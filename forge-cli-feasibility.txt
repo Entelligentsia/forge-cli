@@ -1,0 +1,890 @@
+Installing Forge as forgecli Using the pi-coding-agent                                                                                                                                       
+                                                                                                                                                                                              
+ The Insight: pi-coding-agent Is the Runtime Forge Needs                                                                                                                                      
+                                                                                                                                                                                              
+ My previous answer proposed building a new agent core from scratch. After reading the pi-coding-agent source, that would be pure reinvention. The pi-coding-agent already provides           
+ everything Forge needs:                                                                                                                                                                      
+                                                                                                                                                                                              
+ ┌────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────┐                                                          
+ │ Forge Concept                                          │ pi-coding-agent Equivalent                                             │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ /forge:init orchestration                              │ SDK session.prompt() + extension before_agent_start to inject workflow │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's tool set (bash, read, write, edit)             │ Built-in tools (read, bash, edit, write, grep, find, ls)               │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's subagent spawning (Engineer, Architect, etc.)  │ Subagent extension (already exists as an example!)                     │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's hooks (validate-write, post-init, post-sprint) │ Extension tool_call, tool_result event handlers                        │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's store-cli.cjs, collate.cjs                     │ Custom tools via pi.registerTool()                                     │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's Tomoshibi concierge                            │ Extension command (pi.registerCommand("forge", {...}))                 │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's phase banners and progress                     │ Extension widgets, ctx.ui.setStatus(), ctx.ui.notify()                 │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's store/event emission                           │ pi.appendEntry() for custom persistent state                           │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's FORGE_ROOT path resolution                     │ pi -e ./path/to/extension.ts + resource discovery                      │                                                          
+ ├────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                                                          
+ │ Forge's banners.cjs terminal output                    │ ctx.ui.notify() and ctx.ui.setWidget()                                 │                                                          
+ └────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────┘                                                          
+                                                                                                                                                                                              
+ The mapping is near-perfect. Forge doesn't need a new bridge bar — the pi-coding-agent's extension system IS the bridge bar.                                                                 
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ Architecture: forgecli as a pi Package                                                                                                                                                       
+                                                                                                                                                                                              
+ ```                                                                                                                                                                                          
+   forgecli/                              ← A pi package (npm publishable)                                                                                                                    
+   ├── package.json                       ← pi manifest + npm metadata                                                                                                                        
+   ├── forge/                             ← THE ENTIRE FORGE PLUGIN, VENDORED AS-IS                                                                                                           
+   │   ├── .claude-plugin/plugin.json                                                                                                                                                         
+   │   ├── commands/                                                                                                                                                                          
+   │   ├── hooks/                                                                                                                                                                             
+   │   ├── init/                                                                                                                                                                              
+   │   ├── meta/                                                                                                                                                                              
+   │   ├── schemas/                                                                                                                                                                           
+   │   ├── skills/                                                                                                                                                                            
+   │   ├── tools/                                                                                                                                                                             
+   │   └── ...                                                                                                                                                                                
+   ├── extensions/                                                                                                                                                                            
+   │   └── forgecli/                                                                                                                                                                          
+   │       ├── index.ts                   ← Main extension: registers all tools, commands, hooks                                                                                              
+   │       ├── forge-tools.ts             ← Custom tool wrappers for store-cli, collate, etc.                                                                                                 
+   │       ├── hook-dispatcher.ts         ← Translates pi events into Forge hook semantics                                                                                                    
+   │       ├── init-orchestrator.ts       ← Drives the 4-phase init via session.prompt()                                                                                                      
+   │       └── workflow-runner.ts         ← Drives individual workflows via subagent spawning                                                                                                 
+   ├── skills/                                                                                                                                                                                
+   │   └── forgecli/                      ← SKILL.md for each Forge skill                                                                                                                     
+   │       ├── SKILL.md                                                                                                                                                                       
+   │       └── ...                                                                                                                                                                            
+   ├── agents/                            ← pi agent definitions (Forge personas → pi agents)                                                                                                 
+   │   ├── engineer.md                                                                                                                                                                        
+   │   ├── supervisor.md                                                                                                                                                                      
+   │   ├── architect.md                                                                                                                                                                       
+   │   ├── collator.md                                                                                                                                                                        
+   │   ├── bug-fixer.md                                                                                                                                                                       
+   │   └── qa-engineer.md                                                                                                                                                                     
+   └── prompts/                           ← pi prompt templates (Forge commands → prompts)                                                                                                    
+       ├── plan.md                                                                                                                                                                            
+       ├── implement.md                                                                                                                                                                       
+       ├── review-code.md                                                                                                                                                                     
+       ├── run-task.md                                                                                                                                                                        
+       ├── sprint-plan.md                                                                                                                                                                     
+       ├── fix-bug.md                                                                                                                                                                         
+       └── ...                                                                                                                                                                                
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### package.json                                                                                                                                                                             
+                                                                                                                                                                                              
+ ```json                                                                                                                                                                                      
+   {                                                                                                                                                                                          
+     "name": "forgecli",                                                                                                                                                                      
+     "version": "0.40.2",                                                                                                                                                                     
+     "description": "AI-SDLC tool — generates and operates project-specific software development lifecycles",                                                                                 
+     "keywords": ["pi-package"],                                                                                                                                                              
+     "pi": {                                                                                                                                                                                  
+       "extensions": ["./extensions/forgecli"],                                                                                                                                               
+       "skills": ["./skills/forgecli"],                                                                                                                                                       
+       "prompts": ["./prompts"]                                                                                                                                                               
+     },                                                                                                                                                                                       
+     "bin": {                                                                                                                                                                                 
+       "forgecli": "./bin/forgecli.ts"                                                                                                                                                        
+     },                                                                                                                                                                                       
+     "dependencies": {                                                                                                                                                                        
+       "@mariozechner/pi-coding-agent": "^0.73.0",                                                                                                                                            
+       "@mariozechner/pi-ai": "^0.73.0",                                                                                                                                                      
+       "@mariozechner/pi-tui": "^0.73.0",                                                                                                                                                     
+       "typebox": "^1.1.24"                                                                                                                                                                   
+     },                                                                                                                                                                                       
+     "peerDependencies": {                                                                                                                                                                    
+       "@mariozechner/pi-coding-agent": "*",                                                                                                                                                  
+       "@mariozechner/pi-ai": "*",                                                                                                                                                            
+       "@mariozechner/pi-tui": "*",                                                                                                                                                           
+       "typebox": "*"                                                                                                                                                                         
+     }                                                                                                                                                                                        
+   }                                                                                                                                                                                          
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ The Extension: Where the π Bridge Bar Lives                                                                                                                                                  
+                                                                                                                                                                                              
+ ### extensions/forgecli/index.ts — The Core Extension                                                                                                                                        
+                                                                                                                                                                                              
+ This is the heart of forgecli. It:                                                                                                                                                           
+                                                                                                                                                                                              
+ 1. Discovers the Forge plugin root from .forge/config.json (same as Forge's forgeRef resolution)                                                                                             
+ 2. Registers all Forge's .cjs tools as pi custom tools                                                                                                                                       
+ 3. Registers Forge commands as pi slash commands                                                                                                                                             
+ 4. Intercepts tool calls to implement Forge's write-validation and error-triage hooks                                                                                                        
+ 5. Registers Forge's agent personas as pi agent definitions in .pi/agents/                                                                                                                   
+ 6. Manages lifecycle events (post-init, post-sprint enhancement triggers)                                                                                                                    
+                                                                                                                                                                                              
+ ```typescript                                                                                                                                                                                
+   import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";                                                                                                                         
+   import { Type } from "typebox";                                                                                                                                                            
+   import * as path from "node:path";                                                                                                                                                         
+   import * as fs from "node:fs";                                                                                                                                                             
+   import { registerForgeTools } from "./forge-tools.js";                                                                                                                                     
+   import { registerForgeCommands } from "./forge-commands.js";                                                                                                                               
+   import { registerForgeHooks } from "./hook-dispatcher.js";                                                                                                                                 
+   import { discoverForgeRoot } from "./forge-root.js";                                                                                                                                       
+                                                                                                                                                                                              
+   export default function(pi: ExtensionAPI) {                                                                                                                                                
+     // ─── Resolve forge root ────────────────────────────────────────────                                                                                                                   
+     // The forge root is the installed plugin directory containing meta/,                                                                                                                    
+     // init/, tools/, etc. Same resolution as FORGE_ROOT in the Claude plugin.                                                                                                               
+     const forgeRoot = discoverForgeRoot();                                                                                                                                                   
+     if (!forgeRoot) return; // Not in a Forge-initialized project — noop                                                                                                                     
+                                                                                                                                                                                              
+     const configPath = path.join(process.cwd(), ".forge", "config.json");                                                                                                                    
+     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));                                                                                                                          
+     const kbPath = config.paths?.engineering ?? "engineering";                                                                                                                               
+                                                                                                                                                                                              
+     // ─── Register custom tools (wrapping forge/tools/*.cjs) ─────────────                                                                                                                  
+     registerForgeTools(pi, forgeRoot, config);                                                                                                                                               
+                                                                                                                                                                                              
+     // ─── Register slash commands ────────────────────────────────────────                                                                                                                  
+     registerForgeCommands(pi, forgeRoot, config);                                                                                                                                            
+                                                                                                                                                                                              
+     // ─── Register hook interceptors ─────────────────────────────────────                                                                                                                  
+     registerForgeHooks(pi, forgeRoot, config);                                                                                                                                               
+                                                                                                                                                                                              
+     // ─── Inject Forge system context ───────────────────────────────────                                                                                                                   
+     pi.on("before_agent_start", async (event, ctx) => {                                                                                                                                      
+       // Inject KB context into the system prompt, same as Forge's                                                                                                                           
+       // refresh-kb-links skill does for CLAUDE.md                                                                                                                                           
+       const masterIndex = path.join(process.cwd(), kbPath, "MASTER_INDEX.md");                                                                                                               
+       if (fs.existsSync(masterIndex)) {                                                                                                                                                      
+         return {                                                                                                                                                                             
+           systemPrompt: event.systemPrompt + "\n\n## Forge KB\n\n" +                                                                                                                         
+             `Knowledge base at ${kbPath}/. Use /forge:ask or read ${kbPath}/MASTER_INDEX.md for context.`,                                                                                   
+         };                                                                                                                                                                                   
+       }                                                                                                                                                                                      
+     });                                                                                                                                                                                      
+                                                                                                                                                                                              
+     // ─── Session start: ensure agents are available ─────────────────────                                                                                                                  
+     pi.on("session_start", async (_event, ctx) => {                                                                                                                                          
+       // Copy Forge's generated agent prompts into .pi/agents/ if not present                                                                                                                
+       // This makes them available to the subagent tool for multi-agent workflows                                                                                                            
+       ensureAgentsAvailable(forgeRoot, config);                                                                                                                                              
+     });                                                                                                                                                                                      
+   }                                                                                                                                                                                          
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### extensions/forgecli/forge-tools.ts — Wrapping Forge's Deterministic Tools                                                                                                                
+                                                                                                                                                                                              
+ Forge's forge/tools/*.cjs scripts are standalone Node scripts that read from .forge/config.json and the store. They can be invoked via bash directly, but wrapping them as pi custom tools   
+ gives:                                                                                                                                                                                       
+                                                                                                                                                                                              
+ - Schema validation (TypeBox parameters)                                                                                                                                                     
+ - Progress streaming (onUpdate)                                                                                                                                                              
+ - Error handling (structured error results instead of raw stderr)                                                                                                                            
+ - UI rendering (custom renderCall / renderResult)                                                                                                                                            
+                                                                                                                                                                                              
+ ```typescript                                                                                                                                                                                
+   import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";                                                                                                                         
+   import { Type } from "typebox";                                                                                                                                                            
+   import { execSync } from "node:child_process";                                                                                                                                             
+                                                                                                                                                                                              
+   export function registerForgeTools(                                                                                                                                                        
+     pi: ExtensionAPI,                                                                                                                                                                        
+     forgeRoot: string,                                                                                                                                                                       
+     config: Record<string, any>,                                                                                                                                                             
+   ) {                                                                                                                                                                                        
+     const cwd = process.cwd();                                                                                                                                                               
+                                                                                                                                                                                              
+     // ─── forge:collate ───────────────────────────────────────────────                                                                                                                     
+     pi.registerTool({                                                                                                                                                                        
+       name: "forge_collate",                                                                                                                                                                 
+       label: "Forge Collate",                                                                                                                                                                
+       description: "Regenerate markdown views from the JSON store. Run after completing tasks or sprints.",                                                                                  
+       promptSnippet: "Use forge_collate to regenerate project indexes and timesheets",                                                                                                       
+       promptGuidelines: ["Use forge_collate after completing tasks or sprints to update all project views."],                                                                                
+       parameters: Type.Object({                                                                                                                                                              
+         sprint_id: Type.Optional(Type.String({ description: "Sprint ID (e.g. S01). Omit for all." })),                                                                                       
+         dry_run: Type.Optional(Type.Boolean({ description: "Preview changes without writing." })),                                                                                           
+       }),                                                                                                                                                                                    
+       async execute(toolCallId, params, signal, onUpdate, ctx) {                                                                                                                             
+         const args = ["node", `${forgeRoot}/tools/collate.cjs`];                                                                                                                             
+         if (params.sprint_id) args.push(params.sprint_id);                                                                                                                                   
+         if (params.dry_run) args.push("--dry-run");                                                                                                                                          
+                                                                                                                                                                                              
+         try {                                                                                                                                                                                
+           const result = execSync(args.join(" "), {                                                                                                                                          
+             cwd,                                                                                                                                                                             
+             encoding: "utf8",                                                                                                                                                                
+             timeout: 30000,                                                                                                                                                                  
+             signal,                                                                                                                                                                          
+           });                                                                                                                                                                                
+           return {                                                                                                                                                                           
+             content: [{ type: "text", text: result || "Collation complete." }],                                                                                                              
+             details: { sprint_id: params.sprint_id, dry_run: params.dry_run ?? false },                                                                                                      
+           };                                                                                                                                                                                 
+         } catch (err: any) {                                                                                                                                                                 
+           return {                                                                                                                                                                           
+             content: [{ type: "text", text: `Collation failed: ${err.stderr || err.message}` }],                                                                                             
+             details: {},                                                                                                                                                                     
+             isError: true,                                                                                                                                                                   
+           };                                                                                                                                                                                 
+         }                                                                                                                                                                                    
+       },                                                                                                                                                                                     
+     });                                                                                                                                                                                      
+                                                                                                                                                                                              
+     // ─── forge:store ──────────────────────────────────────────────────                                                                                                                    
+     pi.registerTool({                                                                                                                                                                        
+       name: "forge_store",                                                                                                                                                                   
+       label: "Forge Store",                                                                                                                                                                  
+       description: "Query or update the Forge JSON store (sprints, tasks, bugs, events).",                                                                                                   
+       promptSnippet: "Use forge_store to create, read, or update sprint/task/bug records",                                                                                                   
+       promptGuidelines: ["Use forge_store to manage SDLC entities."],                                                                                                                        
+       parameters: Type.Object({                                                                                                                                                              
+         action: Type.Union([                                                                                                                                                                 
+           Type.Literal("create"),                                                                                                                                                            
+           Type.Literal("read"),                                                                                                                                                              
+           Type.Literal("update-status"),                                                                                                                                                     
+           Type.Literal("list"),                                                                                                                                                              
+           Type.Literal("emit"),                                                                                                                                                              
+         ]),                                                                                                                                                                                  
+         entity: Type.Union([                                                                                                                                                                 
+           Type.Literal("sprint"),                                                                                                                                                            
+           Type.Literal("task"),                                                                                                                                                              
+           Type.Literal("bug"),                                                                                                                                                               
+           Type.Literal("feature"),                                                                                                                                                           
+           Type.Literal("event"),                                                                                                                                                             
+         ]),                                                                                                                                                                                  
+         data: Type.Optional(Type.String({ description: "JSON data for create/update" })),                                                                                                    
+         id: Type.Optional(Type.String({ description: "Entity ID for read/update" })),                                                                                                        
+         filter: Type.Optional(Type.String({ description: "Filter expression (e.g. status=active)" })),                                                                                       
+       }),                                                                                                                                                                                    
+       async execute(toolCallId, params, signal, onUpdate, ctx) {                                                                                                                             
+         const args = ["node", `${forgeRoot}/tools/store-cli.cjs`, params.action, params.entity];                                                                                             
+         if (params.id) args.push(params.id);                                                                                                                                                 
+         if (params.filter) args.push("--filter", params.filter);                                                                                                                             
+         if (params.data) args.push(params.data);                                                                                                                                             
+                                                                                                                                                                                              
+         try {                                                                                                                                                                                
+           const result = execSync(args.join(" "), { cwd, encoding: "utf8", timeout: 10000, signal });                                                                                        
+           return {                                                                                                                                                                           
+             content: [{ type: "text", text: result || "OK" }],                                                                                                                               
+             details: { action: params.action, entity: params.entity },                                                                                                                       
+           };                                                                                                                                                                                 
+         } catch (err: any) {                                                                                                                                                                 
+           return {                                                                                                                                                                           
+             content: [{ type: "text", text: `Store operation failed: ${err.stderr || err.message}` }],                                                                                       
+             details: {},                                                                                                                                                                     
+             isError: true,                                                                                                                                                                   
+           };                                                                                                                                                                                 
+         }                                                                                                                                                                                    
+       },                                                                                                                                                                                     
+     });                                                                                                                                                                                      
+                                                                                                                                                                                              
+     // ─── forge:validate-store ──────────────────────────────────────────                                                                                                                   
+     pi.registerTool({                                                                                                                                                                        
+       name: "forge_validate_store",                                                                                                                                                          
+       label: "Forge Validate Store",                                                                                                                                                         
+       description: "Validate Forge store integrity (required fields, referential integrity).",                                                                                               
+       promptSnippet: "Use forge_validate_store to check store health",                                                                                                                       
+       parameters: Type.Object({}),                                                                                                                                                           
+       async execute() {                                                                                                                                                                      
+         const result = execSync(`node ${forgeRoot}/tools/validate-store.cjs`, { cwd, encoding: "utf8", timeout: 10000 });                                                                    
+         return { content: [{ type: "text", text: result }], details: {} };                                                                                                                   
+       },                                                                                                                                                                                     
+     });                                                                                                                                                                                      
+                                                                                                                                                                                              
+     // ─── forge:manage-config ──────────────────────────────────────────                                                                                                                    
+     pi.registerTool({                                                                                                                                                                        
+       name: "forge_config",                                                                                                                                                                  
+       label: "Forge Config",                                                                                                                                                                 
+       description: "Get or set Forge configuration values.",                                                                                                                                 
+       parameters: Type.Object({                                                                                                                                                              
+         action: Type.Union([Type.Literal("get"), Type.Literal("set")]),                                                                                                                      
+         key: Type.String({ description: "Dot-notation config key (e.g. project.prefix)" }),                                                                                                  
+         value: Type.Optional(Type.String({ description: "Value to set (for set action)" })),                                                                                                 
+       }),                                                                                                                                                                                    
+       async execute(_id, params) {                                                                                                                                                           
+         const args = ["node", `${forgeRoot}/tools/manage-config.cjs`, params.action, params.key];                                                                                            
+         if (params.action === "set" && params.value !== undefined) args.push(params.value);                                                                                                  
+         const result = execSync(args.join(" "), { cwd, encoding: "utf8", timeout: 5000 });                                                                                                   
+         return { content: [{ type: "text", text: result }], details: {} };                                                                                                                   
+       },                                                                                                                                                                                     
+     });                                                                                                                                                                                      
+   }                                                                                                                                                                                          
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### extensions/forgecli/hook-dispatcher.ts — Translating pi Events into Forge Hooks                                                                                                          
+                                                                                                                                                                                              
+ Forge's hooks in forge/hooks/ are Claude Code hook protocol scripts. In pi, the same semantics are achieved via extension event handlers:                                                    
+                                                                                                                                                                                              
+ ```typescript                                                                                                                                                                                
+   import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";                                                                                                                         
+   import * as fs from "node:fs";                                                                                                                                                             
+   import * as path from "node:path";                                                                                                                                                         
+   import { execSync } from "node:child_process";                                                                                                                                             
+                                                                                                                                                                                              
+   export function registerForgeHooks(pi: ExtensionAPI, forgeRoot: string, config: Record<string, any>) {                                                                                     
+     const cwd = process.cwd();                                                                                                                                                               
+                                                                                                                                                                                              
+     // ─── validate-write hook ─────────────────────────────────────────                                                                                                                     
+     // Forge's validate-write.js blocks writes to protected paths.                                                                                                                           
+     // In pi, we intercept write/edit tool calls.                                                                                                                                            
+     pi.on("tool_call", async (event) => {                                                                                                                                                    
+       if (event.toolName !== "write" && event.toolName !== "edit") return;                                                                                                                   
+                                                                                                                                                                                              
+       // Run the validate-write script                                                                                                                                                       
+       const filePath = event.toolName === "write"                                                                                                                                            
+         ? (event.input as any).file_path || (event.input as any).path                                                                                                                        
+         : (event.input as any).file_path || (event.input as any).path;                                                                                                                       
+                                                                                                                                                                                              
+       if (!filePath) return;                                                                                                                                                                 
+                                                                                                                                                                                              
+       // Check against Forge's protected paths (from .forge/config.json)                                                                                                                     
+       const protectedPaths = [                                                                                                                                                               
+         path.join(cwd, "engineering"),                                                                                                                                                       
+         path.join(cwd, ".forge/store"),                                                                                                                                                      
+       ];                                                                                                                                                                                     
+                                                                                                                                                                                              
+       // Allow writes during init (when forge:init is running)                                                                                                                               
+       // Block writes to generated workflows unless user explicitly confirms                                                                                                                 
+       const resolved = path.resolve(cwd, filePath);                                                                                                                                          
+       const isStore = resolved.startsWith(path.join(cwd, ".forge", "store"));                                                                                                                
+       const isGenerated = resolved.startsWith(path.join(cwd, ".forge", "workflows"));                                                                                                        
+                                                                                                                                                                                              
+       if (isStore) {                                                                                                                                                                         
+         // Store writes go through forge_store tool, not direct file writes                                                                                                                  
+         return { block: true, reason: "Use the forge_store tool for store operations, not direct file writes." };                                                                            
+       }                                                                                                                                                                                      
+     });                                                                                                                                                                                      
+                                                                                                                                                                                              
+     // ─── Post-init enhancement trigger ───────────────────────────────                                                                                                                     
+     // Forge's post-init.cjs detects `rm -f .forge/init-progress.json`                                                                                                                       
+     // and suggests /forge:enhance --phase 1 --auto.                                                                                                                                         
+     // In pi, we detect init completion via our /forge:init command handler                                                                                                                  
+     // and use pi.sendUserMessage() to queue the enhancement.                                                                                                                                
+                                                                                                                                                                                              
+     // ─── Post-sprint enhancement trigger ──────────────────────────────                                                                                                                    
+     // Forge's post-sprint.cjs detects collate.cjs <SPRINT_ID> --purge-events                                                                                                                
+     // and suggests /forge:enhance --phase 2.                                                                                                                                                
+     // In pi, we detect this via tool_call observation.                                                                                                                                      
+     pi.on("tool_result", async (event) => {                                                                                                                                                  
+       if (event.toolName !== "forge_collate") return;                                                                                                                                        
+                                                                                                                                                                                              
+       // Check if the collate result mentions sprint purge                                                                                                                                   
+       const content = event.content.find(c => c.type === "text");                                                                                                                            
+       if (!content || content.type !== "text") return;                                                                                                                                       
+                                                                                                                                                                                              
+       // If purge-events was included, suggest enhance phase 2                                                                                                                               
+       if (content.text.includes("--purge-events") || content.text.includes("S0")) {                                                                                                          
+         pi.sendUserMessage("/forge:enhance --phase 2", { deliverAs: "followUp" });                                                                                                           
+       }                                                                                                                                                                                      
+     });                                                                                                                                                                                      
+   }                                                                                                                                                                                          
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### extensions/forgecli/init-orchestrator.ts — The Key Innovation                                                                                                                            
+                                                                                                                                                                                              
+ This is where Forge's 4-phase init flow maps to the pi extension. Instead of running as a single monolithic prompt (as in Claude Code), Forge's init drives the pi SDK session through each  
+ phase programmatically:                                                                                                                                                                      
+                                                                                                                                                                                              
+ ```typescript                                                                                                                                                                                
+   import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";                                                                                                
+   import * as fs from "node:fs";                                                                                                                                                             
+   import * as path from "node:path";                                                                                                                                                         
+   import { execSync } from "node:child_process";                                                                                                                                             
+                                                                                                                                                                                              
+   export function registerForgeInitCommand(pi: ExtensionAPI, forgeRoot: string) {                                                                                                            
+     pi.registerCommand("forge:init", {                                                                                                                                                       
+       description: "Bootstrap a complete AI-SDLC for the current project",                                                                                                                   
+       getArgumentCompletions: (prefix: string) => {                                                                                                                                          
+         return [                                                                                                                                                                             
+           { value: "--fast", label: "Fast mode (equivalent to full, base-pack only)" },                                                                                                      
+           { value: "--full", label: "Full mode (equivalent to base-pack)" },                                                                                                                 
+         ].filter(i => i.value.startsWith(prefix));                                                                                                                                           
+       },                                                                                                                                                                                     
+       handler: async (args: string, ctx: ExtensionCommandContext) => {                                                                                                                       
+         const cwd = ctx.cwd;                                                                                                                                                                 
+                                                                                                                                                                                              
+         // ─── Pre-flight checks ──────────────────────────────────────                                                                                                                      
+         if (fs.existsSync(path.join(cwd, ".forge", "config.json"))) {                                                                                                                        
+           const resume = await ctx.ui.confirm(                                                                                                                                               
+             "Existing .forge/config.json detected",                                                                                                                                          
+             "Resume from previous init? (No = start over)"                                                                                                                                   
+           );                                                                                                                                                                                 
+           if (resume) {                                                                                                                                                                      
+             // Check init-progress.json for phase                                                                                                                                            
+             // ... resume logic                                                                                                                                                              
+             return;                                                                                                                                                                          
+           }                                                                                                                                                                                  
+           // Clean slate                                                                                                                                                                     
+           ctx.ui.notify("Removing existing .forge/ directory...", "info");                                                                                                                   
+         }                                                                                                                                                                                    
+                                                                                                                                                                                              
+         // ─── Phase 1: Collect ──────────────────────────────────────                                                                                                                       
+         ctx.ui.notify("Phase 1/4: Collect — Running 5 discovery scans...", "info");                                                                                                          
+         ctx.ui.setStatus("forge:init", "Phase 1/4: Collect");                                                                                                                                
+                                                                                                                                                                                              
+         // The discovery prompts from forge/init/discovery/ are LLM instructions.                                                                                                            
+         // We send them as the session prompt with subagent spawning for parallelism.                                                                                                        
+         const stackPrompt = fs.readFileSync(path.join(forgeRoot, "init/discovery/discover-stack.md"), "utf8");                                                                               
+         // ... read other discovery prompts                                                                                                                                                  
+                                                                                                                                                                                              
+         // Use pi's subagent spawning for parallel discovery                                                                                                                                 
+         // (or send as a single multi-step prompt to the main agent)                                                                                                                         
+         await ctx.sendUserMessage(`                                                                                                                                                          
+   Run the following 5 discovery scans in parallel using the subagent tool:                                                                                                                   
+                                                                                                                                                                                              
+   1. **Stack discovery**: ${stackPrompt}                                                                                                                                                     
+   2. **Processes discovery**: ...                                                                                                                                                            
+   3. **Database discovery**: ...                                                                                                                                                             
+   4. **Routing discovery**: ...                                                                                                                                                              
+   5. **Testing discovery**: ...                                                                                                                                                              
+                                                                                                                                                                                              
+   Write the combined discovery results to .forge/init-context.md and assemble .forge/config.json.                                                                                            
+         `);                                                                                                                                                                                  
+                                                                                                                                                                                              
+         // Wait for agent to finish                                                                                                                                                          
+         await ctx.waitForIdle();                                                                                                                                                             
+                                                                                                                                                                                              
+         // ─── Phase 2: Discover ────────────────────────────────────                                                                                                                        
+         ctx.ui.notify("Phase 2/4: Discover — Generating knowledge base...", "info");                                                                                                         
+         ctx.ui.setStatus("forge:init", "Phase 2/4: Discover");                                                                                                                               
+                                                                                                                                                                                              
+         // KB generation is LLM work — send the generation prompt                                                                                                                            
+         const kbGenPrompt = fs.readFileSync(path.join(forgeRoot, "init/generation/generate-kb-doc.md"), "utf8");                                                                             
+                                                                                                                                                                                              
+         await ctx.sendUserMessage(`                                                                                                                                                          
+   Read and follow the rulebook at ${forgeRoot}/init/generation/generate-kb-doc.md exactly.                                                                                                   
+                                                                                                                                                                                              
+   Generate all 7 knowledge base documents as specified. Use subagent parallelism                                                                                                             
+   for the leaf docs.                                                                                                                                                                         
+         `);                                                                                                                                                                                  
+                                                                                                                                                                                              
+         await ctx.waitForIdle();                                                                                                                                                             
+                                                                                                                                                                                              
+         // ─── Phase 3: Materialize (deterministic) ─────────────────                                                                                                                        
+         ctx.ui.notify("Phase 3/4: Materialize — Substituting placeholders...", "info");                                                                                                      
+         ctx.ui.setStatus("forge:init", "Phase 3/4: Materialize");                                                                                                                            
+                                                                                                                                                                                              
+         // This phase is entirely deterministic — run via bash                                                                                                                               
+         execSync(`node ${forgeRoot}/tools/substitute-placeholders.cjs ` +                                                                                                                    
+           `--forge-root ${forgeRoot} ` +                                                                                                                                                     
+           `--base-pack ${forgeRoot}/init/base-pack ` +                                                                                                                                       
+           `--config .forge/config.json ` +                                                                                                                                                   
+           `--context .forge/project-context.json ` +                                                                                                                                         
+           `--out .`, { cwd, encoding: "utf8" });                                                                                                                                             
+                                                                                                                                                                                              
+         execSync(`node ${forgeRoot}/tools/build-overlay.cjs --task INIT-SMOKE-TEST --format json`,                                                                                           
+           { cwd, encoding: "utf8" });                                                                                                                                                        
+                                                                                                                                                                                              
+         // ─── Phase 4: Register (deterministic) ────────────────────                                                                                                                        
+         ctx.ui.notify("Phase 4/4: Register — Finalizing...", "info");                                                                                                                        
+         ctx.ui.setStatus("forge:init", "Phase 4/4: Register");                                                                                                                               
+                                                                                                                                                                                              
+         execSync(`node ${forgeRoot}/tools/manage-versions.cjs init`, { cwd, encoding: "utf8" });                                                                                             
+         execSync(`node ${forgeRoot}/tools/generation-manifest.cjs record-all`, { cwd, encoding: "utf8" });                                                                                   
+         execSync(`node ${forgeRoot}/tools/build-persona-pack.cjs --out .forge/cache/persona-pack.json`, { cwd, encoding: "utf8" });                                                          
+         execSync(`node ${forgeRoot}/tools/build-context-pack.cjs --arch-dir ${kbPath}/architecture --out-md .forge/cache/context-pack.md --out-json .forge/cache/context-pack.json`, { cwd,  
+ encoding: "utf8" });                                                                                                                                                                         
+         execSync(`node ${forgeRoot}/tools/build-init-context.cjs --config .forge/config.json --personas .forge/personas --templates .forge/templates --kb ${kbPath} --out                    
+ .forge/init-context.md --json-out .forge/init-context.json`, { cwd, encoding: "utf8" });                                                                                                     
+         execSync(`node ${forgeRoot}/tools/seed-store.cjs`, { cwd, encoding: "utf8" });                                                                                                       
+                                                                                                                                                                                              
+         // Write update-check cache                                                                                                                                                          
+         const pluginPkg = JSON.parse(fs.readFileSync(path.join(forgeRoot, ".claude-plugin/plugin.json"), "utf8"));                                                                           
+         const cache = { lastChecked: new Date().toISOString(), installedVersion: pluginPkg.version, latestVersion: pluginPkg.version, upToDate: true };                                      
+         fs.mkdirSync(path.join(cwd, ".forge"), { recursive: true });                                                                                                                         
+         fs.writeFileSync(path.join(cwd, ".forge/update-check-cache.json"), JSON.stringify(cache, null, 2) + "\n");                                                                           
+                                                                                                                                                                                              
+         // Clean up init-progress                                                                                                                                                            
+         fs.unlinkSync(path.join(cwd, ".forge/init-progress.json"));                                                                                                                          
+                                                                                                                                                                                              
+         ctx.ui.setStatus("forge:init", undefined); // Clear status                                                                                                                           
+         ctx.ui.notify("✓ Forge init complete! Run /sprint-plan to start.", "success");                                                                                                       
+                                                                                                                                                                                              
+         // Trigger enhance --phase 1 as a follow-up                                                                                                                                          
+         pi.sendUserMessage("/forge:enhance --phase 1 --auto", { deliverAs: "followUp" });                                                                                                    
+       },                                                                                                                                                                                     
+     });                                                                                                                                                                                      
+   }                                                                                                                                                                                          
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### Agent Definitions — agents/ Directory                                                                                                                                                    
+                                                                                                                                                                                              
+ These are pi agent Markdown files that map 1:1 to Forge's generated personas. When /forge:init materializes personas, they go to .pi/agents/ instead of (or in addition to)                  
+ .forge/personas/:                                                                                                                                                                            
+                                                                                                                                                                                              
+ ```markdown                                                                                                                                                                                  
+   <!-- .pi/agents/engineer.md -->                                                                                                                                                            
+   ---                                                                                                                                                                                        
+   name: engineer                                                                                                                                                                             
+   description: Forge Engineer Agent — implements code, runs tests, documents progress                                                                                                        
+   tools: read, bash, edit, write, grep, find, ls, forge_store, forge_collate, forge_validate_store                                                                                           
+   model: claude-sonnet-4-5                                                                                                                                                                   
+   ---                                                                                                                                                                                        
+                                                                                                                                                                                              
+   You are the Engineer Agent for {{PROJECT_NAME}}.                                                                                                                                           
+                                                                                                                                                                                              
+   {{ENGINEER_PERSONA_CONTENT}}                                                                                                                                                               
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ When forgecli init runs, after Phase 3 (Materialize), it generates these .pi/agents/*.md files from the base-pack personas with {{KEY}} substitutions resolved. The pi coding-agent then     
+ discovers them via its native agent discovery system.                                                                                                                                        
+                                                                                                                                                                                              
+ ### Prompt Templates — prompts/ Directory                                                                                                                                                    
+                                                                                                                                                                                              
+ These map 1:1 to Forge's command Markdown files, adapted to pi's template format:                                                                                                            
+                                                                                                                                                                                              
+ ```markdown                                                                                                                                                                                  
+   <!-- prompts/plan.md -->                                                                                                                                                                   
+   ---                                                                                                                                                                                        
+   name: plan                                                                                                                                                                                 
+   description: Design and document the implementation plan for a task                                                                                                                        
+   ---                                                                                                                                                                                        
+                                                                                                                                                                                              
+   {{PLAN_WORKFLOW_CONTENT}}                                                                                                                                                                  
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ When forgecli init materializes workflows, it writes them to .pi/prompts/ as well as .forge/workflows/. The pi coding-agent discovers them as /plan, /implement, etc.                        
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ The SDK Path: Headless forgecli                                                                                                                                                              
+                                                                                                                                                                                              
+ The extension above works beautifully in interactive mode — pi with the forgecli extension loaded. But the original question asked about forgecli as a purpose-made tool. This means a       
+ headless CLI that doesn't require interactive TUI.                                                                                                                                           
+                                                                                                                                                                                              
+ The pi SDK makes this trivial. Here's bin/forgecli.ts:                                                                                                                                       
+                                                                                                                                                                                              
+ ```typescript                                                                                                                                                                                
+   #!/usr/bin/env node                                                                                                                                                                        
+   import {                                                                                                                                                                                   
+     AuthStorage,                                                                                                                                                                             
+     ModelRegistry,                                                                                                                                                                           
+     createAgentSession,                                                                                                                                                                      
+     createAgentSessionRuntime,                                                                                                                                                               
+     createAgentSessionServices,                                                                                                                                                              
+     createEventBus,                                                                                                                                                                          
+     DefaultResourceLoader,                                                                                                                                                                   
+     getAgentDir,                                                                                                                                                                             
+     SessionManager,                                                                                                                                                                          
+     SettingsManager,                                                                                                                                                                         
+   } from "@mariozechner/pi-coding-agent";                                                                                                                                                    
+   import * as fs from "node:fs";                                                                                                                                                             
+   import * as path from "node:path";                                                                                                                                                         
+                                                                                                                                                                                              
+   const command = process.argv[2];                                                                                                                                                           
+   const args = process.argv.slice(3);                                                                                                                                                        
+                                                                                                                                                                                              
+   const authStorage = AuthStorage.create();                                                                                                                                                  
+   const modelRegistry = ModelRegistry.create(authStorage);                                                                                                                                   
+                                                                                                                                                                                              
+   // ─── Build ResourceLoader with forgecli extension ──────────────────                                                                                                                     
+   const forgecliExtensionPath = path.resolve(__dirname, "../extensions/forgecli/index.js");                                                                                                  
+                                                                                                                                                                                              
+   const loader = new DefaultResourceLoader({                                                                                                                                                 
+     additionalExtensionPaths: [forgecliExtensionPath],                                                                                                                                       
+     skillsOverride: (current) => {                                                                                                                                                           
+       // Add forgecli skill if in a Forge-initialized project                                                                                                                                
+       const skillDir = path.resolve(__dirname, "../skills/forgecli");                                                                                                                        
+       if (fs.existsSync(path.join(skillDir, "SKILL.md"))) {                                                                                                                                  
+         current.skills.push({                                                                                                                                                                
+           name: "forgecli",                                                                                                                                                                  
+           description: "Forge AI-SDLC tools and workflows",                                                                                                                                  
+           filePath: path.join(skillDir, "SKILL.md"),                                                                                                                                         
+           baseDir: skillDir,                                                                                                                                                                 
+           source: "package",                                                                                                                                                                 
+         });                                                                                                                                                                                  
+       }                                                                                                                                                                                      
+       return current;                                                                                                                                                                        
+     },                                                                                                                                                                                       
+     // Load Forge-generated agents from .pi/agents/ (project-local)                                                                                                                          
+     // and from forgecli package agents/ (user-level)                                                                                                                                        
+   });                                                                                                                                                                                        
+   await loader.reload();                                                                                                                                                                     
+                                                                                                                                                                                              
+   // ─── Create session ─────────────────────────────────────────────────                                                                                                                    
+   const sessionManager = SessionManager.inMemory();                                                                                                                                          
+   const settingsManager = SettingsManager.inMemory({                                                                                                                                         
+     compaction: { enabled: true },                                                                                                                                                           
+   });                                                                                                                                                                                        
+                                                                                                                                                                                              
+   const { session } = await createAgentSession({                                                                                                                                             
+     cwd: process.cwd(),                                                                                                                                                                      
+     model: modelRegistry.find("anthropic", "claude-sonnet-4-5"),                                                                                                                             
+     authStorage,                                                                                                                                                                             
+     modelRegistry,                                                                                                                                                                           
+     sessionManager,                                                                                                                                                                          
+     settingsManager,                                                                                                                                                                         
+     resourceLoader: loader,                                                                                                                                                                  
+   });                                                                                                                                                                                        
+                                                                                                                                                                                              
+   // ─── Route commands ──────────────────────────────────────────────────                                                                                                                   
+   switch (command) {                                                                                                                                                                         
+     case "init": {                                                                                                                                                                           
+       // The /forge:init command is registered by our extension.                                                                                                                             
+       // In headless mode, we drive it programmatically:                                                                                                                                     
+       const initPrompt = fs.readFileSync(                                                                                                                                                    
+         path.resolve(__dirname, "../forge/init/sdlc-init.md"), "utf8"                                                                                                                        
+       );                                                                                                                                                                                     
+       await session.prompt(initPrompt);                                                                                                                                                      
+       break;                                                                                                                                                                                 
+     }                                                                                                                                                                                        
+     case "run-task": {                                                                                                                                                                       
+       const taskId = args[0];                                                                                                                                                                
+       if (!taskId) { console.error("Usage: forgecli run-task <TASK_ID>"); process.exit(1); }                                                                                                 
+       // Read the orchestrate_task workflow                                                                                                                                                  
+       const workflow = fs.readFileSync(                                                                                                                                                      
+         path.resolve(process.cwd(), ".forge/workflows/orchestrate_task.md"), "utf8"                                                                                                          
+       );                                                                                                                                                                                     
+       await session.prompt(`${workflow}\n\nTask ID: ${taskId}`);                                                                                                                             
+       break;                                                                                                                                                                                 
+     }                                                                                                                                                                                        
+     case "sprint-plan": {                                                                                                                                                                    
+       const sprintId = args[0];                                                                                                                                                              
+       const workflow = fs.readFileSync(                                                                                                                                                      
+         path.resolve(process.cwd(), ".forge/workflows/architect_sprint_plan.md"), "utf8"                                                                                                     
+       );                                                                                                                                                                                     
+       await session.prompt(`${workflow}\n\nSprint ID: ${sprintId || "new"}`);                                                                                                                
+       break;                                                                                                                                                                                 
+     }                                                                                                                                                                                        
+     case "health": {                                                                                                                                                                         
+       // Deterministic — no LLM needed                                                                                                                                                       
+       const forgeRoot = discoverForgeRoot();                                                                                                                                                 
+       const result = execSync(`node ${forgeRoot}/tools/ensure-ready.cjs --all`, { encoding: "utf8" });                                                                                       
+       console.log(result);                                                                                                                                                                   
+       break;                                                                                                                                                                                 
+     }                                                                                                                                                                                        
+     case "collate": {                                                                                                                                                                        
+       const sprintId = args[0];                                                                                                                                                              
+       const forgeRoot = discoverForgeRoot();                                                                                                                                                 
+       const collateArgs = sprintId ? sprintId : "";                                                                                                                                          
+       const result = execSync(`node ${forgeRoot}/tools/collate.cjs ${collateArgs}`, { encoding: "utf8" });                                                                                   
+       console.log(result);                                                                                                                                                                   
+       break;                                                                                                                                                                                 
+     }                                                                                                                                                                                        
+     // ... other commands                                                                                                                                                                    
+   }                                                                                                                                                                                          
+                                                                                                                                                                                              
+   session.dispose();                                                                                                                                                                         
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ The Complete Mapping: Claude Code Hooks → pi Events                                                                                                                                          
+                                                                                                                                                                                              
+ ┌──────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────┐ 
+ │ Claude Code Hook                                                     │ pi Event                                     │ Implementation                                                     │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → SessionStart → check-update.js                          │ pi.on("session_start")                       │ Check update-check-cache.json; show notification                   │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → PreToolUse(Write|Edit) → validate-write.js              │ pi.on("tool_call") filter by write/edit      │ Same logic: check protected paths, block or allow                  │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → PostToolUse(Bash) → triage-error.js                     │ pi.on("tool_result") filter by bash          │ Parse exit code; if error, append diagnostic context               │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → PostToolUse(Bash) → query-logger.cjs                    │ pi.on("tool_result") filter by forge_store   │ Log all store operations                                           │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → PostToolUse(Bash) → post-init.cjs                       │ Extension /forge:init command handler        │ Detect init completion; queue /forge:enhance --phase 1 --auto      │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → PostToolUse(Bash) → post-sprint.cjs                     │ pi.on("tool_result") filter by forge_collate │ Detect --purge-events with sprint ID; queue /forge:enhance --phase │ 
+ │                                                                      │                                              │ 2                                                                  │ 
+ ├──────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤ 
+ │ hooks.json → PermissionRequest(Bash|Write|...) →                     │ pi.on("tool_call")                           │ Auto-approve Forge store operations; prompt for risky ops          │ 
+ │ forge-permissions.js                                                 │                                              │                                                                    │ 
+ └──────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────┘ 
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ Multi-Agent Orchestration: The Subagent Extension Already Does It                                                                                                                            
+                                                                                                                                                                                              
+ The most striking discovery: the subagent extension in the pi examples already implements the Forge orchestrator's core pattern. It can:                                                     
+                                                                                                                                                                                              
+ - Spawn isolated agents with custom system prompts, model selections, and tool restrictions                                                                                                  
+ - Run chains (sequential: scout → planner → worker) — this is Forge's run-task pipeline                                                                                                      
+ - Run parallel tasks — this is Forge's wave-parallel sprint execution                                                                                                                        
+ - Stream results back in real-time                                                                                                                                                           
+ - Track usage per agent (turns, tokens, cost)                                                                                                                                                
+                                                                                                                                                                                              
+ The mapping from Forge's orchestrated pipeline to pi subagent chains:                                                                                                                        
+                                                                                                                                                                                              
+ ┌──────────────────────┬─────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────┐                                                    
+ │ Forge Pipeline Phase │ Forge Workflow                      │ pi Subagent Agent                                                        │                                                    
+ ├──────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤                                                    
+ │ Plan                 │ engineer_plan_task.md               │ engineer agent (model: sonnet, tools: read, grep, find, ls, forge_store) │                                                    
+ ├──────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤                                                    
+ │ Review Plan          │ supervisor_review_plan.md           │ supervisor agent (model: opus, tools: read, grep, find, ls)              │                                                    
+ ├──────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤                                                    
+ │ Implement            │ engineer_implement_plan.md          │ engineer agent (model: sonnet, tools: all)                               │                                                    
+ ├──────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤                                                    
+ │ Review Code          │ supervisor_review_implementation.md │ supervisor agent (model: opus, tools: read, grep, find, ls)              │                                                    
+ ├──────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤                                                    
+ │ Approve              │ architect_approve.md                │ architect agent (model: opus, tools: read, grep, find, ls)               │                                                    
+ ├──────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤                                                    
+ │ Commit               │ engineer_commit_task.md             │ engineer agent (model: haiku, tools: read, bash, write)                  │                                                    
+ └──────────────────────┴─────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────┘                                                    
+                                                                                                                                                                                              
+ And Forge's run-sprint --parallel maps directly to the subagent's parallel mode with MAX_CONCURRENCY = 4.                                                                                    
+                                                                                                                                                                                              
+ The forgecli/workflow-runner.ts extension builds on this by registering a forge_run_task tool that chains subagent calls through the orchestrate_task workflow:                              
+                                                                                                                                                                                              
+ ```typescript                                                                                                                                                                                
+   pi.registerTool({                                                                                                                                                                          
+     name: "forge_run_task",                                                                                                                                                                  
+     label: "Forge Run Task",                                                                                                                                                                 
+     description: "Orchestrate the full plan→implement→review→approve pipeline for a task",                                                                                                   
+     parameters: Type.Object({                                                                                                                                                                
+       task_id: Type.String({ description: "Task ID (e.g. ACME-S01-T01)" }),                                                                                                                  
+       skip_phases: Type.Optional(Type.Array(Type.String())),                                                                                                                                 
+     }),                                                                                                                                                                                      
+     async execute(toolCallId, params, signal, onUpdate, ctx) {                                                                                                                               
+       // Read the orchestration workflow                                                                                                                                                     
+       const orchestration = fs.readFileSync(                                                                                                                                                 
+         path.join(process.cwd(), ".forge/workflows/orchestrate_task.md"), "utf8"                                                                                                             
+       );                                                                                                                                                                                     
+                                                                                                                                                                                              
+       // Build the chain: plan -> review -> implement -> review -> approve -> commit                                                                                                         
+       const chain = [                                                                                                                                                                        
+         { agent: "engineer", task: `Plan task ${params.task_id}. Follow the plan_task workflow.` },                                                                                          
+         { agent: "supervisor", task: `Review the plan for task ${params.task_id}. {previous}` },                                                                                             
+         { agent: "engineer", task: `Implement task ${params.task_id} following the approved plan. {previous}` },                                                                             
+         { agent: "supervisor", task: `Review the implementation for task ${params.task_id}. {previous}` },                                                                                   
+         { agent: "architect", task: `Approve task ${params.task_id}. {previous}` },                                                                                                          
+         { agent: "engineer", task: `Commit task ${params.task_id}. {previous}` },                                                                                                            
+       ];                                                                                                                                                                                     
+                                                                                                                                                                                              
+       // Use the subagent tool in chain mode                                                                                                                                                 
+       pi.sendUserMessage(JSON.stringify({ chain }));                                                                                                                                         
+     },                                                                                                                                                                                       
+   });                                                                                                                                                                                        
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ What Changes in forge/ Itself                                                                                                                                                                
+                                                                                                                                                                                              
+ Here's the beautiful part: almost nothing changes in forge/.                                                                                                                                 
+                                                                                                                                                                                              
+ The only adaptation needed:                                                                                                                                                                  
+                                                                                                                                                                                              
+ 1. Agent output format — Forge's generated agent .md files (in .forge/personas/) today inject persona text as the opening section of each workflow. In pi, these become .pi/agents/*.md      
+ files with the same content in YAML frontmatter format. The substitute-placeholders.cjs tool already handles {{KEY}} substitution; it just needs an additional output directory:             
+                                                                                                                                                                                              
+ ```javascript                                                                                                                                                                                
+   // In substitute-placeholders.cjs, add to SUBDIR_OUTPUT_MAP:                                                                                                                               
+   "base-pack/personas/": {                                                                                                                                                                   
+     // Existing: output to .forge/personas/                                                                                                                                                  
+     forge: ".forge/personas/",                                                                                                                                                               
+     // New: also output to .pi/agents/ with YAML frontmatter wrapping                                                                                                                        
+     pi: ".pi/agents/",                                                                                                                                                                       
+   },                                                                                                                                                                                         
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ 2. The FORGE_ROOT resolution — Currently resolved via !echo "${CLAUDE_PLUGIN_ROOT}"`` in command Markdown. In pi, it's resolved by the extension at startup from .forge/config.json's        
+ paths.forgeRoot field. The forge/tools/*.cjs scripts already accept --forge-root as a CLI argument, so they work unchanged.                                                                  
+ 3. The skill format — Forge's forge/skills/refresh-kb-links/SKILL.md and forge/skills/store-custodian/SKILL.md follow the Agent Skills standard. They work in pi as-is — pi discovered them  
+ from skills/ directories automatically.                                                                                                                                                      
+                                                                                                                                                                                              
+ Everything else — the meta-definitions, the base-pack, the schemas, the deterministic tools, the init orchestration prompts, the KB generation rules — works unchanged. The π's left leg     
+ (forge/meta/), right leg (.forge/ + engineering/), and bridge bar (forge/init/) are all compatible with pi's extension system because:                                                       
+                                                                                                                                                                                              
+ - Meta-definitions are Markdown — pi reads them as agent system prompts, subagent system prompts, or prompt templates                                                                        
+ - The base-pack + substitute-placeholders.cjs produces the same outputs; pi just receives them in additional locations (.pi/agents/, .pi/prompts/)                                           
+ - The deterministic tools are Node.js scripts; pi invokes them via bash or via custom tool wrappers                                                                                          
+ - The store is on-disk JSON; store-cli.cjs works identically                                                                                                                                 
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ Installation and Distribution                                                                                                                                                                
+                                                                                                                                                                                              
+ ### Installing forgecli into a project with pi                                                                                                                                               
+                                                                                                                                                                                              
+ ```bash                                                                                                                                                                                      
+   # From npm:                                                                                                                                                                                
+   pi install npm:forgecli                                                                                                                                                                    
+                                                                                                                                                                                              
+   # Or from git:                                                                                                                                                                             
+   pi install git:github.com:Entelligentsia/forgecli                                                                                                                                          
+                                                                                                                                                                                              
+   # Or for development:                                                                                                                                                                      
+   pi -e ./path/to/forgecli/extensions/forgecli/index.ts                                                                                                                                      
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ Then:                                                                                                                                                                                        
+                                                                                                                                                                                              
+ ```bash                                                                                                                                                                                      
+   pi                                                                                                                                                                                         
+   > /forge:init                                                                                                                                                                              
+   # ... the full 4-phase init runs, generating:                                                                                                                                              
+   #   .forge/               (store, config, workflows, personas, templates)                                                                                                                  
+   #   engineering/          (knowledge base)                                                                                                                                                 
+   #   .pi/agents/           (Forge personas as pi agents)                                                                                                                                    
+   #   .pi/prompts/          (Forge commands as pi prompt templates)                                                                                                                          
+   #   .pi/skills/forgecli   (Forge skills)                                                                                                                                                   
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### Using forgecli headlessly (CI/automation)                                                                                                                                                
+                                                                                                                                                                                              
+ ```bash                                                                                                                                                                                      
+   forgecli init --fast                                                                                                                                                                       
+   forgecli run-task ACME-S01-T01                                                                                                                                                             
+   forgecli sprint-plan --json                                                                                                                                                                
+   forgecli collate S01                                                                                                                                                                       
+   forgecli health                                                                                                                                                                            
+ ```                                                                                                                                                                                          
+                                                                                                                                                                                              
+ ### Dual-mode existence                                                                                                                                                                      
+                                                                                                                                                                                              
+ The same forge/ source tree works as both:                                                                                                                                                   
+ - A Claude Code plugin (installed via /plugin install forge@skillforge)                                                                                                                      
+ - A pi package (installed via pi install npm:forgecli)                                                                                                                                       
+                                                                                                                                                                                              
+ The distribution branches in CLAUDE.md (main → release tags → skillforge git-subdir) continue to work. The forgecli package simply adds the extensions/, agents/, prompts/, and skills/      
+ directories that pi requires, plus the bin/forgecli.ts headless entry point.                                                                                                                 
+                                                                                                                                                                                              
+ ────────────────────────────────────────────────────────────────────────────────                                                                                                             
+                                                                                                                                                                                              
+ Summary                                                                                                                                                                                      
+                                                                                                                                                                                              
+ The pi-coding-agent's extension system provides exactly the bridge bar that Forge needs to escape the Claude Code plugin prison:                                                             
+                                                                                                                                                                                              
+ ┌───────────────────────────┬─────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────┐                             
+ │ What Forge Needs          │ What pi Provides                                        │ How                                                                    │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Slash commands            │ pi.registerCommand()                                    │ /forge:init, /forge:health, etc.                                       │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Custom tools              │ pi.registerTool()                                       │ forge_collate, forge_store, forge_validate_store, forge_config         │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Hook interceptors         │ pi.on("tool_call"), pi.on("tool_result")                │ Write validation, error triage, post-init/post-sprint triggers         │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ System prompt injection   │ pi.on("before_agent_start")                             │ KB context, phase instructions                                         │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Multi-agent orchestration │ Subagent extension (chain/parallel)                     │ Plan→Review→Implement→Review→Approve→Commit pipeline                   │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Persistent state          │ pi.appendEntry()                                        │ Sprint state, enhancement proposals, calibration baselines             │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Agent personas            │ .pi/agents/*.md                                         │ Engineer, Supervisor, Architect, etc. with per-agent model/tool config │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Prompt templates          │ .pi/prompts/*.md                                        │ /plan, /implement, /review-code, /run-task, /sprint-plan               │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Skills                    │ .pi/skills/*/SKILL.md                                   │ refresh-kb-links, store-custodian                                      │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ TUI branding              │ ctx.ui.setStatus(), ctx.ui.setWidget(), ctx.ui.notify() │ Phase banners, sprint progress, Tomoshibi status                       │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Headless operation        │ createAgentSession() SDK                                │ forgecli init, forgecli run-task ACME-S01-T01                          │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Session persistence       │ SessionManager                                          │ JSONL sessions with branching                                          │                             
+ ├───────────────────────────┼─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────┤                             
+ │ Package distribution      │ pi install npm:forgecli                                 │ One command to get forgecli everywhere pi is installed                 │                             
+ └───────────────────────────┴─────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────┘                             
+                                                                                                                                                                                              
+ The total new code is:                                                                                                                                                                       
+ - extensions/forgecli/index.ts — ~200 lines (registration glue)                                                                                                                              
+ - extensions/forgecli/forge-tools.ts — ~150 lines (tool wrappers)                                                                                                                            
+ - extensions/forgecli/hook-dispatcher.ts — ~80 lines (event → hook mapping)                                                                                                                  
+ - extensions/forgecli/forge-commands.ts — ~300 lines (command handlers, init orchestrator)                                                                                                   
+ - bin/forgecli.ts — ~150 lines (SDK-based headless runner)                                                                                                                                   
+ - agents/*.md — Generated from base-pack personas (same content, YAML frontmatter)                                                                                                           
+ - prompts/*.md — Generated from base-pack workflows (same content, frontmatter added)                                                                                                        
+                                                                                                                                                                                              
+ ~900 lines of new code to adapt Forge's entire π architecture into a pi package. Zero lines changed in forge/. Zero lines changed in pi-coding-agent/. The bridge is pure extension.  
