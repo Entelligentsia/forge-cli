@@ -1,0 +1,7 @@
+{
+  "taskId": "FIXTURE-T01",
+  "title": "Plan fixture task",
+  "status": "planned",
+  "sprintId": "FORGE-S15",
+  "estimate": "XS"
+}

@@ -10,13 +10,17 @@
 //     `ctx.ui.notify(...)` once per process.
 //
 // Tools/commands/hooks land in T04+; this file is intentionally minimal.
+//
+// Spike R1 (FORGE-S15-T04): when FORGE_SPIKE_R1=1, registers the /forge-poc:r1
+// command via registerPocRunTask. Gated behind env flag; does not alter
+// production behaviour when flag is absent.
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { discoverForgeRoot } from "./forge-root.js";
 
 let notified = false;
 
-export default function forgecli(pi: ExtensionAPI): void {
+export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	const forgeRoot = discoverForgeRoot();
 	if (!forgeRoot) return;
 
@@ -25,4 +29,17 @@ export default function forgecli(pi: ExtensionAPI): void {
 		notified = true;
 		ctx.ui.notify("forgecli active", "info");
 	});
+
+	// Spike R1 — env-gated; dynamic import awaited before factory returns
+	// so the command is registered before the spike runner activates.
+	// PLAN_REVIEW iter2 advisory: top-level await import ensures the command
+	// is registered in time.
+	// The session reference is injected via setSession() in session-harness.ts
+	// (closure setter — not globalThis). This is a spike-only pattern.
+	if (process.env.FORGE_SPIKE_R1 === "1") {
+		const { registerPocRunTask } = await import(
+			"../../../test/poc/spike-r1/spike.js"
+		);
+		registerPocRunTask(pi);
+	}
 }
