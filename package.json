@@ -1,0 +1,54 @@
+{
+	"name": "forgecli",
+	"version": "0.0.0",
+	"description": "Forge SDLC ported onto pi-coding-agent — Stage 1 scaffold (FORGE-S15-T01).",
+	"type": "module",
+	"private": true,
+	"bin": {
+		"forgecli": "./dist/bin/forgecli.js"
+	},
+	"main": "./dist/extensions/forgecli/index.js",
+	"types": "./dist/extensions/forgecli/index.d.ts",
+	"files": [
+		"dist",
+		"agents",
+		"prompts",
+		"skills",
+		"README.md"
+	],
+	"pi": {
+		"extensions": [
+			"./dist/extensions/forgecli/index.js"
+		],
+		"skills": [
+			"./skills"
+		],
+		"prompts": [
+			"./prompts"
+		]
+	},
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"lint": "biome check src test"
+	},
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "^0.73.0",
+		"@mariozechner/pi-ai": "^0.73.0",
+		"@mariozechner/pi-tui": "^0.73.0",
+		"typebox": "^1.1.24"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": "^0.73.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.5",
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"engines": {
+		"node": ">=22"
+	}
+}
