@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/**/*", "test/poc/spike-r1/**/*.ts", "test/poc/spike-r3/**/*.ts"],
+  "include": ["src/**/*", "test/poc/spike-r1/**/*.ts", "test/poc/spike-r3/**/*.ts", "test/poc/spike-r4/**/*.ts"],
   "compilerOptions": {
     "noEmit": true,
     "rootDir": "."
