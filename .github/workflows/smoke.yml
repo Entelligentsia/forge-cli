@@ -1,0 +1,59 @@
+name: smoke
+
+# Functional pre-publish smoke gate (FORGE-S16-T11, issue #22).
+#
+# Runs on Linux + Node 20 only — multi-OS and multi-Node matrix expansion is
+# explicitly deferred to v1.0 maturity (Q24 functional sufficiency).
+#
+# Auth-free gates run on every push/PR.
+# Auth-required gates run only when secrets.ANTHROPIC_API_KEY is configured.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: smoke (linux, node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run E2E smoke gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: ./test/e2e/smoke.sh
+
+      - name: Upload SUMMARY artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-summary
+          path: |
+            .smoke-out/SUMMARY.md
+            .smoke-out/*.log
+            .smoke-out/*.out
+          if-no-files-found: warn
+          retention-days: 7

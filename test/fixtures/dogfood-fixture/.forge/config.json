@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "project": {
+    "prefix": "DOGFOOD",
+    "name": "Dogfood Fixture",
+    "description": "Minimal Forge project used by forge-cli smoke gate (FORGE-S16-T11)."
+  },
+  "paths": {
+    "engineering": "engineering",
+    "store": ".forge/store",
+    "workflows": ".forge/workflows",
+    "commands": ".claude/commands",
+    "templates": ".forge/templates",
+    "customCommands": "engineering/commands",
+    "forgeRoot": ".forge/plugin",
+    "forgeRef": "0.40.3"
+  },
+  "pipeline": {
+    "maxReviewIterations": 3
+  }
+}
