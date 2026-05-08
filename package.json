@@ -1,11 +1,12 @@
 {
-	"name": "forgecli",
-	"version": "0.0.0",
-	"description": "Forge SDLC ported onto pi-coding-agent — Stage 1 scaffold (FORGE-S15-T01).",
+	"name": "@entelligentsia/forgecli",
+	"version": "0.1.0",
+	"description": "Forge SDLC ported onto @earendil-works/pi-coding-agent — production launcher with three bin aliases (forge/forgecli/4ge).",
 	"type": "module",
-	"private": true,
 	"bin": {
-		"forgecli": "./dist/bin/forgecli.js"
+		"forge":    "./dist/bin/forge.js",
+		"forgecli": "./dist/bin/forge.js",
+		"4ge":      "./dist/bin/forge.js"
 	},
 	"main": "./dist/extensions/forgecli/index.js",
 	"types": "./dist/extensions/forgecli/index.d.ts",
@@ -27,12 +28,23 @@
 			"./prompts"
 		]
 	},
+	"forge": {
+		"bundledVersion": "0.40.3",
+		"forgeRoot": "../forge/forge"
+	},
 	"scripts": {
-		"build": "tsc",
+		"build": "node scripts/build-payload.cjs && tsc",
+		"build:tsc-only": "tsc",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
-		"lint": "biome check src test"
+		"lint": "biome check src test",
+		"sync-forge": "node scripts/sync-forge.cjs"
 	},
+	"bundledDependencies": [
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-ai",
+		"@earendil-works/pi-tui"
+	],
 	"dependencies": {
 		"@earendil-works/pi-coding-agent": "0.74.0",
 		"@earendil-works/pi-ai": "0.74.0",

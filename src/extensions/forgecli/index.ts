@@ -1,41 +1,27 @@
-// forgecli pi extension — Stage 1 (FORGE-S15-T03).
+// forgecli pi extension — production factory (FORGE-S16-T02).
 //
 // Behaviour:
-//   - When loaded outside a Forge-initialized project (no `.forge/config.json`
-//     reachable via walk-up from cwd, or the config is malformed/missing
-//     `paths.forgeRoot`), this extension is a silent no-op: zero handler
-//     registrations, no log output.
-//   - When loaded inside a Forge-initialized project, registers exactly one
-//     `session_start` handler that emits `forgecli active` via
-//     `ctx.ui.notify(...)` once per process.
+//   - Registers `/forge:init` unconditionally (even outside a Forge project).
+//   - On `session_start` (UI only):
+//       1. Foundry-collision detection + one-time notify (AC#7, Q17).
+//       2. Outside-Forge banner when no `.forge/config.json` found (AC#4, Q14).
+//       3. Inside-Forge project-name/prefix banner when inside a Forge project (AC#5).
+//   - Registers full `/forge:*` command/tool set only when inside a Forge project.
 //
-// Tools/commands/hooks land in T04+; this file is intentionally minimal.
-//
-// Spike R1 (FORGE-S15-T04): when FORGE_SPIKE_R1=1, registers the /forge-poc:r1
-// command via registerPocRunTask. Gated behind env flag; does not alter
-// production behaviour when flag is absent.
-//
-// Spike R2 (FORGE-S15-T05): when FORGE_SPIKE_R2=1, loads and registers the
-// vendored subagent default export via dynamic default import. This validates
-// that the vendored subagent module (dist/extensions/forgecli/subagent/index.js)
-// imports correctly when forgecli is consumed as an npm pack tarball.
-// The import path uses a variable (not a string literal) per SPIKE-LESSONS §5
-// to avoid rootDir violations. Does not alter production behaviour when absent.
+// Spike R1/R2 env-gated blocks are preserved for backward-compat — no-op in
+// production when env flags are absent.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { discoverForgeRoot } from "./forge-root.js";
+import { readProjectMeta } from "./banner.js";
+import { discoverForgeConfig } from "./forge-root.js";
+import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 
 let notified = false;
 
 export default async function forgecli(pi: ExtensionAPI): Promise<void> {
-	// Spike R2 — env-gated; runs BEFORE the forgeRoot early-return so it works
-	// even when no .forge/config.json is present (e.g. in an isolated tmp dir).
-	// This is intentional: AC4 tests that the vendored subagent module resolves
-	// cleanly from the installed tarball path, independent of Forge project state.
-	// Import path is a variable (not a string literal) per SPIKE-LESSONS §5
-	// to avoid TS rootDir violations. The default export is an anonymous
-	// function matching: (pi: ExtensionAPI) => void (subagent/index.ts:442).
-	// FORGE_SPIKE_R2_DEBUG=1 enables diagnostic logging.
+	// ── Spike R2 (env-gated) ──────────────────────────────────────────────────
+	// Validates that the vendored subagent module resolves cleanly from the
+	// installed tarball path. No-op in production.
 	if (process.env.FORGE_SPIKE_R2 === "1") {
 		const subagentPath = "./subagent/index.js";
 		if (process.env.FORGE_SPIKE_R2_DEBUG === "1") {
@@ -50,21 +36,62 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		}
 	}
 
-	const forgeRoot = discoverForgeRoot();
-	if (!forgeRoot) return;
+	// ── Forge project discovery ───────────────────────────────────────────────
+	const forgeConfig = discoverForgeConfig();
+	const forgeRoot = forgeConfig?.forgeRoot ?? null;
 
-	pi.on("session_start", async (_event, ctx) => {
-		if (notified) return;
-		notified = true;
-		ctx.ui.notify("forgecli active", "info");
+	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
+	// Stub — full implementation lands in FORGE-S16-T04.
+	pi.registerCommand("forge:init", {
+		description: "Bootstrap a new Forge SDLC project at the current working directory",
+		async handler(_args, ctx) {
+			ctx.ui.notify("forge:init — coming in FORGE-S16-T04", "info");
+		},
 	});
 
-	// Spike R1 — env-gated; dynamic import awaited before factory returns
-	// so the command is registered before the spike runner activates.
-	// PLAN_REVIEW iter2 advisory: top-level await import ensures the command
-	// is registered in time.
-	// The session reference is injected via setSession() in session-harness.ts
-	// (closure setter — not globalThis). This is a spike-only pattern.
+	// ── Session start — banners + collision detection ─────────────────────────
+	pi.on("session_start", async (_event, ctx) => {
+		if (!ctx.hasUI) return; // headless mode — no banners
+		if (notified) return;
+		notified = true;
+
+		// 1. Foundry-collision detection (AC#7)
+		const collision = detectFoundryCollision();
+		if (collision.collides && collision.colliderPath !== null && !wasCollisionSeen(collision.colliderPath)) {
+			markCollisionSeen(collision.colliderPath);
+			ctx.ui.notify(
+				`forge: collision detected — another 'forge' binary found at ${collision.colliderPath}. ` +
+					"Use 'forgecli' or '4ge' to disambiguate.",
+				"warning",
+			);
+		}
+
+		if (!forgeRoot) {
+			// 2. Outside-Forge banner (AC#4, Q14)
+			ctx.ui.notify("forge — no .forge/ at cwd; run /forge:init to bootstrap", "info");
+			return;
+		}
+
+		// 3. Inside-Forge banner with project.name [prefix] (AC#5)
+		const meta = forgeConfig ? readProjectMeta(forgeConfig.configPath) : null;
+		if (meta) {
+			ctx.ui.notify(`${meta.name} [${meta.prefix}]`, "info");
+		}
+	});
+
+	// ── Conditional full forge:* set (AC#5) ──────────────────────────────────
+	// Stub registrations — full implementations land in T03 (tools), T04
+	// (commands), T05 (hook dispatcher).
+	if (forgeRoot) {
+		// T03 stub — forge tools registration
+		// registerForgeTools(pi, forgeRoot);  — FORGE-S16-T03
+		// T04 stub — forge commands registration
+		// registerForgeCommands(pi, forgeRoot);  — FORGE-S16-T04
+		// T05 stub — hook dispatcher registration
+		// registerHookDispatcher(pi, forgeRoot);  — FORGE-S16-T05
+	}
+
+	// ── Spike R1 (env-gated) ──────────────────────────────────────────────────
 	if (process.env.FORGE_SPIKE_R1 === "1") {
 		const spikePath = "../../../test/poc/spike-r1/spike.js";
 		const mod = (await import(spikePath)) as {

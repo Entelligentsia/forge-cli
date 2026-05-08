@@ -30,7 +30,17 @@ function findNearestForgeConfig(cwd: string): string | null {
 	}
 }
 
-export function discoverForgeRoot(cwd: string = process.cwd()): string | null {
+export interface ForgeConfig {
+	forgeRoot: string;
+	configPath: string;
+}
+
+/**
+ * Discover the forge plugin root AND return the config path so callers can
+ * read other config fields (e.g. `project.name`) without re-scanning.
+ * Returns null when no `.forge/config.json` is found or it lacks `paths.forgeRoot`.
+ */
+export function discoverForgeConfig(cwd: string = process.cwd()): ForgeConfig | null {
 	const configPath = findNearestForgeConfig(cwd);
 	if (!configPath) return null;
 
@@ -65,5 +75,9 @@ export function discoverForgeRoot(cwd: string = process.cwd()): string | null {
 	const projectDir = path.dirname(path.dirname(configPath));
 	const resolved = path.isAbsolute(forgeRootValue) ? forgeRootValue : path.resolve(projectDir, forgeRootValue);
 
-	return resolved;
+	return { forgeRoot: resolved, configPath };
+}
+
+export function discoverForgeRoot(cwd: string = process.cwd()): string | null {
+	return discoverForgeConfig(cwd)?.forgeRoot ?? null;
 }
