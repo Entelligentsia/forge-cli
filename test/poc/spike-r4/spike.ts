@@ -27,7 +27,7 @@ import type {
 	ToolCallEvent,
 	ToolCallEventResult,
 	WriteToolCallEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Evidence record — populated by handler invocations

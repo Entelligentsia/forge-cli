@@ -65,15 +65,15 @@ forgecli/                              ← A pi package (npm publishable)
     "forgecli": "./bin/forgecli.ts"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.73.0",
-    "@mariozechner/pi-ai": "^0.73.0",
-    "@mariozechner/pi-tui": "^0.73.0",
+    "@earendil-works/pi-coding-agent": "^0.73.0",
+    "@earendil-works/pi-ai": "^0.73.0",
+    "@earendil-works/pi-tui": "^0.73.0",
     "typebox": "^1.1.24"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-tui": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   }
 }

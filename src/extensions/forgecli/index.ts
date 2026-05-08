@@ -22,7 +22,7 @@
 // The import path uses a variable (not a string literal) per SPIKE-LESSONS §5
 // to avoid rootDir violations. Does not alter production behaviour when absent.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { discoverForgeRoot } from "./forge-root.js";
 
 let notified = false;

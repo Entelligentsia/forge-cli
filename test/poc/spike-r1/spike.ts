@@ -11,7 +11,7 @@
  * (closure setter) into production.
  */
 
-import type { ExtensionAPI, AgentSession } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, AgentSession } from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Evidence record — populated by event listeners and polling

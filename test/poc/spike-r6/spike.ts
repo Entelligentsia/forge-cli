@@ -14,7 +14,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type LoadSkillsResult, loadSkills, type ResourceDiagnostic, type Skill } from "@mariozechner/pi-coding-agent";
+import { type LoadSkillsResult, loadSkills, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..", "..", "..");

@@ -35,7 +35,7 @@ interface ToolDefinition<TParams, TDetails, TState> {
 }
 ```
 
-The `onUpdate` callback type is `AgentToolUpdateCallback<TDetails>` — see [`types.ts:426`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) and the re-export from `@mariozechner/pi-agent-core`.
+The `onUpdate` callback type is `AgentToolUpdateCallback<TDetails>` — see [`types.ts:426`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) and the re-export from `@earendil-works/pi-agent-core`.
 
 ## Tools Registry
 
@@ -244,7 +244,7 @@ The `forgeRoot` is resolved by `discoverForgeRoot()` in the extension core and p
 
 The `onUpdate` callback (`AgentToolUpdateCallback<TDetails>`) enables partial result streaming for long-running operations. Currently unused by forgecli's synchronous `execSync` wrappers, but available for future async tool implementations.
 
-API: `AgentToolUpdateCallback` re-exported from `@mariozechner/pi-agent-core` — see [`types.ts:426`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) `execute()` parameter.
+API: `AgentToolUpdateCallback` re-exported from `@earendil-works/pi-agent-core` — see [`types.ts:426`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) `execute()` parameter.
 
 ### Tool Naming Convention
 
@@ -263,8 +263,8 @@ All pi tool names use `forge_` prefix with underscores. All Forge scripts use hy
 |---|---|
 | `ToolDefinition<TParams, TDetails, TState>` | [`src/core/extensions/types.ts:426`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |
 | `defineTool()` helper for type inference | [`src/core/extensions/types.ts:484`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |
-| `AgentToolResult<TDetails>` return type | Re-exported from `@mariozechner/pi-agent-core` via [`types.ts`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |
-| `AgentToolUpdateCallback` (progress streaming) | Re-exported from `@mariozechner/pi-agent-core` via [`types.ts`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |
+| `AgentToolResult<TDetails>` return type | Re-exported from `@earendil-works/pi-agent-core` via [`types.ts`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |
+| `AgentToolUpdateCallback` (progress streaming) | Re-exported from `@earendil-works/pi-agent-core` via [`types.ts`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |
 | Dynamic tool registration example | [`examples/extensions/dynamic-tools.ts`](../../pi-mono/packages/coding-agent/examples/extensions/dynamic-tools.ts) |
 | Tool with custom renderers (subagent) | [`examples/extensions/subagent/index.ts`](../../pi-mono/packages/coding-agent/examples/extensions/subagent/index.ts) |
 | `pi.registerTool()` API method | [`src/core/extensions/types.ts:1116`](../../pi-mono/packages/coding-agent/src/core/extensions/types.ts) |

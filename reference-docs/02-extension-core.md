@@ -17,7 +17,7 @@ This is the heart of forgecli. It:
 ## Complete Reference Implementation
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as path from "node:path";
 import * as fs from "node:fs";

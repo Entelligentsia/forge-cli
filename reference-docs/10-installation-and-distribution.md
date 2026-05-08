@@ -166,7 +166,7 @@ forgecli enhance --phase 2 --auto
 | `pi.skills` | `["./skills/forgecli"]` |
 | `pi.prompts` | `["./prompts"]` |
 | `bin.forgecli` | `"./bin/forgecli.ts"` |
-| `dependencies` | `@mariozechner/pi-coding-agent ^0.73.0`, `@mariozechner/pi-ai ^0.73.0`, `@mariozechner/pi-tui ^0.73.0`, `typebox ^1.1.24` |
+| `dependencies` | `@earendil-works/pi-coding-agent ^0.73.0`, `@earendil-works/pi-ai ^0.73.0`, `@earendil-works/pi-tui ^0.73.0`, `typebox ^1.1.24` |
 
 ## Source Code References
 

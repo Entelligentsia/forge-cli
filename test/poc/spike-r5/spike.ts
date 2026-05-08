@@ -24,12 +24,12 @@ import type {
 	BeforeAgentStartEventResult,
 	ExtensionAPI,
 	ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Local structural alias for the custom-message entries captured from
 // AgentEndEvent.messages. `CustomMessage` is NOT re-exported from the main
-// index of @mariozechner/pi-coding-agent (exports map only exposes "." and
+// index of @earendil-works/pi-coding-agent (exports map only exposes "." and
 // "./hooks"). We define the structural subset we actually inspect so we stay
 // within the public surface.
 //

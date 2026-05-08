@@ -33,7 +33,7 @@ export interface RegisteredCommand {
 ```
 
 ```typescript
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";

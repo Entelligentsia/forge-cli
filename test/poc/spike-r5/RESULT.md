@@ -20,7 +20,7 @@ Total: **12 vitest tests passing** in spike-r5 (10 auth-free + 2 auth-gated LIVE
 
 ## §1 Confirmed `BeforeAgentStartEventResult` shape
 
-Source: `forge-cli/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts:735`
+Source: `forge-cli/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts:735`
 
 ```ts
 interface BeforeAgentStartEventResult {
@@ -118,7 +118,7 @@ Alternative assertion path (not used in this spike): `session.systemPrompt` gett
 
 ### Handler B: `agent_end` event.messages filtered to `role === "custom"`
 
-`AgentEndEvent.messages: AgentMessage[]` (types.d.ts:486). `AgentMessage` is a union that includes `CustomMessage` (via `@mariozechner/pi-agent-core`'s `CustomAgentMessages` augmentation). Filter predicate: `m.role === "custom"`. Live test confirmed: a `CustomMessage` with `customType === "forge.kb_context"` appeared in `event.messages`.
+`AgentEndEvent.messages: AgentMessage[]` (types.d.ts:486). `AgentMessage` is a union that includes `CustomMessage` (via `@earendil-works/pi-agent-core`'s `CustomAgentMessages` augmentation). Filter predicate: `m.role === "custom"`. Live test confirmed: a `CustomMessage` with `customType === "forge.kb_context"` appeared in `event.messages`.
 
 ---
 
@@ -130,7 +130,7 @@ Alternative assertion path (not used in this spike): `session.systemPrompt` gett
 
 ### `TextContent` and `CustomMessage` are not re-exported from the main package index
 
-`@mariozechner/pi-coding-agent` package `exports` only expose `"."` and `"./hooks"`. Neither `TextContent` nor `CustomMessage` appear in `dist/index.d.ts`. Deep imports (`dist/core/messages.js`) are blocked by `moduleResolution: NodeNext`. Solution: define local structural types for the subsets we need (see `spike.ts`'s `CapturedCustomMessage` and `ContentItem`).
+`@earendil-works/pi-coding-agent` package `exports` only expose `"."` and `"./hooks"`. Neither `TextContent` nor `CustomMessage` appear in `dist/index.d.ts`. Deep imports (`dist/core/messages.js`) are blocked by `moduleResolution: NodeNext`. Solution: define local structural types for the subsets we need (see `spike.ts`'s `CapturedCustomMessage` and `ContentItem`).
 
 ### `tsconfig.spike.json` must override `exclude`
 

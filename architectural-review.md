@@ -1,7 +1,7 @@
 # forge-cli Feasibility — Architectural Review
 
 **Reviewer:** Architectural fact-check against `pi-mono` source.
-**Inputs:** `forge-cli-feasibility.txt`, `reference-docs/00–11`, `pi-mono/packages/coding-agent` @ `@mariozechner/pi-coding-agent` v0.73.0.
+**Inputs:** `forge-cli-feasibility.txt`, `reference-docs/00–11`, `pi-mono/packages/coding-agent` @ `@earendil-works/pi-coding-agent` v0.73.0.
 **Date:** 2026-05-07.
 
 ---
@@ -16,7 +16,7 @@
 
 The following are confirmed against pi-mono v0.73 source:
 
-- **Package coordinates.** `@mariozechner/pi-coding-agent` v0.73.0 (`packages/coding-agent/package.json:2-3`), CLI binary `pi` (`bin.pi → dist/cli.js`). Sister packages `@mariozechner/pi-ai` and `@mariozechner/pi-tui` exist at the same version. Proposal's `dependencies` block is accurate.
+- **Package coordinates.** `@earendil-works/pi-coding-agent` v0.73.0 (`packages/coding-agent/package.json:2-3`), CLI binary `pi` (`bin.pi → dist/cli.js`). Sister packages `@earendil-works/pi-ai` and `@earendil-works/pi-tui` exist at the same version. Proposal's `dependencies` block is accurate.
 - **Extension API events used by the proposal.** All cited events exist on `ExtensionAPI.on(...)`:
   - `session_start` — `src/core/extensions/types.ts:1090`, event def at `:514`
   - `before_agent_start` — `:1110`, event def at `:625`
@@ -31,7 +31,7 @@ The following are confirmed against pi-mono v0.73 source:
 - **`pi install` and `pi -e`.** CLI supports `pi install <source>` with `npm:` and `git:` source schemes (`src/cli/args.ts:208`, `src/core/package-manager.ts:1371`, `src/utils/git.ts:131-158`). `--extension, -e <path>` flag exists (`src/cli/args.ts:132,237`). Both lines from "Installation and Distribution" are valid.
 - **`pi` field in `package.json`.** `PiManifest { extensions?, skills?, prompts?, themes? }` (`src/core/package-manager.ts:147-152`, read at `:518-525`). Proposal's `package.json` `pi` block is correctly shaped (themes optional and unused).
 - **Subagent capabilities.** `examples/extensions/subagent/index.ts` registers a `subagent` tool with three modes — `single` / `parallel` / `chain` (`:432`, `:455-457`, `:501`); `MAX_PARALLEL_TASKS = 8` (`:27`), `MAX_CONCURRENCY = 4` (`:28`); `{previous}` placeholder replacement at `:507`; per-agent `--model` (`:266`), `--tools` (`:267`), `--append-system-prompt` (`:298`). All of `reference-docs/06`'s functional claims are correct.
-- **Agent discovery.** `examples/extensions/subagent/agents.ts:97-115` discovers from `getAgentDir()/agents` (user) and `findNearestProjectAgentsDir(cwd)` → `.pi/agents/` (project). YAML frontmatter parsed via `parseFrontmatter` from `@mariozechner/pi-coding-agent`. Proposal's `.pi/agents/*.md` placement is correct **for the subagent extension's discovery rules**.
+- **Agent discovery.** `examples/extensions/subagent/agents.ts:97-115` discovers from `getAgentDir()/agents` (user) and `findNearestProjectAgentsDir(cwd)` → `.pi/agents/` (project). YAML frontmatter parsed via `parseFrontmatter` from `@earendil-works/pi-coding-agent`. Proposal's `.pi/agents/*.md` placement is correct **for the subagent extension's discovery rules**.
 
 ---
 

@@ -8,7 +8,7 @@
 
 ```
 forge-cli/
-├── package.json              ← name "forgecli", ESM, peer dep on @mariozechner/pi-coding-agent ^0.73.0
+├── package.json              ← name "forgecli", ESM, peer dep on @earendil-works/pi-coding-agent ^0.73.0
 ├── tsconfig.json             ← strict, NodeNext, ES2022, outDir dist/
 ├── biome.json                ← mirrors pi-mono conventions
 ├── src/
