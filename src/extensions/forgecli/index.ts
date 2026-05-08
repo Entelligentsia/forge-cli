@@ -19,6 +19,7 @@ import { readProjectMeta } from "./banner.js";
 import { registerForgeCommands } from "./forge-commands.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
+import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { triggerUpdateCheck } from "./update-check.js";
@@ -121,7 +122,22 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			});
 		}
 
-		// 5. Model registry seed + missing-credentials banner (FORGE-S16-T16, issue #17).
+		// 5. Bundled-forge drift prompt (FORGE-S16-T15, issue #18 part 2 / Q7).
+		// Detect+prompt only — never auto-applies migrations.
+		if (PKG_VERSIONS.bundledForgeVersion) {
+			try {
+				await checkBundledForgeDrift({
+					currentBundledForgeVersion: PKG_VERSIONS.bundledForgeVersion,
+					notify: (msg, level) => ctx.ui.notify(msg, level),
+				});
+			} catch (err) {
+				if (process.env.FORGE_DEBUG_UPDATE_CHECK === "1") {
+					console.error("[forge-cli drift-check]", err);
+				}
+			}
+		}
+
+		// 6. Model registry seed + missing-credentials banner (FORGE-S16-T16, issue #17).
 		// Project-scope only; never reads or writes ~/.pi/agent/settings.json.
 		if (forgeRoot && forgeConfig) {
 			try {
@@ -153,6 +169,16 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Registered unconditionally so /forge:ask works outside a Forge project.
 	// Per-command handlers enforce the Q14 outside-project no-op contract.
 	registerForgeCommands(pi, { forgeRoot, promptsRoot: PROMPTS_ROOT });
+
+	// ── /forge:update guided upgrade (FORGE-S16-T15) ─────────────────────────
+	// Registered unconditionally — useful even outside a Forge project (the
+	// command upgrades the globally-installed forgecli, not the project).
+	if (PKG_VERSIONS.cliVersion) {
+		registerForgeUpdateCommand(pi, {
+			pkgRoot: PKG_ROOT,
+			currentCliVersion: PKG_VERSIONS.cliVersion,
+		});
+	}
 
 	// ── Spike R1 (env-gated) ──────────────────────────────────────────────────
 	if (process.env.FORGE_SPIKE_R1 === "1") {

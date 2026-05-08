@@ -126,19 +126,8 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 		},
 	});
 
-	// ── /forge:update ─────────────────────────────────────────────────────────
-	// Stub — T15 replaces this with the guided-upgrade flow.
-	pi.registerCommand("forge:update", {
-		description: "Guided upgrade for forgecli + bundled forge payload (T15 implements full flow)",
-		async handler(_args, ctx) {
-			if (!forgeRoot) return outsideProjectNoOp("update", ctx);
-			ctx.ui.notify(
-				"forge:update — interactive guided upgrade lands in FORGE-S16-T15. " +
-					"For now: `npm i -g @entelligentsia/forgecli@latest`, then re-run /forge:update once T15 ships.",
-				"info",
-			);
-		},
-	});
+	// /forge:update is registered in index.ts via registerForgeUpdateCommand
+	// (FORGE-S16-T15) so it works inside or outside a Forge project.
 
 	// ── /forge:status ─────────────────────────────────────────────────────────
 	// Delegates to the plugin's commands/status.md if shipped, otherwise emits

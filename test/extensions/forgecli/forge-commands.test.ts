@@ -65,20 +65,20 @@ afterEach(() => {
 });
 
 describe("registerForgeCommands", () => {
-	it("registers all five /forge:* commands and the before_agent_start handler", () => {
+	it("registers four /forge:* commands and the before_agent_start handler", () => {
 		const pi = makePi();
 		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
 
-		expect(pi.registerCommand).toHaveBeenCalledTimes(5);
+		expect(pi.registerCommand).toHaveBeenCalledTimes(4);
 		const names = Array.from(pi.commands.keys()).sort();
-		expect(names).toEqual(["forge:ask", "forge:config", "forge:health", "forge:status", "forge:update"]);
+		expect(names).toEqual(["forge:ask", "forge:config", "forge:health", "forge:status"]);
 		expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function));
 		expect(pi.beforeAgentStart).not.toBeNull();
 	});
 });
 
 describe("outside-project no-op (Q14)", () => {
-	const cases = ["health", "config", "update", "status"] as const;
+	const cases = ["health", "config", "status"] as const;
 	for (const cmd of cases) {
 		it(`/forge:${cmd} emits warning notify and skips delegation when forgeRoot is null`, async () => {
 			const pi = makePi();
@@ -164,20 +164,8 @@ describe("/forge:ask Tomoshibi injection", () => {
 	});
 });
 
-describe("/forge:update stub (T15 will replace)", () => {
-	it("emits an info notify and does not delegate or trigger an agent turn", async () => {
-		const pi = makePi();
-		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
-		const ctx = makeCtx();
-		const handler = pi.commands.get("forge:update");
-		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-		const [msg, level] = ctx.ui.notify.mock.calls[0] as [string, string];
-		expect(msg).toContain("FORGE-S16-T15");
-		expect(level).toBe("info");
-		expect(pi.sendUserMessage).not.toHaveBeenCalled();
-	});
-});
+// /forge:update is now registered by registerForgeUpdateCommand (see
+// forge-update-command.test.ts) — FORGE-S16-T15 replaced the stub.
 
 describe("/forge:status ENOENT fallback", () => {
 	it("emits the fallback notify when commands/status.md does not exist", async () => {
