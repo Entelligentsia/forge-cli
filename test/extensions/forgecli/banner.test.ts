@@ -35,9 +35,7 @@ function writeConfig(body: string): string {
 
 describe("readProjectMeta", () => {
 	it("valid config returns { name, prefix }", () => {
-		const configPath = writeConfig(
-			JSON.stringify({ project: { name: "Forge Engineering", prefix: "FORGE" } }),
-		);
+		const configPath = writeConfig(JSON.stringify({ project: { name: "Forge Engineering", prefix: "FORGE" } }));
 		const result = readProjectMeta(configPath);
 		expect(result).toEqual({ name: "Forge Engineering", prefix: "FORGE" });
 	});
