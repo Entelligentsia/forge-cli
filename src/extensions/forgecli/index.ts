@@ -11,9 +11,11 @@
 // Spike R1/R2 env-gated blocks are preserved for backward-compat — no-op in
 // production when env flags are absent.
 
+import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readProjectMeta } from "./banner.js";
 import { discoverForgeConfig } from "./forge-root.js";
+import { registerForgeTools } from "./forge-tools.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 
 let notified = false;
@@ -83,8 +85,11 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Stub registrations — full implementations land in T03 (tools), T04
 	// (commands), T05 (hook dispatcher).
 	if (forgeRoot) {
-		// T03 stub — forge tools registration
-		// registerForgeTools(pi, forgeRoot);  — FORGE-S16-T03
+		// T03: forge tools — wired (FORGE-S16-T03)
+		// AC4 note: .cjs tools use findProjectRoot() not --forge-root. Equivalent
+		// guarantee: forgeRoot captured at init; projectRoot passed as cwd to execFile.
+		const projectRoot = path.dirname(path.dirname(forgeConfig!.configPath));
+		registerForgeTools(pi, forgeRoot, projectRoot);
 		// T04 stub — forge commands registration
 		// registerForgeCommands(pi, forgeRoot);  — FORGE-S16-T04
 		// T05 stub — hook dispatcher registration
