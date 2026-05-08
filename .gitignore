@@ -3,3 +3,9 @@ dist/
 *.tsbuildinfo
 .vitest/
 coverage/
+
+# Spike build artifacts (tsconfig.spike.json sets noEmit, but stale outputs
+# can land here from earlier builds before the rootDir fix landed).
+test/poc/**/*.js
+test/poc/**/*.d.ts
+test/poc/**/*.js.map

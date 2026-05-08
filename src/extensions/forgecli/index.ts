@@ -37,9 +37,10 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// The session reference is injected via setSession() in session-harness.ts
 	// (closure setter — not globalThis). This is a spike-only pattern.
 	if (process.env.FORGE_SPIKE_R1 === "1") {
-		const { registerPocRunTask } = await import(
-			"../../../test/poc/spike-r1/spike.js"
-		);
-		registerPocRunTask(pi);
+		const spikePath = "../../../test/poc/spike-r1/spike.js";
+		const mod = (await import(spikePath)) as {
+			registerPocRunTask: (pi: ExtensionAPI) => void;
+		};
+		mod.registerPocRunTask(pi);
 	}
 }

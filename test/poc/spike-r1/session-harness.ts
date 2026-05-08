@@ -16,12 +16,11 @@
 import {
   createAgentSession,
   SessionManager,
-  createExtensionRuntime,
-  loadExtensionFromFactory,
-  createEventBus,
+  DefaultResourceLoader,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import { getModel } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionFactory } from "@mariozechner/pi-coding-agent";
 
 import registerSubagentTool from "../../../src/extensions/forgecli/subagent/index.js";
 import {
@@ -45,57 +44,86 @@ export async function runSpike(): Promise<LiveRunResult> {
   const start = Date.now();
 
   // -----------------------------------------------------------------------
-  // 1. Create agent session with cheap model, in-memory session (no disk state)
-  //    noTools:"builtin" + extension registration supplies the subagent tool
+  // 1. Build a resourceLoader carrying the spike's extension factories.
+  //    pi v0.73 does not re-export `loadExtensionFromFactory` from its main
+  //    entrypoint, so the factories ride in via DefaultResourceLoader's
+  //    `extensionFactories` option. createAgentSession awaits reload()
+  //    before getExtensions(), so both factories run before any prompt.
   // -----------------------------------------------------------------------
-  const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+  const cwd = process.cwd();
+  const agentDir = getAgentDir();
+
+  const factories: ExtensionFactory[] = [
+    (pi: ExtensionAPI) => {
+      registerSubagentTool(pi);
+    },
+    (pi: ExtensionAPI) => {
+      registerPocRunTask(pi);
+    },
+  ];
+
+  const resourceLoader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    extensionFactories: factories,
+    noExtensions: true,         // skip auto-discovery; only inline factories
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+  });
+
+  // pi v0.73 quirk: createAgentSession only invokes reload() when it builds
+  // its own DefaultResourceLoader. Custom-provided loaders are assumed to be
+  // pre-reloaded by the caller. Without this, inline extensionFactories
+  // never run and the spike command never gets registered.
+  await resourceLoader.reload();
+
+  // -----------------------------------------------------------------------
+  // 2. Create agent session — resourceLoader.reload() runs the inline
+  //    factories before the session is constructed.
+  // -----------------------------------------------------------------------
+  const model = getModel("anthropic", "claude-haiku-4-5");
 
   const { session } = await createAgentSession({
     model,
     thinkingLevel: "min",
-    noTools: "builtin",         // disable built-in read/bash/edit/write
+    tools: ["subagent"],        // explicit allowlist — only subagent active
     sessionManager: SessionManager.inMemory(),
-    cwd: process.cwd(),
+    cwd,
+    resourceLoader,
   });
 
   // -----------------------------------------------------------------------
-  // 2. Wire the session reference into the spike extension via closure setter
+  // 3. Wire the session reference into the spike extension via closure setter.
+  //    Set AFTER createAgentSession returns: factories already ran (registering
+  //    the command), but the command HANDLER reads the session at invoke time.
   //    PLAN_REVIEW iter2 caveat: closure setter preferred over globalThis.
   // -----------------------------------------------------------------------
   setSession(session);
 
   // -----------------------------------------------------------------------
-  // 3. Load extensions via loadExtensionFromFactory — both must be awaited
-  //    before the spike command is invoked (PLAN_REVIEW iter2 advisory).
+  // 4. Diagnostic: inspect what extensions/commands actually loaded.
+  //    Both factories should have produced one extension each, with the
+  //    spike registering "forge-poc:r1" and the subagent registering its tool.
   // -----------------------------------------------------------------------
-  const eventBus = createEventBus();
-  const runtime = createExtensionRuntime();
-
-  // Register the vendored subagent tool
-  await loadExtensionFromFactory(
-    (pi: ExtensionAPI) => {
-      registerSubagentTool(pi);
-    },
-    process.cwd(),
-    eventBus,
-    runtime,
-    "subagent-extension",
-  );
-
-  // Register the spike command (registerPocRunTask also subscribes to
-  // tool_execution_start/end via pi.on — must be called before any turns)
-  await loadExtensionFromFactory(
-    (pi: ExtensionAPI) => {
-      registerPocRunTask(pi);
-    },
-    process.cwd(),
-    eventBus,
-    runtime,
-    "spike-r1-extension",
-  );
+  if (process.env.FORGE_SPIKE_R1_DEBUG === "1") {
+    const extResult = resourceLoader.getExtensions();
+    console.error(
+      `[spike-r1 diag] extensions loaded: ${extResult.extensions.length}, errors: ${extResult.errors.length}`,
+    );
+    for (const e of extResult.extensions) {
+      console.error(
+        `[spike-r1 diag] ext path=${e.path} commands=[${[...e.commands.keys()].join(",")}] tools=[${[...e.tools.keys()].join(",")}]`,
+      );
+    }
+    for (const err of extResult.errors) {
+      console.error(`[spike-r1 diag] ERROR path=${err.path}: ${err.error}`);
+    }
+  }
 
   // -----------------------------------------------------------------------
-  // 4. Activate the spike command — session.prompt dispatches the command
+  // 5. Activate the spike command — session.prompt dispatches the command
   //    handler synchronously through the extension runner.
   //    The handler drives Phase 1 + Phase 2 internally before returning.
   // -----------------------------------------------------------------------

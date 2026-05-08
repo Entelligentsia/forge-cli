@@ -94,7 +94,10 @@ export function registerPocRunTask(pi: ExtensionAPI): void {
   // Subscribe to tool_execution_start/end before registering the command
   // Note: handler signature is (event, ctx: ExtensionContext) — ctx here is NOT
   // the command context (no .ui). Only event.args/event.result are used.
+  const debug = process.env.FORGE_SPIKE_R1_DEBUG === "1";
+
   pi.on("tool_execution_start", (event) => {
+    if (debug) console.error(`[spike-r1] tool_execution_start phase=${currentPhase} tool=${event.toolName}`);
     if (event.toolName === "subagent") {
       const ev = evidence.phases.find((p) => p.phase === currentPhase);
       if (ev) {
@@ -104,6 +107,7 @@ export function registerPocRunTask(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_execution_end", (event) => {
+    if (debug) console.error(`[spike-r1] tool_execution_end phase=${currentPhase} tool=${event.toolName}`);
     if (event.toolName === "subagent") {
       const ev = evidence.phases.find((p) => p.phase === currentPhase);
       if (ev) {
@@ -130,14 +134,22 @@ export function registerPocRunTask(pi: ExtensionAPI): void {
       evidence.phases.push(phase1Evidence);
 
       ctx.ui.setStatus("forge-poc:r1", "Phase 1/2: engineer planning...");
+      if (debug) console.error("[spike-r1] phase 1: sendUserMessage start");
       await session.sendUserMessage(PHASE1_MESSAGE);
+      if (debug) console.error(`[spike-r1] phase 1: sendUserMessage returned, isStreaming=${session.isStreaming}`);
 
       const phase1Start = Date.now();
+      let phase1Polls = 0;
       // Poll isStreaming — headless equivalent of waitForIdle
       while (session.isStreaming) {
+        if (debug && phase1Polls % 50 === 0) {
+          console.error(`[spike-r1] phase 1: still streaming after ${Date.now() - phase1Start}ms`);
+        }
+        phase1Polls++;
         await new Promise<void>((r) => setTimeout(r, 100));
       }
       phase1Evidence.waitForIdleMs = Date.now() - phase1Start;
+      if (debug) console.error(`[spike-r1] phase 1: idle after ${phase1Evidence.waitForIdleMs}ms`);
 
       // ------------------------------------------------------------------
       // Phase 2 — supervisor review (literal {previous} — NOT pre-interpolated)
@@ -150,13 +162,21 @@ export function registerPocRunTask(pi: ExtensionAPI): void {
       evidence.phases.push(phase2Evidence);
 
       ctx.ui.setStatus("forge-poc:r1", "Phase 2/2: supervisor review...");
+      if (debug) console.error("[spike-r1] phase 2: sendUserMessage start");
       await session.sendUserMessage(PHASE2_MESSAGE);
+      if (debug) console.error(`[spike-r1] phase 2: sendUserMessage returned, isStreaming=${session.isStreaming}`);
 
       const phase2Start = Date.now();
+      let phase2Polls = 0;
       while (session.isStreaming) {
+        if (debug && phase2Polls % 50 === 0) {
+          console.error(`[spike-r1] phase 2: still streaming after ${Date.now() - phase2Start}ms`);
+        }
+        phase2Polls++;
         await new Promise<void>((r) => setTimeout(r, 100));
       }
       phase2Evidence.waitForIdleMs = Date.now() - phase2Start;
+      if (debug) console.error(`[spike-r1] phase 2: idle after ${phase2Evidence.waitForIdleMs}ms`);
 
       evidence.totalMs = Date.now() - totalStart;
 
