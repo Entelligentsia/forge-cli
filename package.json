@@ -14,6 +14,7 @@
 		"dist",
 		"agents",
 		"prompts",
+		"registry",
 		"skills",
 		"README.md"
 	],

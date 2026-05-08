@@ -20,6 +20,7 @@ import { registerForgeCommands } from "./forge-commands.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
+import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { triggerUpdateCheck } from "./update-check.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
@@ -118,6 +119,22 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			}).catch(() => {
 				/* AC#5: network failures are fail-silent */
 			});
+		}
+
+		// 5. Model registry seed + missing-credentials banner (FORGE-S16-T16, issue #17).
+		// Project-scope only; never reads or writes ~/.pi/agent/settings.json.
+		if (forgeRoot && forgeConfig) {
+			try {
+				const projectRoot = path.dirname(path.dirname(forgeConfig.configPath));
+				const registry = loadRegistry();
+				await seedEnabledModels({ projectRoot, registry });
+				const credBanner = detectMissingCredentials(registry);
+				if (credBanner) ctx.ui.notify(credBanner, "warning");
+			} catch (err) {
+				if (process.env.FORGE_DEBUG_MODEL_REGISTRY === "1") {
+					console.error("[forge-cli model-registry]", err);
+				}
+			}
 		}
 	});
 

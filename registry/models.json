@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "anthropic-pro-max",
+      "label": "Anthropic Pro/Max plan",
+      "enabled": false,
+      "deferredTo": "S17",
+      "modelGlobs": [],
+      "credentialEnvAny": []
+    },
+    {
+      "id": "anthropic-api",
+      "label": "Anthropic API + enterprise (Bedrock, Vertex, Cloudflare)",
+      "enabled": true,
+      "modelGlobs": ["claude-*"],
+      "credentialEnvAny": [
+        "ANTHROPIC_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "CLOUDFLARE_API_TOKEN"
+      ]
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI (latest)",
+      "enabled": true,
+      "modelGlobs": ["gpt-4o*", "gpt-4.1*", "o1*", "o3*", "o4*"],
+      "credentialEnvAny": ["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"]
+    },
+    {
+      "id": "gemini",
+      "label": "Google Gemini (latest)",
+      "enabled": true,
+      "modelGlobs": ["gemini-2*"],
+      "credentialEnvAny": ["GEMINI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "enabled": true,
+      "modelGlobs": ["openrouter/*"],
+      "credentialEnvAny": ["OPENROUTER_API_KEY"]
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama + Ollama Cloud",
+      "enabled": true,
+      "modelGlobs": ["ollama/*"],
+      "credentialEnvAny": []
+    }
+  ]
+}
