@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/**/*", "test/poc/spike-r1/**/*.ts", "test/poc/spike-r3/**/*.ts", "test/poc/spike-r4/**/*.ts"],
+  "include": ["src/**/*", "test/poc/spike-r1/**/*.ts", "test/poc/spike-r3/**/*.ts", "test/poc/spike-r4/**/*.ts", "test/poc/spike-r5/**/*.ts"],
+  "exclude": ["node_modules", "dist"],
   "compilerOptions": {
     "noEmit": true,
     "rootDir": "."
