@@ -3,7 +3,7 @@
 **Run type:** LIVE
 **pi version:** 0.73.1
 **Model:** claude-haiku-4-5
-**Date:** 2026-05-08T01:12:18.148Z
+**Date:** 2026-05-08T09:01:39.892Z
 **Outcome:** PASS
 
 ## Evidence Checklist
@@ -16,9 +16,13 @@
 **Phase 1 args:**
 ```json
 {
-  "task": "List available agents in the current project directory",
-  "agent": "shell",
-  "cwd": "/home/boni/src/forge-engineering/forge-cli"
+  "chain": [
+    {
+      "agent": "engineer",
+      "task": "Plan fixture task FIXTURE-T01 — output a 3-bullet implementation plan."
+    }
+  ],
+  "agentScope": "project"
 }
 ```
 
@@ -78,7 +82,7 @@ As captured in tool_execution_end result / onUpdate — Phase 1 output embedded 
 
 - Phase 1 waitForIdle: 0ms
 - Phase 2 waitForIdle: 0ms
-- Total wall-clock: 10827ms
+- Total wall-clock: 6469ms
 
 ### 5. Gate status
 LIVE PASS: R1 gate discharged. Stage 3 may proceed.

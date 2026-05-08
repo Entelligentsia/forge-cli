@@ -11,12 +11,13 @@
 // Spike R1/R2 env-gated blocks are preserved for backward-compat — no-op in
 // production when env flags are absent.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readProjectMeta } from "./banner.js";
-import { registerForgeCommands } from "./forge-commands.js";
+import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
+import { registerForgeInit } from "./forge-init.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
@@ -73,13 +74,11 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	const forgeRoot = forgeConfig?.forgeRoot ?? null;
 
 	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
-	// Stub — full implementation lands in FORGE-S16-T04.
-	pi.registerCommand("forge:init", {
-		description: "Bootstrap a new Forge SDLC project at the current working directory",
-		async handler(_args, ctx) {
-			ctx.ui.notify("forge:init — coming in FORGE-S16-T04", "info");
-		},
-	});
+	// Full 4-phase implementation — FORGE-S17-T02.
+	// Banner suppression: outside-Forge banner below only fires when
+	// .forge/config.json is absent. Once /forge:init writes config.json,
+	// the banner is suppressed automatically (no extra guard needed here).
+	registerForgeInit(pi);
 
 	// ── Session start — banners + collision detection ─────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
@@ -169,6 +168,21 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Registered unconditionally so /forge:ask works outside a Forge project.
 	// Per-command handlers enforce the Q14 outside-project no-op contract.
 	registerForgeCommands(pi, { forgeRoot, promptsRoot: PROMPTS_ROOT });
+
+	// ── Phase G: all bundled commands (FORGE-S17-T02) ─────────────────────────
+	// Enumerate every *.md under dist/forge-payload/.base-pack/commands/ and
+	// register each as a pi command. Real handlers (init/health/ask/config/
+	// status/refresh-kb-links) were registered above; stubs for the rest.
+	// Banner-suppression guard: outside-Forge banner is gated on forgeRoot
+	// being null — once /forge:init writes .forge/config.json, forgeRoot is
+	// non-null and the outside-Forge banner no longer fires (F3 AC#8).
+	const payloadRoot = path.join(PKG_ROOT, "dist", "forge-payload");
+	const configExists = existsSync(path.join(process.cwd(), ".forge", "config.json"));
+	registerAllForgeCommands(pi, {
+		bundlePayloadRoot: payloadRoot,
+		cwd: process.cwd(),
+		bundleRoot: configExists ? payloadRoot : undefined,
+	});
 
 	// ── /forge:update guided upgrade (FORGE-S16-T15) ─────────────────────────
 	// Registered unconditionally — useful even outside a Forge project (the

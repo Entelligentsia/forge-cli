@@ -1,11 +1,18 @@
 #!/usr/bin/env node
-// build-payload.cjs — invokes substitute-placeholders.cjs --target pi
-// to produce dist/forge-payload/ before tsc runs.
+// build-payload.cjs — builds dist/forge-payload/ from forge/forge/ source.
 //
-// Reads forge.forgeRoot from package.json (relative to the repo root, not
-// this script's location).
+// Two-pass operation:
+//   Pass 1: invoke substitute-placeholders --target pi to produce:
+//     dist/forge-payload/{personas,skills,templates,workflows}/
+//   Pass 2: selective recursive copy to produce expanded bundle layout:
+//     dist/forge-payload/.tools/         ← selected .cjs tools + lib/
+//     dist/forge-payload/.init/          ← discovery/*.md + generation/generate-*.md
+//     dist/forge-payload/.base-pack/     ← forge/forge/init/base-pack/** (recursive)
+//     dist/forge-payload/.schemas/       ← forge/forge/schemas/*.schema.json
+//     dist/forge-payload/.claude-plugin/ ← plugin.json
 //
 // Iron Law 6: spawnSync with argv array — NO shell-string interpolation.
+// Iron Law 1: reads from forge/forge/ (vendored reference) — never writes there.
 
 "use strict";
 
@@ -15,7 +22,7 @@ const fs = require("node:fs");
 
 // ── Resolve paths ──────────────────────────────────────────────────────────
 
-// scripts/ is one level under the repo root
+// scripts/ is one level under the repo root (forge-cli/)
 const repoRoot = path.resolve(__dirname, "..");
 const pkgPath = path.join(repoRoot, "package.json");
 
@@ -52,12 +59,12 @@ if (!fs.existsSync(toolPath)) {
 // ── Ensure output dir exists ───────────────────────────────────────────────
 fs.mkdirSync(outDir, { recursive: true });
 
-// ── Invoke substitute-placeholders --target pi ────────────────────────────
-console.log(`build-payload: running substitute-placeholders --target pi`);
+// ── Pass 1: invoke substitute-placeholders --target pi ────────────────────
+console.log("build-payload: pass 1 — substitute-placeholders --target pi");
 console.log(`  forgeRoot: ${forgeRoot}`);
 console.log(`  outDir:    ${outDir}`);
 
-const result = spawnSync(
+const pass1Result = spawnSync(
 	"node",
 	[toolPath, "--target", "pi", "--forge-root", forgeRoot, "--out", outDir],
 	{
@@ -66,14 +73,178 @@ const result = spawnSync(
 	},
 );
 
-if (result.error) {
-	console.error("build-payload: failed to spawn substitute-placeholders:", result.error.message);
+if (pass1Result.error) {
+	console.error("build-payload: failed to spawn substitute-placeholders:", pass1Result.error.message);
 	process.exit(1);
 }
 
-if (result.status !== 0) {
-	console.error("build-payload: substitute-placeholders exited with status", result.status);
-	process.exit(result.status ?? 1);
+if (pass1Result.status !== 0) {
+	console.error("build-payload: substitute-placeholders exited with status", pass1Result.status);
+	process.exit(pass1Result.status ?? 1);
+}
+
+console.log("build-payload: pass 1 complete");
+
+// ── Helper functions ───────────────────────────────────────────────────────
+
+/**
+ * Copy a file, creating parent dirs as needed.
+ * @param {string} src
+ * @param {string} dest
+ */
+function copyFile(src, dest) {
+	fs.mkdirSync(path.dirname(dest), { recursive: true });
+	fs.copyFileSync(src, dest);
+}
+
+/**
+ * Recursively copy a directory.
+ * @param {string} srcDir
+ * @param {string} destDir
+ * @param {(name: string) => boolean} [filter] — optional predicate on entry name
+ */
+function copyDir(srcDir, destDir, filter) {
+	if (!fs.existsSync(srcDir)) return;
+	fs.mkdirSync(destDir, { recursive: true });
+	const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+	for (const entry of entries) {
+		if (filter && !filter(entry.name)) continue;
+		const src = path.join(srcDir, entry.name);
+		const dest = path.join(destDir, entry.name);
+		if (entry.isDirectory()) {
+			copyDir(src, dest);
+		} else if (entry.isFile()) {
+			copyFile(src, dest);
+		}
+	}
+}
+
+// ── Pass 2: selective copy for expanded bundle layout ─────────────────────
+console.log("build-payload: pass 2 — expanded bundle layout");
+
+// 2a: .tools/ — selective list of .cjs tools + full lib/ directory
+const TOOLS_TO_COPY = [
+	"substitute-placeholders.cjs",
+	"build-init-context.cjs",
+	"build-overlay.cjs",
+	"manage-versions.cjs",
+	"generation-manifest.cjs",
+	"build-persona-pack.cjs",
+	"build-context-pack.cjs",
+	"seed-store.cjs",
+	"manage-config.cjs",
+	"banners.cjs",
+	"validate-store.cjs",
+	"collate.cjs",
+	"store-cli.cjs",
+	"store.cjs",
+];
+
+const toolsSrcDir = path.join(forgeRoot, "tools");
+const toolsDestDir = path.join(outDir, ".tools");
+fs.mkdirSync(toolsDestDir, { recursive: true });
+
+for (const toolName of TOOLS_TO_COPY) {
+	const src = path.join(toolsSrcDir, toolName);
+	if (!fs.existsSync(src)) {
+		console.warn(`build-payload: tool not found (skipping): ${toolName}`);
+		continue;
+	}
+	copyFile(src, path.join(toolsDestDir, toolName));
+}
+
+// Copy lib/ subdirectory (all files — transitive deps)
+const libSrc = path.join(toolsSrcDir, "lib");
+const libDest = path.join(toolsDestDir, "lib");
+if (fs.existsSync(libSrc)) {
+	copyDir(libSrc, libDest);
+	console.log(`build-payload: .tools/lib/ copied`);
+} else {
+	console.warn("build-payload: forge/forge/tools/lib/ not found — skipping");
+}
+
+console.log(`build-payload: .tools/ — ${TOOLS_TO_COPY.length} tools copied`);
+
+// 2b: .init/discovery/ — discover-*.md (5 files)
+const discoveryDestDir = path.join(outDir, ".init", "discovery");
+const discoverySrcDir = path.join(forgeRoot, "init", "discovery");
+fs.mkdirSync(discoveryDestDir, { recursive: true });
+
+if (fs.existsSync(discoverySrcDir)) {
+	const discoveryFiles = fs.readdirSync(discoverySrcDir).filter((f) => f.startsWith("discover-") && f.endsWith(".md"));
+	for (const file of discoveryFiles) {
+		copyFile(path.join(discoverySrcDir, file), path.join(discoveryDestDir, file));
+	}
+	console.log(`build-payload: .init/discovery/ — ${discoveryFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/init/discovery/ not found — skipping");
+}
+
+// 2c: .init/generation/ — generate-*.md files
+const generationDestDir = path.join(outDir, ".init", "generation");
+const generationSrcDir = path.join(forgeRoot, "init", "generation");
+fs.mkdirSync(generationDestDir, { recursive: true });
+
+if (fs.existsSync(generationSrcDir)) {
+	const generationFiles = fs.readdirSync(generationSrcDir).filter((f) => f.endsWith(".md"));
+	for (const file of generationFiles) {
+		copyFile(path.join(generationSrcDir, file), path.join(generationDestDir, file));
+	}
+	console.log(`build-payload: .init/generation/ — ${generationFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/init/generation/ not found — skipping");
+}
+
+// 2d: .base-pack/ — forge/forge/init/base-pack/** (recursive)
+const basePackSrc = path.join(forgeRoot, "init", "base-pack");
+const basePackDest = path.join(outDir, ".base-pack");
+
+if (fs.existsSync(basePackSrc)) {
+	copyDir(basePackSrc, basePackDest);
+	// Count total files for report
+	let bpFileCount = 0;
+	function countFiles(dir) {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const e of entries) {
+			if (e.isDirectory()) countFiles(path.join(dir, e.name));
+			else bpFileCount++;
+		}
+	}
+	countFiles(basePackDest);
+	console.log(`build-payload: .base-pack/ — ${bpFileCount} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/init/base-pack/ not found — skipping");
+}
+
+// 2e: .schemas/ — forge/forge/schemas/*.schema.json
+const schemasSrc = path.join(forgeRoot, "schemas");
+const schemasDest = path.join(outDir, ".schemas");
+fs.mkdirSync(schemasDest, { recursive: true });
+
+if (fs.existsSync(schemasSrc)) {
+	const schemaFiles = fs.readdirSync(schemasSrc).filter((f) => f.endsWith(".schema.json") || f.endsWith(".json"));
+	for (const file of schemaFiles) {
+		copyFile(path.join(schemasSrc, file), path.join(schemasDest, file));
+	}
+	console.log(`build-payload: .schemas/ — ${schemaFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/schemas/ not found — skipping");
+}
+
+// 2f: .claude-plugin/ — plugin.json
+const claudePluginSrc = path.join(forgeRoot, ".claude-plugin");
+const claudePluginDest = path.join(outDir, ".claude-plugin");
+fs.mkdirSync(claudePluginDest, { recursive: true });
+
+if (fs.existsSync(claudePluginSrc)) {
+	const pluginFiles = fs.readdirSync(claudePluginSrc).filter((f) => f.endsWith(".json"));
+	for (const file of pluginFiles) {
+		copyFile(path.join(claudePluginSrc, file), path.join(claudePluginDest, file));
+	}
+	console.log(`build-payload: .claude-plugin/ — ${pluginFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/.claude-plugin/ not found — skipping");
 }
 
 console.log("build-payload: forge-payload written to", outDir);
+console.log("build-payload: expanded bundle layout complete");

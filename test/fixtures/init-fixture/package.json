@@ -1,0 +1,14 @@
+{
+  "name": "init-fixture",
+  "version": "1.0.0",
+  "description": "Minimal fixture project for forge-cli /forge:init E2E tests",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "echo 'no tests yet'",
+    "build": "tsc",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

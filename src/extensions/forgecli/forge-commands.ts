@@ -13,10 +13,22 @@
 // Q14 contract: every command except /forge:init no-ops gracefully
 // outside a Forge project with a notify pointing at /forge:init.
 // /forge:init is registered in index.ts (unconditional, AC#4 from T02).
+//
+// Phase G (FORGE-S17-T02): registerAllForgeCommands enumerates every
+// *.md under dist/forge-payload/.base-pack/commands/ and registers each
+// as a pi command. Real handlers for init/health/refresh-kb-links are
+// wired separately; all others emit advisory stubs.
 
+import * as fsSync from "node:fs";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { runHealthCheck } from "./health-check.js";
+import { runRefreshKbLinks } from "./refresh-kb-links.js";
+
+// Resolve the package root for bundle path resolution
+const _PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 interface RegisterOptions {
 	/** Absolute path to the installed forge plugin root, or null when outside a Forge project. */
@@ -154,9 +166,154 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 	});
 }
 
+// ── Phase G: registerAllForgeCommands (FORGE-S17-T02) ─────────────────────
+// Enumerate every *.md under dist/forge-payload/.base-pack/commands/ at
+// runtime, parse YAML frontmatter (name + description), and register each
+// via pi.registerCommand(). Real handlers for init/health/refresh-kb-links
+// are deferred to their dedicated modules (called before this function).
+// All remaining commands get advisory stub handlers.
+//
+// This function is called AFTER registerForgeInit(pi) and registerForgeCommands()
+// so that real handlers (registered first) are not overwritten.
+
+/** Parse YAML frontmatter from a markdown file. Returns name and description or null. */
+function parseFrontmatter(content: string): { name: string; description: string } | null {
+	if (!content.startsWith("---")) return null;
+	const end = content.indexOf("---", 3);
+	if (end === -1) return null;
+	const block = content.slice(3, end);
+	let name = "";
+	let description = "";
+	for (const line of block.split("\n")) {
+		const m = line.match(/^(\w+):\s*(.+)$/);
+		if (!m) continue;
+		if (m[1] === "name") name = m[2].trim();
+		if (m[1] === "description") description = m[2].trim();
+	}
+	if (!name) return null;
+	return { name, description };
+}
+
+/** Commands that have real handlers registered by other modules OR explicitly by registerAllForgeCommands. */
+const REAL_HANDLERS = new Set([
+	"forge:init",
+	"forge:health",
+	"forge:ask",
+	"forge:config",
+	"forge:status",
+	"forge:update",
+	"forge:refresh-kb-links",
+	"forge:enhance",
+]);
+
+export interface RegisterAllOptions {
+	/** Absolute path to dist/forge-payload/ (containing .base-pack/commands/). */
+	bundlePayloadRoot: string;
+	/** Current working directory (for health check). */
+	cwd?: string;
+	/** Absolute path to dist/forge-payload/ for health check bundle root. */
+	bundleRoot?: string;
+}
+
+/**
+ * Register all forge commands from the bundled .base-pack/commands/ directory.
+ * Commands already registered (real handlers) are skipped.
+ * Returns the number of commands registered.
+ */
+export function registerAllForgeCommands(pi: ExtensionAPI, options: RegisterAllOptions): number {
+	const commandsDir = path.join(options.bundlePayloadRoot, ".base-pack", "commands");
+
+	let commandFiles: string[];
+	try {
+		commandFiles = fsSync.readdirSync(commandsDir).filter((f) => f.endsWith(".md"));
+	} catch {
+		// .base-pack not yet built — skip gracefully
+		return 0;
+	}
+
+	let registered = 0;
+
+	for (const file of commandFiles) {
+		const filePath = path.join(commandsDir, file);
+		let content: string;
+		try {
+			content = fsSync.readFileSync(filePath, "utf8");
+		} catch {
+			continue;
+		}
+
+		const meta = parseFrontmatter(content);
+		if (!meta) continue;
+
+		const commandName = `forge:${meta.name}`;
+
+		// Skip commands that already have real handlers
+		if (REAL_HANDLERS.has(commandName)) continue;
+
+		// Register stub
+		const capturedName = commandName;
+		pi.registerCommand(capturedName, {
+			description: meta.description || `Forge: ${meta.name}`,
+			async handler(_args, ctx) {
+				ctx.ui.notify(`〇 ${capturedName} — full implementation in S18+.`, "info");
+			},
+		});
+
+		registered++;
+	}
+
+	// Register /forge:refresh-kb-links with real handler (Phase G)
+	const capturedCwd = options.cwd ?? process.cwd();
+	pi.registerCommand("forge:refresh-kb-links", {
+		description: "Refresh Forge KB and workflow links in agent instruction files",
+		async handler(_args, ctx) {
+			ctx.ui.setStatus?.("forge:refresh-kb-links", "Refreshing KB links…");
+			try {
+				const result = await runRefreshKbLinks(capturedCwd);
+				for (const msg of result.messages) {
+					ctx.ui.notify(msg, "info");
+				}
+				if (result.filesUpdated === 0 && result.filesSkipped > 0) {
+					ctx.ui.notify("forge:refresh-kb-links — all agent instruction files already up to date.", "info");
+				}
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				ctx.ui.notify(`forge:refresh-kb-links error: ${e.message ?? "unknown"}`, "error");
+			} finally {
+				ctx.ui.setStatus?.("forge:refresh-kb-links", undefined);
+			}
+		},
+	});
+
+	// Register /forge:enhance stub with sentinel (PLAN sub-decision #4)
+	pi.registerCommand("forge:enhance", {
+		description: "Progressive project-specific enrichment of structural elements",
+		async handler(_args, ctx) {
+			const sentinelPath = path.join(capturedCwd, ".forge", "cache", "post-init-enhancement-triggered");
+			const sentinelExists = fsSync.existsSync(sentinelPath);
+			ctx.ui.notify(
+				`〇 forge:enhance — full implementation in S18+. ${sentinelExists ? "Sentinel already written." : "Sentinel written; auto-trigger will fire when it lands."}`,
+				"info",
+			);
+			if (!sentinelExists) {
+				try {
+					fsSync.mkdirSync(path.dirname(sentinelPath), { recursive: true });
+					fsSync.writeFileSync(sentinelPath, new Date().toISOString() + "\n", "utf8");
+				} catch {
+					// non-fatal
+				}
+			}
+		},
+	});
+
+	return registered;
+}
+
 // ── Test helpers ─────────────────────────────────────────────────────────────
 // Internal — exported only for unit tests. Not part of the public API.
 export const __test__ = {
 	resetTomoshibiState,
 	getTomoshibiPending: () => tomoshibiPending,
+	parseFrontmatter,
+	REAL_HANDLERS,
 };
