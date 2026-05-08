@@ -11,6 +11,7 @@
 // Spike R1/R2 env-gated blocks are preserved for backward-compat — no-op in
 // production when env flags are absent.
 
+import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -19,12 +20,31 @@ import { registerForgeCommands } from "./forge-commands.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
+import { triggerUpdateCheck } from "./update-check.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
 // to <pkg>/, then into prompts/. In the source tree (vitest runs raw .ts), the
 // equivalent climb resolves to forge-cli/prompts/.
-const PROMPTS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "prompts");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const PROMPTS_ROOT = path.join(PKG_ROOT, "prompts");
+
+// Read package.json once at module load. Failures here are non-fatal — the
+// update-check module short-circuits if the version strings are empty.
+function readPkgVersions(): { cliVersion: string; bundledForgeVersion: string } {
+	try {
+		const raw = readFileSync(path.join(PKG_ROOT, "package.json"), "utf8");
+		const pkg = JSON.parse(raw) as { version?: unknown; forge?: { bundledVersion?: unknown } };
+		return {
+			cliVersion: typeof pkg.version === "string" ? pkg.version : "",
+			bundledForgeVersion: typeof pkg.forge?.bundledVersion === "string" ? pkg.forge.bundledVersion : "",
+		};
+	} catch {
+		return { cliVersion: "", bundledForgeVersion: "" };
+	}
+}
+
+const PKG_VERSIONS = readPkgVersions();
 
 let notified = false;
 
@@ -86,6 +106,18 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		const meta = forgeConfig ? readProjectMeta(forgeConfig.configPath) : null;
 		if (meta) {
 			ctx.ui.notify(`${meta.name} [${meta.prefix}]`, "info");
+		}
+
+		// 4. Update-check probe + banner (FORGE-S16-T14, issue #18 part 1).
+		// Fire-and-forget — never blocks startup; fail-silent on the user surface.
+		if (PKG_VERSIONS.cliVersion && PKG_VERSIONS.bundledForgeVersion) {
+			void triggerUpdateCheck({
+				notify: (msg, level) => ctx.ui.notify(msg, level),
+				currentCliVersion: PKG_VERSIONS.cliVersion,
+				currentBundledForgeVersion: PKG_VERSIONS.bundledForgeVersion,
+			}).catch(() => {
+				/* AC#5: network failures are fail-silent */
+			});
 		}
 	});
 
