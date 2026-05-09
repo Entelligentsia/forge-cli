@@ -65,6 +65,24 @@ function buildMockCtx(overrides: Record<string, unknown> = {}): Record<string, u
 		ui: {
 			notify: vi.fn(),
 			confirm: vi.fn(() => Promise.resolve(false)),
+			input: vi.fn(() => Promise.resolve(undefined)),
+			setStatus: vi.fn(),
+		},
+		waitForIdle: vi.fn(() => Promise.resolve()),
+		...overrides,
+	};
+}
+
+/**
+ * Like buildMockCtx but with confirm always resolving true.
+ * Use for tests that need the full phase pipeline to run (G2 pre-flight confirm proceeds).
+ */
+function buildMockCtxProceed(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		ui: {
+			notify: vi.fn(),
+			confirm: vi.fn(() => Promise.resolve(true)),
+			input: vi.fn(() => Promise.resolve(undefined)),
 			setStatus: vi.fn(),
 		},
 		waitForIdle: vi.fn(() => Promise.resolve()),
@@ -192,15 +210,20 @@ describe("registerForgeInit", () => {
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtx({
+			ui: {
+				notify: vi.fn(),
+				confirm: vi.fn(() => Promise.resolve(true)), // user confirms pre-flight
+				input: vi.fn(() => Promise.resolve(undefined)),
+				setStatus: vi.fn(),
+			},
+		});
 
 		await def.handler("--fast foo", ctx);
 
-		// sendUserMessage should be called for the pre-flight table
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining("4 phases will run"),
-			expect.objectContaining({ deliverAs: expect.any(String) }),
-		);
+		// ctx.ui.confirm should be called for the pre-flight gate (G2)
+		const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+		expect(confirmLabels.some((l) => l.includes("Start /forge:init?"))).toBe(true);
 	});
 
 	// T01: Resume detection — no file → shows pre-flight (no malformed/stale warning)
@@ -211,15 +234,20 @@ describe("registerForgeInit", () => {
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtx({
+			ui: {
+				notify: vi.fn(),
+				confirm: vi.fn(() => Promise.resolve(true)), // user confirms pre-flight
+				input: vi.fn(() => Promise.resolve(undefined)),
+				setStatus: vi.fn(),
+			},
+		});
 
 		await def.handler("", ctx);
 
-		// Pre-flight should be sent (project name in pre-flight text)
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining("Forge Init"),
-			expect.objectContaining({ deliverAs: expect.any(String) }),
-		);
+		// Pre-flight confirm (G2) must have been shown with project name context
+		const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+		expect(confirmLabels.some((l) => l.includes("Start /forge:init?"))).toBe(true);
 
 		// No malformed/stale warning — should not have been called for cleanup at the start
 		const notifyCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls as Array<[string, string]>;
@@ -313,7 +341,7 @@ describe("registerForgeInit", () => {
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -335,7 +363,7 @@ describe("registerForgeInit", () => {
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -357,7 +385,7 @@ describe("registerForgeInit", () => {
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -411,7 +439,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -430,7 +458,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -476,7 +504,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -507,7 +535,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -531,7 +559,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		// Should NOT throw even though INIT-SMOKE-TEST task is absent
 		await expect(def.handler("", ctx)).resolves.not.toThrow();
@@ -556,7 +584,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		// Warning-severity gaps must not cause an exception (handler resolves cleanly)
 		await expect(def.handler("", ctx)).resolves.not.toThrow();
@@ -585,7 +613,7 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
-		const ctx = buildMockCtx();
+		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
@@ -600,7 +628,6 @@ describe("registerForgeInit", () => {
 	// BUG-023: KB folder prompt blocks until user answers (uses ctx.ui.confirm, not sendUserMessage)
 	it("bug-023-prompt-blocking: KB folder prompt uses ctx.ui.confirm, not fire-and-forget sendUserMessage", async () => {
 		// Track whether confirm was called before Phase 1 completes
-		let confirmCalledBeforePhase1Complete = false;
 		let phase1WriteProgressCalled = false;
 
 		mockWriteInitProgress.mockImplementation((_cwd: unknown, phase: unknown) => {
@@ -613,31 +640,35 @@ describe("registerForgeInit", () => {
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
 
-		// Build a ctx where confirm resolves but we track call order
+		// Build a ctx where:
+		//   - G2 pre-flight confirm returns true (proceed)
+		//   - G3 KB folder confirm returns false (no conflict — default "engineering")
 		let confirmCallCount = 0;
 		const ctx = buildMockCtx({
 			ui: {
 				notify: vi.fn(),
 				setStatus: vi.fn(),
+				input: vi.fn(() => Promise.resolve(undefined)),
 				confirm: vi.fn(() => {
 					confirmCallCount++;
-					if (!phase1WriteProgressCalled) {
-						// confirm called during Phase 1 (before writeInitProgress(1))
-						confirmCalledBeforePhase1Complete = true;
-					}
-					return Promise.resolve(false);
+					// First call = G2 pre-flight (return true to proceed into Phase 1)
+					// Subsequent calls = G3 KB folder (return false = no conflict)
+					return Promise.resolve(confirmCallCount === 1);
 				}),
 			},
 		});
 
 		await def.handler("", ctx);
 
-		// At least one confirm must have been called during Phase 1 processing
-		// (KB folder prompt) — verifies blocking semantics
-		expect(confirmCallCount).toBeGreaterThanOrEqual(1);
-		// The KB folder confirm must have been called at some point (during phase 1)
-		// — if sendUserMessage was fire-and-forget, this wouldn't happen
-		expect(ctx.ui.confirm).toHaveBeenCalled();
+		// At least two confirms must have been called: G2 (pre-flight) and G3 (KB folder)
+		// This proves the KB folder confirm blocks Phase 1 (not fire-and-forget)
+		expect(confirmCallCount).toBeGreaterThanOrEqual(2);
+		// The KB folder confirm must have been awaited before Phase 1 completes
+		// (writeInitProgress(1) is called after G3 in Phase 1)
+		expect(phase1WriteProgressCalled).toBe(true);
+		// ctx.ui.confirm was called for both G2 and G3
+		const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+		expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(true);
 	});
 });
 
@@ -650,7 +681,23 @@ describe("registerForgeInit", () => {
 //   (c) FORGE_YES=1 — gate bypassed
 
 describe("non-interactive mode (FORGE-S18-T01)", () => {
-	// Restore env after each test
+	// Reset mocks and env after each test
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Default fs mocks (mirror the outer describe setup)
+		mockFs.existsSync.mockReturnValue(false);
+		mockFs.readFileSync.mockImplementation(() => {
+			const err = new Error("ENOENT") as NodeJS.ErrnoException;
+			err.code = "ENOENT";
+			throw err;
+		});
+		mockFs.mkdirSync.mockImplementation(() => undefined);
+		mockFs.writeFileSync.mockImplementation(() => undefined);
+		mockFs.copyFileSync.mockImplementation(() => undefined);
+		mockFs.readdirSync.mockReturnValue([]);
+		mockFs.appendFileSync.mockImplementation(() => undefined);
+		mockReadInitProgress.mockReturnValue({ kind: "none" });
+	});
 	afterEach(() => {
 		vi.unstubAllEnvs();
 	});
@@ -707,63 +754,150 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 		});
 	});
 
-	// ── G2: Pre-flight sendToAgent ──────────────────────────────────────────
+	// ── G2: Pre-flight confirm ─────────────────────────────────────────────
 
-	describe("G2 — pre-flight sendToAgent", () => {
-		it("(a) interactive-default: sendUserMessage called with preflight text", async () => {
+	describe("G2 — pre-flight confirm", () => {
+		it("(a) interactive-default: ctx.ui.confirm called with 'Start /forge:init?'", async () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
-			const { handler, sendUserMessage } = setupNonInteractiveInit();
-			await handler("", buildMockCtx());
-			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
-			expect(msgs.some((m) => m.includes("Start from Phase 1"))).toBe(true);
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(true)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Start /forge:init?"))).toBe(true);
 		});
 
-		it("(b) FORGE_NON_INTERACTIVE=1: preflight sendUserMessage NOT sent", async () => {
+		it("(b) FORGE_NON_INTERACTIVE=1: ctx.ui.confirm NOT called for pre-flight", async () => {
 			vi.stubEnv("FORGE_NON_INTERACTIVE", "1");
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
-			const { handler, sendUserMessage } = setupNonInteractiveInit();
-			await handler("", buildMockCtx());
-			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
-			expect(msgs.some((m) => m.includes("Start from Phase 1"))).toBe(false);
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Start /forge:init?"))).toBe(false);
 		});
 
-		it("(c) FORGE_YES=1: preflight sendUserMessage NOT sent", async () => {
+		it("(c) FORGE_YES=1: ctx.ui.confirm NOT called for pre-flight", async () => {
 			vi.stubEnv("FORGE_YES", "1");
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
-			const { handler, sendUserMessage } = setupNonInteractiveInit();
-			await handler("", buildMockCtx());
-			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
-			expect(msgs.some((m) => m.includes("Start from Phase 1"))).toBe(false);
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Start /forge:init?"))).toBe(false);
+		});
+
+		it("G2-cancel: handler exits early when user cancels pre-flight confirm", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(false)), // user cancels
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
+			});
+			await handler("", ctx);
+			// Handler exited early — writeInitProgress must NOT have been called
+			expect(mockWriteInitProgress).not.toHaveBeenCalled();
 		});
 	});
 
-	// ── G3: KB folder sendToAgent ───────────────────────────────────────────
+	// ── G3: KB folder confirm + input ─────────────────────────────────────
 
-	describe("G3 — KB folder sendToAgent", () => {
-		it("(a) interactive-default: sendUserMessage called with KB folder prompt", async () => {
+	describe("G3 — KB folder confirm", () => {
+		it("(a) interactive-default: ctx.ui.confirm called for KB folder conflict check", async () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
-			const { handler, sendUserMessage } = setupNonInteractiveInit();
-			await handler("", buildMockCtx());
-			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
-			expect(msgs.some((m) => m.includes("Knowledge Base Folder"))).toBe(true);
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(true)), // confirm pre-flight + KB check
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(true);
 		});
 
-		it("(b) FORGE_NON_INTERACTIVE=1: KB folder sendUserMessage NOT sent", async () => {
+		it("(b) FORGE_NON_INTERACTIVE=1: ctx.ui.confirm NOT called for KB folder gate", async () => {
 			vi.stubEnv("FORGE_NON_INTERACTIVE", "1");
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
-			const { handler, sendUserMessage } = setupNonInteractiveInit();
-			await handler("", buildMockCtx());
-			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
-			expect(msgs.some((m) => m.includes("Knowledge Base Folder"))).toBe(false);
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(false);
 		});
 
-		it("(c) FORGE_YES=1: KB folder sendUserMessage NOT sent", async () => {
+		it("(c) FORGE_YES=1: ctx.ui.confirm NOT called for KB folder gate", async () => {
 			vi.stubEnv("FORGE_YES", "1");
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
-			const { handler, sendUserMessage } = setupNonInteractiveInit();
-			await handler("", buildMockCtx());
-			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
-			expect(msgs.some((m) => m.includes("Knowledge Base Folder"))).toBe(false);
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(false);
+		});
+
+		it("G3-custom-folder: ctx.ui.input called when conflict confirmed, manage-config set for custom name", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler } = setupNonInteractiveInit();
+			// Both pre-flight and KB folder confirms return true; input returns "ai-docs"
+			let confirmCallCount = 0;
+			const ctx = buildMockCtx({
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => {
+						confirmCallCount++;
+						return Promise.resolve(true); // pre-flight → proceed; KB → has conflict
+					}),
+					input: vi.fn(() => Promise.resolve("ai-docs")),
+					setStatus: vi.fn(),
+				},
+			});
+			// manageConfigTool: existsSync must return true for the early manage-config call
+			mockFs.existsSync.mockReturnValue(true);
+			await handler("", ctx);
+			// ctx.ui.input must have been called (KB folder free-text)
+			expect(ctx.ui.input).toHaveBeenCalled();
+			const inputCalls = vi.mocked(ctx.ui.input).mock.calls;
+			expect(inputCalls.some((c) => (c[0] as string).includes("Engineering folder name?"))).toBe(true);
+		});
+
+		it("G3-no-conflict: ctx.ui.input NOT called when user reports no conflict", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler } = setupNonInteractiveInit();
+			// Pre-flight confirm → true (proceed); KB folder confirm → false (no conflict)
+			let confirmCallCount = 0;
+			const ctx = buildMockCtx({
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => {
+						confirmCallCount++;
+						// First call = pre-flight (return true); subsequent calls = KB folder (return false)
+						return Promise.resolve(confirmCallCount === 1);
+					}),
+					input: vi.fn(() => Promise.resolve("ai-docs")),
+					setStatus: vi.fn(),
+				},
+			});
+			await handler("", ctx);
+			// No conflict → ctx.ui.input NOT called for KB folder
+			const inputTitles = vi.mocked(ctx.ui.input).mock.calls.map((c) => c[0] as string);
+			expect(inputTitles.some((t) => t.includes("Engineering folder name?"))).toBe(false);
 		});
 	});
 

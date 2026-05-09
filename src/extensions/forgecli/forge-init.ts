@@ -483,8 +483,8 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			// ── 5. Pre-flight plan (unless jumping to a specific phase) ───────
 			const projectName = discoverProjectName(cwd);
 			if (flags.startPhase === null || flags.invalidPhase) {
-				const preflightText =
-					`## Forge Init — ${projectName}\n\n` +
+				const preflightSummary =
+					`Forge Init — ${projectName}\n\n` +
 					`4 phases will run in this session (~45 seconds non-interactive):\n\n` +
 					`  1   Collect      — 5 parallel discovery scans → config.json\n` +
 					`                     KB folder prompt (interactive)\n` +
@@ -492,13 +492,15 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					`  3   Materialize  — substitute-placeholders.cjs → fully functional workflows\n` +
 					`  4   Register     — versioning, manifest, cache, store entries, Tomoshibi\n\n` +
 					`Phase 1 is interactive (KB folder name prompt). Phases 2–4 are non-interactive\n` +
-					`and complete in under 45 seconds.\n\n` +
-					`Start from Phase 1? [Y] or specify phase (1–4): ___`;
+					`and complete in under 45 seconds.`;
 
-				// G2: skip pre-flight prompt in non-interactive mode (proceed directly to Phase 1)
+				// G2: skip pre-flight confirm in non-interactive mode (proceed directly to Phase 1)
 				if (!isNonInteractive()) {
-					sendToAgent(preflightText);
-					await ctx.waitForIdle();
+					const proceed = await ctx.ui.confirm("Start /forge:init?", preflightSummary);
+					if (!proceed) {
+						ctx.ui.notify("〇 /forge:init cancelled.", "info");
+						return;
+					}
 				}
 			}
 
@@ -525,15 +527,29 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 
 				// KB folder prompt (spec §7, F2) — G3: skipped in non-interactive mode (default: "engineering")
 				if (!isNonInteractive()) {
-					const kbPromptText =
-						`━━━ Knowledge Base Folder ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+					const kbDescription =
 						`Forge will create a folder for architecture docs, sprints, bugs, and features.\n` +
 						`Default name: engineering/\n\n` +
-						`Does "engineering" conflict with an existing folder in this project? [n/Y]\n` +
-						`If yes, enter your preferred name (e.g. ai-docs, .forge-kb, docs/ai): ___`;
-
-					sendToAgent(kbPromptText);
-					await ctx.waitForIdle();
+						`Does "engineering" conflict with an existing folder in this project?`;
+					const hasConflict = await ctx.ui.confirm("Engineering folder name?", kbDescription);
+					if (hasConflict) {
+						const customName = await ctx.ui.input(
+							"Engineering folder name?",
+							"Enter preferred folder name (e.g. ai-docs, .forge-kb, docs/ai): ",
+						);
+						if (customName && customName.trim()) {
+							const manageConfigToolEarly = path.join(toolsRoot, "manage-config.cjs");
+							if (fs.existsSync(manageConfigToolEarly)) {
+								await runToolAdvisory(
+									manageConfigToolEarly,
+									["set", "paths.engineering", customName.trim()],
+									cwd,
+									ctx,
+									"manage-config paths.engineering",
+								);
+							}
+						}
+					}
 				}
 
 				// Marketplace skills advisory (sub-decision #1)
