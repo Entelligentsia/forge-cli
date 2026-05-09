@@ -332,7 +332,12 @@ async function linkAgentInstructionFile(
 export function registerForgeInit(pi: ExtensionAPI): void {
 	// Capture pi.sendUserMessage in closure — ExtensionCommandContext does not
 	// have sendUserMessage; it is on ExtensionAPI per pi types.ts:1187.
-	const sendToAgent = (text: string) => pi.sendUserMessage(text);
+	//
+	// FIX BUG-017 / BUG-023: all sendUserMessage calls during a command handler
+	// execution (which is itself an active agent turn) MUST carry deliverAs: "steer"
+	// to avoid the "Agent is already processing" runtime error. The command handler
+	// runs inside a turn boundary; raw sendUserMessage() without deliverAs throws.
+	const sendToAgent = (text: string) => pi.sendUserMessage(text, { deliverAs: "steer" });
 
 	pi.registerCommand("forge:init", {
 		description: "Bootstrap a new Forge SDLC project at the current working directory",
@@ -923,8 +928,54 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			}
 
 			// ── Report ────────────────────────────────────────────────────────
+			// FIX BUG-020: read kbPathFinal from config.json at report time so
+			// a custom KB folder chosen in Phase 1 is reflected here. kbPathFinal
+			// is only updated inside the Phase-4 block, so if init was resumed
+			// from Phase 1-3 we still get the right value.
+			try {
+				const cfgRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
+				const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
+				const p = cfg.paths as Record<string, unknown> | undefined;
+				if (p && typeof p.engineering === "string" && p.engineering) {
+					kbPathFinal = p.engineering;
+				}
+			} catch {
+				// use default "engineering" already set
+			}
+
 			ctx.ui.setStatus?.("forge:init", undefined);
 			const kbPath_ = kbPathFinal;
+
+			// FIX BUG-022 (product call): surface gap details in Report.
+			// Conservative path: always include gap list in the Report.
+			// Exit non-zero (via notify "error") only for blocking (severity: "error") gaps.
+			// Warning-severity gaps are advisory; init is considered successful.
+			//
+			// Rationale: exiting non-zero for any gap would break common fresh-init
+			// flows where KB docs haven't been generated yet (kb-freshness warning).
+			// Error gaps (e.g. config missing) indicate structural failure and must
+			// surface clearly.
+			const criticalGaps = healthResult.gaps.filter((g) => g.severity === "error");
+			const warningGaps = healthResult.gaps.filter((g) => g.severity === "warning");
+
+			let healthSection = `Health: ${healthResult.summary}`;
+			if (healthResult.gaps.length > 0) {
+				const gapLines = healthResult.gaps
+					.map((g) => `  [${g.severity.toUpperCase()}] ${g.check}: ${g.message}`)
+					.join("\n");
+				healthSection += `\n\nGap detail:\n${gapLines}`;
+			}
+			if (warningGaps.length > 0) {
+				healthSection += `\n\nWarning gaps are advisory. Run /forge:health anytime to recheck.`;
+			}
+			if (criticalGaps.length > 0) {
+				healthSection += `\n\n× CRITICAL: ${criticalGaps.length} blocking gap(s) — review the detail above and re-run /forge:init.`;
+				ctx.ui.notify(
+					`× /forge:init: ${criticalGaps.length} critical gap(s) require attention — see Report.`,
+					"error",
+				);
+			}
+
 			const report = [
 				``,
 				`╔══════════════════════════════════════════════════════════════╗`,
@@ -940,7 +991,7 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				`Workflows: .forge/workflows/`,
 				`Templates: .forge/templates/`,
 				``,
-				`Health: ${healthResult.summary}`,
+				healthSection,
 				``,
 				`Next steps:`,
 				`  1. Run /forge:sprint-intake to start your first sprint`,

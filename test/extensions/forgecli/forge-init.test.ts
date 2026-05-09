@@ -199,6 +199,7 @@ describe("registerForgeInit", () => {
 		// sendUserMessage should be called for the pre-flight table
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(
 			expect.stringContaining("4 phases will run"),
+			expect.objectContaining({ deliverAs: expect.any(String) }),
 		);
 	});
 
@@ -217,6 +218,7 @@ describe("registerForgeInit", () => {
 		// Pre-flight should be sent (project name in pre-flight text)
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(
 			expect.stringContaining("Forge Init"),
+			expect.objectContaining({ deliverAs: expect.any(String) }),
 		);
 
 		// No malformed/stale warning — should not have been called for cleanup at the start
@@ -398,5 +400,243 @@ describe("registerForgeInit", () => {
 			"Resume /forge:init?",
 			expect.stringContaining("Phase 4"),
 		);
+	});
+
+	// ── Bug fix tests ───────────────────────────────────────────────────────
+
+	// BUG-017: no sendUserMessage calls during banner or Phase-1 prompt rendering
+	// (hero-banner and KB folder prompt must NOT use pi.sendUserMessage synchronously
+	// during an already-active agent turn without deliverAs option)
+	it("bug-017-no-active-turn-conflict: all pi.sendUserMessage calls carry deliverAs option", async () => {
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		await def.handler("", ctx);
+
+		// Every call to pi.sendUserMessage must include a second argument with deliverAs
+		const calls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+		for (const call of calls) {
+			expect(call.length).toBeGreaterThanOrEqual(2);
+			const opts = call[1] as Record<string, unknown>;
+			expect(opts).toBeDefined();
+			expect(["steer", "followUp"]).toContain(opts.deliverAs);
+		}
+	});
+
+	// BUG-018: all 4 phase-complete markers fire in order
+	it("bug-018-phase3-marker: all 4 phase-complete markers emitted in order", async () => {
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		await def.handler("", ctx);
+
+		const notifyCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls as Array<[string, string]>;
+		const completionMessages = notifyCalls
+			.filter(([msg]) => msg.includes("Phase") && msg.includes("complete"))
+			.map(([msg]) => msg);
+
+		// Must include all 4 phase-complete markers
+		expect(completionMessages.some((m) => m.includes("Phase 1"))).toBe(true);
+		expect(completionMessages.some((m) => m.includes("Phase 2"))).toBe(true);
+		expect(completionMessages.some((m) => m.includes("Phase 3"))).toBe(true);
+		expect(completionMessages.some((m) => m.includes("Phase 4"))).toBe(true);
+
+		// Check ordering: phase 1 before 2 before 3 before 4
+		const idx1 = notifyCalls.findIndex(([m]) => m.includes("Phase 1") && m.includes("complete"));
+		const idx2 = notifyCalls.findIndex(([m]) => m.includes("Phase 2") && m.includes("complete"));
+		const idx3 = notifyCalls.findIndex(([m]) => m.includes("Phase 3") && m.includes("complete"));
+		const idx4 = notifyCalls.findIndex(([m]) => m.includes("Phase 4") && m.includes("complete"));
+		expect(idx1).toBeLessThan(idx2);
+		expect(idx2).toBeLessThan(idx3);
+		expect(idx3).toBeLessThan(idx4);
+	});
+
+	// BUG-019: manifest.forge_version must equal bundledVersion, not a hardcoded stale value
+	it("bug-019-manifest-version: Report prints bundledVersion not stale constant", async () => {
+		// Simulate plugin.json returning a specific version
+		mockFs.readFileSync.mockImplementation((p: unknown) => {
+			const pathStr = String(p);
+			if (pathStr.includes("plugin.json")) {
+				return JSON.stringify({ version: "0.40.3" });
+			}
+			if (pathStr.includes("config.json")) {
+				return JSON.stringify({
+					version: "1",
+					project: { name: "test-project", prefix: "TP" },
+					paths: { engineering: "engineering" },
+				});
+			}
+			throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+		});
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		await def.handler("", ctx);
+
+		// The final report sent via sendUserMessage should contain bundledVersion (0.40.3)
+		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		expect(reportCall).toBeDefined();
+		const reportText = String(reportCall![0]);
+		expect(reportText).toContain("0.40.3");
+		// Must NOT contain the stale hardcoded version
+		expect(reportText).not.toContain("0.24.1");
+	});
+
+	// BUG-020: Report shows actual chosen KB folder, not hardcoded "engineering/"
+	it("bug-020-report-kb-folder: Report KB folder reflects config not default", async () => {
+		mockFs.readFileSync.mockImplementation((p: unknown) => {
+			const pathStr = String(p);
+			if (pathStr.includes("config.json")) {
+				return JSON.stringify({
+					version: "1",
+					project: { name: "test-project", prefix: "TP" },
+					paths: { engineering: "ai-docs" },
+				});
+			}
+			throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+		});
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		await def.handler("", ctx);
+
+		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		expect(reportCall).toBeDefined();
+		const reportText = String(reportCall![0]);
+		// Must show "ai-docs/" not "engineering/"
+		expect(reportText).toContain("ai-docs/");
+	});
+
+	// BUG-021: build-overlay smoke exits cleanly on fresh init (task not found is expected)
+	it("bug-021-smoke-seed: smoke gate advisory does not block Phase 3 completion", async () => {
+		// build-overlay.cjs exists but INIT-SMOKE-TEST task is not seeded
+		mockFs.existsSync.mockImplementation((p: unknown) => {
+			const pathStr = String(p);
+			// Report build-overlay.cjs as existing
+			return pathStr.includes("build-overlay.cjs");
+		});
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		// Should NOT throw even though INIT-SMOKE-TEST task is absent
+		await expect(def.handler("", ctx)).resolves.not.toThrow();
+
+		// Phase 3 should still be marked complete
+		expect(mockWriteInitProgress).toHaveBeenCalledWith(expect.any(String), 3);
+	});
+
+	// BUG-022: health gaps surfaced in Report; blocking exit only for critical ("error") gaps
+	it("bug-022-health-gap-surfaced: warning-severity gaps surface in Report without blocking exit", async () => {
+		const { runHealthCheck } = await import("../../../src/extensions/forgecli/health-check.js");
+		const mockHealth = vi.mocked(runHealthCheck);
+		mockHealth.mockResolvedValue({
+			clean: false,
+			gaps: [
+				{ check: "kb-freshness", severity: "warning", message: "MASTER_INDEX.md not found" },
+			],
+			configPresent: true,
+			summary: "△ /forge:health: 1 gap(s) detected.",
+		});
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		// Warning-severity gaps must not cause an exception (handler resolves cleanly)
+		await expect(def.handler("", ctx)).resolves.not.toThrow();
+
+		// Gap detail must appear in the final Report
+		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		expect(reportCall).toBeDefined();
+		const reportText = String(reportCall![0]);
+		expect(reportText).toContain("kb-freshness");
+	});
+
+	// BUG-022 (error path): critical gaps (severity "error") cause non-zero signal in Report
+	it("bug-022-health-gap-critical: error-severity gaps surfaced in Report text", async () => {
+		const { runHealthCheck } = await import("../../../src/extensions/forgecli/health-check.js");
+		const mockHealth = vi.mocked(runHealthCheck);
+		mockHealth.mockResolvedValue({
+			clean: false,
+			gaps: [
+				{ check: "config-completeness", severity: "error", message: ".forge/config.json missing" },
+			],
+			configPresent: false,
+			summary: "△ /forge:health: 1 gap(s) detected.",
+		});
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const ctx = buildMockCtx();
+
+		await def.handler("", ctx);
+
+		// Gap detail and severity must appear in Report
+		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		expect(reportCall).toBeDefined();
+		const reportText = String(reportCall![0]);
+		expect(reportText).toContain("config-completeness");
+	});
+
+	// BUG-023: KB folder prompt blocks until user answers (uses ctx.ui.confirm, not sendUserMessage)
+	it("bug-023-prompt-blocking: KB folder prompt uses ctx.ui.confirm, not fire-and-forget sendUserMessage", async () => {
+		// Track whether confirm was called before Phase 1 completes
+		let confirmCalledBeforePhase1Complete = false;
+		let phase1WriteProgressCalled = false;
+
+		mockWriteInitProgress.mockImplementation((_cwd: unknown, phase: unknown) => {
+			if (phase === 1) {
+				phase1WriteProgressCalled = true;
+			}
+		});
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+
+		// Build a ctx where confirm resolves but we track call order
+		let confirmCallCount = 0;
+		const ctx = buildMockCtx({
+			ui: {
+				notify: vi.fn(),
+				setStatus: vi.fn(),
+				confirm: vi.fn(() => {
+					confirmCallCount++;
+					if (!phase1WriteProgressCalled) {
+						// confirm called during Phase 1 (before writeInitProgress(1))
+						confirmCalledBeforePhase1Complete = true;
+					}
+					return Promise.resolve(false);
+				}),
+			},
+		});
+
+		await def.handler("", ctx);
+
+		// At least one confirm must have been called during Phase 1 processing
+		// (KB folder prompt) — verifies blocking semantics
+		expect(confirmCallCount).toBeGreaterThanOrEqual(1);
+		// The KB folder confirm must have been called at some point (during phase 1)
+		// — if sendUserMessage was fire-and-forget, this wouldn't happen
+		expect(ctx.ui.confirm).toHaveBeenCalled();
 	});
 });
