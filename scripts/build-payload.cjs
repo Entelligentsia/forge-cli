@@ -178,11 +178,23 @@ const TOOLS_TO_COPY = [
 	"collate.cjs",
 	"store-cli.cjs",
 	"store.cjs",
+	"store-query.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
 const toolsDestDir = path.join(outDir, ".tools");
 fs.mkdirSync(toolsDestDir, { recursive: true });
+
+// FORGE-BUG-030: forge-cli package.json sets "type":"module", which makes
+// every bundled .js file (lib/validate.js, lib/result.js) resolve as ESM.
+// Those files use CommonJS module.exports. Drop a package.json scope-marker
+// here so .js files in this subtree resolve as CommonJS regardless of the
+// outer forge-cli package type. .cjs files are unaffected.
+fs.writeFileSync(
+	path.join(toolsDestDir, "package.json"),
+	`${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,
+);
+console.log("build-payload: .tools/package.json written (type=commonjs scope marker)");
 
 for (const toolName of TOOLS_TO_COPY) {
 	const src = path.join(toolsSrcDir, toolName);
@@ -209,6 +221,9 @@ const LIB_ALLOWLIST = new Set([
 	"project-root.cjs",
 	"result.js",
 	"validate.js",
+	"store-facade.cjs",
+	"store-nlp.cjs",
+	"store-query-exec.cjs",
 ]);
 const libSrc = path.join(toolsSrcDir, "lib");
 const libDest = path.join(toolsDestDir, "lib");

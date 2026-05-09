@@ -45,7 +45,7 @@
 		]
 	},
 	"forge": {
-		"bundledVersion": "0.40.3",
+		"bundledVersion": "0.41.0",
 		"forgeRoot": "../forge/forge"
 	},
 	"scripts": {

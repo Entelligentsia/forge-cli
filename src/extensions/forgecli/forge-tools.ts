@@ -15,12 +15,32 @@
 // Iron Law 6 compliance: execFile with argv arrays only. No shell strings.
 
 import { execFile } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Resolve the directory holding the .cjs tools.
+ *
+ * Two layouts are supported (FORGE-BUG-029):
+ *  1. Claude-plugin layout: forgeRoot = <plugin>/forge/forge/, tools at <forgeRoot>/tools/<x>.cjs
+ *  2. forge-cli flat layout: forgeRoot = <pkg>/dist/forge-payload/.tools, tools at <forgeRoot>/<x>.cjs
+ *
+ * Probe once: if <forgeRoot>/tools/ exists as a directory, use nested; else flat.
+ */
+function resolveToolDir(forgeRoot: string): string {
+	const nested = path.join(forgeRoot, "tools");
+	try {
+		if (fs.statSync(nested).isDirectory()) return nested;
+	} catch {
+		/* nested missing — fall through to flat */
+	}
+	return forgeRoot;
+}
 
 // ── Shared helper ────────────────────────────────────────────────────────────
 
@@ -91,15 +111,19 @@ function errResult(text: string) {
  * @param projectRoot The directory containing `.forge/` (parent of `.forge/`).
  */
 export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectRoot: string): void {
-	registerForgeCollate(pi, forgeRoot, projectRoot);
-	registerForgeStore(pi, forgeRoot, projectRoot);
-	registerForgeValidateStore(pi, forgeRoot, projectRoot);
-	registerForgeConfig(pi, forgeRoot, projectRoot);
+	const toolDir = resolveToolDir(forgeRoot);
+	registerForgeCollate(pi, toolDir, projectRoot);
+	registerForgeStore(pi, toolDir, projectRoot);
+	registerForgeValidateStore(pi, toolDir, projectRoot);
+	registerForgeConfig(pi, toolDir, projectRoot);
+	registerForgeStoreDescribe(pi, toolDir, projectRoot);
+	registerForgeStoreTemplate(pi, toolDir, projectRoot);
+	registerForgeStoreQuery(pi, toolDir, projectRoot);
 }
 
 // ── forge_collate ────────────────────────────────────────────────────────────
 
-function registerForgeCollate(pi: ExtensionAPI, forgeRoot: string, projectRoot: string): void {
+function registerForgeCollate(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
 	pi.registerTool({
 		name: "forge_collate",
 		label: "Forge Collate",
@@ -123,7 +147,7 @@ function registerForgeCollate(pi: ExtensionAPI, forgeRoot: string, projectRoot: 
 			),
 		}),
 		async execute(_toolCallId, params, signal) {
-			const toolPath = path.join(forgeRoot, "tools", "collate.cjs");
+			const toolPath = path.join(toolDir, "collate.cjs");
 			const argv: string[] = [];
 			if (params.sprintId) argv.push(params.sprintId);
 			if (params.purgeEvents) argv.push("--purge-events");
@@ -142,7 +166,7 @@ function registerForgeCollate(pi: ExtensionAPI, forgeRoot: string, projectRoot: 
 
 // ── forge_store ──────────────────────────────────────────────────────────────
 
-function registerForgeStore(pi: ExtensionAPI, forgeRoot: string, projectRoot: string): void {
+function registerForgeStore(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
 	pi.registerTool({
 		name: "forge_store",
 		label: "Forge Store",
@@ -165,7 +189,7 @@ function registerForgeStore(pi: ExtensionAPI, forgeRoot: string, projectRoot: st
 			),
 		}),
 		async execute(_toolCallId, params, signal) {
-			const toolPath = path.join(forgeRoot, "tools", "store-cli.cjs");
+			const toolPath = path.join(toolDir, "store-cli.cjs");
 			const argv: string[] = [params.command, ...params.args];
 			if (params.dryRun) argv.push("--dry-run");
 
@@ -182,7 +206,7 @@ function registerForgeStore(pi: ExtensionAPI, forgeRoot: string, projectRoot: st
 
 // ── forge_validate_store ─────────────────────────────────────────────────────
 
-function registerForgeValidateStore(pi: ExtensionAPI, forgeRoot: string, projectRoot: string): void {
+function registerForgeValidateStore(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
 	pi.registerTool({
 		name: "forge_validate_store",
 		label: "Forge Validate Store",
@@ -209,7 +233,7 @@ function registerForgeValidateStore(pi: ExtensionAPI, forgeRoot: string, project
 			),
 		}),
 		async execute(_toolCallId, params, signal) {
-			const toolPath = path.join(forgeRoot, "tools", "validate-store.cjs");
+			const toolPath = path.join(toolDir, "validate-store.cjs");
 			const argv: string[] = [];
 			if (params.fix) argv.push("--fix");
 			if (params.json) argv.push("--json");
@@ -243,7 +267,7 @@ function registerForgeValidateStore(pi: ExtensionAPI, forgeRoot: string, project
 
 // ── forge_config ─────────────────────────────────────────────────────────────
 
-function registerForgeConfig(pi: ExtensionAPI, forgeRoot: string, projectRoot: string): void {
+function registerForgeConfig(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
 	// Subcommand union verified against manage-config.cjs source dispatch
 	// (FORGE-S16-T03 PLAN_REVIEW advisory #4, pre-flight grep):
 	// handles exactly: get, list-pipelines, pipeline, set, resolve-forge-root.
@@ -271,7 +295,7 @@ function registerForgeConfig(pi: ExtensionAPI, forgeRoot: string, projectRoot: s
 			}),
 		}),
 		async execute(_toolCallId, params, signal) {
-			const toolPath = path.join(forgeRoot, "tools", "manage-config.cjs");
+			const toolPath = path.join(toolDir, "manage-config.cjs");
 			const argv: string[] = [params.subcommand, ...params.args];
 
 			try {
@@ -280,6 +304,108 @@ function registerForgeConfig(pi: ExtensionAPI, forgeRoot: string, projectRoot: s
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				return errResult(`forge_config failed: ${e.message ?? "unknown error"}`);
+			}
+		},
+	});
+}
+
+// ── forge_store_describe ─────────────────────────────────────────────────────
+
+const STORE_ENTITIES = Type.Union(
+	[Type.Literal("sprint"), Type.Literal("task"), Type.Literal("bug"), Type.Literal("event"), Type.Literal("feature")],
+	{ description: "Forge store entity type." },
+);
+
+function registerForgeStoreDescribe(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
+	pi.registerTool({
+		name: "forge_store_describe",
+		label: "Forge Store Describe",
+		description:
+			"Return the raw JSON Schema for a Forge store entity. Wraps `store-cli.cjs describe <entity>`. " +
+			"Call this BEFORE writing a record so you know the exact required fields, types, enums, and constraints.",
+		promptSnippet:
+			"Use forge_store_describe to fetch the JSON Schema for sprint/task/bug/event/feature before constructing a record.",
+		parameters: Type.Object({
+			entity: STORE_ENTITIES,
+		}),
+		async execute(_toolCallId, params, signal) {
+			const toolPath = path.join(toolDir, "store-cli.cjs");
+			try {
+				const { stdout } = await runCjs(toolPath, ["describe", params.entity], signal, 5_000, projectRoot);
+				return okResult(stdout);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				return errResult(`forge_store_describe failed: ${e.message ?? "unknown error"}`);
+			}
+		},
+	});
+}
+
+// ── forge_store_template ─────────────────────────────────────────────────────
+
+function registerForgeStoreTemplate(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
+	pi.registerTool({
+		name: "forge_store_template",
+		label: "Forge Store Template",
+		description:
+			"Return a canonical sample record for a Forge store entity, with all required fields populated " +
+			"with placeholder values that match the schema (enum first-value, ISO date-time, ID placeholders, etc.). " +
+			"Wraps `store-cli.cjs template <entity>`. Use this BEFORE writing a record to avoid validation failures.",
+		promptSnippet:
+			"Use forge_store_template to get a canonical sample for sprint/task/bug/event/feature — copy the shape, replace placeholders.",
+		parameters: Type.Object({
+			entity: STORE_ENTITIES,
+		}),
+		async execute(_toolCallId, params, signal) {
+			const toolPath = path.join(toolDir, "store-cli.cjs");
+			try {
+				const { stdout } = await runCjs(toolPath, ["template", params.entity], signal, 5_000, projectRoot);
+				return okResult(stdout);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				return errResult(`forge_store_template failed: ${e.message ?? "unknown error"}`);
+			}
+		},
+	});
+}
+
+// ── forge_store_query ────────────────────────────────────────────────────────
+
+function registerForgeStoreQuery(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
+	pi.registerTool({
+		name: "forge_store_query",
+		label: "Forge Store Query",
+		description:
+			"Query the Forge store. Wraps `store-cli.cjs` query/nlp/schema dispatch (which delegates to store-query.cjs). " +
+			"Use `nlp` for natural-language intent (e.g. 'open bugs in S12', 'blocked tasks'); " +
+			"`query` with flag args for structured filters (--sprint, --task, --bug, --feature, --status, --keyword, " +
+			"--with-blockers, --with-blocked-tasks, --with-sprint, --with-feature, --no-excerpts, --list-sprints, --mode auto|strict|off); " +
+			"`schema` for the project schema and grammar reference (entity ID patterns, status enums, FKs, synonyms).",
+		promptSnippet:
+			'Use forge_store_query nlp "<intent>" to find tasks/bugs/sprints/features by natural language, ' +
+			"or forge_store_query schema for entity/status/FK reference, before constructing query args.",
+		parameters: Type.Object({
+			command: Type.Union([Type.Literal("query"), Type.Literal("nlp"), Type.Literal("schema")], {
+				description:
+					"store-query subcommand: query (flag-based filters), nlp (natural-language intent), schema (project meta reference).",
+			}),
+			args: Type.Array(Type.String(), {
+				description:
+					"Positional and flag arguments after the subcommand. " +
+					"For 'nlp': a single quoted intent string. " +
+					"For 'query': flag pairs e.g. ['--sprint','FORGE-S19','--status','active','--with-blockers']. " +
+					"For 'schema': empty array.",
+			}),
+		}),
+		async execute(_toolCallId, params, signal) {
+			const toolPath = path.join(toolDir, "store-cli.cjs");
+			const argv: string[] = [params.command, ...params.args];
+			try {
+				const { stdout } = await runCjs(toolPath, argv, signal, 10_000, projectRoot);
+				return okResult(stdout);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				return errResult(`forge_store_query failed: ${e.message ?? "unknown error"}`);
 			}
 		},
 	});

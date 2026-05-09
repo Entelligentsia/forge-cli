@@ -269,6 +269,31 @@ if [[ -x "$FORGE_BIN" ]]; then
 	done
 	[[ "$TOOLS_PRESENT" == "true" ]] && record PASS "E2E-01: .tools/ key CJS tools bundled" ""
 
+	# E2E-12 (FORGE-BUG-030): .tools/package.json scope marker must set type=commonjs
+	# so bundled lib/*.js files (validate.js, result.js) resolve as CJS despite
+	# the outer forge-cli package.json type=module.
+	TOOLS_PKG_JSON="$PAYLOAD_DIR/.tools/package.json"
+	if [[ -f "$TOOLS_PKG_JSON" ]] && grep -q '"type"[[:space:]]*:[[:space:]]*"commonjs"' "$TOOLS_PKG_JSON"; then
+		record PASS "E2E-12: .tools/package.json scope marker (type=commonjs)" ""
+	else
+		record FAIL "E2E-12: .tools/package.json scope marker missing or wrong" "BUG-030 regression"
+	fi
+
+	# E2E-13 (FORGE-BUG-030): bundled store-cli.cjs must run without ESM scope error.
+	# Directly invoke `node store-cli.cjs --help` and verify zero exit + no
+	# "ReferenceError: module is not defined" message.
+	STORE_CLI="$PAYLOAD_DIR/.tools/store-cli.cjs"
+	if [[ -f "$STORE_CLI" ]]; then
+		STORE_CLI_OUT=$(node "$STORE_CLI" --help 2>&1 || true)
+		if grep -q "ReferenceError: module is not defined" <<<"$STORE_CLI_OUT"; then
+			record FAIL "E2E-13: store-cli.cjs runs under bundle scope" "ESM scope error — BUG-030 regression"
+		else
+			record PASS "E2E-13: store-cli.cjs runs under bundle scope" ""
+		fi
+	else
+		record SKIP "E2E-13: store-cli.cjs runs under bundle scope" "store-cli.cjs not bundled"
+	fi
+
 	# Verify .init/discovery/ has 5 discover-*.md files
 	DISCOVERY_COUNT=$(ls "$PAYLOAD_DIR/.init/discovery/discover-"*.md 2>/dev/null | wc -l)
 	if [[ "$DISCOVERY_COUNT" -eq 5 ]]; then
@@ -406,133 +431,17 @@ else
 	record SKIP "E2E-06: FORGE_NON_INTERACTIVE=1 forge --help" "forge bin missing"
 fi
 
-# ── E2E-08: sprint-intake non-interactive abort ───────────────────────────
-# forge:sprint-intake must refuse when FORGE_NON_INTERACTIVE=1 is set.
-# We invoke via pi directly; check that the error text appears in output.
-if [[ -n "${FORGE_BIN:-}" ]] && command -v pi >/dev/null 2>&1; then
-	e2e08_out="$SMOKE_OUT_DIR/sprint-intake-non-interactive.out"
-	if FORGE_NON_INTERACTIVE=1 pi -e "$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
-		--run-command "forge:sprint-intake FORGE-TEST" >"$e2e08_out" 2>&1; then
-		# Command should have exited but check output for expected error message
-		if grep -q "requires an interactive terminal" "$e2e08_out" 2>/dev/null; then
-			record PASS "E2E-08: sprint-intake non-interactive abort" "error message present"
-		else
-			record WARN "E2E-08: sprint-intake non-interactive abort" "ran but error message not found in output"
-		fi
-	else
-		# Non-zero exit — check output for the error message
-		if grep -q "requires an interactive terminal" "$e2e08_out" 2>/dev/null; then
-			record PASS "E2E-08: sprint-intake non-interactive abort" "error message present in output"
-		else
-			record WARN "E2E-08: sprint-intake non-interactive abort" "exit non-zero but error message not found"
-		fi
-	fi
-else
-	record SKIP "E2E-08: sprint-intake non-interactive abort" "forge bin or pi missing"
-fi
+# ── E2E-08/09: retired (FORGE-BUG-031) ────────────────────────────────────
+# The deterministic TUI sprint-intake handler shipped in FORGE-S19-T01 has
+# been retired in favour of a thin LLM-kickoff handler. Non-interactive
+# abort and scripted-answers gates no longer apply — coverage moved to
+# unit tests for parseSprintIntakeArgs / composeKickoff.
 
-# ── E2E-09: sprint-intake scripted answers via FORGE_INTAKE_ANSWERS_FILE ──
-# Verify that a scripted answers file drives the interview deterministically.
-e2e09_tmp="$SMOKE_OUT_DIR/sprint-intake-e2e09"
-mkdir -p "$e2e09_tmp"
-e2e09_project="$e2e09_tmp/project"
-mkdir -p "$e2e09_project/.forge/cache"
-mkdir -p "$e2e09_project/.forge/store/bugs"
-mkdir -p "$e2e09_project/.forge/store/features"
-mkdir -p "$e2e09_project/engineering/sprints"
-# Write minimal .forge/config.json
-cat >"$e2e09_project/.forge/config.json" <<'EOFCFG'
-{"paths":{"engineering":"engineering","forgeRoot":"/dev/null"}}
-EOFCFG
-# Write answers file: title, theme, no goals, no OOS, no constraints, no risks
-cat >"$e2e09_tmp/answers.json" <<'EOFANSWERS'
-["E2E-09 Sprint Title","Theme: automated test sprint","","","",""]
-EOFANSWERS
-e2e09_out="$SMOKE_OUT_DIR/sprint-intake-scripted.out"
-if command -v pi >/dev/null 2>&1; then
-	if FORGE_INTAKE_ANSWERS_FILE="$e2e09_tmp/answers.json" \
-		pi -e "$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
-		--cwd "$e2e09_project" \
-		--run-command "forge:sprint-intake FORGE-TEST-E2E09" >"$e2e09_out" 2>&1; then
-		req_path="$e2e09_project/engineering/sprints/FORGE-TEST-E2E09/SPRINT_REQUIREMENTS.md"
-		if [[ -f "$req_path" ]]; then
-			record PASS "E2E-09: sprint-intake scripted answers" "SPRINT_REQUIREMENTS.md written"
-		else
-			record WARN "E2E-09: sprint-intake scripted answers" "command ran but SPRINT_REQUIREMENTS.md not found at $req_path"
-		fi
-	else
-		record WARN "E2E-09: sprint-intake scripted answers" "pi command exited non-zero — see $e2e09_out"
-	fi
-else
-	record SKIP "E2E-09: sprint-intake scripted answers" "pi command not found"
-fi
-
-# ── E2E-10: sprint-plan fixture-backed scripted-LLM variant (FORGE-S19-T02) ─
-# Verify that FORGE_SPRINT_PLAN_FIXTURE bypasses LLM and drives planning end-to-end.
-e2e10_tmp="$SMOKE_OUT_DIR/sprint-plan-e2e10"
-mkdir -p "$e2e10_tmp"
-e2e10_project="$e2e10_tmp/project"
-mkdir -p "$e2e10_project/.forge/cache"
-mkdir -p "$e2e10_project/.forge/store/sprints"
-mkdir -p "$e2e10_project/.forge/store/tasks"
-mkdir -p "$e2e10_project/.forge/personas"
-mkdir -p "$e2e10_project/engineering/sprints/FORGE-TEST-E2E10"
-# Write minimal .forge/config.json
-cat >"$e2e10_project/.forge/config.json" <<'EOFCFG'
-{"paths":{"engineering":"engineering","forgeRoot":"/dev/null"}}
-EOFCFG
-# Write SPRINT_REQUIREMENTS.md (pre-flight requirement)
-cat >"$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/SPRINT_REQUIREMENTS.md" <<'EOFMREQ'
-# Sprint Requirements — FORGE-TEST-E2E10
-
-## Goals
-- E2E-10 smoke test: verify sprint-plan fixture mode works end-to-end.
-EOFMREQ
-# Write fixture task list
-cat >"$e2e10_tmp/fixture-tasks.json" <<'EOFFIXTURE'
-[
-  {
-    "taskId": "FORGE-TEST-E2E10-T01",
-    "title": "E2E smoke task one",
-    "estimate": "S",
-    "dependencies": [],
-    "pipeline": "plan,implement,review,validate,approve,commit",
-    "acceptanceCriteria": ["Task one artifact exists", "No errors during execution"]
-  },
-  {
-    "taskId": "FORGE-TEST-E2E10-T02",
-    "title": "E2E smoke task two depending on one",
-    "estimate": "M",
-    "dependencies": ["FORGE-TEST-E2E10-T01"],
-    "pipeline": "plan,implement,review,validate,approve,commit",
-    "acceptanceCriteria": ["Task two artifact exists", "Dependency ordering preserved"]
-  }
-]
-EOFFIXTURE
-e2e10_out="$SMOKE_OUT_DIR/sprint-plan-fixture.out"
-if command -v pi >/dev/null 2>&1; then
-	if FORGE_SPRINT_PLAN_FIXTURE="$e2e10_tmp/fixture-tasks.json" \
-		pi -e "$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
-		--cwd "$e2e10_project" \
-		--run-command "forge:sprint-plan FORGE-TEST-E2E10" >"$e2e10_out" 2>&1; then
-		plan_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/SPRINT_PLAN.md"
-		t01_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/FORGE-TEST-E2E10-T01/TASK_PROMPT.md"
-		t02_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/FORGE-TEST-E2E10-T02/TASK_PROMPT.md"
-		if [[ -f "$plan_path" && -f "$t01_path" && -f "$t02_path" ]]; then
-			record PASS "E2E-10: sprint-plan fixture mode" "SPRINT_PLAN.md + 2x TASK_PROMPT.md written"
-		else
-			missing=""
-			[[ ! -f "$plan_path" ]] && missing="$missing SPRINT_PLAN.md"
-			[[ ! -f "$t01_path" ]] && missing="$missing FORGE-TEST-E2E10-T01/TASK_PROMPT.md"
-			[[ ! -f "$t02_path" ]] && missing="$missing FORGE-TEST-E2E10-T02/TASK_PROMPT.md"
-			record WARN "E2E-10: sprint-plan fixture mode" "command ran but missing:$missing"
-		fi
-	else
-		record WARN "E2E-10: sprint-plan fixture mode" "pi command exited non-zero — see $e2e10_out"
-	fi
-else
-	record SKIP "E2E-10: sprint-plan fixture mode" "pi command not found"
-fi
+# ── E2E-10: retired (FORGE-BUG-032) ───────────────────────────────────────
+# The deterministic JSON-mode sprint-plan handler shipped in FORGE-S19-T02 has
+# been retired in favour of an LLM-kickoff handler mirroring sprint-intake.
+# FORGE_SPRINT_PLAN_FIXTURE is no longer honoured. Coverage moved to unit
+# tests for parseSprintPlanArgs / composeKickoff (TODO).
 
 # ── E2E-11: README↔CHANGELOG diff verifier (FORGE-S19-T04) ──────────────────
 # Run the gate script against the source tree ($PKG_DIR) before packing.

@@ -193,7 +193,7 @@ describe("forge_store", () => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const r = result as any;
 		expect(r.content[0].text).toBe("task list output");
-		expect(capturedArgs).toContain(`${FAKE_FORGE_ROOT}/tools/store-cli.cjs`);
+		expect(capturedArgs).toContain(`${FAKE_FORGE_ROOT}/store-cli.cjs`);
 		expect(capturedArgs).toContain("list");
 		expect(capturedArgs).toContain("task");
 	});
@@ -216,7 +216,7 @@ describe("forge_store", () => {
 		});
 
 		// Verify subcommand and args appear in correct order after the .cjs path
-		const cjsIdx = capturedArgs.indexOf(`${FAKE_FORGE_ROOT}/tools/store-cli.cjs`);
+		const cjsIdx = capturedArgs.indexOf(`${FAKE_FORGE_ROOT}/store-cli.cjs`);
 		expect(cjsIdx).toBeGreaterThanOrEqual(0);
 		const afterCjs = capturedArgs.slice(cjsIdx + 1);
 		expect(afterCjs).toEqual(["write", "task", "--json", '{"id":"FORGE-S16-T03"}']);
@@ -280,6 +280,64 @@ describe("forge_config", () => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const r = result as any;
 		expect(r.content[0].text).toBe("./forge/forge");
-		expect(capturedArgs).toEqual([`${FAKE_FORGE_ROOT}/tools/manage-config.cjs`, "get", "paths.forgeRoot"]);
+		expect(capturedArgs).toEqual([`${FAKE_FORGE_ROOT}/manage-config.cjs`, "get", "paths.forgeRoot"]);
+	});
+});
+
+// ── Layout detection (FORGE-BUG-029 regression) ──────────────────────────────
+
+describe("layout detection", () => {
+	it("test 11 — flat layout (no tools/ subdir): toolPath = forgeRoot/<x>.cjs", async () => {
+		const fs = require("node:fs") as typeof import("node:fs");
+		const os = require("node:os") as typeof import("node:os");
+		const pathMod = require("node:path") as typeof import("node:path");
+		const tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), "forge-flat-"));
+		try {
+			fs.writeFileSync(pathMod.join(tmp, "store-cli.cjs"), "");
+
+			const stub = makeStubApi();
+			registerForgeTools(stub.pi, tmp, FAKE_PROJECT_ROOT);
+
+			const capturedArgs: string[] = [];
+			mockExecFileCaptureArgs(capturedArgs, "ok");
+			await (stub.tools.get("forge_store") as ToolDefinition<unknown>).execute(
+				"id",
+				{ command: "list", args: ["task"] },
+				new AbortController().signal,
+				() => {},
+				{},
+			);
+			expect(capturedArgs[0]).toBe(pathMod.join(tmp, "store-cli.cjs"));
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it("test 12 — nested layout (tools/ subdir present): toolPath = forgeRoot/tools/<x>.cjs", async () => {
+		const fs = require("node:fs") as typeof import("node:fs");
+		const os = require("node:os") as typeof import("node:os");
+		const pathMod = require("node:path") as typeof import("node:path");
+		const tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), "forge-nested-"));
+		try {
+			const toolsDir = pathMod.join(tmp, "tools");
+			fs.mkdirSync(toolsDir);
+			fs.writeFileSync(pathMod.join(toolsDir, "store-cli.cjs"), "");
+
+			const stub = makeStubApi();
+			registerForgeTools(stub.pi, tmp, FAKE_PROJECT_ROOT);
+
+			const capturedArgs: string[] = [];
+			mockExecFileCaptureArgs(capturedArgs, "ok");
+			await (stub.tools.get("forge_store") as ToolDefinition<unknown>).execute(
+				"id",
+				{ command: "list", args: ["task"] },
+				new AbortController().signal,
+				() => {},
+				{},
+			);
+			expect(capturedArgs[0]).toBe(pathMod.join(toolsDir, "store-cli.cjs"));
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
 	});
 });
