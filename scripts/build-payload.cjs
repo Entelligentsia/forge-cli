@@ -20,6 +20,38 @@ const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
 
+// ── Argv ──────────────────────────────────────────────────────────────────
+// `--include-full` restores the historical superset bundle (Pass 1 top-level
+// dirs, every `.tools/lib/*`, every `.init/generation/*.md`, generic
+// `.schemas/*.json`). Default build emits the minimal payload — only files
+// a live forge-cli runtime path actually reads (per
+// engineering/sprints/FORGE-S17/PAYLOAD_AUDIT.md).
+const argv = process.argv.slice(2);
+if (argv.includes("--help") || argv.includes("-h")) {
+	console.log(
+		[
+			"build-payload.cjs — build dist/forge-payload/ from forge/forge/ source.",
+			"",
+			"Usage:",
+			"  node scripts/build-payload.cjs [--include-full]",
+			"",
+			"Flags:",
+			"  --include-full  Emit historical superset payload (pre-T04). Adds Pass 1",
+			"                  pre-substituted personas/skills/workflows/templates/ at",
+			"                  the bundle root, the full .tools/lib/ tree (including",
+			"                  *.test.cjs and store-{nlp,query-exec,facade}.cjs),",
+			"                  every .init/generation/*.md, and generic .schemas/*.json.",
+			"                  Use only for /forge:enhance precursor work (S18+).",
+			"  --help, -h      Show this message and exit.",
+			"",
+			"Default mode is the minimal payload consumed by /forge:init and other",
+			"forge-cli runtime paths. See PAYLOAD_AUDIT.md for the classification.",
+		].join("\n"),
+	);
+	process.exit(0);
+}
+const includeFull = argv.includes("--include-full");
+
 // ── Resolve paths ──────────────────────────────────────────────────────────
 
 // scripts/ is one level under the repo root (forge-cli/)
@@ -60,30 +92,38 @@ if (!fs.existsSync(toolPath)) {
 fs.mkdirSync(outDir, { recursive: true });
 
 // ── Pass 1: invoke substitute-placeholders --target pi ────────────────────
-console.log("build-payload: pass 1 — substitute-placeholders --target pi");
-console.log(`  forgeRoot: ${forgeRoot}`);
-console.log(`  outDir:    ${outDir}`);
+// Pass 1 emits pre-substituted personas/skills/workflows/templates at the
+// bundle root. forge-init.ts re-runs substitute-placeholders against the
+// user's actual config at runtime (Phase 3b, reading .base-pack/), so Pass 1
+// output is dead in the default flow. Skipped unless --include-full.
+if (includeFull) {
+	console.log("build-payload: pass 1 — substitute-placeholders --target pi");
+	console.log(`  forgeRoot: ${forgeRoot}`);
+	console.log(`  outDir:    ${outDir}`);
 
-const pass1Result = spawnSync(
-	"node",
-	[toolPath, "--target", "pi", "--forge-root", forgeRoot, "--out", outDir],
-	{
-		stdio: "inherit",
-		encoding: "utf8",
-	},
-);
+	const pass1Result = spawnSync(
+		"node",
+		[toolPath, "--target", "pi", "--forge-root", forgeRoot, "--out", outDir],
+		{
+			stdio: "inherit",
+			encoding: "utf8",
+		},
+	);
 
-if (pass1Result.error) {
-	console.error("build-payload: failed to spawn substitute-placeholders:", pass1Result.error.message);
-	process.exit(1);
+	if (pass1Result.error) {
+		console.error("build-payload: failed to spawn substitute-placeholders:", pass1Result.error.message);
+		process.exit(1);
+	}
+
+	if (pass1Result.status !== 0) {
+		console.error("build-payload: substitute-placeholders exited with status", pass1Result.status);
+		process.exit(pass1Result.status ?? 1);
+	}
+
+	console.log("build-payload: pass 1 complete");
+} else {
+	console.log("build-payload: pass 1 — skipped (default minimal payload; pass --include-full to restore)");
 }
-
-if (pass1Result.status !== 0) {
-	console.error("build-payload: substitute-placeholders exited with status", pass1Result.status);
-	process.exit(pass1Result.status ?? 1);
-}
-
-console.log("build-payload: pass 1 complete");
 
 // ── Helper functions ───────────────────────────────────────────────────────
 
@@ -153,12 +193,28 @@ for (const toolName of TOOLS_TO_COPY) {
 	copyFile(src, path.join(toolsDestDir, toolName));
 }
 
-// Copy lib/ subdirectory (all files — transitive deps)
+// Copy lib/ subdirectory.
+// Default: allowlist mirrors what bundled tools require. Source citations:
+//   forge-root.cjs, paths.cjs, pricing.cjs, project-root.cjs — required by
+//     bundled store-cli.cjs / manage-config.cjs / manage-versions.cjs /
+//     collate.cjs / store.cjs / substitute-placeholders.cjs.
+//   result.js, validate.js — required by store-cli.cjs.
+// Excluded by default: *.test.cjs (node:test units, never run from bundle),
+//   store-{nlp,query-exec,facade}.cjs (only consumed by store-query.cjs,
+//   which is not in TOOLS_TO_COPY).
+const LIB_ALLOWLIST = new Set([
+	"forge-root.cjs",
+	"paths.cjs",
+	"pricing.cjs",
+	"project-root.cjs",
+	"result.js",
+	"validate.js",
+]);
 const libSrc = path.join(toolsSrcDir, "lib");
 const libDest = path.join(toolsDestDir, "lib");
 if (fs.existsSync(libSrc)) {
-	copyDir(libSrc, libDest);
-	console.log(`build-payload: .tools/lib/ copied`);
+	copyDir(libSrc, libDest, (name) => includeFull || LIB_ALLOWLIST.has(name));
+	console.log(`build-payload: .tools/lib/ copied (${includeFull ? "full" : "allowlist"})`);
 } else {
 	console.warn("build-payload: forge/forge/tools/lib/ not found — skipping");
 }
@@ -185,8 +241,15 @@ const generationDestDir = path.join(outDir, ".init", "generation");
 const generationSrcDir = path.join(forgeRoot, "init", "generation");
 fs.mkdirSync(generationDestDir, { recursive: true });
 
+// Default: only generate-kb-doc.md is read at runtime (cited by Phase 2
+// prompt in forge-cli/src/extensions/forgecli/forge-init.ts:230). The other
+// generate-*.md and lazy-materialize.md are placeholders for /forge:enhance,
+// /forge:regenerate, /forge:materialize — all deferred to S18+. Restore them
+// (and add to TOOLS_TO_COPY) when those commands ship.
 if (fs.existsSync(generationSrcDir)) {
-	const generationFiles = fs.readdirSync(generationSrcDir).filter((f) => f.endsWith(".md"));
+	const generationFiles = fs
+		.readdirSync(generationSrcDir)
+		.filter((f) => f.endsWith(".md") && (includeFull || f === "generate-kb-doc.md"));
 	for (const file of generationFiles) {
 		copyFile(path.join(generationSrcDir, file), path.join(generationDestDir, file));
 	}
@@ -221,8 +284,15 @@ const schemasSrc = path.join(forgeRoot, "schemas");
 const schemasDest = path.join(outDir, ".schemas");
 fs.mkdirSync(schemasDest, { recursive: true });
 
+// Default: only `*.schema.json` (real JSON-Schemas, copied verbatim into
+// the user's `.forge/schemas/` by forge-init.ts:799-808 and consumed by
+// validate-store.cjs / store-cli PreToolUse hook). `structure-manifest.json`
+// is not a schema and no bundled tool reads it — restored only with
+// --include-full.
 if (fs.existsSync(schemasSrc)) {
-	const schemaFiles = fs.readdirSync(schemasSrc).filter((f) => f.endsWith(".schema.json") || f.endsWith(".json"));
+	const schemaFiles = fs
+		.readdirSync(schemasSrc)
+		.filter((f) => f.endsWith(".schema.json") || (includeFull && f.endsWith(".json")));
 	for (const file of schemaFiles) {
 		copyFile(path.join(schemasSrc, file), path.join(schemasDest, file));
 	}
