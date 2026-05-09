@@ -130,4 +130,27 @@ describe("parseForgeArgv", () => {
 		expect(result.piArgv).toEqual([]);
 		expect(result.env).toEqual({});
 	});
+
+	// FORGE-S18-T01: --non-interactive flag
+	it("--non-interactive → env.FORGE_NON_INTERACTIVE = '1', forgeAction null", () => {
+		const result = parseForgeArgv(["--non-interactive"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.env.FORGE_NON_INTERACTIVE).toBe("1");
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual([]);
+	});
+
+	it("--non-interactive is not rejected as unknown flag", () => {
+		const result = parseForgeArgv(["--non-interactive"]);
+		expect(isParseError(result)).toBe(false);
+	});
+
+	it("--non-interactive combined with pi flags forwards pi args", () => {
+		const result = parseForgeArgv(["--non-interactive", "--cwd", "/tmp"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.env.FORGE_NON_INTERACTIVE).toBe("1");
+		expect(result.piArgv).toEqual(["--cwd", "/tmp"]);
+	});
 });

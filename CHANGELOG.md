@@ -5,6 +5,29 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-09
+
+Headline: Non-interactive mode for CI and scripted use. `FORGE_YES=1` and
+`forge --non-interactive` both bypass every Y/N gate in `/forge:init`, resolving
+each to its documented default. Unblocks scripted adoption immediately (BUG-026
+short-circuit; T04/T05 deliver the real interactive TUI path).
+
+### Added
+
+- **`--non-interactive` CLI flag** (FORGE-S18-T01). Parsed by `argv.ts`,
+  sets `FORGE_NON_INTERACTIVE=1`. Documented in `--help` output.
+- **`FORGE_YES=1` environment variable** (FORGE-S18-T01). Ergonomic shorthand
+  for scripts (`FORGE_YES=1 forge`). Checked alongside `FORGE_NON_INTERACTIVE`.
+- **`isNonInteractive()` helper** in `forge-init.ts`. Bypasses G1 (resume
+  confirm), G2 (pre-flight phase selector), G3 (KB folder name), G4 (CLAUDE.md
+  create confirm) when active.
+- **README non-interactive mode section** — flag, env var, and default-resolution
+  table for all four gate sites.
+- **Vitest gate coverage** — 12 new test cases covering each gate under
+  interactive, `FORGE_NON_INTERACTIVE=1`, and `FORGE_YES=1` arms.
+- **E2E smoke gates E2E-04/05/06** — auth-free checks that flag and env vars
+  are accepted without errors.
+
 ## [0.2.0] — 2026-05-09
 
 Headline: `/forge:init` is now a real implementation. The 0.1.0 stub at

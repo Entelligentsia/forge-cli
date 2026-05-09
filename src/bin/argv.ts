@@ -98,6 +98,12 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 			continue;
 		}
 
+		if (token === "--non-interactive") {
+			env.FORGE_NON_INTERACTIVE = "1";
+			i++;
+			continue;
+		}
+
 		if (token === "--registry") {
 			if (i + 1 >= argv.length) {
 				return { error: "forge: --registry requires a path argument. Run `forge --help` for usage." };

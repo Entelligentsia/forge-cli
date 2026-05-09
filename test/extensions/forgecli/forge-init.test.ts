@@ -1,7 +1,7 @@
 // forge-init.test.ts — Tests for forge-init.ts (FORGE-S17-T02)
 // Covers T06-T24 from PLAN.md test table.
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 
 vi.mock("node:fs");
@@ -638,5 +638,190 @@ describe("registerForgeInit", () => {
 		// The KB folder confirm must have been called at some point (during phase 1)
 		// — if sendUserMessage was fire-and-forget, this wouldn't happen
 		expect(ctx.ui.confirm).toHaveBeenCalled();
+	});
+});
+
+// ── FORGE-S18-T01: Non-interactive mode gate bypass ────────────────────────
+//
+// Verifies that FORGE_YES=1 and FORGE_NON_INTERACTIVE=1 both bypass every
+// Y/N gate in /forge:init. Three arms per gate:
+//   (a) interactive-default — gate emits prompt / calls confirm
+//   (b) FORGE_NON_INTERACTIVE=1 — gate bypassed
+//   (c) FORGE_YES=1 — gate bypassed
+
+describe("non-interactive mode (FORGE-S18-T01)", () => {
+	// Restore env after each test
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	// Helper: register forge:init and return the captured handler + sendUserMessage spy
+	function setupNonInteractiveInit(): {
+		handler: (args: string, ctx: unknown) => Promise<void>;
+		sendUserMessage: ReturnType<typeof vi.fn>;
+	} {
+		const sendUserMessage = vi.fn(() => undefined);
+		const pi = buildMockPi();
+		// Replace auto-generated sendUserMessage with our spy
+		(pi as unknown as { sendUserMessage: unknown }).sendUserMessage = sendUserMessage;
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		return { handler: def.handler, sendUserMessage };
+	}
+
+	// ── G1: Resume confirm ──────────────────────────────────────────────────
+
+	describe("G1 — resume confirm", () => {
+		it("(a) interactive-default: ctx.ui.confirm called when progress found", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "valid", progress: { lastPhase: 2 } });
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			expect(ctx.ui.confirm).toHaveBeenCalled();
+		});
+
+		it("(b) FORGE_NON_INTERACTIVE=1: ctx.ui.confirm NOT called for resume", async () => {
+			vi.stubEnv("FORGE_NON_INTERACTIVE", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "valid", progress: { lastPhase: 2 } });
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Resume"))).toBe(false);
+		});
+
+		it("(c) FORGE_YES=1: ctx.ui.confirm NOT called for resume", async () => {
+			vi.stubEnv("FORGE_YES", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "valid", progress: { lastPhase: 2 } });
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Resume"))).toBe(false);
+		});
+	});
+
+	// ── G2: Pre-flight sendToAgent ──────────────────────────────────────────
+
+	describe("G2 — pre-flight sendToAgent", () => {
+		it("(a) interactive-default: sendUserMessage called with preflight text", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler, sendUserMessage } = setupNonInteractiveInit();
+			await handler("", buildMockCtx());
+			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
+			expect(msgs.some((m) => m.includes("Start from Phase 1"))).toBe(true);
+		});
+
+		it("(b) FORGE_NON_INTERACTIVE=1: preflight sendUserMessage NOT sent", async () => {
+			vi.stubEnv("FORGE_NON_INTERACTIVE", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler, sendUserMessage } = setupNonInteractiveInit();
+			await handler("", buildMockCtx());
+			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
+			expect(msgs.some((m) => m.includes("Start from Phase 1"))).toBe(false);
+		});
+
+		it("(c) FORGE_YES=1: preflight sendUserMessage NOT sent", async () => {
+			vi.stubEnv("FORGE_YES", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler, sendUserMessage } = setupNonInteractiveInit();
+			await handler("", buildMockCtx());
+			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
+			expect(msgs.some((m) => m.includes("Start from Phase 1"))).toBe(false);
+		});
+	});
+
+	// ── G3: KB folder sendToAgent ───────────────────────────────────────────
+
+	describe("G3 — KB folder sendToAgent", () => {
+		it("(a) interactive-default: sendUserMessage called with KB folder prompt", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler, sendUserMessage } = setupNonInteractiveInit();
+			await handler("", buildMockCtx());
+			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
+			expect(msgs.some((m) => m.includes("Knowledge Base Folder"))).toBe(true);
+		});
+
+		it("(b) FORGE_NON_INTERACTIVE=1: KB folder sendUserMessage NOT sent", async () => {
+			vi.stubEnv("FORGE_NON_INTERACTIVE", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler, sendUserMessage } = setupNonInteractiveInit();
+			await handler("", buildMockCtx());
+			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
+			expect(msgs.some((m) => m.includes("Knowledge Base Folder"))).toBe(false);
+		});
+
+		it("(c) FORGE_YES=1: KB folder sendUserMessage NOT sent", async () => {
+			vi.stubEnv("FORGE_YES", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			const { handler, sendUserMessage } = setupNonInteractiveInit();
+			await handler("", buildMockCtx());
+			const msgs = sendUserMessage.mock.calls.map((c) => c[0] as string);
+			expect(msgs.some((m) => m.includes("Knowledge Base Folder"))).toBe(false);
+		});
+	});
+
+	// ── G4: linkAgentInstructionFile confirm ────────────────────────────────
+
+	describe("G4 — CLAUDE.md confirm", () => {
+		it("(a) interactive-default: ctx.ui.confirm called for CLAUDE.md creation when no instruction file exists", async () => {
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			// Make instruction files not exist so the confirm gate is reached
+			mockFs.existsSync.mockImplementation((p: unknown) => {
+				const ps = String(p);
+				if (["CLAUDE.md", "AGENTS.md", "CLAUDE.local.md", ".cursorrules"].some((f) => ps.endsWith(f))) return false;
+				return true; // payload dirs etc. exist
+			});
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			expect(ctx.ui.confirm).toHaveBeenCalled();
+		});
+
+		it("(b) FORGE_NON_INTERACTIVE=1: ctx.ui.confirm NOT called for CLAUDE.md gate", async () => {
+			vi.stubEnv("FORGE_NON_INTERACTIVE", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			mockFs.existsSync.mockImplementation((p: unknown) => {
+				const ps = String(p);
+				if (["CLAUDE.md", "AGENTS.md", "CLAUDE.local.md", ".cursorrules"].some((f) => ps.endsWith(f))) return false;
+				return true;
+			});
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), setStatus: vi.fn() },
+			});
+			await handler("", ctx);
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("CLAUDE.md"))).toBe(false);
+		});
+
+		it("(c) FORGE_YES=1: ctx.ui.confirm NOT called for CLAUDE.md gate", async () => {
+			vi.stubEnv("FORGE_YES", "1");
+			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			mockFs.existsSync.mockImplementation((p: unknown) => {
+				const ps = String(p);
+				if (["CLAUDE.md", "AGENTS.md", "CLAUDE.local.md", ".cursorrules"].some((f) => ps.endsWith(f))) return false;
+				return true;
+			});
+			const { handler } = setupNonInteractiveInit();
+			const ctx = buildMockCtx({
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(false)),
+					setStatus: vi.fn(),
+				},
+			});
+			await handler("", ctx);
+			const confirmCalls = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmCalls.some((label) => label.includes("CLAUDE.md"))).toBe(false);
+		});
 	});
 });

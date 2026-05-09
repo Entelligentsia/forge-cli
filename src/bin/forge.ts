@@ -72,6 +72,7 @@ Forge-owned options:
   --version                Print version triplet and exit
   --help, -h               Print this help message
   --no-update-check        Skip forge update check (sets FORGE_NO_UPDATE_CHECK=1)
+  --non-interactive        Bypass all Y/N gates with defaults, e.g. for CI (sets FORGE_NON_INTERACTIVE=1)
   --registry <path>        Override model registry path (sets FORGE_MODEL_REGISTRY=path)
 
 Pi options (forwarded verbatim):

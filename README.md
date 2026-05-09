@@ -35,13 +35,35 @@ Outputs land in `.forge/{personas,skills,workflows,templates,config.json,project
 ## CLI flags
 
 ```
-forge --version            Print version triplet (forgecli, forge, pi)
-forge --help               Show forge + pi help
-forge --no-update-check    Skip update check
-forge --registry <path>    Override model registry
+forge --version              Print version triplet (forgecli, forge, pi)
+forge --help                 Show forge + pi help
+forge --no-update-check      Skip update check
+forge --non-interactive      Bypass all Y/N gates with defaults (CI/scripted use)
+forge --registry <path>      Override model registry
 ```
 
 Pi flags (`-p`, `--cwd`, `--session`, `--model`, `--tools`, `--thinking`, …) are forwarded verbatim. Run `forge --help` for the full list.
+
+## Non-interactive mode
+
+For CI, scripts, or any context where the model cannot answer Y/N prompts:
+
+```sh
+# Using the flag
+forge --non-interactive
+
+# Using the environment variable
+FORGE_YES=1 forge
+```
+
+Both activate the same bypass. When active, every Y/N gate in `/forge:init` resolves to its documented default:
+
+| Gate | Default resolution |
+|------|--------------------|
+| Resume previous init? | No — delete checkpoint, start fresh |
+| Pre-flight phase selector (Phase 1–4 prompt) | Skip prompt — proceed from Phase 1 |
+| Knowledge base folder name | Use default `engineering/` |
+| Create CLAUDE.md? | Yes — create with KB links |
 
 ## Roadmap
 

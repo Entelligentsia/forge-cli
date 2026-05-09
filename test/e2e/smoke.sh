@@ -314,6 +314,37 @@ else
 	record SKIP "E2E-03: banner suppression" "forge bin missing"
 fi
 
+# ── Non-interactive flag smoke (FORGE-S18-T01) ────────────────────────────
+
+echo "▶ smoke gate — --non-interactive flag and FORGE_YES env"
+
+if [[ -f "$FORGE_BIN" ]]; then
+	# Auth-free: verify --non-interactive flag is accepted (not rejected as unknown)
+	if "$FORGE_BIN" --non-interactive --help >/dev/null 2>&1; then
+		record PASS "E2E-04: --non-interactive flag accepted" "flag not rejected, help rendered"
+	else
+		record FAIL "E2E-04: --non-interactive flag rejected" "--non-interactive treated as unknown flag"
+	fi
+
+	# Auth-free: verify FORGE_YES=1 env var does not break flag parsing
+	if FORGE_YES=1 "$FORGE_BIN" --help >/dev/null 2>&1; then
+		record PASS "E2E-05: FORGE_YES=1 forge --help succeeds" "env var accepted"
+	else
+		record FAIL "E2E-05: FORGE_YES=1 forge --help failed" "env var caused unexpected failure"
+	fi
+
+	# Auth-free: verify FORGE_NON_INTERACTIVE=1 does not break startup
+	if FORGE_NON_INTERACTIVE=1 "$FORGE_BIN" --help >/dev/null 2>&1; then
+		record PASS "E2E-06: FORGE_NON_INTERACTIVE=1 forge --help succeeds" "env var accepted"
+	else
+		record FAIL "E2E-06: FORGE_NON_INTERACTIVE=1 forge --help failed" "env var caused unexpected failure"
+	fi
+else
+	record SKIP "E2E-04: --non-interactive flag" "forge bin missing"
+	record SKIP "E2E-05: FORGE_YES=1 forge --help" "forge bin missing"
+	record SKIP "E2E-06: FORGE_NON_INTERACTIVE=1 forge --help" "forge bin missing"
+fi
+
 # ── Write SUMMARY.md ───────────────────────────────────────────────────────
 
 {

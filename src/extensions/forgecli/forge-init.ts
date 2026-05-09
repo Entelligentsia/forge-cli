@@ -109,6 +109,22 @@ function getBundledForgeVersion(): string {
 // Prevents re-rendering the hero banner on resume within the same session.
 let heroBannerShown = false;
 
+// ── Non-interactive mode ───────────────────────────────────────────────────
+
+/**
+ * Returns true when running in non-interactive / CI mode.
+ *
+ * Activated by either:
+ *   - `FORGE_YES=1`          — ergonomic shell shorthand (FORGE-S18-T01)
+ *   - `FORGE_NON_INTERACTIVE=1` — set by `forge --non-interactive` flag
+ *
+ * When active, every Y/N gate resolves to its documented default without
+ * emitting a model-text prompt.
+ */
+function isNonInteractive(): boolean {
+	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
+}
+
 // ── Flag parsing ───────────────────────────────────────────────────────────
 
 interface ParsedFlags {
@@ -311,11 +327,13 @@ async function linkAgentInstructionFile(
 		return;
 	}
 
-	// None exist — prompt to create minimal CLAUDE.md
-	const ok = await ctx.ui.confirm(
-		"Create CLAUDE.md?",
-		`No agent instruction file found at project root.\nCreate a minimal CLAUDE.md with links to the Forge knowledge base? [Y/n]`,
-	);
+	// None exist — prompt to create minimal CLAUDE.md (G4: bypassed in non-interactive mode)
+	const ok = isNonInteractive()
+		? true
+		: await ctx.ui.confirm(
+				"Create CLAUDE.md?",
+				`No agent instruction file found at project root.\nCreate a minimal CLAUDE.md with links to the Forge knowledge base? [Y/n]`,
+			);
 
 	if (!ok) {
 		ctx.ui.notify("〇 KB not linked — run /forge:refresh-kb-links after creating CLAUDE.md.", "info");
@@ -412,7 +430,10 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					`〇 Previous init detected — last completed phase: ${lastPhase} of 4\n` +
 					`Resume from Phase ${nextPhase}?`;
 
-				const shouldResume = await ctx.ui.confirm("Resume /forge:init?", resumeBanner);
+				// G1: in non-interactive mode, default to not resuming (start fresh)
+				const shouldResume = isNonInteractive()
+					? false
+					: await ctx.ui.confirm("Resume /forge:init?", resumeBanner);
 				if (shouldResume) {
 					startPhase = nextPhase;
 					// Skip hero banner on resume (session-scoped gate)
@@ -474,8 +495,11 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					`and complete in under 45 seconds.\n\n` +
 					`Start from Phase 1? [Y] or specify phase (1–4): ___`;
 
-				sendToAgent(preflightText);
-				await ctx.waitForIdle();
+				// G2: skip pre-flight prompt in non-interactive mode (proceed directly to Phase 1)
+				if (!isNonInteractive()) {
+					sendToAgent(preflightText);
+					await ctx.waitForIdle();
+				}
 			}
 
 			// ── Phase 1 — Collect ─────────────────────────────────────────────
@@ -499,16 +523,18 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				sendToAgent(phase1Prompt);
 				await ctx.waitForIdle();
 
-				// KB folder prompt (spec §7, F2)
-				const kbPromptText =
-					`━━━ Knowledge Base Folder ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-					`Forge will create a folder for architecture docs, sprints, bugs, and features.\n` +
-					`Default name: engineering/\n\n` +
-					`Does "engineering" conflict with an existing folder in this project? [n/Y]\n` +
-					`If yes, enter your preferred name (e.g. ai-docs, .forge-kb, docs/ai): ___`;
+				// KB folder prompt (spec §7, F2) — G3: skipped in non-interactive mode (default: "engineering")
+				if (!isNonInteractive()) {
+					const kbPromptText =
+						`━━━ Knowledge Base Folder ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+						`Forge will create a folder for architecture docs, sprints, bugs, and features.\n` +
+						`Default name: engineering/\n\n` +
+						`Does "engineering" conflict with an existing folder in this project? [n/Y]\n` +
+						`If yes, enter your preferred name (e.g. ai-docs, .forge-kb, docs/ai): ___`;
 
-				sendToAgent(kbPromptText);
-				await ctx.waitForIdle();
+					sendToAgent(kbPromptText);
+					await ctx.waitForIdle();
+				}
 
 				// Marketplace skills advisory (sub-decision #1)
 				ctx.ui.notify(
