@@ -13,3 +13,9 @@ entelligentsia-forgecli-*.tgz
 test/poc/**/*.js
 test/poc/**/*.d.ts
 test/poc/**/*.js.map
+
+# Forge — transient agent event logs (one file per phase, do not commit)
+.forge/store/events/
+
+# Runtime residue when forge runs with this dir as cwd (smoke tests, --version)
+.forge/
