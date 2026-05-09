@@ -5,6 +5,19 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`registerHookDispatcher` wired to `tool_call` / `tool_result`** (FORGE-S18-T02).
+  Replaces the 7-line empty shim with a real implementation. Subscribes both pi events;
+  logs to `.forge/logs/hooks.log` when `FORGE_HOOK_AUDIT=1` (audit-only — no calls blocked).
+  Exports `parseStoreCLIInvocation()` + `StoreCLICall` interface for T03 to layer
+  validation on top. Hook inventory document produced at
+  `engineering/sprints/FORGE-S18/FORGE-S18-T02/HOOK_INVENTORY.md`.
+
+---
+
 ## [0.2.1] — 2026-05-09
 
 Headline: Non-interactive mode for CI and scripted use. `FORGE_YES=1` and

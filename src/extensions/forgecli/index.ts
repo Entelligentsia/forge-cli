@@ -21,6 +21,7 @@ import { registerForgeInit } from "./forge-init.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
+import { registerHookDispatcher } from "./hook-dispatcher.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { triggerUpdateCheck } from "./update-check.js";
@@ -160,8 +161,8 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		// guarantee: forgeRoot captured at init; projectRoot passed as cwd to execFile.
 		const projectRoot = path.dirname(path.dirname(forgeConfig!.configPath));
 		registerForgeTools(pi, forgeRoot, projectRoot);
-		// T05 stub — hook dispatcher registration
-		// registerHookDispatcher(pi, forgeRoot);  — FORGE-S16-T05
+		// T05 → T02 (FORGE-S18-T02): hook dispatcher wired — audit-only, no blocking.
+		registerHookDispatcher(pi, forgeRoot);
 	}
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────
