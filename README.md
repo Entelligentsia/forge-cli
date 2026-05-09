@@ -195,10 +195,15 @@ On any npm error or version mismatch the script logs a `[warn] registry check fa
 
 ## Roadmap
 
-| Command                   | Status              |
-|---------------------------|---------------------|
-| `/forge:init`             | Shipped (0.3.0)     |
-| Other `/forge:*` commands | Roadmap             |
+| Command                                    | Status              |
+|--------------------------------------------|---------------------|
+| `/forge:sprint-intake`                     | Shipped (0.4.0)     |
+| `/forge:sprint-plan`                       | Shipped (0.4.0)     |
+| Pi-runtime token telemetry (`usage-hook`)  | Shipped (0.4.0)     |
+| forge-packager README↔CHANGELOG verifier   | Shipped (0.4.0)     |
+| forge-releaser post-publish npm-view check | Shipped (0.4.0)     |
+| `/forge:init`                              | Shipped (0.3.0)     |
+| Other `/forge:*` commands                  | Roadmap             |
 
 Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
@@ -206,6 +211,7 @@ Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
 | Version | Headline |
 |---------|----------|
+| 0.4.0   | Native sprint-intake + sprint-plan handlers — SDLC entry path self-hosted |
 | 0.3.0   | Pi-runtime parity adapters — `forge:ask_user` TUI tool + hook safety net |
 | 0.2.1   | Non-interactive mode — `--non-interactive` flag and `FORGE_YES=1` env var |
 | 0.2.0   | `/forge:init` real implementation — full 4-phase port with payload trim |

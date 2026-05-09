@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-09
+
+Headline: Native sprint-intake + sprint-plan handlers — forge-cli takes over the SDLC entry path for S20+.
+
 ### Added
 
 - **`usage-hook.ts`: Pi-runtime token telemetry hook** (FORGE-S19-T03 / FORGE-BUG-028).
@@ -268,6 +272,7 @@ ported onto `@earendil-works/pi-coding-agent`.
 - `claude-agent-sdk` plan-limit support (deferred to S17+).
 - Cost telemetry surfacing in `/forge:*` (waived for S16).
 
+[0.4.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.2.0

@@ -411,7 +411,7 @@ fi
 # We invoke via pi directly; check that the error text appears in output.
 if [[ -n "${FORGE_BIN:-}" ]] && command -v pi >/dev/null 2>&1; then
 	e2e08_out="$SMOKE_OUT_DIR/sprint-intake-non-interactive.out"
-	if FORGE_NON_INTERACTIVE=1 pi -e "$INSTALL_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
+	if FORGE_NON_INTERACTIVE=1 pi -e "$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
 		--run-command "forge:sprint-intake FORGE-TEST" >"$e2e08_out" 2>&1; then
 		# Command should have exited but check output for expected error message
 		if grep -q "requires an interactive terminal" "$e2e08_out" 2>/dev/null; then
@@ -451,7 +451,7 @@ EOFANSWERS
 e2e09_out="$SMOKE_OUT_DIR/sprint-intake-scripted.out"
 if command -v pi >/dev/null 2>&1; then
 	if FORGE_INTAKE_ANSWERS_FILE="$e2e09_tmp/answers.json" \
-		pi -e "$INSTALL_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
+		pi -e "$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
 		--cwd "$e2e09_project" \
 		--run-command "forge:sprint-intake FORGE-TEST-E2E09" >"$e2e09_out" 2>&1; then
 		req_path="$e2e09_project/engineering/sprints/FORGE-TEST-E2E09/SPRINT_REQUIREMENTS.md"
@@ -512,7 +512,7 @@ EOFFIXTURE
 e2e10_out="$SMOKE_OUT_DIR/sprint-plan-fixture.out"
 if command -v pi >/dev/null 2>&1; then
 	if FORGE_SPRINT_PLAN_FIXTURE="$e2e10_tmp/fixture-tasks.json" \
-		pi -e "$INSTALL_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
+		pi -e "$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
 		--cwd "$e2e10_project" \
 		--run-command "forge:sprint-plan FORGE-TEST-E2E10" >"$e2e10_out" 2>&1; then
 		plan_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/SPRINT_PLAN.md"
