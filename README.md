@@ -1,64 +1,64 @@
-# forgecli
+## @entelligentsia/forgecli
 
-**Status:** Stage 1 scaffold (FORGE-S15-T01). No runtime logic yet.
+Forge SDLC on the [pi-coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) runtime. Three bin aliases: `forge`, `forgecli`, `4ge`.
 
-`forgecli` is the TypeScript port of the Forge SDLC plugin, packaged as a `pi-coding-agent` extension. It will eventually expose the same workflows, personas, and tools that live in the Claude Code Forge plugin (`forge/`), but on the pi runtime.
+Bundled Forge plugin: **v0.40.3**.
+Bundled pi runtime: pinned in `package.json`.
 
-## Layout
+## Install
 
-```
-forge-cli/
-├── package.json              ← name "forgecli", ESM, peer dep on @earendil-works/pi-coding-agent ^0.73.0
-├── tsconfig.json             ← strict, NodeNext, ES2022, outDir dist/
-├── biome.json                ← mirrors pi-mono conventions
-├── src/
-│   ├── extensions/forgecli/
-│   │   ├── index.ts          ← extension entrypoint (no-op stub)
-│   │   ├── forge-tools.ts    ← tool registration shim
-│   │   ├── forge-commands.ts ← command registration shim
-│   │   ├── hook-dispatcher.ts← hook routing shim
-│   │   ├── forge-root.ts     ← .forge/config.json resolver stub
-│   │   └── subagent/         ← T02 vendors pi-mono subagent module here
-│   └── bin/forgecli.ts       ← CLI entry stub (real impl in T03)
-├── agents/                   ← reserved for generated agents
-├── prompts/                  ← reserved for generated prompts
-├── skills/                   ← reserved for skill defs
-└── test/poc/                 ← spike tests for T04–T09
+```sh
+npm install -g @entelligentsia/forgecli
 ```
 
-## Reference
+Requires Node 20+.
 
-- `architectural-review.md` (sibling of this README) — design decisions and constraints.
-- `forge-cli-feasibility.txt` — feasibility study and PoC notes.
-- `.claude/skills/forge-cli-engineer/SKILL.md` — implementer skill (boundary rules, git protocol).
+## Quick start
 
-## Next steps
-
-| Task | What lands |
-|---|---|
-| FORGE-S15-T02 | Vendor subagent module from pi-mono |
-| FORGE-S15-T03 | No-op extension entrypoint + `pi -e` smoke load |
-| FORGE-S15-T04–T09 | Spike R1–R6 PoCs |
-| FORGE-S15-T10 | Stage 2 gate |
-
-## Build / verify (Stage 1)
-
-```bash
-cd forge-cli
-npm install
-npx tsc --noEmit
+```sh
+cd your-project
+forge                # launch interactive session (forge | forgecli | 4ge)
+> /forge:init        # bootstrap Forge SDLC — 4 phases, ~45s
 ```
 
-No runtime entrypoint is wired up yet — `npm run lint` and `npx tsc --noEmit` are the only meaningful verifications at this stage.
+`/forge:init` is idempotent and resumable via `.forge/init-progress.json`. Re-running picks up where the previous run stopped.
 
-## Tarball size budget
+## What `/forge:init` does
 
-The smoke gate (`test/e2e/smoke.sh`) measures the compressed npm tarball on every run and enforces:
+1. **Collect** — 5 parallel discovery scans → `.forge/config.json`
+2. **Discover** — KB doc generation + `.forge/project-context.json`
+3. **Materialize** — substitute placeholders → fully functional workflows
+4. **Register** — versioning, manifest, cache, store entries
 
-- `≤ 35 MB` — silent PASS
-- `> 35 MB`, `≤ 50 MB` — WARN (still PASS; surfaces creep)
-- `> 50 MB` — FAIL (smoke exits non-zero; CI red)
+Outputs land in `.forge/{personas,skills,workflows,templates,config.json,project-context.json}` and the configured KB folder (default `engineering/`).
 
-Single source of truth: `test/e2e/lib/tarball-size-gate.sh`. Edit the constants there to retune. Override at runtime via `TARBALL_BUDGET_WARN_BYTES` / `TARBALL_BUDGET_HARD_BYTES` env vars (used by `test/e2e/size-budget.test.sh`).
+## CLI flags
 
-CI inherits the gate by running `smoke.sh` directly — no separate workflow logic to keep in sync.
+```
+forge --version            Print version triplet (forgecli, forge, pi)
+forge --help               Show forge + pi help
+forge --no-update-check    Skip update check
+forge --registry <path>    Override model registry
+```
+
+Pi flags (`-p`, `--cwd`, `--session`, `--model`, `--tools`, `--thinking`, …) are forwarded verbatim. Run `forge --help` for the full list.
+
+## Roadmap
+
+| Command                   | Status              |
+|---------------------------|---------------------|
+| `/forge:init`             | Shipped (0.2.0)     |
+| Other `/forge:*` commands | Roadmap             |
+
+Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
+
+## Links
+
+- Source: <https://github.com/Entelligentsia/forge-cli>
+- Issues: <https://github.com/Entelligentsia/forge-cli/issues>
+- Forge plugin (Claude Code): <https://github.com/Entelligentsia/forge>
+- Changelog: [CHANGELOG.md](./CHANGELOG.md)
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
