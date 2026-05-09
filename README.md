@@ -174,7 +174,7 @@ provided: `confirm` → `"Y"`, `choice` → `options[0]`, `text` → `""`.
 
 | Command                   | Status              |
 |---------------------------|---------------------|
-| `/forge:init`             | Shipped (0.2.0)     |
+| `/forge:init`             | Shipped (0.3.0)     |
 | Other `/forge:*` commands | Roadmap             |
 
 Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).

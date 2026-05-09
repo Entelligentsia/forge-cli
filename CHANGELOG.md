@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-05-09
+
+Headline: Pi-runtime parity adapters — interactive UX + hook safety net.
+`forge:ask_user` delivers real TUI prompts for all `/forge:init` gate sites;
+the hook safety net enforces store-cli write validity and legal status
+transitions at runtime. Fixes BUG-026 (non-blocking Y/N prompts) and BUG-027
+(unguarded store-cli writes under pi runtime).
+
 ### Added
 
 - **`forge:ask_user` custom tool** (FORGE-S18-T04).
@@ -18,11 +28,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immediately. Cancellation surfaces as `isError: true`. 14 Vitest tests.
 
 - **`registerHookDispatcher` wired to `tool_call` / `tool_result`** (FORGE-S18-T02).
-  Replaces the 7-line empty shim with a real implementation. Subscribes both pi events;
-  logs to `.forge/logs/hooks.log` when `FORGE_HOOK_AUDIT=1` (audit-only — no calls blocked).
+  Replaces the 7-line empty shim with a real implementation. Subscribes both pi events
+  (wired to tool_call/tool_result; enforcement layer added by T03).
   Exports `parseStoreCLIInvocation()` + `StoreCLICall` interface for T03 to layer
   validation on top. Hook inventory document produced at
   `engineering/sprints/FORGE-S18/FORGE-S18-T02/HOOK_INVENTORY.md`.
+
+- **Store-cli pushback correction loop + audit-log mode** (FORGE-S18-T03).
+  Extends the T02 hook-dispatcher scaffold from audit-only to enforcement.
+  `store-validator.ts` spawns `store-cli validate` synchronously on every write call;
+  `transition-guard.ts` enforces the legal status-transition table for task/sprint/bug
+  records. Returns `{ block: true, reason }` on violation. `FORGE_HOOK_AUDIT=1` logs
+  every decision (would-block/would-allow) with timestamp, entity, reason — returns
+  `undefined` (allow-through) regardless, enabling observation without disruption.
+  Closes FORGE-BUG-027.
+
+### Changed
+
+- **Gate sites in `/forge:init` now use `forge:ask_user`** (FORGE-S18-T05). G2
+  (pre-flight phase selector) and G3 (KB folder prompt) replaced from
+  `sendToAgent+waitForIdle` to `ctx.ui.confirm / ctx.ui.input`. Operator receives a
+  real TUI prompt instead of model-generated text. Gate audit captured in
+  `GATE_AUDIT.md`.
+
+### Fixed
+
+- **BUG-026** — Pi runtime: TUI Y/N prompts in command bodies don't wait for user
+  input. Fixed by `forge:ask_user` tool (T04) + gate-site retrofit (T05). `/forge:init`
+  gate sites G2 and G3 now use `ctx.ui.confirm/input` and block until the operator
+  responds.
+- **BUG-027** — Pi runtime: validation hooks not wired — store-cli writes unguarded,
+  no pushback correction loop. Fixed by hook adapter (T02) + enforcement layer (T03).
+  `registerHookDispatcher` intercepts `store-cli write` and `store-cli update-status`
+  calls, validates against schema and transition table, returns `{ block: true, reason }`
+  on violation.
 
 ---
 
@@ -153,4 +192,7 @@ ported onto `@earendil-works/pi-coding-agent`.
 - `claude-agent-sdk` plan-limit support (deferred to S17+).
 - Cost telemetry surfacing in `/forge:*` (waived for S16).
 
+[0.3.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.3.0
+[0.2.1]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.2.1
+[0.2.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.1.0
