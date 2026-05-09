@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   E2E-08 (non-interactive abort) and E2E-09 (`FORGE_INTAKE_ANSWERS_FILE` scripted
   run) gates added to `test/e2e/smoke.sh`.
 
+- **`scripts/verify-readme-changelog.cjs`: README↔CHANGELOG diff verifier** (FORGE-S19-T04).
+  Hard release gate at `scripts/verify-readme-changelog.cjs` — pure CJS, zero npm
+  dependencies. Reads `package.json:version`, `README.md`, `CHANGELOG.md` from CWD
+  or `--root <path>`. Asserts every `## [X.Y.Z]` CHANGELOG heading since `[0.1.0]`
+  (baseline exempt) has at least one mention in README. Asserts README roadmap
+  `Shipped (X.Y.Z)` matches `package.json:version`; warns (not fails) if no roadmap
+  section. Hard FAIL with actionable diff output on first mismatch. `--allow-section-skip`
+  escape hatch suppresses roadmap check. Wired into `test/e2e/smoke.sh` as E2E-11.
+  5 vitest tests with synthetic fixtures.
+
 ---
 
 ## [0.3.0] — 2026-05-09

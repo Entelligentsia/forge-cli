@@ -179,6 +179,15 @@ provided: `confirm` → `"Y"`, `choice` → `options[0]`, `text` → `""`.
 
 Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
+## Release history
+
+| Version | Headline |
+|---------|----------|
+| 0.3.0   | Pi-runtime parity adapters — `forge:ask_user` TUI tool + hook safety net |
+| 0.2.1   | Non-interactive mode — `--non-interactive` flag and `FORGE_YES=1` env var |
+| 0.2.0   | `/forge:init` real implementation — full 4-phase port with payload trim |
+| 0.1.0   | First stable release — three bin aliases, bundled pi runtime, 5 slash commands |
+
 ## Links
 
 - Source: <https://github.com/Entelligentsia/forge-cli>

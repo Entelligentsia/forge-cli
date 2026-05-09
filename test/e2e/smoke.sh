@@ -467,6 +467,34 @@ else
 	record SKIP "E2E-09: sprint-intake scripted answers" "pi command not found"
 fi
 
+# ── E2E-11: README↔CHANGELOG diff verifier (FORGE-S19-T04) ──────────────────
+# Run the gate script against the source tree ($PKG_DIR) before packing.
+# Auth-free — reads local files only. Hard FAIL if exit non-zero.
+# WARN is informational: roadmap section may warn about missing "Shipped (X.Y.Z)"
+# during unreleased development cycles (T06 updates the roadmap for 0.4.0).
+
+echo "▶ smoke gate — README↔CHANGELOG diff verifier (E2E-11)"
+
+E2E11_SCRIPT="$PKG_DIR/scripts/verify-readme-changelog.cjs"
+if [[ -f "$E2E11_SCRIPT" ]]; then
+	E2E11_OUT=$(node "$E2E11_SCRIPT" --root "$PKG_DIR" 2>&1)
+	E2E11_RC=$?
+	if [[ $E2E11_RC -eq 0 ]]; then
+		# Check for WARN lines (non-fatal informational).
+		if echo "$E2E11_OUT" | grep -q "\[verify-readme-changelog\] WARN:"; then
+			WARN_LINE=$(echo "$E2E11_OUT" | grep "\[verify-readme-changelog\] WARN:" | head -n 1)
+			record WARN "E2E-11: README↔CHANGELOG diff verifier" "$WARN_LINE"
+		else
+			record PASS "E2E-11: README↔CHANGELOG diff verifier" "all version checks passed"
+		fi
+	else
+		FAIL_LINE=$(echo "$E2E11_OUT" | grep "\[verify-readme-changelog\] FAIL:" | head -n 1 || echo "see output above")
+		record FAIL "E2E-11: README↔CHANGELOG diff verifier" "$FAIL_LINE"
+	fi
+else
+	record SKIP "E2E-11: README↔CHANGELOG diff verifier" "script not found at $E2E11_SCRIPT"
+fi
+
 # ── Write SUMMARY.md ───────────────────────────────────────────────────────
 
 {
