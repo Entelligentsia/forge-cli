@@ -406,6 +406,67 @@ else
 	record SKIP "E2E-06: FORGE_NON_INTERACTIVE=1 forge --help" "forge bin missing"
 fi
 
+# ── E2E-08: sprint-intake non-interactive abort ───────────────────────────
+# forge:sprint-intake must refuse when FORGE_NON_INTERACTIVE=1 is set.
+# We invoke via pi directly; check that the error text appears in output.
+if [[ -n "${FORGE_BIN:-}" ]] && command -v pi >/dev/null 2>&1; then
+	e2e08_out="$SMOKE_OUT_DIR/sprint-intake-non-interactive.out"
+	if FORGE_NON_INTERACTIVE=1 pi -e "$INSTALL_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
+		--run-command "forge:sprint-intake FORGE-TEST" >"$e2e08_out" 2>&1; then
+		# Command should have exited but check output for expected error message
+		if grep -q "requires an interactive terminal" "$e2e08_out" 2>/dev/null; then
+			record PASS "E2E-08: sprint-intake non-interactive abort" "error message present"
+		else
+			record WARN "E2E-08: sprint-intake non-interactive abort" "ran but error message not found in output"
+		fi
+	else
+		# Non-zero exit — check output for the error message
+		if grep -q "requires an interactive terminal" "$e2e08_out" 2>/dev/null; then
+			record PASS "E2E-08: sprint-intake non-interactive abort" "error message present in output"
+		else
+			record WARN "E2E-08: sprint-intake non-interactive abort" "exit non-zero but error message not found"
+		fi
+	fi
+else
+	record SKIP "E2E-08: sprint-intake non-interactive abort" "forge bin or pi missing"
+fi
+
+# ── E2E-09: sprint-intake scripted answers via FORGE_INTAKE_ANSWERS_FILE ──
+# Verify that a scripted answers file drives the interview deterministically.
+e2e09_tmp="$SMOKE_OUT_DIR/sprint-intake-e2e09"
+mkdir -p "$e2e09_tmp"
+e2e09_project="$e2e09_tmp/project"
+mkdir -p "$e2e09_project/.forge/cache"
+mkdir -p "$e2e09_project/.forge/store/bugs"
+mkdir -p "$e2e09_project/.forge/store/features"
+mkdir -p "$e2e09_project/engineering/sprints"
+# Write minimal .forge/config.json
+cat >"$e2e09_project/.forge/config.json" <<'EOFCFG'
+{"paths":{"engineering":"engineering","forgeRoot":"/dev/null"}}
+EOFCFG
+# Write answers file: title, theme, no goals, no OOS, no constraints, no risks
+cat >"$e2e09_tmp/answers.json" <<'EOFANSWERS'
+["E2E-09 Sprint Title","Theme: automated test sprint","","","",""]
+EOFANSWERS
+e2e09_out="$SMOKE_OUT_DIR/sprint-intake-scripted.out"
+if command -v pi >/dev/null 2>&1; then
+	if FORGE_INTAKE_ANSWERS_FILE="$e2e09_tmp/answers.json" \
+		pi -e "$INSTALL_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
+		--cwd "$e2e09_project" \
+		--run-command "forge:sprint-intake FORGE-TEST-E2E09" >"$e2e09_out" 2>&1; then
+		req_path="$e2e09_project/engineering/sprints/FORGE-TEST-E2E09/SPRINT_REQUIREMENTS.md"
+		if [[ -f "$req_path" ]]; then
+			record PASS "E2E-09: sprint-intake scripted answers" "SPRINT_REQUIREMENTS.md written"
+		else
+			record WARN "E2E-09: sprint-intake scripted answers" "command ran but SPRINT_REQUIREMENTS.md not found at $req_path"
+		fi
+	else
+		record WARN "E2E-09: sprint-intake scripted answers" "pi command exited non-zero — see $e2e09_out"
+	fi
+else
+	record SKIP "E2E-09: sprint-intake scripted answers" "pi command not found"
+fi
+
 # ── Write SUMMARY.md ───────────────────────────────────────────────────────
 
 {

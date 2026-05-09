@@ -137,6 +137,8 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		});
 
 		// These command names must be registered (they are NOT in REAL_HANDLERS)
+		// Note: forge:sprint-intake was moved to REAL_HANDLERS in FORGE-S19-T01
+		// (native TS handler registered in sprint-intake.ts). It is no longer a stub.
 		const expectedStubCommands = [
 			"forge:plan",
 			"forge:implement",
@@ -146,7 +148,6 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 			"forge:validate",
 			"forge:commit",
 			"forge:sprint-plan",
-			"forge:sprint-intake",
 			"forge:run-sprint",
 		];
 

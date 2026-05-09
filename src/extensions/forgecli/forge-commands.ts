@@ -204,6 +204,7 @@ const REAL_HANDLERS = new Set([
 	"forge:update",
 	"forge:refresh-kb-links",
 	"forge:enhance",
+	"forge:sprint-intake", // FORGE-S19-T01: real handler registered in sprint-intake.ts
 ]);
 
 export interface RegisterAllOptions {

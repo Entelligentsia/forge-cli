@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/forge:sprint-intake` native TS handler** (FORGE-S19-T01).
+  Full multi-turn TUI interview for sprint requirements capture. Adapts
+  `meta-sprint-intake.md` 4-step algorithm to pi `ctx.ui.input/confirm/select`
+  calls. Pre-flight reads `paths.engineering` from `.forge/config.json`; aborts
+  if no `.forge/` found. Persona self-load from `.forge/personas/product-manager.md`.
+  Context load: `MASTER_INDEX.md`, `architecture/stack.md`, open bugs and features.
+  Captures: working title, theme, goals (loop with severity via `ctx.ui.select` and
+  per-goal ACs), out-of-scope items, constraints, risks (with likelihood select),
+  carry-over items (auto-detected from previous `SPRINT_RETROSPECTIVE.md`).
+  Resumable via `.forge/cache/sprint-intake-{SPRINT_ID}.json` checkpoint.
+  Non-interactive mode (`FORGE_NON_INTERACTIVE=1` / `FORGE_YES=1`) refuses with
+  actionable error. `SPRINT_REQUIREMENTS.md` rendered via template substitution
+  from `.base-pack/templates/SPRINT_REQUIREMENTS_TEMPLATE.md`. Sprint manifest
+  record written via `store-cli write sprint` (argv array, Iron Law 6 compliant).
+  `sprint-intake-complete` event emitted via `store-cli emit`. 14 vitest tests.
+  E2E-08 (non-interactive abort) and E2E-09 (`FORGE_INTAKE_ANSWERS_FILE` scripted
+  run) gates added to `test/e2e/smoke.sh`.
+
 ---
 
 ## [0.3.0] — 2026-05-09
