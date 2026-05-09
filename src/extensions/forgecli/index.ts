@@ -15,14 +15,15 @@ import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerAskUserTool } from "./ask-user-tool.js";
 import { readProjectMeta } from "./banner.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { registerForgeInit } from "./forge-init.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
-import { registerHookDispatcher } from "./hook-dispatcher.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
+import { registerHookDispatcher } from "./hook-dispatcher.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { triggerUpdateCheck } from "./update-check.js";
 
@@ -163,6 +164,8 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		registerForgeTools(pi, forgeRoot, projectRoot);
 		// T05 → T02 (FORGE-S18-T02): hook dispatcher wired — audit-only, no blocking.
 		registerHookDispatcher(pi, forgeRoot);
+		// T04 (FORGE-S18-T04): forge:ask_user interactive prompt tool.
+		registerAskUserTool(pi);
 	}
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────

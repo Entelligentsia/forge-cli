@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`forge:ask_user` custom tool** (FORGE-S18-T04).
+  Registers `forge_ask_user` via `pi.registerTool`. Accepts `{question, type, options?, default?}`
+  where `type` is `confirm` (Y/N), `choice` (select from list), or `text` (free-form input).
+  Uses `ctx.ui.confirm / select / input` from the pi `ExtensionContext` — no raw pi-tui
+  component wiring needed. Blocks the model loop until the user responds. Non-interactive
+  bypass: `FORGE_YES=1`, `--non-interactive`, or headless mode returns the default
+  immediately. Cancellation surfaces as `isError: true`. 14 Vitest tests.
+
 - **`registerHookDispatcher` wired to `tool_call` / `tool_result`** (FORGE-S18-T02).
   Replaces the 7-line empty shim with a real implementation. Subscribes both pi events;
   logs to `.forge/logs/hooks.log` when `FORGE_HOOK_AUDIT=1` (audit-only — no calls blocked).
