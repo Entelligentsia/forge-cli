@@ -194,8 +194,12 @@ function parseFrontmatter(content: string): { name: string; description: string 
 	return { name, description };
 }
 
-/** Commands that have real handlers registered by other modules OR explicitly by registerAllForgeCommands. */
-const REAL_HANDLERS = new Set([
+/**
+ * Commands that have real handlers registered by other modules OR explicitly by registerAllForgeCommands.
+ * Formerly REAL_HANDLERS — renamed to EXPLICITLY_REGISTERED_NAMES per FORGE-S19-T02 AC#1.
+ * Internal-only; not part of the public API.
+ */
+const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:init",
 	"forge:health",
 	"forge:ask",
@@ -205,7 +209,12 @@ const REAL_HANDLERS = new Set([
 	"forge:refresh-kb-links",
 	"forge:enhance",
 	"forge:sprint-intake", // FORGE-S19-T01: real handler registered in sprint-intake.ts
+	"forge:sprint-plan",   // FORGE-S19-T02: real handler registered in sprint-plan.ts
 ]);
+
+// Alias for backwards-compat with tests that reference REAL_HANDLERS directly.
+// Will be removed after all test references are updated.
+const REAL_HANDLERS = EXPLICITLY_REGISTERED_NAMES;
 
 export interface RegisterAllOptions {
 	/** Absolute path to dist/forge-payload/ (containing .base-pack/commands/). */
@@ -317,4 +326,5 @@ export const __test__ = {
 	getTomoshibiPending: () => tomoshibiPending,
 	parseFrontmatter,
 	REAL_HANDLERS,
+	EXPLICITLY_REGISTERED_NAMES,
 };

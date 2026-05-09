@@ -20,6 +20,7 @@ import { readProjectMeta } from "./banner.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { registerForgeInit } from "./forge-init.js";
 import { registerSprintIntake } from "./sprint-intake.js";
+import { registerSprintPlan } from "./sprint-plan.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
@@ -178,6 +179,11 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Registered before registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub generated from the command markdown file.
 	registerSprintIntake(pi);
+
+	// ── /forge:sprint-plan native handler (FORGE-S19-T02) ────────────────────
+	// Registered before registerAllForgeCommands so the real handler takes
+	// precedence over the auto-stub generated from the command markdown file.
+	registerSprintPlan(pi);
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────
 	// Registered unconditionally so /forge:ask works outside a Forge project.

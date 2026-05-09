@@ -467,6 +467,73 @@ else
 	record SKIP "E2E-09: sprint-intake scripted answers" "pi command not found"
 fi
 
+# ── E2E-10: sprint-plan fixture-backed scripted-LLM variant (FORGE-S19-T02) ─
+# Verify that FORGE_SPRINT_PLAN_FIXTURE bypasses LLM and drives planning end-to-end.
+e2e10_tmp="$SMOKE_OUT_DIR/sprint-plan-e2e10"
+mkdir -p "$e2e10_tmp"
+e2e10_project="$e2e10_tmp/project"
+mkdir -p "$e2e10_project/.forge/cache"
+mkdir -p "$e2e10_project/.forge/store/sprints"
+mkdir -p "$e2e10_project/.forge/store/tasks"
+mkdir -p "$e2e10_project/.forge/personas"
+mkdir -p "$e2e10_project/engineering/sprints/FORGE-TEST-E2E10"
+# Write minimal .forge/config.json
+cat >"$e2e10_project/.forge/config.json" <<'EOFCFG'
+{"paths":{"engineering":"engineering","forgeRoot":"/dev/null"}}
+EOFCFG
+# Write SPRINT_REQUIREMENTS.md (pre-flight requirement)
+cat >"$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/SPRINT_REQUIREMENTS.md" <<'EOFMREQ'
+# Sprint Requirements — FORGE-TEST-E2E10
+
+## Goals
+- E2E-10 smoke test: verify sprint-plan fixture mode works end-to-end.
+EOFMREQ
+# Write fixture task list
+cat >"$e2e10_tmp/fixture-tasks.json" <<'EOFFIXTURE'
+[
+  {
+    "taskId": "FORGE-TEST-E2E10-T01",
+    "title": "E2E smoke task one",
+    "estimate": "S",
+    "dependencies": [],
+    "pipeline": "plan,implement,review,validate,approve,commit",
+    "acceptanceCriteria": ["Task one artifact exists", "No errors during execution"]
+  },
+  {
+    "taskId": "FORGE-TEST-E2E10-T02",
+    "title": "E2E smoke task two depending on one",
+    "estimate": "M",
+    "dependencies": ["FORGE-TEST-E2E10-T01"],
+    "pipeline": "plan,implement,review,validate,approve,commit",
+    "acceptanceCriteria": ["Task two artifact exists", "Dependency ordering preserved"]
+  }
+]
+EOFFIXTURE
+e2e10_out="$SMOKE_OUT_DIR/sprint-plan-fixture.out"
+if command -v pi >/dev/null 2>&1; then
+	if FORGE_SPRINT_PLAN_FIXTURE="$e2e10_tmp/fixture-tasks.json" \
+		pi -e "$INSTALL_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/extensions/forgecli/index.js" \
+		--cwd "$e2e10_project" \
+		--run-command "forge:sprint-plan FORGE-TEST-E2E10" >"$e2e10_out" 2>&1; then
+		plan_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/SPRINT_PLAN.md"
+		t01_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/FORGE-TEST-E2E10-T01/TASK_PROMPT.md"
+		t02_path="$e2e10_project/engineering/sprints/FORGE-TEST-E2E10/FORGE-TEST-E2E10-T02/TASK_PROMPT.md"
+		if [[ -f "$plan_path" && -f "$t01_path" && -f "$t02_path" ]]; then
+			record PASS "E2E-10: sprint-plan fixture mode" "SPRINT_PLAN.md + 2x TASK_PROMPT.md written"
+		else
+			missing=""
+			[[ ! -f "$plan_path" ]] && missing="$missing SPRINT_PLAN.md"
+			[[ ! -f "$t01_path" ]] && missing="$missing FORGE-TEST-E2E10-T01/TASK_PROMPT.md"
+			[[ ! -f "$t02_path" ]] && missing="$missing FORGE-TEST-E2E10-T02/TASK_PROMPT.md"
+			record WARN "E2E-10: sprint-plan fixture mode" "command ran but missing:$missing"
+		fi
+	else
+		record WARN "E2E-10: sprint-plan fixture mode" "pi command exited non-zero — see $e2e10_out"
+	fi
+else
+	record SKIP "E2E-10: sprint-plan fixture mode" "pi command not found"
+fi
+
 # ── E2E-11: README↔CHANGELOG diff verifier (FORGE-S19-T04) ──────────────────
 # Run the gate script against the source tree ($PKG_DIR) before packing.
 # Auth-free — reads local files only. Hard FAIL if exit non-zero.

@@ -136,9 +136,11 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 			bundlePayloadRoot,
 		});
 
-		// These command names must be registered (they are NOT in REAL_HANDLERS)
-		// Note: forge:sprint-intake was moved to REAL_HANDLERS in FORGE-S19-T01
+		// These command names must be registered (they are NOT in EXPLICITLY_REGISTERED_NAMES)
+		// Note: forge:sprint-intake was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S19-T01
 		// (native TS handler registered in sprint-intake.ts). It is no longer a stub.
+		// Note: forge:sprint-plan was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S19-T02
+		// (native TS handler registered in sprint-plan.ts). It is no longer a stub.
 		const expectedStubCommands = [
 			"forge:plan",
 			"forge:implement",
@@ -147,7 +149,6 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 			"forge:approve",
 			"forge:validate",
 			"forge:commit",
-			"forge:sprint-plan",
 			"forge:run-sprint",
 		];
 

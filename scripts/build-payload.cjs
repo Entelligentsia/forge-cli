@@ -316,5 +316,26 @@ if (fs.existsSync(claudePluginSrc)) {
 	console.warn("build-payload: forge/forge/.claude-plugin/ not found — skipping");
 }
 
+// 2g: .tools/prompts/ and .tools/schemas/ — forge-cli/src/extensions/forgecli/{prompts,schemas}/
+// These are co-located with the sprint-plan.ts handler (FORGE-S19-T02).
+// Always included (not gated by --include-full) — required for runtime, not historical superset.
+const extensionPromptsSrc = path.join(repoRoot, "src", "extensions", "forgecli", "prompts");
+const extensionPromptsDest = path.join(outDir, ".tools", "prompts");
+if (fs.existsSync(extensionPromptsSrc)) {
+	copyDir(extensionPromptsSrc, extensionPromptsDest);
+	console.log("build-payload: .tools/prompts/ — extension prompts copied");
+} else {
+	console.warn("build-payload: src/extensions/forgecli/prompts/ not found — skipping");
+}
+
+const extensionSchemasSrc = path.join(repoRoot, "src", "extensions", "forgecli", "schemas");
+const extensionSchemasDest = path.join(outDir, ".tools", "schemas");
+if (fs.existsSync(extensionSchemasSrc)) {
+	copyDir(extensionSchemasSrc, extensionSchemasDest);
+	console.log("build-payload: .tools/schemas/ — extension schemas copied");
+} else {
+	console.warn("build-payload: src/extensions/forgecli/schemas/ not found — skipping");
+}
+
 console.log("build-payload: forge-payload written to", outDir);
 console.log("build-payload: expanded bundle layout complete");

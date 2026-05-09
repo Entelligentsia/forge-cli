@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warn; non-assistant messages silently skipped. Iron Law 6: `spawnSync` argv array.
   Wired in `index.ts` alongside `registerHookDispatcher`. 8 auth-free vitest tests.
 
+- **`/forge:sprint-plan` native TS handler** (FORGE-S19-T02).
+  Full LLM-driven sprint decomposition. Pre-flight: reads `SPRINT_REQUIREMENTS.md`
+  from `{engineeringDir}/sprints/{SPRINT_ID}/` (config-resolved); verifies sprint is
+  in `planning` status. Persona self-load from `.forge/personas/architect.md` (🗻).
+  LLM invocation via vendored subagent spawn pattern (`./subagent/index.js`) — confirmed
+  correct by SPIKE_NOTES.md after scanning `@earendil-works/pi-coding-agent` types
+  (`pi.invokeLLM` absent on ExtensionAPI). Prompt loaded from
+  `dist/forge-payload/.tools/prompts/sprint-plan-prompt.md` (new).
+  JSON output validated against `dist/forge-payload/.tools/schemas/task-list.schema.json`
+  (new TypeBox-compatible schema). First failure retries once with error context
+  appended; second failure writes raw output to `.forge/cache/sprint-plan-failure-{ID}.json`
+  and aborts. Kahn's algorithm cycle detection after validation, before store writes.
+  Per-task records written via `store-cli write task` (argv array form, Iron Law 6).
+  `SPRINT_PLAN.md` rendered inline with mermaid dep graph (zero-dependency case
+  emits valid node-only graph). Per-task `TASK_PROMPT.md` written under
+  `engineering/sprints/{SPRINT_ID}/{TASK_ID}/`. Sprint status `planning → planned`
+  via `store-cli update-status`. `sprint-plan-complete` event emitted.
+  `forge:sprint-plan` added to `EXPLICITLY_REGISTERED_NAMES` (renamed from
+  `REAL_HANDLERS`) in `forge-commands.ts`. Registered in `index.ts` before
+  `registerAllForgeCommands`. `scripts/build-payload.cjs` updated with Pass 2g to
+  copy `src/extensions/forgecli/prompts/` and `schemas/` into
+  `dist/forge-payload/.tools/`. 14 vitest tests. E2E-10 (`FORGE_SPRINT_PLAN_FIXTURE`
+  scripted fixture run) added to `test/e2e/smoke.sh`.
+
 - **`/forge:sprint-intake` native TS handler** (FORGE-S19-T01).
   Full multi-turn TUI interview for sprint requirements capture. Adapts
   `meta-sprint-intake.md` 4-step algorithm to pi `ctx.ui.input/confirm/select`

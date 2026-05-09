@@ -215,14 +215,19 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		});
 
 		// registerAllForgeCommands returns the count of STUB commands registered.
-		// Real handlers (init/health/ask/config/status/refresh-kb-links) are excluded from stubs.
+		// Real handlers in EXPLICITLY_REGISTERED_NAMES are excluded from stubs.
 		// But enhance and refresh-kb-links ARE registered by registerAllForgeCommands.
 		// registered = (fileCount - realHandlerOverlapCount) + 2 (enhance + refresh-kb-links always added)
 		// The total pi.registerCommand calls should be: registered + 2 (enhance + refresh-kb-links)
+		// Deduct commands with real handlers that have bundled .md files:
+		//   - forge:sprint-intake (FORGE-S19-T01)
+		//   - forge:sprint-plan (FORGE-S19-T02)
+		const REAL_HANDLER_CMD_FILES = 2; // commands with .md files AND real handlers
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
 		// Total calls = stub count + forge:refresh-kb-links + forge:enhance
-		expect(totalCalls).toBeGreaterThanOrEqual(expectedFileCount);
+		// minus commands that have .md files but are excluded from stubs (real handlers)
+		expect(totalCalls).toBeGreaterThanOrEqual(expectedFileCount - REAL_HANDLER_CMD_FILES);
 
 		// Verify no duplicate registrations (all names unique)
 		const names = (pi.registerCommand.mock.calls as Array<[string, unknown]>).map((c) => c[0]);
