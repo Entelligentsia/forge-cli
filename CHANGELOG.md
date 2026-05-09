@@ -47,6 +47,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   escape hatch suppresses roadmap check. Wired into `test/e2e/smoke.sh` as E2E-11.
   5 vitest tests with synthetic fixtures.
 
+- **`scripts/verify-publish.cjs`: post-publish npm-view check** (FORGE-S19-T05).
+  Mandatory post-publish verifier at `scripts/verify-publish.cjs` — pure CJS, zero
+  npm dependencies. Accepts `--version <VERSION>` (required), `--package <PKG>`
+  (defaults to `package.json:name`), `--allow-non-latest`, `--root <path>`. Runs
+  `npm view <PKG>@<VERSION> version` and asserts trimmed output matches `<VERSION>`.
+  Runs `npm view <PKG> dist-tags --json` and asserts `latest === <VERSION>` (hard
+  fail without `--allow-non-latest`; warn-only with flag). On any npm non-zero exit
+  or network failure: logs `[warn] registry check failed — verify manually:
+  npm view <PKG>@<VERSION>` and exits 1. Iron Law 6 compliant: `spawnSync` argv
+  array, no shell interpolation. 4 vitest tests covering success, version mismatch,
+  network failure, and `--allow-non-latest` behaviour.
+
 ---
 
 ## [0.3.0] — 2026-05-09

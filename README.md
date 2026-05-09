@@ -170,6 +170,29 @@ or pi is running in headless/RPC mode, the tool returns the `default` immediatel
 without rendering any TUI. Fallback defaults when no explicit `default` is
 provided: `confirm` → `"Y"`, `choice` → `options[0]`, `text` → `""`.
 
+## Publishing
+
+After every `npm publish`, run the post-publish verifier to confirm the registry reflects the new version and `dist-tags.latest` is updated:
+
+```sh
+node scripts/verify-publish.cjs --version <VERSION>
+```
+
+Options:
+
+```
+--version <VERSION>   Required. The version just published.
+--package <PKG>       Package name (default: reads from package.json).
+--allow-non-latest    Warn instead of fail when dist-tags.latest != VERSION.
+--root <path>         Root directory for package.json lookup (default: cwd).
+```
+
+The script runs two checks:
+1. `npm view <PKG>@<VERSION> version` — asserts the trimmed output matches `<VERSION>`.
+2. `npm view <PKG> dist-tags --json` — asserts `latest === <VERSION>` (hard fail unless `--allow-non-latest`).
+
+On any npm error or version mismatch the script logs a `[warn] registry check failed` message and exits 1.
+
 ## Roadmap
 
 | Command                   | Status              |
