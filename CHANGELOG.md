@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`usage-hook.ts`: Pi-runtime token telemetry hook** (FORGE-S19-T03 / FORGE-BUG-028).
+  Registers `pi.on("message_end")` listener that accumulates per-turn token usage
+  from `AssistantMessage.usage` (`input`, `output`, `cacheRead`, `cacheWrite`,
+  `cost.total`). Closes the 3-sprint `source=missing` regression (S15–S18).
+  `registerUsageHook(pi, opts)` returns an accumulator `Map<phaseKey, UsageAccumulator>`.
+  `flushPhaseUsage(opts)` writes `store-cli record-usage` sidecar with `source=reported`.
+  Phase key via `FORGE_PHASE_KEY` env var. Non-blocking: subprocess failure → stderr
+  warn; non-assistant messages silently skipped. Iron Law 6: `spawnSync` argv array.
+  Wired in `index.ts` alongside `registerHookDispatcher`. 8 auth-free vitest tests.
+
 - **`/forge:sprint-intake` native TS handler** (FORGE-S19-T01).
   Full multi-turn TUI interview for sprint requirements capture. Adapts
   `meta-sprint-intake.md` 4-step algorithm to pi `ctx.ui.input/confirm/select`

@@ -26,6 +26,7 @@ import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-upda
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
+import { registerUsageHook } from "./usage-hook.js";
 import { triggerUpdateCheck } from "./update-check.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
@@ -167,6 +168,10 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		registerHookDispatcher(pi, forgeRoot);
 		// T04 (FORGE-S18-T04): forge:ask_user interactive prompt tool.
 		registerAskUserTool(pi);
+		// T03 (FORGE-S19-T03): pi-runtime token telemetry hook.
+		// Accumulates per-turn usage from message_end events. Phase key is read
+		// from FORGE_PHASE_KEY env (set by the sprint runner before each phase).
+		registerUsageHook(pi);
 	}
 
 	// ── /forge:sprint-intake native handler (FORGE-S19-T01) ──────────────────
