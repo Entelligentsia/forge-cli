@@ -47,13 +47,49 @@ const _DIST_DIR = path.resolve(_EXTENSION_DIR, "..", "..");
 const _PKG_ROOT = path.resolve(_DIST_DIR, "..");
 
 /** Get the bundled forge-payload root (dist/forge-payload/) */
-function getBundledPayloadRoot(): string {
+export function getBundledPayloadRoot(): string {
 	return path.join(_PKG_ROOT, "dist", "forge-payload");
 }
 
 /** Get the bundled tools directory (dist/forge-payload/.tools/) */
-function getBundledToolsRoot(): string {
+export function getBundledToolsRoot(): string {
 	return path.join(getBundledPayloadRoot(), ".tools");
+}
+
+/**
+ * Resolve the absolute path to dist/forge-payload/.tools and validate it
+ * contains store-cli.cjs. Throws if the directory is missing or incomplete.
+ * Exported for test access and for Phase-4 pi-aware forgeRoot stamp.
+ */
+export function resolveBundleToolsRoot(): string {
+	const toolsRoot = getBundledToolsRoot();
+	const storeCli = path.join(toolsRoot, "store-cli.cjs");
+	if (!fs.existsSync(storeCli)) {
+		throw new Error(
+			`resolveBundleToolsRoot: bundled tools dir missing store-cli.cjs — expected at ${storeCli}. ` +
+				"Run 'npm run build' to populate dist/forge-payload/.tools/.",
+		);
+	}
+	return toolsRoot;
+}
+
+/**
+ * Detect pi runtime. forge-init.ts is only ever called from the forgecli pi
+ * extension (registerForgeInit is invoked during extension load by pi). There
+ * is no Claude Code execution path. Therefore this always returns true.
+ *
+ * We keep the guard explicit rather than hardcoding `true` so that if a future
+ * Claude Code path is added it is obvious where to insert the condition.
+ *
+ * Heuristic: PI_CODING_AGENT_DIR env set → definitely pi. Otherwise assume pi
+ * (our only caller). Only false if explicitly opted-out via env flag in a
+ * hypothetical future Claude Code integration.
+ * Exported for test access.
+ */
+export function isPiRuntime(): boolean {
+	// If the caller explicitly overrides via env, respect it (test escape hatch only).
+	if (process.env.FORGE_INIT_CLAUDE_CODE_MODE === "1") return false;
+	return true;
 }
 
 /** Get the bundled forge version from .claude-plugin/plugin.json */
@@ -720,10 +756,37 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				const seedStoreTool = path.join(toolsRoot, "seed-store.cjs");
 
 				// Step 4-1: write paths.forgeRoot + copy schemas
+				// BUG-024 fix: under pi runtime stamp paths.forgeRoot to the bundled
+				// tools directory (dist/forge-payload/.tools/) which is the path where
+				// store-cli.cjs and all other tools live. This is always-pi when
+				// forge-init.ts runs (isPiRuntime() === true). Under a hypothetical
+				// future Claude Code path we fall back to bundleRoot.
 				if (fs.existsSync(manageConfigTool)) {
+					// BUG-024: under pi runtime resolve bundled tools path and validate
+					// store-cli.cjs is present before stamping. manageConfigTool guard
+					// ensures the validation block only runs when we're about to actually
+					// invoke manage-config — avoids false-positive errors in test contexts
+					// where fs is fully mocked and tools don't exist on disk.
+					let forgeRootToStamp: string;
+					if (isPiRuntime()) {
+						const toolsRoot = getBundledToolsRoot();
+						const storeCli = path.join(toolsRoot, "store-cli.cjs");
+						if (!fs.existsSync(storeCli)) {
+							ctx.ui.notify(
+								`× step 4-1 paths.forgeRoot: store-cli.cjs missing from bundled tools (expected: ${storeCli}). ` +
+									"Run 'npm run build' to populate dist/forge-payload/.tools/. Aborting Phase 4.",
+								"error",
+							);
+							return;
+						}
+						forgeRootToStamp = toolsRoot;
+					} else {
+						// Claude Code path (not active today — preserved for future use)
+						forgeRootToStamp = bundleRoot;
+					}
 					await runToolAdvisory(
 						manageConfigTool,
-						["set", "paths.forgeRoot", bundleRoot],
+						["set", "paths.forgeRoot", forgeRootToStamp],
 						cwd,
 						ctx,
 						"step 4-1 paths.forgeRoot",
@@ -888,6 +951,50 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				// Step 4-10: .gitignore update
 				updateGitignore(cwd, ctx);
 
+				// Step 4-10b: BUG-025 fix — remove Claude-Code-only .claude/commands/ artifact.
+				// substitute-placeholders.cjs (Phase 3) unconditionally writes command .md files
+				// to .claude/commands/<prefix>/ regardless of runtime. Under pi runtime pi never
+				// scans .claude/commands/ (commands are discovered via programmatic registerCommand
+				// in registerAllForgeCommands). Delete the directory so it does not pollute the
+				// project root. This runs in Phase 4 so it handles both same-session and resumed
+				// inits (where Phase 3 ran in a prior session).
+				if (isPiRuntime()) {
+					let commandsPrefix = "forge";
+					try {
+						const cfgRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
+						const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
+						const proj = cfg.project as Record<string, unknown> | undefined;
+						if (proj && typeof proj.prefix === "string" && proj.prefix) {
+							commandsPrefix = proj.prefix.toLowerCase();
+						}
+					} catch {
+						// fall back to "forge"
+					}
+					const claudeCommandsDir = path.join(cwd, ".claude", "commands", commandsPrefix);
+					if (fs.existsSync(claudeCommandsDir)) {
+						try {
+							fs.rmSync(claudeCommandsDir, { recursive: true, force: true });
+							// Remove empty ancestor dirs best-effort
+							const parentDir = path.join(cwd, ".claude", "commands");
+							try {
+								if (fs.readdirSync(parentDir).length === 0) {
+									fs.rmdirSync(parentDir);
+									const grandparent = path.join(cwd, ".claude");
+									if (fs.readdirSync(grandparent).length === 0) fs.rmdirSync(grandparent);
+								}
+							} catch {
+								// best-effort
+							}
+						} catch (err: unknown) {
+							const e = err as { message?: string };
+							ctx.ui.notify(
+								`△ Could not remove .claude/commands/${commandsPrefix}/: ${e.message ?? "unknown"} — non-fatal.`,
+								"warning",
+							);
+						}
+					}
+				}
+
 				// Step 4-11: agent instruction file linking
 				await linkAgentInstructionFile(cwd, kbPathFinal, projectName, ctx);
 
@@ -1001,6 +1108,13 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				`Note: Marketplace skills auto-recommendation is Claude-Code-only.`,
 				`Pi users install extensions manually.`,
 				``,
+				// BUG-025: explain slash command registration under pi runtime
+				...(isPiRuntime()
+					? [
+							`Note: Slash commands registered programmatically (pi runtime); skipping .claude/commands/ Claude-Code-only artifact.`,
+							``,
+						]
+					: []),
 			].join("\n");
 
 			sendToAgent(report);
