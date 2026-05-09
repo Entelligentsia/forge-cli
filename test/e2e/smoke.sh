@@ -21,6 +21,10 @@ PKG_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 FIXTURE_DIR="$PKG_DIR/test/fixtures/dogfood-fixture"
 INIT_FIXTURE_DIR="$PKG_DIR/test/fixtures/init-fixture"
 
+# Shared tarball size budget — single source of truth for smoke + CI (FORGE-S17-T05).
+# shellcheck source=lib/tarball-size-gate.sh
+source "$SCRIPT_DIR/lib/tarball-size-gate.sh"
+
 SMOKE_OUT_DIR=${SMOKE_OUT_DIR:-"$PKG_DIR/.smoke-out"}
 SMOKE_PREFIX=${SMOKE_PREFIX:-"$SMOKE_OUT_DIR/install-prefix"}
 SUMMARY_FILE="$SMOKE_OUT_DIR/SUMMARY.md"
@@ -32,16 +36,19 @@ mkdir -p "$SMOKE_OUT_DIR" "$SMOKE_PREFIX"
 CHECKS_PASSED=0
 CHECKS_FAILED=0
 CHECKS_SKIPPED=0
+CHECKS_WARNED=0
 RESULTS=()
 
 record() {
 	# record <status> <name> <detail>
+	# WARN is informational — increments its own counter, prints ⚠, does NOT fail the gate.
 	local status=$1 name=$2 detail=${3:-}
 	RESULTS+=("$status|$name|$detail")
 	case "$status" in
 		PASS) CHECKS_PASSED=$((CHECKS_PASSED + 1)); echo "  ✓ $name" ;;
 		FAIL) CHECKS_FAILED=$((CHECKS_FAILED + 1)); echo "  ✗ $name — $detail" ;;
 		SKIP) CHECKS_SKIPPED=$((CHECKS_SKIPPED + 1)); echo "  ⊘ $name — $detail" ;;
+		WARN) CHECKS_WARNED=$((CHECKS_WARNED + 1)); echo "  ⚠ $name — $detail" ;;
 	esac
 }
 
@@ -56,6 +63,22 @@ if [[ -z "$TARBALL" || ! -f "$PKG_DIR/$TARBALL" ]]; then
 	record FAIL "pack" "npm pack produced no tarball"
 else
 	record PASS "pack" "$TARBALL"
+fi
+
+# Tarball size budget — locks in T04 trim (FORGE-S17-T05).
+if [[ -f "$PKG_DIR/$TARBALL" ]]; then
+	if TARBALL_BYTES=$(tarball_size_bytes "$PKG_DIR/$TARBALL"); then
+		SIZE_OUT=$(check_tarball_size "$TARBALL_BYTES")
+		SIZE_RC=$?
+		SIZE_DETAIL=$(echo "$SIZE_OUT" | tail -n 1)
+		case "$SIZE_RC" in
+			0) record PASS "tarball-size-budget" "$SIZE_DETAIL" ;;
+			1) record WARN "tarball-size-budget" "$SIZE_DETAIL" ;;
+			2) record FAIL "tarball-size-budget" "$SIZE_DETAIL" ;;
+		esac
+	else
+		record FAIL "tarball-size-budget" "stat could not measure $TARBALL"
+	fi
 fi
 
 if [[ -f "$PKG_DIR/$TARBALL" ]]; then
@@ -306,6 +329,7 @@ fi
 	echo "- Passed:  $CHECKS_PASSED"
 	echo "- Failed:  $CHECKS_FAILED"
 	echo "- Skipped: $CHECKS_SKIPPED"
+	echo "- Warned:  $CHECKS_WARNED"
 	echo ""
 	echo "## Checks"
 	echo ""
@@ -317,6 +341,7 @@ fi
 			PASS) icon="✓ PASS" ;;
 			FAIL) icon="✗ FAIL" ;;
 			SKIP) icon="⊘ SKIP" ;;
+			WARN) icon="⚠ WARN" ;;
 			*)    icon="$status" ;;
 		esac
 		# Escape pipes in detail field
@@ -330,7 +355,7 @@ fi
 
 echo ""
 echo "▶ summary written to $SUMMARY_FILE"
-echo "▶ passed=$CHECKS_PASSED failed=$CHECKS_FAILED skipped=$CHECKS_SKIPPED"
+echo "▶ passed=$CHECKS_PASSED failed=$CHECKS_FAILED skipped=$CHECKS_SKIPPED warned=$CHECKS_WARNED"
 
 if (( CHECKS_FAILED > 0 )); then
 	exit 1

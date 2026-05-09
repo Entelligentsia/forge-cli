@@ -50,3 +50,15 @@ npx tsc --noEmit
 ```
 
 No runtime entrypoint is wired up yet — `npm run lint` and `npx tsc --noEmit` are the only meaningful verifications at this stage.
+
+## Tarball size budget
+
+The smoke gate (`test/e2e/smoke.sh`) measures the compressed npm tarball on every run and enforces:
+
+- `≤ 35 MB` — silent PASS
+- `> 35 MB`, `≤ 50 MB` — WARN (still PASS; surfaces creep)
+- `> 50 MB` — FAIL (smoke exits non-zero; CI red)
+
+Single source of truth: `test/e2e/lib/tarball-size-gate.sh`. Edit the constants there to retune. Override at runtime via `TARBALL_BUDGET_WARN_BYTES` / `TARBALL_BUDGET_HARD_BYTES` env vars (used by `test/e2e/size-budget.test.sh`).
+
+CI inherits the gate by running `smoke.sh` directly — no separate workflow logic to keep in sync.
