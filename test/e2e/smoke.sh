@@ -314,6 +314,67 @@ else
 	record SKIP "E2E-03: banner suppression" "forge bin missing"
 fi
 
+# ── Hook audit-mode smoke (FORGE-S18-T03) ────────────────────────────────
+# AC#7: Verify that FORGE_HOOK_AUDIT=1 causes the hook dispatcher to write
+# at least one [store-cli-intercept] entry to .forge/logs/hooks.log when
+# a store-cli write is performed.
+#
+# This gate exercises the hook path with a fixture write (not a full /forge:init
+# run — that is outside automated test scope due to weight).
+
+echo "▶ smoke gate — hook audit-mode (FORGE-S18-T03)"
+
+HOOK_AUDIT_FIXTURE_DIR="$SMOKE_OUT_DIR/hook-audit-fixture"
+rm -rf "$HOOK_AUDIT_FIXTURE_DIR"
+mkdir -p "$HOOK_AUDIT_FIXTURE_DIR/.forge/store"
+
+# Materialize a minimal config so forge-root resolution works.
+PAYLOAD_DIR="$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/forge-payload"
+if [[ -d "$PAYLOAD_DIR" && -x "$FORGE_BIN" ]]; then
+	cat >"$HOOK_AUDIT_FIXTURE_DIR/.forge/config.json" <<EOF
+{
+  "version": "1.0",
+  "project": { "prefix": "HOOK", "name": "Hook Audit Fixture" },
+  "paths": {
+    "engineering": "engineering",
+    "store": ".forge/store",
+    "workflows": ".forge/workflows",
+    "commands": ".claude/commands",
+    "templates": ".forge/templates",
+    "customCommands": "engineering/commands",
+    "forgeRoot": "$PAYLOAD_DIR"
+  },
+  "pipeline": { "maxReviewIterations": 3 }
+}
+EOF
+
+	# Attempt a store-cli write under FORGE_HOOK_AUDIT=1.
+	# The write will likely fail validation (fixture has no seeded sprint), but
+	# the hook intercept fires before the write — the audit log entry is what we check.
+	STORE_CLI_PATH="$PAYLOAD_DIR/.tools/store-cli.cjs"
+	if [[ -f "$STORE_CLI_PATH" ]]; then
+		(
+			cd "$HOOK_AUDIT_FIXTURE_DIR"
+			FORGE_HOOK_AUDIT=1 timeout 30 "$FORGE_BIN" -p "node \"$STORE_CLI_PATH\" write task '{\"taskId\":\"HOOK-T01\",\"sprintId\":\"HOOK-S01\",\"status\":\"draft\"}'" \
+				>"$SMOKE_OUT_DIR/hook-audit.out" 2>&1 || true
+		) || true
+
+		HOOKS_LOG="$HOOK_AUDIT_FIXTURE_DIR/.forge/logs/hooks.log"
+		if [[ -f "$HOOKS_LOG" ]] && grep -q "\[store-cli-intercept\]" "$HOOKS_LOG" 2>/dev/null; then
+			record PASS "E2E-07: FORGE_HOOK_AUDIT=1 writes [store-cli-intercept] to hooks.log" ""
+		else
+			# Hooks log may not be written if the agent does not actually invoke store-cli.
+			# The unit tests and typecheck gate cover the hook behavior directly.
+			record WARN "E2E-07: FORGE_HOOK_AUDIT=1 hooks.log not populated" \
+				"unit tests cover hook behavior; smoke requires live agent store-cli invocation (auth-required)"
+		fi
+	else
+		record SKIP "E2E-07: FORGE_HOOK_AUDIT=1 hook audit smoke" "store-cli.cjs not found at $STORE_CLI_PATH"
+	fi
+else
+	record SKIP "E2E-07: FORGE_HOOK_AUDIT=1 hook audit smoke" "forge-payload or forge bin missing"
+fi
+
 # ── Non-interactive flag smoke (FORGE-S18-T01) ────────────────────────────
 
 echo "▶ smoke gate — --non-interactive flag and FORGE_YES env"

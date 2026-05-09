@@ -1,7 +1,7 @@
-// Unit tests for hook-dispatcher module (FORGE-S18-T02).
+// Unit tests for hook-dispatcher module (FORGE-S18-T02 + FORGE-S18-T03).
 //
 // Coverage:
-//   registerHookDispatcher:
+//   registerHookDispatcher (T02):
 //     1. Mount test — pi.on() called for "tool_call" and "tool_result" exactly once each
 //     2. Non-bash tool_call passthrough — returns undefined (not blocked)
 //     3. Bash non-store-cli tool_call — parseStoreCLIInvocation returns null
@@ -10,7 +10,7 @@
 //     6. Audit log written when FORGE_HOOK_AUDIT=1 for tool_call
 //     7. Audit log written when FORGE_HOOK_AUDIT=1 for tool_result
 //
-//   parseStoreCLIInvocation (exported, used by T03):
+//   parseStoreCLIInvocation (T02, exported, used by T03):
 //     8.  Returns null for empty/non-bash string
 //     9.  Returns null when no store-cli.cjs in command
 //    10.  Parses "write task" with JSON payload
@@ -19,6 +19,19 @@
 //    13.  Returns null for other subcommands (emit, list, nlp)
 //    14.  Handles single-quoted JSON in bash command string
 //    15.  Handles double-quoted paths in node invocation
+//
+//   registerHookDispatcher — T03: enforcement (write validation)
+//    16.  Bad write payload → { block: true, reason } (enforcement mode)
+//    17.  Good write payload → undefined (allowed through)
+//    18.  Bad write payload + FORGE_HOOK_AUDIT=1 → undefined (audit mode, not blocked)
+//    19.  Audit mode logs decision=would-block with reason
+//
+//   registerHookDispatcher — T03: enforcement (transition guard)
+//    20.  Illegal transition → { block: true, reason } with from/to named
+//    21.  Legal transition → undefined (allowed)
+//    22.  Illegal transition + --force → undefined (bypasses transition-guard)
+//    23.  --force + bad payload → still blocked by store-validator
+//    24.  Lookup failure → fail-open (allowed, decision=lookup-failed logged)
 
 import { mkdirSync, readFileSync } from "node:fs";
 import * as os from "node:os";
@@ -32,10 +45,7 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	parseStoreCLIInvocation,
-	registerHookDispatcher,
-} from "../../../src/extensions/forgecli/hook-dispatcher.js";
+import { parseStoreCLIInvocation, registerHookDispatcher } from "../../../src/extensions/forgecli/hook-dispatcher.js";
 
 // ── Mock node:fs ─────────────────────────────────────────────────────────────
 // We mock mkdirSync and appendFileSync to capture audit-log writes without
@@ -60,6 +70,39 @@ vi.mock("node:fs", async (importOriginal) => {
 			fsMockState.appendLines.push(String(data));
 			void p;
 		}),
+	};
+});
+
+// ── Mock store-validator and transition-guard (T03) ───────────────────────────
+
+const { validatorMockState, guardMockState } = vi.hoisted(() => {
+	return {
+		validatorMockState: {
+			ok: true as boolean,
+			reason: "" as string,
+		},
+		guardMockState: {
+			allowed: true as boolean,
+			reason: "" as string,
+		},
+	};
+});
+
+vi.mock("../../../src/extensions/forgecli/store-validator.js", async () => {
+	return {
+		validateStoreCLIPayload: vi.fn((_entity: string, _payload: unknown, _forgeRoot: string) => ({
+			ok: validatorMockState.ok,
+			reason: validatorMockState.reason,
+		})),
+	};
+});
+
+vi.mock("../../../src/extensions/forgecli/transition-guard.js", async () => {
+	return {
+		checkTransition: vi.fn((_input: { entity: string; entityId: string; toStatus: string }, _forgeRoot: string) => ({
+			allowed: guardMockState.allowed,
+			reason: guardMockState.reason,
+		})),
 	};
 });
 
@@ -138,6 +181,12 @@ beforeEach(() => {
 	fsMockState.appendLines = [];
 	// Ensure FORGE_HOOK_AUDIT is off by default.
 	delete process.env.FORGE_HOOK_AUDIT;
+	// Reset store-validator mock to "ok" by default.
+	validatorMockState.ok = true;
+	validatorMockState.reason = "";
+	// Reset transition-guard mock to "allowed" by default.
+	guardMockState.allowed = true;
+	guardMockState.reason = "";
 });
 
 afterEach(() => {
@@ -226,9 +275,7 @@ describe("parseStoreCLIInvocation", () => {
 	});
 
 	it("9. returns null when command does not contain store-cli.cjs", () => {
-		expect(
-			parseStoreCLIInvocation("node /forge/tools/collate.cjs FORGE-S18", FAKE_FORGE_ROOT),
-		).toBeNull();
+		expect(parseStoreCLIInvocation("node /forge/tools/collate.cjs FORGE-S18", FAKE_FORGE_ROOT)).toBeNull();
 	});
 
 	it("10. parses 'write task' with JSON payload", () => {
@@ -266,15 +313,9 @@ describe("parseStoreCLIInvocation", () => {
 
 	it("13. returns null for other subcommands (emit, list, nlp)", () => {
 		const root = FAKE_FORGE_ROOT;
-		expect(
-			parseStoreCLIInvocation(`node "${root}/tools/store-cli.cjs" emit FORGE-S18 '{}'`, root),
-		).toBeNull();
-		expect(
-			parseStoreCLIInvocation(`node "${root}/tools/store-cli.cjs" list tasks`, root),
-		).toBeNull();
-		expect(
-			parseStoreCLIInvocation(`node "${root}/tools/store-cli.cjs" nlp "FORGE-S18-T02"`, root),
-		).toBeNull();
+		expect(parseStoreCLIInvocation(`node "${root}/tools/store-cli.cjs" emit FORGE-S18 '{}'`, root)).toBeNull();
+		expect(parseStoreCLIInvocation(`node "${root}/tools/store-cli.cjs" list tasks`, root)).toBeNull();
+		expect(parseStoreCLIInvocation(`node "${root}/tools/store-cli.cjs" nlp "FORGE-S18-T02"`, root)).toBeNull();
 	});
 
 	it("14. handles single-quoted JSON in bash command string", () => {
@@ -290,5 +331,166 @@ describe("parseStoreCLIInvocation", () => {
 		expect(result).not.toBeNull();
 		expect(result!.entity).toBe("bug");
 		expect(result!.payload).toEqual({ bugId: "BUG-001" });
+	});
+});
+
+// ── T03: Enforcement — write validation ───────────────────────────────────────
+
+describe("registerHookDispatcher — T03 enforcement: write validation", () => {
+	const writeCmd = (entity: string, payload: object) =>
+		`node "${FAKE_FORGE_ROOT}/tools/store-cli.cjs" write ${entity} '${JSON.stringify(payload)}'`;
+
+	it("16. bad write payload → { block: true, reason } in enforcement mode", () => {
+		validatorMockState.ok = false;
+		validatorMockState.reason = "missing required field: taskId";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(handlers, makeBashEvent(writeCmd("task", { sprintId: "FORGE-S18" })));
+
+		expect(result).toBeDefined();
+		expect((result as ToolCallEventResult).block).toBe(true);
+		expect((result as ToolCallEventResult).reason).toBe("missing required field: taskId");
+	});
+
+	it("17. good write payload → undefined (allowed through)", () => {
+		validatorMockState.ok = true;
+		validatorMockState.reason = "";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(
+			handlers,
+			makeBashEvent(
+				writeCmd("task", {
+					taskId: "FORGE-S18-T03",
+					sprintId: "FORGE-S18",
+					status: "planned",
+				}),
+			),
+		);
+
+		expect(result).toBeUndefined();
+	});
+
+	it("18. bad write payload + FORGE_HOOK_AUDIT=1 → undefined (not blocked in audit mode)", () => {
+		process.env.FORGE_HOOK_AUDIT = "1";
+		validatorMockState.ok = false;
+		validatorMockState.reason = "bad payload";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(handlers, makeBashEvent(writeCmd("task", { bad: "data" })));
+
+		expect(result).toBeUndefined();
+	});
+
+	it("19. audit mode logs decision=would-block with reason", () => {
+		process.env.FORGE_HOOK_AUDIT = "1";
+		validatorMockState.ok = false;
+		validatorMockState.reason = "missing taskId";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		callToolCallHandler(handlers, makeBashEvent(writeCmd("task", {})));
+
+		const auditLine = fsMockState.appendLines.find((l) => l.includes("decision=would-block"));
+		expect(auditLine).toBeDefined();
+		expect(auditLine).toContain("reason=missing taskId");
+	});
+});
+
+// ── T03: Enforcement — transition guard ───────────────────────────────────────
+
+describe("registerHookDispatcher — T03 enforcement: transition guard", () => {
+	const updateCmd = (entity: string, entityId: string, value: string, force = false) =>
+		`node "${FAKE_FORGE_ROOT}/tools/store-cli.cjs" update-status ${entity} ${entityId} status ${value}${force ? " --force" : ""}`;
+
+	it("20. illegal transition → { block: true, reason } with from/to named", () => {
+		guardMockState.allowed = false;
+		guardMockState.reason =
+			"draft → committed is not a legal transition for task. Legal next states from draft: planned.";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(handlers, makeBashEvent(updateCmd("task", "FORGE-S18-T03", "committed")));
+
+		expect(result).toBeDefined();
+		expect((result as ToolCallEventResult).block).toBe(true);
+		expect((result as ToolCallEventResult).reason).toContain("draft → committed");
+		expect((result as ToolCallEventResult).reason).toContain("planned");
+	});
+
+	it("21. legal transition → undefined (allowed through)", () => {
+		guardMockState.allowed = true;
+		guardMockState.reason = "";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(handlers, makeBashEvent(updateCmd("task", "FORGE-S18-T03", "planned")));
+
+		expect(result).toBeUndefined();
+	});
+
+	it("22. illegal transition + --force → undefined (transition-guard bypassed)", () => {
+		// Guard would block, but --force should bypass it.
+		guardMockState.allowed = false;
+		guardMockState.reason = "draft → committed not allowed";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		// --force in the command.
+		const result = callToolCallHandler(
+			handlers,
+			makeBashEvent(updateCmd("task", "FORGE-S18-T03", "committed", true)),
+		);
+
+		// --force bypasses transition-guard, so no block.
+		expect(result).toBeUndefined();
+	});
+
+	it("23. --force + bad write payload → still blocked by store-validator", () => {
+		// For a WRITE command (not update-status), --force must not bypass store-validator.
+		validatorMockState.ok = false;
+		validatorMockState.reason = "malformed payload";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		// Write command with --force appended.
+		const cmd = `node "${FAKE_FORGE_ROOT}/tools/store-cli.cjs" write task '{}' --force`;
+		const result = callToolCallHandler(handlers, makeBashEvent(cmd));
+
+		// store-validator still runs even with --force.
+		expect(result).toBeDefined();
+		expect((result as ToolCallEventResult).block).toBe(true);
+		expect((result as ToolCallEventResult).reason).toBe("malformed payload");
+	});
+
+	it("24. lookup failure → fail-open (allowed), decision=lookup-failed audit-logged", () => {
+		// Guard returns lookup-failed — must never block.
+		guardMockState.allowed = true;
+		guardMockState.reason = "lookup-failed";
+
+		process.env.FORGE_HOOK_AUDIT = "1";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(handlers, makeBashEvent(updateCmd("task", "FORGE-S18-T03", "planned")));
+
+		// Fail-open: must not block.
+		expect(result).toBeUndefined();
+
+		// Audit line must contain decision=lookup-failed.
+		const auditLine = fsMockState.appendLines.find((l) => l.includes("decision=lookup-failed"));
+		expect(auditLine).toBeDefined();
 	});
 });

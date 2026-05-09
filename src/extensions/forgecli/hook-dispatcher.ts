@@ -1,11 +1,18 @@
-// Pi-runtime hook adapter — FORGE-S18-T02
+// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03
 //
 // Wires Forge's hook semantics onto pi's tool_call / tool_result events.
-// Provides audit-only observation scaffolding in T02; T03 layers validation
-// (store-cli pushback correction loop) on top of the surface exposed here.
+// T02: Provides audit-only observation scaffolding.
+// T03: Adds enforcement — validates store-cli write payloads via store-validator,
+//      checks status transitions via transition-guard, and blocks on violation
+//      by returning { block: true, reason } from the tool_call handler.
 //
 // Audit logging: set FORGE_HOOK_AUDIT=1 to write to .forge/logs/hooks.log.
-// No tool calls are blocked in this task.
+// In enforcement mode (default): violations are blocked.
+// In audit mode (FORGE_HOOK_AUDIT=1): violations are logged but never blocked.
+//
+// --force scope:
+//   When --force is present in store-cli argv, transition-guard is bypassed.
+//   store-validator still runs — a malformed payload is always invalid.
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import * as path from "node:path";
@@ -17,6 +24,8 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { validateStoreCLIPayload } from "./store-validator.js";
+import { checkTransition } from "./transition-guard.js";
 
 // ── Exported types — used by T03 to layer validation ─────────────────────────
 
@@ -60,10 +69,7 @@ function appendAudit(logsDir: string, line: string): void {
  * NOTE (T02 scope): extraction only — no validation performed here.
  * T03 imports this function and layers schema validation on the returned payload.
  */
-export function parseStoreCLIInvocation(
-	command: string,
-	_forgeRoot: string,
-): StoreCLICall | null {
+export function parseStoreCLIInvocation(command: string, _forgeRoot: string): StoreCLICall | null {
 	// Quick pre-filter before any parsing overhead.
 	if (!command.includes("store-cli.cjs")) return null;
 
@@ -181,21 +187,18 @@ function tokeniseShellCommand(command: string): string[] {
  * @param forgeRoot Absolute path to the Forge plugin root (from .forge/config.json).
  *
  * AC#1: Both tool_call and tool_result handlers are registered.
- * AC#3: tool_call handler logs to .forge/logs/hooks.log when FORGE_HOOK_AUDIT=1.
- * AC#4: tool_result handler same.
- * AC#6: bash invocation interception scaffold in place via parseStoreCLIInvocation().
+ * AC#2: write calls validated via store-validator; blocked on schema violation.
+ * AC#3: update-status calls checked via transition-guard; blocked on illegal transition.
+ * AC#4: FORGE_HOOK_AUDIT=1 — all decisions logged, nothing blocked.
  */
 export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): void {
 	const logsDir = path.join(process.cwd(), ".forge", "logs");
 
-	// ── tool_call: fires before any tool executes (can block; T02 = audit-only) ──
+	// ── tool_call: fires before any tool executes ─────────────────────────────
 	pi.on("tool_call", (event: ToolCallEvent): ToolCallEventResult | void => {
-		appendAudit(
-			logsDir,
-			`[tool_call] toolName=${event.toolName} toolCallId=${event.toolCallId}`,
-		);
+		appendAudit(logsDir, `[tool_call] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
 
-		// Bash interception scaffold: identify store-cli write/update-status calls.
+		// Bash interception: identify store-cli write/update-status calls.
 		if (isToolCallEventType("bash", event)) {
 			const bashEvent = event as BashToolCallEvent;
 			const intercept = parseStoreCLIInvocation(bashEvent.input.command, forgeRoot);
@@ -204,21 +207,75 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 					logsDir,
 					`[store-cli-intercept] subcmd=${intercept.subcmd} entity=${intercept.entity} payload=${JSON.stringify(intercept.payload)}`,
 				);
-				// T02 scope: observe-only. T03 will add: validate payload against schema
-				// and return { block: true, reason } on violation.
+
+				// Detect --force in the original argv tokens.
+				const tokens = tokeniseShellCommand(bashEvent.input.command);
+				const hasForce = tokens.includes("--force");
+
+				if (intercept.subcmd === "write") {
+					// AC#2: Validate payload against schema via store-validator.
+					// --force does NOT bypass schema validation.
+					const validation = validateStoreCLIPayload(intercept.entity, intercept.payload, forgeRoot);
+					if (!validation.ok) {
+						appendAudit(logsDir, `[store-cli-intercept] decision=would-block reason=${validation.reason}`);
+						if (auditEnabled()) {
+							// Audit mode: log and allow.
+							return undefined;
+						}
+						return { block: true, reason: validation.reason };
+					}
+					appendAudit(logsDir, `[store-cli-intercept] decision=would-allow`);
+				} else if (intercept.subcmd === "update-status") {
+					// AC#3: Check transition via transition-guard.
+					// --force bypasses transition-guard only (not schema validation).
+					if (!hasForce) {
+						const payloadRecord = intercept.payload as {
+							entityId: string;
+							field: string;
+							value: string;
+						};
+						const guard = checkTransition(
+							{
+								entity: intercept.entity,
+								entityId: payloadRecord.entityId,
+								toStatus: payloadRecord.value,
+							},
+							forgeRoot,
+						);
+
+						if (guard.reason === "lookup-failed") {
+							// Fail-open: lookup error must never block.
+							appendAudit(
+								logsDir,
+								`[store-cli-intercept] decision=lookup-failed entity=${intercept.entity} entityId=${payloadRecord.entityId}`,
+							);
+							return undefined;
+						}
+
+						if (!guard.allowed) {
+							appendAudit(logsDir, `[store-cli-intercept] decision=would-block reason=${guard.reason}`);
+							if (auditEnabled()) {
+								return undefined;
+							}
+							return { block: true, reason: guard.reason };
+						}
+						appendAudit(logsDir, `[store-cli-intercept] decision=would-allow`);
+					} else {
+						appendAudit(
+							logsDir,
+							`[store-cli-intercept] decision=would-allow (--force bypasses transition-guard)`,
+						);
+					}
+				}
 			}
 		}
 
-		// Audit-only in T02 — return void (no blocking).
 		return undefined;
 	});
 
 	// ── tool_result: fires after any tool completes (observe-only) ──────────────
 	pi.on("tool_result", (event: ToolResultEvent): void => {
-		appendAudit(
-			logsDir,
-			`[tool_result] toolName=${event.toolName} toolCallId=${event.toolCallId}`,
-		);
+		appendAudit(logsDir, `[tool_result] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
 		// Audit-only in T02 — return void (no result replacement).
 	});
 }
