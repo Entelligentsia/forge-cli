@@ -144,8 +144,9 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// (native TS handler registered in sprint-plan.ts). It is no longer a stub.
 		// Note: forge:plan was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S20-T05
 		// (native TS handler registered in plan.ts). It is no longer a stub.
+		// Note: forge:implement was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S20-T06
+		// (native TS handler registered in implement.ts). It is no longer a stub.
 		const expectedStubCommands = [
-			"forge:implement",
 			"forge:run-task",
 			"forge:fix-bug",
 			"forge:approve",
@@ -172,6 +173,12 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
 		// MUST NOT register it (would clobber the real handler).
 		expect(registeredCommands.has("forge:plan")).toBe(false);
+
+		// forge:implement: as of FORGE-S20-T06, the native kickoff handler is
+		// registered separately via registerImplement(pi) in index.ts. It now
+		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
+		// MUST NOT register it (would clobber the real handler).
+		expect(registeredCommands.has("forge:implement")).toBe(false);
 	});
 
 	it("after Phase-4, .claude/commands/ is cleaned up in pi mode (isPiRuntime=true)", async () => {

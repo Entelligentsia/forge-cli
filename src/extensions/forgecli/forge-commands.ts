@@ -209,6 +209,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:refresh-kb-links",
 	"forge:enhance",
 	"forge:plan", // FORGE-S20-T05: real handler registered in plan.ts
+	"forge:implement", // FORGE-S20-T06: real handler registered in implement.ts
 	"forge:sprint-intake", // FORGE-S19-T01: real handler registered in sprint-intake.ts
 	"forge:sprint-plan", // FORGE-S19-T02: real handler registered in sprint-plan.ts
 ]);
@@ -305,6 +306,12 @@ export function registerAllForgeCommands(pi: ExtensionAPI, options: RegisterAllO
 	// registerPlan(pi) — FORGE-S20-T05. EXPLICITLY_REGISTERED_NAMES lists
 	// "forge:plan" so the auto-stub loop above skips it. Prompt-injection
 	// fallback was DELETED per T05 AC#4 (no FORGE_LEGACY_KICKOFF flag).
+	//
+	// /forge:implement: real native kickoff handler is registered in index.ts
+	// via registerImplement(pi) — FORGE-S20-T06. EXPLICITLY_REGISTERED_NAMES
+	// lists "forge:implement" so the auto-stub loop above skips it.
+	// Prompt-injection fallback was DELETED per T06 AC#4 (no
+	// FORGE_LEGACY_KICKOFF flag).
 
 	return registered;
 }

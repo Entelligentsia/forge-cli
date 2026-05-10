@@ -25,6 +25,7 @@ import { registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
+import { registerImplement } from "./implement.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { registerPlan } from "./plan.js";
 import { registerSprintIntake } from "./sprint-intake.js";
@@ -201,6 +202,13 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// `.forge/workflows/plan_task.md` is absent (graceful no-op outside Forge
 	// project). Prompt-injection fallback DELETED per T05 AC#4.
 	registerPlan(pi);
+
+	// ── /forge:implement native kickoff handler (FORGE-S20-T06) ──────────────
+	// Replaces the auto-generated stub. Same Kickoff Shim archetype as plan.
+	// Handler notifies and returns when `.forge/workflows/implement_plan.md`
+	// is absent (graceful no-op outside Forge project). Prompt-injection
+	// fallback DELETED per T06 AC#4.
+	registerImplement(pi);
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────
 	// Registered unconditionally so /forge:ask works outside a Forge project.
