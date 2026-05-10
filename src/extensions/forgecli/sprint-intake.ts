@@ -10,6 +10,12 @@
 //
 // No multi-turn TUI, no checkpoints, no scripted-answers env var. The LLM
 // owns the conversation; the handler returns once the kickoff is queued.
+//
+// Persona/skill loading: this handler does not read `.forge/personas/` or
+// `.forge/skills/` directly — the LLM dereferences those via the workflow
+// text. Any future need for typed persona/skill access in this handler MUST
+// go through `./loaders/persona-skill-loader.ts` (FORGE-S20-T02). The smoke
+// gate enforces this with a grep assertion.
 
 import * as fs from "node:fs";
 import * as path from "node:path";

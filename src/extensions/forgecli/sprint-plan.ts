@@ -8,6 +8,12 @@
 //   4. Composes a kickoff message (workflow + requirements + optional seed)
 //   5. Calls pi.sendUserMessage() — LLM drives task decomposition with
 //      forge_store write task per task, no rigid JSON contract.
+//
+// Persona/skill loading: this handler does not read `.forge/personas/` or
+// `.forge/skills/` directly — the LLM dereferences those via the workflow
+// text. Any future need for typed persona/skill access in this handler MUST
+// go through `./loaders/persona-skill-loader.ts` (FORGE-S20-T02). The smoke
+// gate enforces this with a grep assertion.
 
 import * as fs from "node:fs";
 import * as path from "node:path";

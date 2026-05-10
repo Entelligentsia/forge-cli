@@ -152,6 +152,34 @@ else
 	record SKIP "auth-free CLI gates" "forge bin missing"
 fi
 
+# ── Static source invariants (FORGE-S20-T02) ───────────────────────────────
+# Lock the central persona/skill loader invariant: no handler may issue a raw
+# fs.read* call against `.forge/personas/` or `.forge/skills/`. All such
+# access goes through `loaders/persona-skill-loader.ts`.
+
+echo "▶ smoke gate — source invariants"
+
+LOADER_GATE_DIR="$PKG_DIR/src/extensions/forgecli"
+LOADER_FILE="loaders/persona-skill-loader.ts"
+
+if [[ -d "$LOADER_GATE_DIR" ]]; then
+	# Match fs.read* calls referencing personas/ or skills/ paths.
+	# Exclude the loader module itself (it owns these reads).
+	PERSONA_HITS=$(grep -RnE "fs\\.read[A-Za-z]*\\(.*personas/" "$LOADER_GATE_DIR" 2>/dev/null \
+		| grep -v "$LOADER_FILE" || true)
+	SKILL_HITS=$(grep -RnE "fs\\.read[A-Za-z]*\\(.*skills/" "$LOADER_GATE_DIR" 2>/dev/null \
+		| grep -v "$LOADER_FILE" || true)
+	if [[ -z "$PERSONA_HITS" && -z "$SKILL_HITS" ]]; then
+		record PASS "persona/skill loader invariant" "no inline reads outside loader"
+	else
+		COMBINED="$PERSONA_HITS"$'\n'"$SKILL_HITS"
+		echo "$COMBINED" >"$SMOKE_OUT_DIR/loader-invariant-violations.txt"
+		record FAIL "persona/skill loader invariant" "inline reads found — see loader-invariant-violations.txt"
+	fi
+else
+	record SKIP "persona/skill loader invariant" "src/extensions/forgecli missing"
+fi
+
 # ── Auth-required gates (gated on ANTHROPIC_API_KEY) ───────────────────────
 
 echo "▶ smoke gate — auth-required gates"
