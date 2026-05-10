@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-05-10
+
+Hot-patch: `forge_ask_user` UI rendering — text/choice prompts now show the question.
+
+### Headline
+
+Cartographer testbench: `/forge:sprint-intake` interview "got stuck — no Q visible". Root cause: `ask-user-tool.ts` passed the constant tag `"forge:ask_user"` as the dialog title for every type. Pi's `ctx.ui.input(title, placeholder)` rendered the question as faded ghost-text in the placeholder slot (vanished on first keystroke); `ctx.ui.select(title, options)` has no question slot at all, so users only saw the option list. Only `confirm` worked because pi's confirm signature is `(title, message)` and the question landed in the message body.
+
+### Changed
+
+- `src/extensions/forgecli/ask-user-tool.ts` — every type now passes `params.question` as the dialog title:
+  - `confirm(question, "", opts)`
+  - `select(question, options, opts)`
+  - `input(question, default ?? "", opts)` — `default` becomes the placeholder hint.
+- Added `ctx.ui.notify("forge:ask_user — <question>", "info")` before the dialog so the source-tag provenance is visible without crowding the dialog title.
+- Updated 2 existing test assertions (test 5 select, test 8 input) to match new arg shape. 14/14 tests pass; 406/406 full suite.
+
 ## [0.5.1] — 2026-05-10
 
 Hot-patch: direct-exec contract for forge tools. Pairs with forge-plugin v0.43.1.

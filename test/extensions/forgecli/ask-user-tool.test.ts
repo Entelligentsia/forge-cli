@@ -153,7 +153,7 @@ describe("registerAskUserTool", () => {
 			);
 			expect(result.isError).toBeFalsy();
 			expect(result.content[0].text).toBe("optionA");
-			expect(ctx.ui.select).toHaveBeenCalledWith("forge:ask_user", ["optionA", "optionB"], expect.anything());
+			expect(ctx.ui.select).toHaveBeenCalledWith("Pick one:", ["optionA", "optionB"], expect.anything());
 		});
 
 		it("returns isError when user cancels (test 6)", async () => {
@@ -185,7 +185,7 @@ describe("registerAskUserTool", () => {
 			const result = await callAskUser(tools, { question: "Enter value:", type: "text" }, ctx);
 			expect(result.isError).toBeFalsy();
 			expect(result.content[0].text).toBe("hello world");
-			expect(ctx.ui.input).toHaveBeenCalledWith("forge:ask_user", "Enter value:", expect.anything());
+			expect(ctx.ui.input).toHaveBeenCalledWith("Enter value:", "", expect.anything());
 		});
 
 		it("returns isError when user cancels (test 9)", async () => {

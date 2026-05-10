@@ -139,9 +139,22 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
 			const opts = signal !== undefined ? { signal } : {};
 
+			// Render the question as the dialog TITLE for every type. pi's UI
+			// signatures (per `ExtensionUIContext`):
+			//   select(title, options, opts)    — title shown above options
+			//   confirm(title, message, opts)   — title + message body
+			//   input(title, placeholder, opts) — title + ghost placeholder
+			// Passing a constant tag ("forge:ask_user") as title hid the question
+			// for input (where it landed in the placeholder slot — ghost text that
+			// vanished on first keystroke) and for select (which has no question
+			// slot at all). Always use `params.question` as title; the source-tag
+			// notification is emitted separately so users see provenance without
+			// losing the question text.
+			ctx.ui.notify(`forge:ask_user — ${params.question}`, "info");
+
 			if (params.type === "confirm") {
 				// ctx.ui.confirm returns true/false or undefined (cancel).
-				const answer = await ctx.ui.confirm("forge:ask_user", params.question, opts);
+				const answer = await ctx.ui.confirm(params.question, "", opts);
 				if (answer === undefined) {
 					return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
 				}
@@ -153,7 +166,7 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 					return errResult("forge:ask_user error — type 'choice' requires a non-empty 'options' array.");
 				}
 				// ctx.ui.select returns the selected string or undefined (cancel).
-				const answer = await ctx.ui.select("forge:ask_user", params.options, opts);
+				const answer = await ctx.ui.select(params.question, params.options, opts);
 				if (answer === undefined) {
 					return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
 				}
@@ -162,7 +175,9 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 
 			// type === "text"
 			// ctx.ui.input returns the entered string or undefined (cancel/ESC).
-			const answer = await ctx.ui.input("forge:ask_user", params.question, opts);
+			// Pass `default` (if any) as the placeholder ghost text so the user
+			// sees a hint of the model's suggested answer.
+			const answer = await ctx.ui.input(params.question, params.default ?? "", opts);
 			if (answer === undefined) {
 				return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
 			}
