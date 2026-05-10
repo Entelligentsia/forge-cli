@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] — 2026-05-10
+
+Pack-06 materialization-marker regression fix (paired with forge plugin v0.43.2).
+
+### Headline
+
+`hello` testbench observed `/forge:plan` (and `/forge:implement`) hard-failing every fresh init with `× workflow regression: Store-Write Verification not found in /home/.../.forge/workflows/plan_task.md` plus three siblings (`Iron Laws`, `forge_store`, `persona file path (architect)`). Root cause: FORGE-S20-T05/T06 added kickoff-shim materialization preconditions but the corresponding meta sources (`forge/forge/meta/workflows/meta-plan-task.md`, `meta-implement.md`) never gained those sections. The base-pack regen produced workflows that the kickoff shim refused to dispatch.
+
+### Fixed
+
+- Bumped bundled forge plugin from `0.43.1` → `0.43.2`. The new bundle ships `plan_task.md` + `implement_plan.md` with all four Pack-06 markers (Iron Laws, Store-Write Verification, `forge_store` token, `architect.md`/`engineer.md` persona path).
+- `/forge:plan` and `/forge:implement` kickoff shims now successfully validate the bundled workflows on fresh init.
+
+### Added
+
+- `test/extensions/forgecli/bundled-base-pack-markers.test.ts` — regression guard that runs `checkMaterialization` against the real bundled `dist/forge-payload/.base-pack/workflows/{plan_task,implement_plan}.md` (not a fixture). Catches future bundle bumps that drop markers.
+
+### Notes
+
+- Existing projects on `0.43.1` need to run `/forge:regenerate` after `/forge:update` to pick up the new markers in their `.forge/workflows/`.
+
 ## [0.5.5] — 2026-05-10
 
 Hot-fix: 0.5.4 shipped with the source-side verify code accidentally reverted by an in-conversation `git checkout` during testing. The CHANGELOG, package.json bump, and test updates all landed but `forge-init.ts` did not. v0.5.5 lands the actual implementation.
