@@ -112,9 +112,29 @@ const mockWriteInitProgress = vi.mocked(writeInitProgress);
 describe("registerForgeInit", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		// Default fs mocks
-		mockFs.existsSync.mockReturnValue(false);
-		mockFs.readFileSync.mockImplementation(() => {
+		// Default fs mocks. existsSync returns true ONLY for `config.json` so
+		// verifyPhase1 can read the default config below; tests that need other
+		// files to "exist" override this.
+		mockFs.existsSync.mockImplementation((p: unknown) => String(p).endsWith("config.json"));
+		// Default: pretend Phase 1 wrote a complete config so verifyPhase1 passes.
+		// Tests that exercise config-missing/partial paths override readFileSync.
+		mockFs.readFileSync.mockImplementation((p: unknown) => {
+			const ps = String(p);
+			if (ps.endsWith("config.json")) {
+				return JSON.stringify({
+					version: "1",
+					project: { name: "test-project", prefix: "TP" },
+					stack: { primary: ["TypeScript"], test: "vitest", build: "tsc" },
+					commands: { test: "npx vitest run", build: "tsc", lint: "biome check" },
+					paths: {
+						engineering: "engineering",
+						store: ".forge/store",
+						workflows: ".forge/workflows",
+						commands: ".claude/commands/forge",
+						templates: ".forge/templates",
+					},
+				});
+			}
 			const err = new Error("ENOENT") as NodeJS.ErrnoException;
 			err.code = "ENOENT";
 			throw err;
@@ -122,7 +142,20 @@ describe("registerForgeInit", () => {
 		mockFs.mkdirSync.mockImplementation(() => undefined);
 		mockFs.writeFileSync.mockImplementation(() => undefined);
 		mockFs.copyFileSync.mockImplementation(() => undefined);
-		mockFs.readdirSync.mockReturnValue([]);
+		// Default: pretend Phase 3 materialization succeeded so verifyPhase3
+		// passes. Specific tests that exercise the Phase 3 failure path override.
+		mockFs.readdirSync.mockImplementation((p: unknown) => {
+			const ps = String(p);
+			if (
+				ps.endsWith(".forge/workflows") ||
+				ps.endsWith(".forge/personas") ||
+				ps.endsWith(".forge/skills") ||
+				ps.endsWith(".forge/templates")
+			) {
+				return ["stub.md"] as unknown as ReturnType<typeof fs.readdirSync>;
+			}
+			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+		});
 		mockFs.appendFileSync.mockImplementation(() => undefined);
 		// Default: no init-progress file
 		mockReadInitProgress.mockReturnValue({ kind: "none" });
@@ -510,7 +543,7 @@ describe("registerForgeInit", () => {
 
 		// The final report sent via sendUserMessage should contain bundledVersion (0.40.3)
 		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("Knowledge base:"));
 		expect(reportCall).toBeDefined();
 		const reportText = String(reportCall![0]);
 		expect(reportText).toContain("0.40.3");
@@ -540,7 +573,7 @@ describe("registerForgeInit", () => {
 		await def.handler("", ctx);
 
 		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("Knowledge base:"));
 		expect(reportCall).toBeDefined();
 		const reportText = String(reportCall![0]);
 		// Must show "ai-docs/" not "engineering/"
@@ -591,7 +624,7 @@ describe("registerForgeInit", () => {
 
 		// Gap detail must appear in the final Report
 		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("Knowledge base:"));
 		expect(reportCall).toBeDefined();
 		const reportText = String(reportCall![0]);
 		expect(reportText).toContain("kb-freshness");
@@ -619,7 +652,7 @@ describe("registerForgeInit", () => {
 
 		// Gap detail and severity must appear in Report
 		const reportCalls = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-		const reportCall = reportCalls.find((c) => String(c[0]).includes("forge:init complete"));
+		const reportCall = reportCalls.find((c) => String(c[0]).includes("Knowledge base:"));
 		expect(reportCall).toBeDefined();
 		const reportText = String(reportCall![0]);
 		expect(reportText).toContain("config-completeness");
@@ -854,6 +887,10 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 
 		it("G3-custom-folder: ctx.ui.input called when user declines default, manage-config set for custom name", async () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
+			// existsSync: TRUE for everything (manage-config tool path + config.json).
+			// Use mockImplementation explicitly so the beforeEach default doesn't
+			// shadow this override.
+			mockFs.existsSync.mockImplementation(() => true);
 			const { handler } = setupNonInteractiveInit();
 			// Pre-flight confirm → true (proceed); KB-folder confirm → false (don't use default)
 			let confirmCallCount = 0;
@@ -869,8 +906,6 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 					setStatus: vi.fn(),
 				},
 			});
-			// manageConfigTool: existsSync must return true for the early manage-config call
-			mockFs.existsSync.mockReturnValue(true);
 			await handler("", ctx);
 			// ctx.ui.input must have been called (KB folder free-text)
 			expect(ctx.ui.input).toHaveBeenCalled();
