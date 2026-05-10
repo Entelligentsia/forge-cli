@@ -367,6 +367,30 @@ else
 	record SKIP "E2E-03: banner suppression" "forge bin missing"
 fi
 
+# ── E2E-14: Friction emit bundled (FORGE-S20-T08, BUG-029 extension) ─────
+# Verifies the inline node -e + node store-cli.cjs emit shape stamped into
+# 5 meta-workflows by FORGE-S20-T00 works under the flat-payload bundled
+# .tools/ layout. T01 schema constraints (subkind enum, evidence shape)
+# are exercised when present in the bundled .schemas/.
+
+echo "▶ smoke gate — friction emit bundled (E2E-14)"
+
+E2E14_SCRIPT="$SCRIPT_DIR/friction-emit-bundled.test.sh"
+if [[ -x "$E2E14_SCRIPT" ]]; then
+	if "$E2E14_SCRIPT" >"$SMOKE_OUT_DIR/friction-emit.out" 2>&1; then
+		record PASS "E2E-14: friction emit bundled (BUG-029 extension)" "see friction-emit.out"
+	else
+		E2E14_RC=$?
+		if [[ "$E2E14_RC" -eq 2 ]]; then
+			record SKIP "E2E-14: friction emit bundled (BUG-029 extension)" "bundle missing — see friction-emit.out"
+		else
+			record FAIL "E2E-14: friction emit bundled (BUG-029 extension)" "exit=$E2E14_RC — see friction-emit.out"
+		fi
+	fi
+else
+	record SKIP "E2E-14: friction emit bundled (BUG-029 extension)" "test script missing or non-executable"
+fi
+
 # ── Hook audit-mode smoke (FORGE-S18-T03) ────────────────────────────────
 # AC#7: Verify that FORGE_HOOK_AUDIT=1 causes the hook dispatcher to write
 # at least one [store-cli-intercept] entry to .forge/logs/hooks.log when
