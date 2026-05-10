@@ -212,6 +212,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:implement", // FORGE-S20-T06: real handler registered in implement.ts
 	"forge:sprint-intake", // FORGE-S19-T01: real handler registered in sprint-intake.ts
 	"forge:sprint-plan", // FORGE-S19-T02: real handler registered in sprint-plan.ts
+	"forge:read", // Real handler registered in index.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.

@@ -32,6 +32,7 @@ import { registerSprintIntake } from "./sprint-intake.js";
 import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
 import { registerUsageHook } from "./usage-hook.js";
+import { registerReadCommand } from "./read-command.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -209,6 +210,9 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// is absent (graceful no-op outside Forge project). Prompt-injection
 	// fallback DELETED per T06 AC#4.
 	registerImplement(pi);
+
+	// ── /forge:read native handler ───────────────────────────────────────────
+	registerReadCommand(pi, forgeRoot);
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────
 	// Registered unconditionally so /forge:ask works outside a Forge project.
