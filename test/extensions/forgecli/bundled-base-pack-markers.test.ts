@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import { checkMaterialization as checkPlanMaterialization } from "../../../src/extensions/forgecli/plan.js";
 import { checkMaterialization as checkImplementMaterialization } from "../../../src/extensions/forgecli/implement.js";
+import { checkMaterialization as checkEnhanceMaterialization } from "../../../src/extensions/forgecli/enhance.js";
 import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init.js";
 
 describe("bundled base-pack: Pack-06 materialization markers", () => {
@@ -38,6 +39,15 @@ describe("bundled base-pack: Pack-06 materialization markers", () => {
 		const wfPath = path.join(basePackWorkflows, "implement_plan.md");
 		const md = fs.readFileSync(wfPath, "utf8");
 		const res = checkImplementMaterialization(wfPath, md);
+		expect(res.missing).toEqual([]);
+		expect(res.ok).toBe(true);
+	});
+
+	it("enhance.md carries Iron Laws + Store-Write Verification + forge_store + engineer.md", () => {
+		const wfPath = path.join(basePackWorkflows, "enhance.md");
+		expect(fs.existsSync(wfPath)).toBe(true);
+		const md = fs.readFileSync(wfPath, "utf8");
+		const res = checkEnhanceMaterialization(wfPath, md);
 		expect(res.missing).toEqual([]);
 		expect(res.ok).toBe(true);
 	});

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.7] — 2026-05-10
+
+FORGE-S20-T04 sprint-completion gap fix (paired with forge plugin v0.43.3).
+
+### Headline
+
+`hello` testbench triggered `× forge:enhance — workflow not found at .forge/workflows/enhance.md; run /forge:init or /forge:regenerate first.` on every fresh init. Root cause: T04 added the native /forge:enhance kickoff shim (enhance.ts) reading `.forge/workflows/enhance.md`, but the bundled forge plugin never shipped that file. build-base-pack.cjs only handled commands/enhance.md via the ENHANCE_AGENT_SENTINEL path; the workflow side was absent. The T04 spec line — "resolves meta-enhance.md from bundled payload" — was not honoured by the implementation.
+
+### Fixed
+
+- Bumped bundled forge plugin from `0.43.2` → `0.43.3`. The new bundle ships `init/base-pack/workflows/enhance.md` (generated from `meta-enhance.md` via the standard transformWorkflow path) carrying the four Pack-06 markers required by the kickoff shim (Iron Laws, Store-Write Verification, `forge_store` token, `engineer.md` persona path). enhance.md remains `audience: orchestrator-only` and is exempt from the 4KB phase-file byte budget.
+- `/forge:enhance` now dispatches successfully on fresh init.
+
+### Added
+
+- `bundled-base-pack-markers.test.ts` — third assertion exercising `dist/forge-payload/.base-pack/workflows/enhance.md` against `enhance.checkMaterialization`. Catches future bundle bumps that drop enhance.md or its markers.
+
+### Notes
+
+- Existing projects on `0.43.2` need `/forge:regenerate` after `/forge:update` to materialize `.forge/workflows/enhance.md`.
+
 ## [0.5.6] — 2026-05-10
 
 Pack-06 materialization-marker regression fix (paired with forge plugin v0.43.2).
