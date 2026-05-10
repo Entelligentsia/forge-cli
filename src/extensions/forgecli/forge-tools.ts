@@ -119,6 +119,48 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 	registerForgeStoreDescribe(pi, toolDir, projectRoot);
 	registerForgeStoreTemplate(pi, toolDir, projectRoot);
 	registerForgeStoreQuery(pi, toolDir, projectRoot);
+	registerForgeToolDiscipline(pi);
+}
+
+/**
+ * Append the Forge tool-discipline block to every system prompt.
+ *
+ * Why: workflow text often refers to `forge_store ...` colloquially; without
+ * this rule, models on some providers shell-bash `forge store ...`, which
+ * spawns a fresh pi/agent loop per call — historically 26s+ cold-start vs
+ * 50ms direct exec. The bin's fast-path makes shell-out cheap, but the
+ * named MCP tools are still preferred (deterministic, schema-validated,
+ * no subprocess overhead).
+ */
+function registerForgeToolDiscipline(pi: ExtensionAPI): void {
+	// Guard: some test harnesses register a partial pi mock without `on`.
+	// Discipline injection is non-critical for unit tests of tool wrappers.
+	if (typeof pi.on !== "function") return;
+	pi.on("before_agent_start", async (event) => {
+		const discipline = `
+
+## Forge Tool Discipline
+
+All forge_* tools wrap local .cjs scripts via direct exec — deterministic, no LLM,
+no agent loop. Prefer them over shelling out.
+
+- Store CRUD: call \`forge_store\` (named tool). Canonical write is 2-positional:
+  \`{command:"write", args:["<entity>","<json>"]}\`. The id lives INSIDE the json
+  (e.g. \`{"sprintId":"X-S01","title":"...","status":"planning","taskIds":[],"createdAt":"..."}\`).
+  DO NOT pass id as a separate arg — \`["sprint","X-S01","<json>"]\` (3-arg) FAILS.
+- Before writing any record, call \`forge_store_template\` for the canonical shape and
+  \`forge_store_describe\` for required fields, status enums, and FK constraints.
+- Use \`forge_store_query\` (nlp/query/schema) for lookups instead of grepping \`.forge/store/\`.
+- Use \`forge_collate\` to refresh the KB; \`forge_validate_store\` for integrity checks;
+  \`forge_config\` for project config reads/writes.
+- Never \`bash forge store ...\`. The bin has a fast-path that exec's store-cli.cjs
+  directly (~50ms), but the named MCP tool is shorter, validated, and preferred.
+- Workflow text saying \`forge_store write sprint '<json>'\` means: call the MCP tool
+  \`forge_store\` with that 2-positional shape. Not a shell command.
+`;
+		const existing = event.systemPrompt ?? "";
+		return { systemPrompt: existing + discipline };
+	});
 }
 
 // ── forge_collate ────────────────────────────────────────────────────────────
@@ -171,16 +213,38 @@ function registerForgeStore(pi: ExtensionAPI, toolDir: string, projectRoot: stri
 		name: "forge_store",
 		label: "Forge Store",
 		description:
-			"Full store CRUD — wraps forge/tools/store-cli.cjs. Accepts any subcommand and argv. " +
-			"store-cli enforces schema validation, status transitions, and path-traversal guards internally.",
-		promptSnippet: "Use forge_store to read or write sprint/task/bug/feature/event records in the Forge store.",
+			"Direct exec of forge/tools/store-cli.cjs. Deterministic CLI, no LLM, no agent loop. " +
+			"store-cli enforces schema validation, status transitions, and path-traversal guards.\n\n" +
+			"Canonical arg shapes (entity ∈ {sprint, task, bug, feature, event}):\n" +
+			"  write <entity> '<json>'                          — 2 args. ID lives inside json. Do NOT pass id as a separate arg.\n" +
+			"  read <entity> <id> [--json]                       — 2-3 args.\n" +
+			"  list <entity> [key=value ...]                     — variadic filters.\n" +
+			"  delete <entity> <id>                              — 2 args.\n" +
+			"  update-status <entity> <id> <field> <value> [--force]\n" +
+			"  emit <sprintId> '<json>' [--sidecar]              — 2-3 args. event json embeds eventId, taskId, sprintId.\n" +
+			"  validate <entity> '<json>'                        — schema check, no write.\n" +
+			"  set-summary <taskId> <phase> <jsonFile>           — phase ∈ {plan, review_plan, implementation, code_review, validation}.\n" +
+			"  set-bug-summary <bugId> <phase> <jsonFile>\n" +
+			"  progress <sprintOrBugId> <agentName> <bannerKey> <status> [detail]\n" +
+			"  progress-clear <sprintOrBugId>\n" +
+			"  describe <entity>                                 — print JSON Schema.\n" +
+			"  template <entity>                                 — print canonical sample (call this BEFORE write to get the shape).\n\n" +
+			"Common mistake: 'write sprint <id> <json>' (3-arg) FAILS — id is parsed as JSON. Use 'write sprint <json>' (2-arg).",
+		promptSnippet:
+			"Use forge_store for store CRUD. Direct cjs exec — no shell, no bash. " +
+			"Canonical write form is 2-positional: {command:'write', args:['<entity>','<json>']}. " +
+			"Call forge_store_template first to get the json shape.",
 		parameters: Type.Object({
 			command: Type.String({
 				description:
-					"store-cli subcommand: write|read|list|delete|update-status|emit|merge-sidecar|record-usage|purge-events|write-collation-state|validate|set-summary|set-bug-summary|progress|progress-clear|nlp",
+					"store-cli subcommand: write|read|list|delete|update-status|emit|merge-sidecar|record-usage|purge-events|write-collation-state|validate|set-summary|set-bug-summary|progress|progress-clear|describe|template",
 			}),
 			args: Type.Array(Type.String(), {
-				description: "Positional and flag arguments after the subcommand. E.g. ['task', 'FORGE-S16-T03', '--json']",
+				description:
+					"Positional + flag args after the subcommand. Examples: " +
+					"write → ['sprint', '{\"sprintId\":\"X-S01\",...}'] (2-arg, id in json). " +
+					"read → ['task', 'FORGE-S16-T03', '--json']. " +
+					"update-status → ['task', 'FORGE-S16-T03', 'status', 'committed'].",
 			}),
 			dryRun: Type.Optional(
 				Type.Boolean({

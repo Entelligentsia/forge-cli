@@ -153,4 +153,64 @@ describe("parseForgeArgv", () => {
 		expect(result.env.FORGE_NON_INTERACTIVE).toBe("1");
 		expect(result.piArgv).toEqual(["--cwd", "/tmp"]);
 	});
+
+	// Fast-path subcommands — bypass pi, exec bundled cjs directly
+	it("'forge store write sprint <json>' → fast-path subcommand", () => {
+		const result = parseForgeArgv(["store", "write", "sprint", '{"id":"X"}']);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("subcommand");
+		expect(result.subcommandTool).toBe("store-cli.cjs");
+		expect(result.subcommandArgs).toEqual(["write", "sprint", '{"id":"X"}']);
+		expect(result.piArgv).toEqual([]);
+	});
+
+	it("'forge collate FOO-S01' → fast-path collate.cjs", () => {
+		const result = parseForgeArgv(["collate", "FOO-S01"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("subcommand");
+		expect(result.subcommandTool).toBe("collate.cjs");
+		expect(result.subcommandArgs).toEqual(["FOO-S01"]);
+	});
+
+	it("'forge validate-store --json' → fast-path validate-store.cjs", () => {
+		const result = parseForgeArgv(["validate-store", "--json"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.subcommandTool).toBe("validate-store.cjs");
+		expect(result.subcommandArgs).toEqual(["--json"]);
+	});
+
+	it("'forge store-query nlp \"open bugs\"' → fast-path store-query.cjs", () => {
+		const result = parseForgeArgv(["store-query", "nlp", "open bugs"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.subcommandTool).toBe("store-query.cjs");
+		expect(result.subcommandArgs).toEqual(["nlp", "open bugs"]);
+	});
+
+	it("non-fast-path bare arg → still treated as pi project path", () => {
+		const result = parseForgeArgv(["/tmp/some-project"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual(["/tmp/some-project"]);
+	});
+
+	it("fast-path only matches FIRST bare token; subsequent 'store' is a literal arg", () => {
+		const result = parseForgeArgv(["store", "store"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("subcommand");
+		expect(result.subcommandArgs).toEqual(["store"]);
+	});
+
+	it("pi flags before fast-path subcommand → bare token treated as pi arg, not fast-path", () => {
+		const result = parseForgeArgv(["--cwd", "/tmp", "store", "list"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual(["--cwd", "/tmp", "store", "list"]);
+	});
 });

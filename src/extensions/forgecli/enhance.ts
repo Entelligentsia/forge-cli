@@ -203,7 +203,7 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 			"1. Read friction events ONLY via the `forge_store_query` tool — do NOT raw-read `.forge/store/events/`. Query `events where type=friction`.",
 			`2. If at least one friction event is present, synthesize concrete enrichment proposals per the workflow's Phase 2 algorithm, then write them via the \`write\` tool to \`${proposalRel}\` (one section per proposed change, with a fenced diff block showing before/after).`,
 			"3. If zero friction events are present, emit an explicit notice — `〇 no friction events present — Phase 2 produces no proposals` — and write NO proposal file. Empty artifacts are not acceptable.",
-			"4. Honour the Pack-06 Read/Write/Ask/Store discipline: writes to store entities go via `forge_store write`; never raw-write to `.forge/store/`.",
+			"4. Honour the Pack-06 Read/Write/Ask/Store discipline: store writes go via the `forge_store` MCP tool with `{command:'write', args:['<entity>','<json>']}` (2-positional, id INSIDE json); never raw-write `.forge/store/`. Do NOT bash-shell `forge store ...`.",
 		);
 	} else if (parsed.phase === 1) {
 		sections.push(

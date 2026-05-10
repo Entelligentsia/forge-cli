@@ -73,7 +73,7 @@ export function composeKickoff(
 	const sections: string[] = [
 		"# /forge:sprint-plan",
 		"",
-		`Decompose sprint ${parsed.sprintId} into tasks. Drive the planning conversationally per the workflow below — read referenced personas/skills, validate dependencies, and write each task via \`forge_store write task '<json>'\` once you and the user agree on the shape. Update the sprint record with the final task ID list. Do not return a single bulk JSON array; commit tasks one at a time so the user can interject.`,
+		`Decompose sprint ${parsed.sprintId} into tasks. Drive the planning conversationally per the workflow below — read referenced personas/skills, validate dependencies, and write each task by calling the \`forge_store\` MCP tool with \`{command:'write', args:['task','<json>']}\` (2-positional, id INSIDE json) once you and the user agree on the shape. Call \`forge_store_template\` first for the canonical task shape. Update the sprint record (same tool, args:['sprint','<json>']) with the final task ID list. Do not return a single bulk JSON array; commit tasks one at a time so the user can interject. Do NOT bash-shell \`forge store ...\`.`,
 		"",
 		"---",
 		"",

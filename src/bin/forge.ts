@@ -5,6 +5,7 @@
 // Three bin aliases: forge / forgecli / 4ge (all point here via package.json).
 // Handles --version, --help, forge-owned flags, then delegates to pi's main().
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,6 +127,28 @@ if (parsed.forgeAction === "help") {
 
 // Apply forge env overrides
 Object.assign(process.env, parsed.env);
+
+// Fast-path subcommand: spawn the bundled cjs tool directly. This skips
+// the entire pi/agent boot and turns 26s cold-starts into <100ms shells.
+if (parsed.forgeAction === "subcommand" && parsed.subcommandTool) {
+	const toolPath = path.resolve(
+		__dirname,
+		"..",
+		"forge-payload",
+		".tools",
+		parsed.subcommandTool,
+	);
+	if (!fs.existsSync(toolPath)) {
+		process.stderr.write(
+			`forge: fast-path tool not found at ${toolPath}. Bundle may be corrupt — try \`forge --version\` and reinstall.\n`,
+		);
+		process.exit(1);
+	}
+	const result = spawnSync(process.execPath, [toolPath, ...(parsed.subcommandArgs ?? [])], {
+		stdio: "inherit",
+	});
+	process.exit(result.status ?? 1);
+}
 
 // Delegate to pi
 await main(parsed.piArgv, { extensionFactories: [forgecli] });

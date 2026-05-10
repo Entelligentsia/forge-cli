@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-05-10
+
+Hot-patch: direct-exec contract for forge tools. Pairs with forge-plugin v0.43.1.
+
+### Headline
+
+Cartographer testbench observed haiku-4-5 burning 26-220s per `bash forge store ...` shell-out — each invocation cold-started a fresh pi/agent loop because `forge` had no `store` subcommand. Native MCP `forge_store` tool also failed on 3-arg `write sprint <id> <json>` form (store-cli requires 2-arg). Net: 600x perf regression on store-write-heavy workflows.
+
+### Added
+
+- **Bin fast-path subcommands** (`src/bin/argv.ts`, `src/bin/forge.ts`) — `forge {store|collate|validate-store|store-query} <args>` now bypasses pi entirely and exec's the bundled `.tools/<name>.cjs` directly via `spawnSync`. Cold-start drops from ~26s to ~50ms. Whitelist defined in `FAST_PATH_SUBCOMMANDS`. 7 new vitest cases on the parser.
+- **System-prompt tool-discipline block** (`src/extensions/forgecli/forge-tools.ts:registerForgeToolDiscipline`) — appended to every system prompt via `pi.on("before_agent_start", ...)`. Prescribes: prefer named MCP tools over bash, canonical 2-positional `forge_store` write shape, `forge_store_template` before write, no `bash forge store ...` shell-out.
+
+### Changed
+
+- **`forge_store` MCP description + parameters** (`forge-tools.ts`) — rewritten to enumerate every store-cli subcommand with exact arg counts and worked examples. Highlights the common 3-arg-write footgun.
+- **Kickoff prompts** rewritten to instruct named MCP tool calls instead of colloquial `forge_store ...` text:
+  - `sprint-intake.ts:56` — explicit `{command:'write', args:['sprint','<json>']}` with template-first guidance.
+  - `sprint-plan.ts:76` — same for task-write loop.
+  - `plan.ts:166-167`, `implement.ts:171-172`, `enhance.ts:206` — `update-status` and Pack-06 refs rewritten to canonical MCP-call form.
+
+### Bundled
+
+- Forge plugin bumped 0.43.0 → **0.43.1** (`forge.bundledVersion`). Brings `init/base-pack/workflows/*.md` and `_fragments/*.md` rewrites: all `/forge:store ...` slash refs replaced with `node "$FORGE_ROOT/tools/store-cli.cjs" ...` direct-cjs form.
+
 ## [0.5.0] — 2026-05-10
 
 Headline: Foundation finish — central loaders + 3 native kickoff handlers + FS-level boundary guard. SDLC core path self-hosted on pi.

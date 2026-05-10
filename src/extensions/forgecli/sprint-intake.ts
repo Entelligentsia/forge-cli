@@ -53,7 +53,7 @@ export function composeKickoff(workflowMd: string, parsed: ParsedArgs): string {
 	return [
 		"# /forge:sprint-intake",
 		"",
-		"Run the sprint-intake workflow below. Drive the interview conversationally — read referenced personas/skills/templates as needed, ask clarifying questions one at a time, and write `engineering/sprints/<SPRINT_ID>/SPRINT_REQUIREMENTS.md` plus the corresponding store records when ready. Use `forge_store write sprint '<json>'` for the canonical sprint record.",
+		"Run the sprint-intake workflow below. Drive the interview conversationally — read referenced personas/skills/templates as needed, ask clarifying questions one at a time, and write `engineering/sprints/<SPRINT_ID>/SPRINT_REQUIREMENTS.md` plus the corresponding store records when ready. For the canonical sprint record, call the `forge_store` MCP tool with `{command:'write', args:['sprint','<json>']}` — 2-positional, id INSIDE json. Call `forge_store_template` first to get the json shape. Do NOT bash-shell `forge store ...`.",
 		"",
 		"---",
 		"",

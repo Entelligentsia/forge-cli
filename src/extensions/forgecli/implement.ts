@@ -168,8 +168,8 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 		"2. Query the store for the task and its sprint/feature context via `forge_store_query` — do NOT raw-read `.forge/store/`.",
 		"3. Follow the workflow Algorithm verbatim: load context, execute plan steps incrementally, run syntax/test/build verification, write PROGRESS.md, knowledge writeback, finalize.",
 		"4. Write `PROGRESS.md` and `IMPLEMENTATION-SUMMARY.json` to the task directory using the `write` tool.",
-		"5. Update task status via `forge_store update-status` (or the equivalent forge_store write) — never raw-write to `.forge/store/`.",
-		"6. Honour Pack-06 Read/Write/Ask/Store discipline: writes to store entities go via `forge_store`; in-conversation clarifications use `forge_ask_user`.",
+		"5. Update task status by calling the `forge_store` MCP tool: `{command:'update-status', args:['task','<TASK_ID>','status','<new-status>']}`. Never raw-write `.forge/store/`. Do NOT bash-shell `forge store ...`.",
+		"6. Honour Pack-06 Read/Write/Ask/Store discipline: writes go via the `forge_store` MCP tool (canonical 2-positional write: `args:['<entity>','<json>']`, id INSIDE json); in-conversation clarifications use `forge_ask_user`.",
 	);
 
 	sections.push("", "---", "", "## Workflow", "", workflowMd.trim(), "", "---");

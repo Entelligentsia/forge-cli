@@ -20,8 +20,21 @@
 //   --model, --tools, --append-system-prompt, --no-tools, --thinking,
 //   --no-thinking, and bare non-flag arguments.
 
-/** Parsed result when `--version` or `--help` is requested. */
-export type ForgeAction = "version" | "help" | null;
+/** Parsed result when `--version`, `--help`, or a fast-path subcommand is requested. */
+export type ForgeAction = "version" | "help" | "subcommand" | null;
+
+/**
+ * Whitelist of bare subcommands that bypass pi and exec a bundled cjs tool
+ * directly. Each entry maps the user-typed subcommand to the cjs filename
+ * under `dist/forge-payload/.tools/`. Direct exec keeps these <100ms vs the
+ * ~26s cold-start an agent loop would incur.
+ */
+export const FAST_PATH_SUBCOMMANDS: Readonly<Record<string, string>> = Object.freeze({
+	store: "store-cli.cjs",
+	collate: "collate.cjs",
+	"validate-store": "validate-store.cjs",
+	"store-query": "store-query.cjs",
+});
 
 export interface ParseResult {
 	/** Action for forge to handle before invoking pi, or null if pi should run. */
@@ -30,6 +43,10 @@ export interface ParseResult {
 	piArgv: string[];
 	/** Env vars to set before invoking pi. */
 	env: Record<string, string>;
+	/** When forgeAction === "subcommand", the cjs filename to exec. */
+	subcommandTool?: string;
+	/** When forgeAction === "subcommand", argv to pass after the cjs filename. */
+	subcommandArgs?: string[];
 }
 
 export interface ParseError {
@@ -131,6 +148,24 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 				i++;
 			}
 			continue;
+		}
+
+		// ── Fast-path subcommand (forge store, forge collate, etc.) ──────────
+		// Only matches the FIRST bare token, and only when no flags have
+		// been collected yet (so `forge --cwd /tmp store ...` still treats
+		// `store` as a fast-path; forgeAction overrides piArgv in that case).
+		if (
+			!token.startsWith("-") &&
+			Object.hasOwn(FAST_PATH_SUBCOMMANDS, token) &&
+			piArgv.length === 0
+		) {
+			return {
+				forgeAction: "subcommand",
+				piArgv: [],
+				env,
+				subcommandTool: FAST_PATH_SUBCOMMANDS[token],
+				subcommandArgs: argv.slice(i + 1),
+			};
 		}
 
 		// ── Bare non-flag argument (project path etc.) ───────────────────────
