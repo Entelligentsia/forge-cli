@@ -209,7 +209,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:refresh-kb-links",
 	"forge:enhance",
 	"forge:sprint-intake", // FORGE-S19-T01: real handler registered in sprint-intake.ts
-	"forge:sprint-plan",   // FORGE-S19-T02: real handler registered in sprint-plan.ts
+	"forge:sprint-plan", // FORGE-S19-T02: real handler registered in sprint-plan.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.
@@ -295,26 +295,10 @@ export function registerAllForgeCommands(pi: ExtensionAPI, options: RegisterAllO
 		},
 	});
 
-	// Register /forge:enhance stub with sentinel (PLAN sub-decision #4)
-	pi.registerCommand("forge:enhance", {
-		description: "Progressive project-specific enrichment of structural elements",
-		async handler(_args, ctx) {
-			const sentinelPath = path.join(capturedCwd, ".forge", "cache", "post-init-enhancement-triggered");
-			const sentinelExists = fsSync.existsSync(sentinelPath);
-			ctx.ui.notify(
-				`〇 forge:enhance — full implementation in S18+. ${sentinelExists ? "Sentinel already written." : "Sentinel written; auto-trigger will fire when it lands."}`,
-				"info",
-			);
-			if (!sentinelExists) {
-				try {
-					fsSync.mkdirSync(path.dirname(sentinelPath), { recursive: true });
-					fsSync.writeFileSync(sentinelPath, new Date().toISOString() + "\n", "utf8");
-				} catch {
-					// non-fatal
-				}
-			}
-		},
-	});
+	// /forge:enhance: real native kickoff handler is registered in index.ts via
+	// registerEnhance(pi) — FORGE-S20-T04. The previous sentinel-writing stub
+	// has been retired. EXPLICITLY_REGISTERED_NAMES still lists "forge:enhance"
+	// so the auto-stub loop above skips it.
 
 	return registered;
 }

@@ -17,18 +17,19 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { readProjectMeta } from "./banner.js";
+import { registerEnhance } from "./enhance.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { registerForgeInit } from "./forge-init.js";
-import { registerSprintIntake } from "./sprint-intake.js";
-import { registerSprintPlan } from "./sprint-plan.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
-import { registerUsageHook } from "./usage-hook.js";
+import { registerSprintIntake } from "./sprint-intake.js";
+import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
+import { registerUsageHook } from "./usage-hook.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -184,6 +185,14 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Registered before registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub generated from the command markdown file.
 	registerSprintPlan(pi);
+
+	// ── /forge:enhance native kickoff handler (FORGE-S20-T04) ────────────────
+	// Replaces the post-S17 sentinel-writing stub. Registered unconditionally
+	// here so it takes precedence over the auto-stub registered by
+	// registerAllForgeCommands; the handler itself notifies and returns when
+	// `.forge/workflows/enhance.md` is absent (graceful no-op outside Forge
+	// project).
+	registerEnhance(pi);
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────
 	// Registered unconditionally so /forge:ask works outside a Forge project.

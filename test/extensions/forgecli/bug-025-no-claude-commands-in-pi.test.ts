@@ -13,18 +13,20 @@
 //       retrospective, enhance — subset that are NOT in REAL_HANDLERS).
 //   3. The final Report contains the pi-runtime note about programmatic registration.
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mock setup ────────────────────────────────────────────────────────────────
 
 vi.mock("node:child_process", () => ({
-	execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
-		if (typeof cb === "function") cb(null, "", "");
-		return { pid: 1 };
-	}),
+	execFile: vi.fn(
+		(_cmd: string, _args: string[], _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
+			if (typeof cb === "function") cb(null, "", "");
+			return { pid: 1 };
+		},
+	),
 	execFileSync: vi.fn(),
 }));
 
@@ -79,9 +81,8 @@ vi.mock("../../../src/extensions/forgecli/refresh-kb-links.js", () => ({
 	),
 }));
 
-import { registerForgeInit } from "../../../src/extensions/forgecli/forge-init.js";
 import { registerAllForgeCommands } from "../../../src/extensions/forgecli/forge-commands.js";
-import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init.js";
+import { getBundledPayloadRoot, registerForgeInit } from "../../../src/extensions/forgecli/forge-init.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -156,9 +157,14 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 			expect(registeredCommands.has(cmd), `Expected command ${cmd} to be registered`).toBe(true);
 		}
 
-		// refresh-kb-links and enhance are also registered by registerAllForgeCommands
+		// refresh-kb-links is registered by registerAllForgeCommands.
 		expect(registeredCommands.has("forge:refresh-kb-links")).toBe(true);
-		expect(registeredCommands.has("forge:enhance")).toBe(true);
+
+		// forge:enhance: as of FORGE-S20-T04, the native kickoff handler is
+		// registered separately via registerEnhance(pi) in index.ts. It now
+		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
+		// MUST NOT register it (would clobber the real handler).
+		expect(registeredCommands.has("forge:enhance")).toBe(false);
 	});
 
 	it("after Phase-4, .claude/commands/ is cleaned up in pi mode (isPiRuntime=true)", async () => {
