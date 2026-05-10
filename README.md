@@ -197,6 +197,11 @@ On any npm error or version mismatch the script logs a `[warn] registry check fa
 
 | Command                                    | Status              |
 |--------------------------------------------|---------------------|
+| `/forge:enhance` (Phase 2)                 | Shipped (0.5.0)     |
+| `/forge:plan`                              | Shipped (0.5.0)     |
+| `/forge:implement`                         | Shipped (0.5.0)     |
+| FS-level two-layer boundary guard          | Shipped (0.5.0)     |
+| Bundled-tools layout regression coverage   | Shipped (0.5.0)     |
 | `/forge:sprint-intake`                     | Shipped (0.4.0)     |
 | `/forge:sprint-plan`                       | Shipped (0.4.0)     |
 | Pi-runtime token telemetry (`usage-hook`)  | Shipped (0.4.0)     |
@@ -211,6 +216,7 @@ Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
 | Version | Headline |
 |---------|----------|
+| 0.5.0   | Foundation finish — central loaders + 3 native kickoff handlers + FS-level boundary guard |
 | 0.4.0   | Native sprint-intake + sprint-plan handlers — SDLC entry path self-hosted |
 | 0.3.0   | Pi-runtime parity adapters — `forge:ask_user` TUI tool + hook safety net |
 | 0.2.1   | Non-interactive mode — `--non-interactive` flag and `FORGE_YES=1` env var |

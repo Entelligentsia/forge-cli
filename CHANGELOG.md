@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-10
+
+Headline: Foundation finish — central loaders + 3 native kickoff handlers + FS-level boundary guard. SDLC core path self-hosted on pi.
+
+### △ Breaking
+
+- **`/forge:plan` and `/forge:implement` legacy markdown-stub fallback DELETED** (FORGE-S20-T05, T06). The pre-S20 path injected a workflow markdown body into the user's prompt when no native handler was registered. With T05 (`plan.ts`) and T06 (`implement.ts`) shipping native Kickoff Shims, the fallback is removed. Users on a custom fork that still relied on stub injection must port to the native handler API. Stock forge-cli users see no behaviour change beyond improved kickoff reliability.
+
+### Added
+
+- **Central persona/skill loader** (FORGE-S20-T02) — `loaders/persona.ts`, `loaders/skill.ts`. Single source for resolving `meta-<persona>.md` / `meta-<skill>.md` from the bundled payload. Reused by all native kickoff handlers.
+- **Shared template-render helper** (FORGE-S20-T03) — `helpers/template-render.ts`. Mustache-style placeholder substitution for kickoff message composition; centralizes formatting across enhance/plan/implement.
+- **`/forge:enhance` Phase 2 native kickoff handler** (FORGE-S20-T04) — `enhance.ts`. Replaces the prior `/forge:enhance` markdown stub with a native Kickoff Shim. Argv parses `--phase` and free-form text; composes kickoff via T02+T03; calls `pi.sendUserMessage()` with `deliverAs:"steer"`.
+- **`/forge:plan` native kickoff handler** (FORGE-S20-T05) — `plan.ts`. Native port; legacy fallback deleted (see Breaking).
+- **`/forge:implement` native kickoff handler** (FORGE-S20-T06) — `implement.ts`. Native port mirroring T05; materialization-marker check pre-dispatch; legacy fallback deleted (see Breaking).
+- **FS-level two-layer boundary guard hook** (FORGE-S20-T07) — `hooks/two-layer-guard.ts`. Blocks tool calls that would write to `forge/forge/meta/` or non-`.forge/` paths owned by the Forge plugin from inside forge-cli runtime. Issue #24 enforcement promoted from engineer-discipline to FS layer.
+- **Bundled-tools regression test** (FORGE-S20-T08) — extends BUG-029 layout-detection coverage. Smoke gate ensures all four affected MCP tools (`forge_config`, `forge_store`, `forge_validate_store`, `forge_collate`) succeed against the flat bundled layout.
+- **forge-plugin bundled bump 0.41.0 → 0.43.0** — picks up the friction-emit channel (workflows + event schema + validate-store) from FORGE-S20 T00/T01 and the v0.42.0 catch-up content (substitute-placeholders `--target pi`, store-cli `describe`/`template`, validate hint).
+- **`forge_store_describe` MCP tool** — returns the raw JSON Schema for a Forge store entity (sprint/task/bug/event/feature). Wraps `store-cli.cjs describe`. Enables LLMs to inspect schema before writing.
+- **`forge_store_template` MCP tool** — returns a canonical sample record with all required fields populated (enum first-value, ISO date-time, ID placeholders). Wraps `store-cli.cjs template`. Reduces write→reject→retry friction. See forge#3 for phase 2/3 (per-entity TypeBox tools + harness one-shot injection).
+- **`forge_store_query` MCP tool** — natural-language and structured queries over the Forge store. Wraps `store-cli.cjs` query/nlp/schema dispatch (delegates to `store-query.cjs`). Closes the tool-gap surfaced in forge-cli#2 — non-Anthropic models can now find tasks/bugs/sprints/features by intent without scanning JSON manually. Bundled deps: `store-query.cjs` + `lib/{store-facade,store-nlp,store-query-exec}.cjs`.
+
 ### Fixed
 
 - **forge-tools layout detection (FORGE-BUG-029)** — `forge_config`, `forge_store`, `forge_validate_store`, and `forge_collate` MCP tools failed with "Cannot find module" when `paths.forgeRoot` pointed at the flat bundled payload (`dist/forge-payload/.tools/`). `forge-tools.ts` was unconditionally appending a `tools/` segment, valid only for the Claude-plugin nested layout. New `resolveToolDir()` probes for `<forgeRoot>/tools/` and falls back to flat layout when absent. Two regression tests (test 11/12) cover both layouts.
@@ -16,13 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **sprint-intake handler — LLM-driven kickoff (FORGE-BUG-031)** — retired the deterministic TUI interview shipped in FORGE-S19-T01. `sprint-intake.ts` (768 → 106 lines) now parses argv (empty | `@<file>` | free-form text), reads `.forge/workflows/architect_sprint_intake.md`, composes a kickoff message, and calls `pi.sendUserMessage()` to hand control to the LLM. The LLM drives the conversational interview using `forge_store`, `forge_ask_user`, `read`, `write`, and `forge_collate`. Removed `sprint-intake.test.ts` (14 TUI tests), retired smoke gates E2E-08/09 (`FORGE_NON_INTERACTIVE`, `FORGE_INTAKE_ANSWERS_FILE`). Motivation: TUI captured raw input as sprint dir name producing malformed dirs (`Add/`, `S02/`, `"add/`) and lost the elicitation intelligence of the Claude-plugin flow.
 - **sprint-plan handler — LLM-driven kickoff (FORGE-BUG-032)** — retired the deterministic JSON-mode subagent call shipped in FORGE-S19-T02. `sprint-plan.ts` (606 → 138 lines) now parses argv (`<SPRINT_ID> [@<file> | <text>]`), reads `SPRINT_REQUIREMENTS.md` or `REQUIREMENTS.md` alias, composes a kickoff with `architect_sprint_plan.md`, and calls `pi.sendUserMessage()`. LLM drives task decomposition conversationally, writing tasks via `forge_store write task` one at a time — no rigid JSON-array contract, no 2-attempt retry cap. Removed `sprint-plan.test.ts` and retired E2E-10 / `FORGE_SPRINT_PLAN_FIXTURE`. Motivation: emberglow testbench hit cascading failures with glm-5.1:cloud returning non-array output, plus accepted bare/wrong-prefix sprint IDs and lacked filename alias.
-
-### Added
-
-- **`forge_store_describe` MCP tool** — returns the raw JSON Schema for a Forge store entity (sprint/task/bug/event/feature). Wraps `store-cli.cjs describe`. Enables LLMs to inspect schema before writing.
-- **`forge_store_template` MCP tool** — returns a canonical sample record with all required fields populated (enum first-value, ISO date-time, ID placeholders). Wraps `store-cli.cjs template`. Reduces write→reject→retry friction. See forge#3 for phase 2/3 (per-entity TypeBox tools + harness one-shot injection).
-- **`forge_store_query` MCP tool** — natural-language and structured queries over the Forge store. Wraps `store-cli.cjs` query/nlp/schema dispatch (delegates to `store-query.cjs`). Closes the tool-gap surfaced in forge-cli#2 — non-Anthropic models can now find tasks/bugs/sprints/features by intent without scanning JSON manually. Bundled deps: `store-query.cjs` + `lib/{store-facade,store-nlp,store-query-exec}.cjs`.
-- **forge-plugin bundled bump 0.40.3 → 0.41.0** — picks up new `describe`/`template` subcommands and validate.js hint line.
 
 ## [0.4.0] — 2026-05-09
 
@@ -289,6 +304,7 @@ ported onto `@earendil-works/pi-coding-agent`.
 - `claude-agent-sdk` plan-limit support (deferred to S17+).
 - Cost telemetry surfacing in `/forge:*` (waived for S16).
 
+[0.5.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Entelligentsia/forge-cli/releases/tag/v0.2.1
