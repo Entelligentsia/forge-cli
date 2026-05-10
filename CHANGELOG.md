@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-05-10
+
+UX: KB-folder confirm question rephrased so default-Yes is the safe path.
+
+### Changed
+
+- `forge-init.ts:528` — KB-folder gate question changed from `Does "engineering" conflict with an existing folder in this project?` (default-Yes meant unsafe path: trigger custom-name flow) to `Use "engineering" as the folder name?` (default-Yes = use default; pick No only if a real conflict exists). Pi's `ctx.ui.confirm` exposes no `defaultValue` option, so the question text has to align with the highlighted default. Updated 2 tests in `forge-init.test.ts` G3 group.
+
 ## [0.5.2] — 2026-05-10
 
 Hot-patch: `forge_ask_user` UI rendering — text/choice prompts now show the question.

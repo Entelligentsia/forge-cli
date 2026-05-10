@@ -526,16 +526,19 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				await ctx.waitForIdle();
 
 				// KB folder prompt (spec §7, F2) — G3: skipped in non-interactive mode (default: "engineering")
+				// Phrasing chosen so the default-Yes affirmative ("use engineering/") is the
+				// safe path. Pi's ctx.ui.confirm has no defaultValue option, so the question
+				// has to align with the highlighted default — earlier "does this conflict?"
+				// phrasing made the unsafe answer the default.
 				if (!isNonInteractive()) {
 					const kbDescription =
-						`Forge will create a folder for architecture docs, sprints, bugs, and features.\n` +
-						`Default name: engineering/\n\n` +
-						`Does "engineering" conflict with an existing folder in this project?`;
-					const hasConflict = await ctx.ui.confirm("Engineering folder name?", kbDescription);
-					if (hasConflict) {
+						`Forge will create a folder for architecture docs, sprints, bugs, and features.\n\n` +
+						`Use "engineering" as the folder name?  (Pick No only if your project already has an "engineering/" folder you don't want Forge to touch.)`;
+					const useDefault = await ctx.ui.confirm("Engineering folder name?", kbDescription);
+					if (!useDefault) {
 						const customName = await ctx.ui.input(
-							"Engineering folder name?",
-							"Enter preferred folder name (e.g. ai-docs, .forge-kb, docs/ai): ",
+							"Engineering folder name? Enter preferred folder name",
+							"e.g. ai-docs, .forge-kb, docs/ai",
 						);
 						if (customName && customName.trim()) {
 							const manageConfigToolEarly = path.join(toolsRoot, "manage-config.cjs");

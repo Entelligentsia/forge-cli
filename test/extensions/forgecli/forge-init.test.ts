@@ -852,17 +852,18 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(false);
 		});
 
-		it("G3-custom-folder: ctx.ui.input called when conflict confirmed, manage-config set for custom name", async () => {
+		it("G3-custom-folder: ctx.ui.input called when user declines default, manage-config set for custom name", async () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
-			// Both pre-flight and KB folder confirms return true; input returns "ai-docs"
+			// Pre-flight confirm → true (proceed); KB-folder confirm → false (don't use default)
 			let confirmCallCount = 0;
 			const ctx = buildMockCtx({
 				ui: {
 					notify: vi.fn(),
 					confirm: vi.fn(() => {
 						confirmCallCount++;
-						return Promise.resolve(true); // pre-flight → proceed; KB → has conflict
+						// First call = pre-flight (return true); subsequent = KB-folder (return false)
+						return Promise.resolve(confirmCallCount === 1);
 					}),
 					input: vi.fn(() => Promise.resolve("ai-docs")),
 					setStatus: vi.fn(),
@@ -877,25 +878,20 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			expect(inputCalls.some((c) => (c[0] as string).includes("Engineering folder name?"))).toBe(true);
 		});
 
-		it("G3-no-conflict: ctx.ui.input NOT called when user reports no conflict", async () => {
+		it("G3-use-default: ctx.ui.input NOT called when user accepts the default", async () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
-			// Pre-flight confirm → true (proceed); KB folder confirm → false (no conflict)
-			let confirmCallCount = 0;
+			// Both pre-flight and KB-folder confirms return true (proceed; use default)
 			const ctx = buildMockCtx({
 				ui: {
 					notify: vi.fn(),
-					confirm: vi.fn(() => {
-						confirmCallCount++;
-						// First call = pre-flight (return true); subsequent calls = KB folder (return false)
-						return Promise.resolve(confirmCallCount === 1);
-					}),
+					confirm: vi.fn(() => Promise.resolve(true)),
 					input: vi.fn(() => Promise.resolve("ai-docs")),
 					setStatus: vi.fn(),
 				},
 			});
 			await handler("", ctx);
-			// No conflict → ctx.ui.input NOT called for KB folder
+			// User accepted default → ctx.ui.input NOT called for KB folder
 			const inputTitles = vi.mocked(ctx.ui.input).mock.calls.map((c) => c[0] as string);
 			expect(inputTitles.some((t) => t.includes("Engineering folder name?"))).toBe(false);
 		});
