@@ -714,12 +714,29 @@ describe("registerForgeInit", () => {
 //   (c) FORGE_YES=1 — gate bypassed
 
 describe("non-interactive mode (FORGE-S18-T01)", () => {
-	// Reset mocks and env after each test
+	// Reset mocks and env after each test. Mirrors outer-describe beforeEach
+	// updates that make verifyPhase1/3 pass by default (config.json present
+	// with full schema; .forge/{workflows,personas,skills,templates} non-empty).
 	beforeEach(() => {
 		vi.clearAllMocks();
-		// Default fs mocks (mirror the outer describe setup)
-		mockFs.existsSync.mockReturnValue(false);
-		mockFs.readFileSync.mockImplementation(() => {
+		mockFs.existsSync.mockImplementation((p: unknown) => String(p).endsWith("config.json"));
+		mockFs.readFileSync.mockImplementation((p: unknown) => {
+			const ps = String(p);
+			if (ps.endsWith("config.json")) {
+				return JSON.stringify({
+					version: "1",
+					project: { name: "test-project", prefix: "TP" },
+					stack: { primary: ["TypeScript"], test: "vitest", build: "tsc" },
+					commands: { test: "npx vitest run", build: "tsc", lint: "biome check" },
+					paths: {
+						engineering: "engineering",
+						store: ".forge/store",
+						workflows: ".forge/workflows",
+						commands: ".claude/commands/forge",
+						templates: ".forge/templates",
+					},
+				});
+			}
 			const err = new Error("ENOENT") as NodeJS.ErrnoException;
 			err.code = "ENOENT";
 			throw err;
@@ -727,7 +744,18 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 		mockFs.mkdirSync.mockImplementation(() => undefined);
 		mockFs.writeFileSync.mockImplementation(() => undefined);
 		mockFs.copyFileSync.mockImplementation(() => undefined);
-		mockFs.readdirSync.mockReturnValue([]);
+		mockFs.readdirSync.mockImplementation((p: unknown) => {
+			const ps = String(p);
+			if (
+				ps.endsWith(".forge/workflows") ||
+				ps.endsWith(".forge/personas") ||
+				ps.endsWith(".forge/skills") ||
+				ps.endsWith(".forge/templates")
+			) {
+				return ["stub.md"] as unknown as ReturnType<typeof fs.readdirSync>;
+			}
+			return [] as unknown as ReturnType<typeof fs.readdirSync>;
+		});
 		mockFs.appendFileSync.mockImplementation(() => undefined);
 		mockReadInitProgress.mockReturnValue({ kind: "none" });
 	});

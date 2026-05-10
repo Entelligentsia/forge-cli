@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] — 2026-05-10
+
+Hot-fix: 0.5.4 shipped with the source-side verify code accidentally reverted by an in-conversation `git checkout` during testing. The CHANGELOG, package.json bump, and test updates all landed but `forge-init.ts` did not. v0.5.5 lands the actual implementation.
+
+### Added
+
+- All v0.5.4 changes per CHANGELOG below — for real this time. `verifyPhase1/2/3` helpers + Phase 1+2 retry-once-then-confirm loop + Phase 3 hard-fail + final report banner gated on cross-phase verify.
+- `non-interactive mode` describe block beforeEach updated to match outer beforeEach defaults (was overriding with old null-config setup).
+
 ## [0.5.4] — 2026-05-10
 
 `/forge:init` per-phase verify + retry + recover.

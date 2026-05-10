@@ -234,7 +234,7 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 
 		// The final report sent via pi.sendUserMessage should contain the pi-runtime note
 		const allMessages = (pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
-		const reportCall = allMessages.find((c) => String(c[0]).includes("forge:init complete"));
+		const reportCall = allMessages.find((c) => String(c[0]).includes("Knowledge base:"));
 		expect(reportCall).toBeDefined();
 		const reportText = String(reportCall![0]);
 		expect(reportText).toMatch(/programmatically.*pi runtime|pi runtime.*programmatically/i);

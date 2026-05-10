@@ -199,6 +199,67 @@ async function runToolAdvisory(
 	}
 }
 
+// ── Per-phase verification ────────────────────────────────────────────────────
+
+interface VerifyResult {
+	ok: boolean;
+	missing: string[];
+	reason?: string;
+}
+
+function verifyPhase1(cwd: string): VerifyResult {
+	const configPath = path.join(cwd, ".forge", "config.json");
+	if (!fs.existsSync(configPath)) {
+		return { ok: false, missing: [".forge/config.json"], reason: "config file not written" };
+	}
+	let cfg: Record<string, unknown>;
+	try {
+		cfg = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		return { ok: false, missing: [".forge/config.json"], reason: `JSON parse failed: ${e.message ?? "?"}` };
+	}
+	const missing: string[] = [];
+	if (!cfg.version) missing.push("version");
+	const proj = cfg.project as Record<string, unknown> | undefined;
+	if (!proj?.name) missing.push("project.name");
+	if (!proj?.prefix) missing.push("project.prefix");
+	if (!cfg.stack) missing.push("stack");
+	if (!cfg.commands) missing.push("commands");
+	const paths = cfg.paths as Record<string, unknown> | undefined;
+	if (!paths?.engineering) missing.push("paths.engineering");
+	if (!paths?.store) missing.push("paths.store");
+	if (!paths?.workflows) missing.push("paths.workflows");
+	return { ok: missing.length === 0, missing };
+}
+
+function verifyPhase2(cwd: string, kbPath: string): VerifyResult {
+	const archDocs = ["stack", "processes", "database", "routing", "deployment", "entity-model", "stack-checklist"];
+	const missing: string[] = [];
+	for (const d of archDocs) {
+		if (!fs.existsSync(path.join(cwd, kbPath, "architecture", `${d}.md`))) {
+			missing.push(`${kbPath}/architecture/${d}.md`);
+		}
+	}
+	return { ok: missing.length === 0, missing };
+}
+
+function verifyPhase3(cwd: string): VerifyResult {
+	const dirs = ["workflows", "personas", "skills", "templates"];
+	const missing: string[] = [];
+	for (const d of dirs) {
+		const dir = path.join(cwd, ".forge", d);
+		let count = 0;
+		try {
+			count = fs.readdirSync(dir).filter((f) => f.endsWith(".md") || f.endsWith(".json")).length;
+		} catch {
+			count = 0;
+		}
+		if (count === 0) missing.push(`.forge/${d}/ (empty)`);
+	}
+	return { ok: missing.length === 0, missing };
+}
+
 // ── Discovery prompt text ──────────────────────────────────────────────────
 
 function buildPhase1PromptText(bundleRoot: string, projectName: string): string {
@@ -519,11 +580,49 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 
 				ctx.ui.notify("Running 5 discovery scans in parallel...", "info");
 
-				// Dispatch 5 discovery subagents via sendUserMessage instruction
-				// (model invokes the subagent tool with mode: "parallel")
+				// Dispatch 5 discovery subagents via sendUserMessage instruction.
+				// If the agent doesn't have a `subagent` tool, it must fall back to
+				// running the 5 scans inline — Phase 1's deliverable is non-negotiable.
 				const phase1Prompt = buildPhase1PromptText(bundleRoot, projectName);
 				sendToAgent(phase1Prompt);
 				await ctx.waitForIdle();
+
+				// Verify deliverable. If missing, retry once with a corrective steer;
+				// if still missing, prompt the user to abort or continue with partial.
+				let phase1 = verifyPhase1(cwd);
+				if (!phase1.ok) {
+					ctx.ui.notify(
+						`△ Phase 1 deliverable missing: ${phase1.missing.join(", ")} — retrying with corrective steer.`,
+						"warning",
+					);
+					sendToAgent(
+						`Phase 1 verification failed. .forge/config.json is missing the following required fields: ${phase1.missing.join(", ")}.\n\n` +
+							`Write a complete .forge/config.json now using the \`write\` tool. Do NOT call subagents — analyze the project codebase yourself if needed. ` +
+							`Use the schema from the original Phase 1 prompt: version, project.{name,prefix}, stack, commands, and paths.{engineering,store,workflows,commands,templates} are all required.`,
+					);
+					await ctx.waitForIdle();
+					phase1 = verifyPhase1(cwd);
+				}
+				if (!phase1.ok) {
+					if (isNonInteractive()) {
+						ctx.ui.notify(
+							`× Phase 1 failed: ${phase1.missing.join(", ")}. Aborting init in non-interactive mode.`,
+							"error",
+						);
+						return;
+					}
+					const proceed = await ctx.ui.confirm(
+						"Phase 1 failed twice — continue with partial init?",
+						`.forge/config.json is still missing: ${phase1.missing.join(", ")}.\n\n` +
+							`Yes = continue (you'll need to /forge:regenerate later).\n` +
+							`No  = abort. Inspect the file manually and re-run /forge:init.`,
+					);
+					if (!proceed) {
+						ctx.ui.notify("× /forge:init aborted at Phase 1 verify.", "error");
+						return;
+					}
+					ctx.ui.notify("△ Continuing with partial Phase 1 — downstream phases may fail.", "warning");
+				}
 
 				// KB folder prompt (spec §7, F2) — G3: skipped in non-interactive mode (default: "engineering")
 				// Phrasing chosen so the default-Yes affirmative ("use engineering/") is the
@@ -632,6 +731,42 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				const phase2Prompt = buildPhase2PromptText(bundleRoot, kbPath, projectName);
 				sendToAgent(phase2Prompt);
 				await ctx.waitForIdle();
+
+				// Verify Phase 2 deliverables.
+				let phase2 = verifyPhase2(cwd, kbPath);
+				if (!phase2.ok) {
+					ctx.ui.notify(
+						`△ Phase 2 deliverable incomplete: ${phase2.missing.length} doc(s) missing — retrying.`,
+						"warning",
+					);
+					sendToAgent(
+						`Phase 2 verification failed. The following architecture docs are missing:\n${phase2.missing.map((m) => `  - ${m}`).join("\n")}\n\n` +
+							`Write the missing files now using the \`write\` tool. Do NOT call subagents — analyze the project codebase yourself. ` +
+							`Use the rulebook at ${path.join(bundleRoot, ".init", "generation", "generate-kb-doc.md")} for the per-doc shape and confidence-header format.`,
+					);
+					await ctx.waitForIdle();
+					phase2 = verifyPhase2(cwd, kbPath);
+				}
+				if (!phase2.ok) {
+					if (isNonInteractive()) {
+						ctx.ui.notify(
+							`× Phase 2 failed: ${phase2.missing.length} doc(s) still missing. Aborting init in non-interactive mode.`,
+							"error",
+						);
+						return;
+					}
+					const proceed = await ctx.ui.confirm(
+						"Phase 2 failed twice — continue with partial init?",
+						`Missing docs:\n${phase2.missing.map((m) => `  - ${m}`).join("\n")}\n\n` +
+							`Yes = continue (you'll need to fill these manually).\n` +
+							`No  = abort. Inspect the project and re-run /forge:init.`,
+					);
+					if (!proceed) {
+						ctx.ui.notify("× /forge:init aborted at Phase 2 verify.", "error");
+						return;
+					}
+					ctx.ui.notify("△ Continuing with partial Phase 2.", "warning");
+				}
 
 				// Construct project-context.json
 				let kbPathResolved = kbPath;
@@ -773,6 +908,20 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 						"build-overlay smoke (advisory)",
 						15000,
 					);
+				}
+
+				// Verify Phase 3 deliverables. substitute-placeholders.cjs is invoked
+				// via runToolAdvisory, so a missing/invalid config produces zero
+				// output and no exception. Hard-fail here.
+				const phase3 = verifyPhase3(cwd);
+				if (!phase3.ok) {
+					ctx.ui.notify(
+						`× Phase 3 failed: ${phase3.missing.join(", ")}. ` +
+							`This usually means substitute-placeholders.cjs ran against an incomplete config. ` +
+							`Fix .forge/config.json and run /forge:regenerate, or restart /forge:init from scratch (delete .forge/init-progress.json).`,
+						"error",
+					);
+					return;
 				}
 
 				writeInitProgress(cwd, 3);
@@ -1128,10 +1277,28 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				);
 			}
 
+			// Final cross-phase verification — banner reflects real disk state.
+			const finalP1 = verifyPhase1(cwd);
+			const finalP3 = verifyPhase3(cwd);
+			const fullyComplete = finalP1.ok && finalP3.ok;
+			const bannerLabel = fullyComplete
+				? `║  /forge:init complete                                        ║`
+				: `║  /forge:init incomplete — see gaps below                     ║`;
+			const incompleteDetail: string[] = [];
+			if (!finalP1.ok) {
+				incompleteDetail.push(`× Phase 1: ${finalP1.missing.join(", ")} (config incomplete)`);
+			}
+			if (!finalP3.ok) {
+				incompleteDetail.push(`× Phase 3: ${finalP3.missing.join(", ")} (materialization missing)`);
+				incompleteDetail.push(
+					`  → Recover: \`/forge:regenerate\` (re-runs substitute-placeholders against current config), or delete .forge/init-progress.json and re-run /forge:init.`,
+				);
+			}
+
 			const report = [
 				``,
 				`╔══════════════════════════════════════════════════════════════╗`,
-				`║  /forge:init complete                                        ║`,
+				bannerLabel,
 				`╚══════════════════════════════════════════════════════════════╝`,
 				``,
 				`Project: ${projectName}`,
@@ -1143,6 +1310,7 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				`Workflows: .forge/workflows/`,
 				`Templates: .forge/templates/`,
 				``,
+				...(incompleteDetail.length > 0 ? [`Phase verification gaps:`, ...incompleteDetail, ``] : []),
 				healthSection,
 				``,
 				`Next steps:`,
