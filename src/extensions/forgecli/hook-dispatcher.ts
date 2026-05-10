@@ -24,6 +24,7 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
 
@@ -197,6 +198,25 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 	// ── tool_call: fires before any tool executes ─────────────────────────────
 	pi.on("tool_call", (event: ToolCallEvent): ToolCallEventResult | void => {
 		appendAudit(logsDir, `[tool_call] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
+
+		// ── Two-layer boundary guard (FORGE-S20-T07) ───────────────────────────
+		// Reject any write/edit whose target path resolves under
+		// <cwd>/forge/forge/meta/. Two-layer rule: fixes to Forge itself go
+		// through forge-engineer/forge-bugfixer against forge/, not via
+		// forge-cli runtime edits. FORGE_HOOK_AUDIT=1 logs but never blocks.
+		if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
+			const verdict = checkTwoLayerBoundary(event.input.path, process.cwd());
+			if (!verdict.allowed) {
+				appendAudit(
+					logsDir,
+					`[two-layer-guard] decision=would-block path=${verdict.resolvedPath} reason=${verdict.reason}`,
+				);
+				if (auditEnabled()) {
+					return undefined;
+				}
+				return { block: true, reason: verdict.reason as string };
+			}
+		}
 
 		// Bash interception: identify store-cli write/update-status calls.
 		if (isToolCallEventType("bash", event)) {
