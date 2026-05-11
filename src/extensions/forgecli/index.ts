@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import { VERSION as PI_VERSION, initTheme } from "@earendil-works/pi-coding-agent";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { createForgeHeader } from "./forge-header.js";
 import { readProjectMeta } from "./banner.js";
@@ -93,17 +93,22 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerForgeInit(pi);
 
 	// ── Resource discovery — register bundled forge-dark theme ───────────────
-	// resources_discover fires AFTER themes are loaded into the registry, so
-	// ctx.ui.setTheme("forge-dark") is safe to call here — the theme exists.
+	// ctx.ui.setTheme(name) requires the theme already in the registry, but
+	// extension themes aren't loaded yet when resources_discover fires.
+	// Workaround: call initTheme(path) ourselves, which loads from file
+	// directly without a registry lookup, then tell pi the path to register.
 	pi.on("resources_discover", async (_event, ctx) => {
 		const themePath = path.join(PKG_ROOT, "themes", "forge-dark.json");
-		// Auto-apply only when the user hasn't saved a custom theme preference;
-		// pi persists the user's choice in settings.json via settingsManager,
-		// and initTheme() already applied it before this event fires.
 		if (ctx.hasUI) {
 			const currentTheme = ctx.ui.theme.name;
 			if (currentTheme === "dark" || currentTheme === "light") {
-				ctx.ui.setTheme("forge-dark");
+				try {
+					// initTheme accepts a file path in addition to a name; it loads
+					// directly from disk, bypassing the name registry entirely.
+					initTheme(themePath, true);
+				} catch {
+					// Non-fatal — fall back to whatever is active
+				}
 			}
 		}
 		return { themePaths: [themePath] };
