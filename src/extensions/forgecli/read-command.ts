@@ -8,6 +8,17 @@ import { startReviewServer } from "./review-server.js";
 
 const execFileAsync = promisify(execFile);
 
+const ENTITY_TYPES = new Set(["task", "sprint", "bug", "feature"]);
+const filterEntities = (rs: any[]): any[] => rs.filter((r: any) => ENTITY_TYPES.has(r.type));
+
+function isDebug(): boolean {
+	return process.env.FORGE_DEBUG === "1";
+}
+
+function isNonInteractive(): boolean {
+	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
+}
+
 function resolveToolDir(forgeRoot: string): string {
 	const nested = path.join(forgeRoot, "tools");
 	try {
@@ -20,12 +31,20 @@ function resolveToolDir(forgeRoot: string): string {
 
 async function runStoreCli(toolDir: string, argv: string[], cwd: string): Promise<any> {
 	const toolPath = path.join(toolDir, "store-cli.cjs");
+	// NLP queries can be model-backed and slow; bump timeout for `nlp` subcommand only.
+	const timeout = argv[0] === "nlp" ? 30_000 : 10_000;
 	const result = await execFileAsync("node", [toolPath, ...argv], {
 		cwd,
 		encoding: "utf8",
-		timeout: 10_000,
+		timeout,
 	});
-	return JSON.parse(result.stdout);
+	try {
+		return JSON.parse(result.stdout);
+	} catch (err: any) {
+		throw new Error(
+			`store-cli returned non-JSON for argv=${JSON.stringify(argv)}: ${result.stdout.slice(0, 200)}`,
+		);
+	}
 }
 
 /**
@@ -54,8 +73,14 @@ async function resolveArg(
 	const sprintIdRe = /^([A-Z0-9]+-)?S\d+$/i;
 	const bugIdRe = /^([A-Z0-9]+-)?B\d+$/i;
 	const featureIdRe = /^([A-Z0-9]+-)?F\d+$/i;
+	const bareTaskIdRe = /^T\d+$/i;
 
 	// ── 2-5. Structured ID → store-query query flags ─────────────────────────
+	// Canonical IDs (with project prefix) must match exactly — fail-fast on miss
+	// rather than fall through to NLP, which guesses wildly.
+	const isCanonical =
+		/^[A-Z0-9]+-/i.test(arg) &&
+		(taskIdRe.test(arg) || bugIdRe.test(arg) || featureIdRe.test(arg) || sprintIdRe.test(arg));
 	let structuredResult: any | null = null;
 	try {
 		if (taskIdRe.test(arg)) {
@@ -71,54 +96,69 @@ async function resolveArg(
 			ctx.ui.setStatus("forge:read", `Looking up sprint ${arg}…`);
 			structuredResult = await runStoreCli(toolDir, ["query", "--sprint", arg], cwd);
 		}
-	} catch {
-		// structured query failed — fall through
+	} catch (err: any) {
+		if (isDebug()) console.error(`[forge:read] structured query failed: ${err.message}`);
 	}
 
 	if (structuredResult?.results?.length > 0) {
 		return pickFromResults(structuredResult.results, arg, ctx);
 	}
 
+	if (isCanonical) {
+		ctx.ui.setStatus("forge:read", undefined);
+		ctx.ui.notify(`No record found for canonical ID "${arg}"`, "warning");
+		return null;
+	}
+
 	// ── 6. ID suffix matching (for bare IDs like "S01" or "S01-T01" without project prefix) ─
 	// --keyword only searches titles; IDs need separate suffix matching against the full entity list.
-	const looksLikeIdFragment = /^(S|B|F)\d+(-T\d+)?$/i.test(arg);
+	const looksLikeIdFragment = /^(S|B|F|T)\d+(-T\d+)?$/i.test(arg);
 	if (looksLikeIdFragment) {
 		ctx.ui.setStatus("forge:read", `Searching for ID suffix "${arg}"…`);
 		try {
 			const suffix = arg.toUpperCase();
-			// List all sprints to discover project prefix, then resolve
-			const listResult = await runStoreCli(toolDir, ["query", "--list-sprints"], cwd);
-			const allSprints: any[] = listResult?.results ?? [];
+			// Cache sprint list — used for both sprint-suffix and task-suffix branches.
+			let cachedSprints: any[] | null = null;
+			const getSprints = async (): Promise<any[]> => {
+				if (cachedSprints !== null) return cachedSprints;
+				const r = await runStoreCli(toolDir, ["query", "--list-sprints"], cwd);
+				cachedSprints = r?.results ?? [];
+				return cachedSprints!;
+			};
 
-			// Try to find sprint by suffix
+			const allSprints = await getSprints();
 			const matchedSprints = allSprints.filter((s: any) =>
 				s.id?.toUpperCase().endsWith(`-${suffix}`) || s.id?.toUpperCase() === suffix,
 			);
 			if (matchedSprints.length > 0) {
-				// Re-query using canonical IDs we found
 				const canonicalResults: any[] = [];
 				for (const s of matchedSprints) {
 					try {
 						const r = await runStoreCli(toolDir, ["query", "--sprint", s.id], cwd);
 						canonicalResults.push(...(r?.results ?? []));
-					} catch { /* skip */ }
+					} catch (err: any) {
+						if (isDebug()) console.error(`[forge:read] sprint lookup failed for ${s.id}: ${err.message}`);
+					}
 				}
 				if (canonicalResults.length > 0) return pickFromResults(canonicalResults, arg, ctx);
 			}
 
-			// Try task suffix match (e.g. S01-T01 → look for id ending in -S01-T01)
-			if (taskIdRe.test(arg)) {
-				const taskListResult = await runStoreCli(toolDir, ["query", "--list-sprints"], cwd);
-				for (const s of taskListResult?.results ?? []) {
+			// Task suffix match. Supports `S01-T01` (find sprint suffix, append Tnn)
+			// and bare `T01` (try every sprint).
+			if (taskIdRe.test(arg) || bareTaskIdRe.test(arg)) {
+				const tPart = bareTaskIdRe.test(arg) ? suffix : suffix.split("-")[1];
+				for (const s of await getSprints()) {
 					try {
-						const taskId = `${s.id}-${suffix.split("-")[1]}`; // e.g. HELLO-S01 + T01 → HELLO-S01-T01
+						const taskId = `${s.id}-${tPart}`;
 						const r = await runStoreCli(toolDir, ["query", "--task", taskId], cwd);
 						if (r?.results?.length > 0) return pickFromResults(r.results, arg, ctx);
-					} catch { /* skip */ }
+					} catch (err: any) {
+						if (isDebug()) console.error(`[forge:read] task lookup failed for ${s.id}-${tPart}: ${err.message}`);
+					}
 				}
 			}
-		} catch {
-			// fall through to keyword search
+		} catch (err: any) {
+			if (isDebug()) console.error(`[forge:read] suffix search failed: ${err.message}`);
 		}
 	}
 
@@ -127,26 +167,19 @@ async function resolveArg(
 	let keywordResult: any | null = null;
 	try {
 		keywordResult = await runStoreCli(toolDir, ["query", "--keyword", arg], cwd);
-	} catch {
-		// keyword search failed — fall through to NLP
+	} catch (err: any) {
+		if (isDebug()) console.error(`[forge:read] keyword search failed: ${err.message}`);
 	}
 
 	if (keywordResult?.results?.length > 0) {
-		return pickFromResults(
-			keywordResult.results.filter((r: any) => ["task", "sprint", "bug", "feature"].includes(r.type)),
-			arg,
-			ctx,
-		);
+		return pickFromResults(filterEntities(keywordResult.results), arg, ctx);
 	}
 
 	// ── 8. NLP fallback ───────────────────────────────────────────────────────
 	ctx.ui.setStatus("forge:read", `Searching Forge store: "${arg}"…`);
 
-
 	const nlpResult = await runStoreCli(toolDir, ["nlp", arg], cwd);
-	const items = (nlpResult.results || []).filter((r: any) =>
-		["task", "sprint", "bug", "feature"].includes(r.type),
-	);
+	const items = filterEntities(nlpResult.results || []);
 
 	if (items.length === 0) {
 		ctx.ui.setStatus("forge:read", undefined);
@@ -166,14 +199,22 @@ async function pickFromResults(
 		return { item: items[0] };
 	}
 	ctx.ui.setStatus("forge:read", undefined);
-	const options = items.map((t: any) => `${t.id} (${t.type}): ${t.title}`);
+	if (isNonInteractive()) {
+		ctx.ui.notify(
+			`Multiple records match "${arg}" — refusing to pick in non-interactive mode`,
+			"error",
+		);
+		return null;
+	}
+	const options = items.map((t: any, i: number) => `[${i}] ${t.id} (${t.type}): ${t.title}`);
 	const selection = await ctx.ui.select(
 		`Multiple records found for "${arg}". Select one:`,
 		options,
 	);
 	if (!selection) return null;
-	const selectedId = selection.split(" ")[0].trim();
-	return { item: items.find((t: any) => t.id === selectedId) };
+	const idx = parseInt(selection.match(/^\[(\d+)\]/)?.[1] ?? "-1", 10);
+	if (idx < 0 || idx >= items.length) return null;
+	return { item: items[idx] };
 }
 
 export function registerReadCommand(pi: ExtensionAPI, forgeRoot: string | null): void {
@@ -182,6 +223,14 @@ export function registerReadCommand(pi: ExtensionAPI, forgeRoot: string | null):
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			if (!forgeRoot) {
 				ctx.ui.notify("forge:read — no Forge project at cwd; run /forge:init to bootstrap", "warning");
+				return;
+			}
+
+			if (isNonInteractive()) {
+				ctx.ui.notify(
+					"forge:read requires interactive mode (browser review). Unset FORGE_YES/FORGE_NON_INTERACTIVE.",
+					"error",
+				);
 				return;
 			}
 
@@ -264,7 +313,7 @@ export function registerReadCommand(pi: ExtensionAPI, forgeRoot: string | null):
 					}
 					promptText += `Please process this feedback and update the artifact accordingly.`;
 
-					await pi.sendUserMessage(promptText);
+					pi.sendUserMessage(promptText, { deliverAs: "steer" });
 				} else {
 					ctx.ui.notify("Review completed with no feedback submitted.", "info");
 				}
