@@ -213,6 +213,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:sprint-intake", // FORGE-S19-T01: real handler registered in sprint-intake.ts
 	"forge:sprint-plan", // FORGE-S19-T02: real handler registered in sprint-plan.ts
 	"forge:read", // Real handler registered in index.ts
+	"forge:run-task", // FORGE-S21-T02: real handler registered in run-task.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.
@@ -313,6 +314,10 @@ export function registerAllForgeCommands(pi: ExtensionAPI, options: RegisterAllO
 	// lists "forge:implement" so the auto-stub loop above skips it.
 	// Prompt-injection fallback was DELETED per T06 AC#4 (no
 	// FORGE_LEGACY_KICKOFF flag).
+	//
+	// /forge:run-task: real native orchestrator handler is registered in index.ts
+	// via registerRunTask(pi) — FORGE-S21-T02. EXPLICITLY_REGISTERED_NAMES
+	// lists "forge:run-task" so the auto-stub loop above skips it.
 
 	return registered;
 }
