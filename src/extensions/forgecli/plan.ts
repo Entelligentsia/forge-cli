@@ -32,8 +32,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
+import { assertAudience } from "./audience-gate.js";
 import { sendKickoff } from "./kickoff.js";
 import { loadPersona, PersonaSkillLoaderError } from "./loaders/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "./loaders/workflow-loader.js";
 
 // Argv parsing -------------------------------------------------------------
 
@@ -196,18 +198,24 @@ export function registerPlan(pi: ExtensionAPI, options: RegisterPlanOptions = {}
 			const cwd = options.cwd ?? process.cwd();
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 
-			if (!fs.existsSync(workflowPath)) {
-				ctx.ui.notify(
-					`× forge:plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
-					"error",
-				);
-				return;
-			}
-
 			let workflowMd: string;
+			let workflowAudience: import("./loaders/workflow-loader.js").AudienceValue;
 			try {
-				workflowMd = fs.readFileSync(workflowPath, "utf8");
+				const loaded = loadWorkflow(workflowPath);
+				workflowMd = loaded.rawMarkdown;
+				workflowAudience = loaded.audience;
 			} catch (err: unknown) {
+				if (err instanceof WorkflowLoaderError) {
+					if (err.code === "missing_file") {
+						ctx.ui.notify(
+							`× forge:plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							"error",
+						);
+					} else {
+						ctx.ui.notify(`× forge:plan — workflow load failed (${err.code}): ${err.message}`, "error");
+					}
+					return;
+				}
 				const e = err as { message?: string };
 				ctx.ui.notify(`× forge:plan — failed to read workflow: ${e.message ?? "unknown"}`, "error");
 				return;
@@ -248,6 +256,10 @@ export function registerPlan(pi: ExtensionAPI, options: RegisterPlanOptions = {}
 					ctx.ui.notify(`× forge:plan — persona load error: ${e.message ?? "unknown"}`, "error");
 					return;
 				}
+			}
+
+			if (!assertAudience({ workflowName: "plan_task", audience: workflowAudience }, ctx)) {
+				return;
 			}
 
 			const kickoff = composeKickoff({

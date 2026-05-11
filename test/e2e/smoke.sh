@@ -180,6 +180,33 @@ else
 	record SKIP "persona/skill loader invariant" "src/extensions/forgecli missing"
 fi
 
+# ── E2E-15: Audience-gate coverage (FORGE-S21-T01) ───────────────────────────
+# T01 Pack-06 invariant: every kickoff handler must call assertAudience before
+# sendKickoff. Fails if any *.ts file in forgecli/ calls sendKickoff without
+# a prior assertAudience call.
+# kickoff.ts itself is excluded (it DEFINES sendKickoff — it is not a caller).
+
+echo "▶ smoke gate — audience-gate coverage (E2E-15)"
+
+HANDLER_DIR="$PKG_DIR/src/extensions/forgecli"
+if [[ -d "$HANDLER_DIR" ]]; then
+	# Find all TS files that call sendKickoff (excluding kickoff.ts itself).
+	KICKOFF_HANDLERS=$(grep -l "sendKickoff" "$HANDLER_DIR"/*.ts 2>/dev/null \
+		| grep -v "kickoff\.ts$" || true)
+	GATE_OK=true
+	for f in $KICKOFF_HANDLERS; do
+		if ! grep -q "assertAudience" "$f"; then
+			record FAIL "audience-gate-coverage" "$(basename "$f") calls sendKickoff without assertAudience"
+			GATE_OK=false
+		fi
+	done
+	if [[ "$GATE_OK" == "true" ]]; then
+		record PASS "audience-gate-coverage" "all kickoff handlers call assertAudience"
+	fi
+else
+	record SKIP "audience-gate-coverage" "src/extensions/forgecli missing"
+fi
+
 # ── Auth-required gates (gated on ANTHROPIC_API_KEY) ───────────────────────
 
 echo "▶ smoke gate — auth-required gates"
