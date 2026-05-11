@@ -26,6 +26,7 @@
 		"prompts",
 		"registry",
 		"skills",
+		"themes",
 		"README.md",
 		"CHANGELOG.md",
 		"LICENSE"
@@ -42,6 +43,9 @@
 		],
 		"prompts": [
 			"./prompts"
+		],
+		"themes": [
+			"./themes"
 		]
 	},
 	"forge": {

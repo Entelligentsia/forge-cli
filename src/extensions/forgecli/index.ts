@@ -15,7 +15,9 @@ import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { registerAskUserTool } from "./ask-user-tool.js";
+import { createForgeHeader } from "./forge-header.js";
 import { readProjectMeta } from "./banner.js";
 import { registerEnhance } from "./enhance.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
@@ -90,9 +92,32 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// the banner is suppressed automatically (no extra guard needed here).
 	registerForgeInit(pi);
 
+	// ── Resource discovery — register bundled forge-dark theme ───────────────
+	pi.on("resources_discover", async () => {
+		const themePath = path.join(PKG_ROOT, "themes", "forge-dark.json");
+		return { themePaths: [themePath] };
+	});
+
 	// ── Session start — banners + collision detection ─────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return; // headless mode — no banners
+
+		// Apply forge-dark only if the user has no saved theme preference
+		// (i.e., they haven't chosen one via /settings > Theme).
+		// This avoids overriding the user's own selection on every startup.
+		const savedTheme = ctx.ui.getAllThemes().find(t => t.name === ctx.ui.theme.name);
+		const usingDefault = ctx.ui.theme.name === "dark" || ctx.ui.theme.name === "light";
+		if (usingDefault) {
+			ctx.ui.setTheme("forge-dark");
+		}
+
+		// 0. Inject custom Forge CLI branding header
+		ctx.ui.setHeader(createForgeHeader({
+			cliVersion: PKG_VERSIONS.cliVersion || "unknown",
+			bundledForgeVersion: PKG_VERSIONS.bundledForgeVersion || "unknown",
+			piVersion: PI_VERSION || "unknown"
+		}));
+
 		if (notified) return;
 		notified = true;
 
