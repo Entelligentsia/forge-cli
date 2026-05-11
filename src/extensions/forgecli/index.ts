@@ -12,10 +12,11 @@
 // production when env flags are absent.
 
 import { existsSync, readFileSync } from "node:fs";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { VERSION as PI_VERSION, initTheme } from "@earendil-works/pi-coding-agent";
+import { VERSION as PI_VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { createForgeHeader } from "./forge-header.js";
 import { readProjectMeta } from "./banner.js";
@@ -92,32 +93,37 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// the banner is suppressed automatically (no extra guard needed here).
 	registerForgeInit(pi);
 
-	// ── Resource discovery — register bundled forge-dark theme ───────────────
-	// ctx.ui.setTheme(name) requires the theme already in the registry, but
-	// extension themes aren't loaded yet when resources_discover fires.
-	// Workaround: call initTheme(path) ourselves, which loads from file
-	// directly without a registry lookup, then tell pi the path to register.
-	pi.on("resources_discover", async (_event, ctx) => {
-		const themePath = path.join(PKG_ROOT, "themes", "forge-dark.json");
-		if (ctx.hasUI) {
-			const currentTheme = ctx.ui.theme.name;
-			if (currentTheme === "dark" || currentTheme === "light") {
-				try {
-					// initTheme accepts a file path in addition to a name; it loads
-					// directly from disk, bypassing the name registry entirely.
-					initTheme(themePath, true);
-				} catch {
-					// Non-fatal — fall back to whatever is active
-				}
-			}
+	// ── Ensure forge-dark is in ~/.pi/agent/themes/ (global custom theme dir) ─
+	// Themes in that directory are loaded by pi BEFORE initTheme() runs, so
+	// setTheme("forge-dark") will reliably find it by name in session_start.
+	const forgeDarkSrc = path.join(PKG_ROOT, "themes", "forge-dark.json");
+	const globalThemesDir = path.join(getAgentDir(), "themes");
+	const forgeDarkDest = path.join(globalThemesDir, "forge-dark.json");
+	try {
+		if (!existsSync(forgeDarkDest)) {
+			fs.mkdirSync(globalThemesDir, { recursive: true });
+			fs.copyFileSync(forgeDarkSrc, forgeDarkDest);
 		}
-		return { themePaths: [themePath] };
+	} catch {
+		// Non-fatal — theme install skipped, fall back to default
+	}
+
+	// ── Resource discovery — register bundled forge-dark theme ───────────────
+	pi.on("resources_discover", async () => {
+		return { themePaths: [forgeDarkSrc] };
 	});
 
 	// ── Session start — banners + collision detection ─────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return; // headless mode — no banners
-		// Note: forge-dark theme is applied in resources_discover (after theme registration).
+
+		// Apply forge-dark as default. The theme is in ~/.pi/agent/themes/ so
+		// loadThemeJson finds it by name. Only apply if user hasn't saved a
+		// custom preference (setTheme also persists via settingsManager).
+		const currentTheme = ctx.ui.theme.name;
+		if (currentTheme === "dark" || currentTheme === "light") {
+			ctx.ui.setTheme("forge-dark");
+		}
 
 		// 0. Inject custom Forge CLI branding header
 		ctx.ui.setHeader(createForgeHeader({
