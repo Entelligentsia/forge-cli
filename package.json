@@ -54,6 +54,8 @@
 	},
 	"scripts": {
 		"build": "node scripts/build-payload.cjs && tsc",
+		"prepack": "node scripts/prepack-fix-bundled.cjs",
+		"postpack": "node scripts/prepack-fix-bundled.cjs --restore",
 		"build:tsc-only": "tsc",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
