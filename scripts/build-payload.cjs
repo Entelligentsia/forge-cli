@@ -179,6 +179,9 @@ const TOOLS_TO_COPY = [
 	"store-cli.cjs",
 	"store.cjs",
 	"store-query.cjs",
+	"preflight-gate.cjs",
+	"parse-verdict.cjs",
+	"parse-gates.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");

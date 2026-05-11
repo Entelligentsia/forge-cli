@@ -27,6 +27,7 @@ import { sendKickoff } from "./kickoff.js";
 import { loadWorkflow, WorkflowLoaderError } from "./loaders/workflow-loader.js";
 import type { LoadedWorkflow } from "./loaders/workflow-loader.js";
 import { checkMaterialization } from "./plan.js";
+import { resolveToolDir } from "./forge-tools.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ export function readVerdictFromStore(
 	forgeRoot: string,
 	cwd: string,
 ): "approved" | "revision" | "missing" {
-	const storeCli = path.join(forgeRoot, "tools", "store-cli.cjs");
+	const storeCli = path.join(resolveToolDir(forgeRoot), "store-cli.cjs");
 	const result = spawnSync("node", [storeCli, "read", "task", taskId, "--json"], {
 		encoding: "utf8",
 		cwd,
@@ -414,7 +415,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RunTaskOptions = {}):
 				const gateResult = spawnSync(
 					"node",
 					[
-						path.join(forgeRoot, "tools", "preflight-gate.cjs"),
+						path.join(resolveToolDir(forgeRoot), "preflight-gate.cjs"),
 						"--phase",
 						phase.role,
 						"--task",
