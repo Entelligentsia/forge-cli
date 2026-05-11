@@ -93,23 +93,26 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerForgeInit(pi);
 
 	// ── Resource discovery — register bundled forge-dark theme ───────────────
-	pi.on("resources_discover", async () => {
+	// resources_discover fires AFTER themes are loaded into the registry, so
+	// ctx.ui.setTheme("forge-dark") is safe to call here — the theme exists.
+	pi.on("resources_discover", async (_event, ctx) => {
 		const themePath = path.join(PKG_ROOT, "themes", "forge-dark.json");
+		// Auto-apply only when the user hasn't saved a custom theme preference;
+		// pi persists the user's choice in settings.json via settingsManager,
+		// and initTheme() already applied it before this event fires.
+		if (ctx.hasUI) {
+			const currentTheme = ctx.ui.theme.name;
+			if (currentTheme === "dark" || currentTheme === "light") {
+				ctx.ui.setTheme("forge-dark");
+			}
+		}
 		return { themePaths: [themePath] };
 	});
 
 	// ── Session start — banners + collision detection ─────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return; // headless mode — no banners
-
-		// Apply forge-dark only if the user has no saved theme preference
-		// (i.e., they haven't chosen one via /settings > Theme).
-		// This avoids overriding the user's own selection on every startup.
-		const savedTheme = ctx.ui.getAllThemes().find(t => t.name === ctx.ui.theme.name);
-		const usingDefault = ctx.ui.theme.name === "dark" || ctx.ui.theme.name === "light";
-		if (usingDefault) {
-			ctx.ui.setTheme("forge-dark");
-		}
+		// Note: forge-dark theme is applied in resources_discover (after theme registration).
 
 		// 0. Inject custom Forge CLI branding header
 		ctx.ui.setHeader(createForgeHeader({
