@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { VERSION as PI_VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { registerAskUserTool } from "./ask-user-tool.js";
-import { createForgeHeader } from "./forge-header.js";
+import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
 import { readProjectMeta } from "./banner.js";
 import { registerEnhance } from "./enhance.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
@@ -100,18 +100,11 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	const globalThemesDir = path.join(getAgentDir(), "themes");
 	const forgeDarkDest = path.join(globalThemesDir, "forge-dark.json");
 	try {
-		if (!existsSync(forgeDarkDest)) {
-			fs.mkdirSync(globalThemesDir, { recursive: true });
-			fs.copyFileSync(forgeDarkSrc, forgeDarkDest);
-		}
+		fs.mkdirSync(globalThemesDir, { recursive: true });
+		fs.copyFileSync(forgeDarkSrc, forgeDarkDest);
 	} catch {
 		// Non-fatal — theme install skipped, fall back to default
 	}
-
-	// ── Resource discovery — register bundled forge-dark theme ───────────────
-	pi.on("resources_discover", async () => {
-		return { themePaths: [forgeDarkSrc] };
-	});
 
 	// ── Session start — banners + collision detection ─────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
@@ -126,13 +119,23 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		}
 
 		// 0. Inject custom Forge CLI branding header
-		ctx.ui.setHeader(createForgeHeader({
+		let forgeHeaderRef: ForgeHeader | null = null;
+		const headerFactory = createForgeHeader({
 			cliVersion: PKG_VERSIONS.cliVersion || "unknown",
 			bundledForgeVersion: PKG_VERSIONS.bundledForgeVersion || "unknown",
-			piVersion: PI_VERSION || "unknown"
-		}));
+			piVersion: PI_VERSION || "unknown",
+		});
+		ctx.ui.setHeader((tui, theme) => {
+			const h = headerFactory(tui, theme);
+			forgeHeaderRef = h;
+			return h;
+		});
+		const doneStartup = () => forgeHeaderRef?.setStartupDone();
 
-		if (notified) return;
+		if (notified) {
+			doneStartup();
+			return;
+		}
 		notified = true;
 
 		// 1. Foundry-collision detection (AC#7)
@@ -149,6 +152,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		if (!forgeRoot) {
 			// 2. Outside-Forge banner (AC#4, Q14)
 			ctx.ui.notify("forge — no .forge/ at cwd; run /forge:init to bootstrap", "info");
+			doneStartup();
 			return;
 		}
 
@@ -200,6 +204,9 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 				}
 			}
 		}
+
+		// Startup tasks complete — transition header from loader to full logo.
+		doneStartup();
 	});
 
 	// ── Conditional full forge:* set (AC#5) ──────────────────────────────────
