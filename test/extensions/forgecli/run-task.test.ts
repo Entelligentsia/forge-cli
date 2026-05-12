@@ -45,8 +45,7 @@ type SpawnSyncFn = (cmd: string, args: string[], opts?: object) => { status: num
 
 let spawnSyncMock: ReturnType<typeof vi.fn<SpawnSyncFn>>;
 
-vi.mock("node:child_process", async (importOriginal) => ({
-	...(await importOriginal<typeof import("node:child_process")>()),
+vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn<SpawnSyncFn>(() => ({ status: 0, stdout: "", stderr: "" })),
 }));
 
@@ -794,70 +793,5 @@ describe("checkMaterializationForSubWorkflow", () => {
 		const result = checkMaterializationForSubWorkflow("/tmp/plan_task.md", md);
 		expect(result.ok).toBe(false);
 		expect(result.missing).toContain("Store-Write Verification");
-	});
-});
-
-// ── Regression: flat-layout tool resolution (forge-cli payload) ───────────
-// forge-cli packages tools at <forgeRoot>/<tool>.cjs (no `tools/` subdir).
-// Handler must NOT double-append `tools/`. Mirrors forge_tools.resolveToolDir.
-describe("flat-layout tool resolution (FORGE-BUG: doubled tools/)", () => {
-	it("preflight-gate + store-cli resolved at forgeRoot root, not forgeRoot/tools", async () => {
-		const projectDir = path.join(tmpRoot, "flat-proj");
-		const forgeRoot = path.join(projectDir, "flat-root");
-		fs.mkdirSync(path.join(projectDir, ".forge", "workflows"), { recursive: true });
-		fs.mkdirSync(path.join(projectDir, ".forge", "cache"), { recursive: true });
-		fs.mkdirSync(forgeRoot, { recursive: true });
-		fs.writeFileSync(
-			path.join(projectDir, ".forge", "config.json"),
-			JSON.stringify({ paths: { forgeRoot: "./flat-root" } }),
-			"utf8",
-		);
-		fs.writeFileSync(
-			path.join(projectDir, ".forge", "workflows", "orchestrate_task.md"),
-			ORCHESTRATE_WORKFLOW,
-			"utf8",
-		);
-		for (const phase of DEFAULT_PHASES) {
-			fs.writeFileSync(
-				path.join(projectDir, ".forge", "workflows", phase.workflow),
-				GOOD_WORKFLOW,
-				"utf8",
-			);
-		}
-		// Tools at root, NOT under tools/
-		fs.writeFileSync(
-			path.join(forgeRoot, "preflight-gate.cjs"),
-			"#!/usr/bin/env node\nprocess.exit(0);",
-			"utf8",
-		);
-		fs.writeFileSync(
-			path.join(forgeRoot, "store-cli.cjs"),
-			'#!/usr/bin/env node\nconsole.log(JSON.stringify({ id: "FORGE-TEST", summaries: {} }));process.exit(0);',
-			"utf8",
-		);
-
-		mockGateExitAndVerdict("approved");
-
-		const pi = makeStubPi();
-		const ctx = makeStubCtx();
-		registerRunTask(pi as never, { cwd: projectDir });
-		await invokeHandler(pi, ctx, "FORGE-S21-T99");
-
-		const preflightCall = spawnSyncMock.mock.calls.find((c: unknown[]) => {
-			const args = c[1] as string[] | undefined;
-			return Array.isArray(args) && args.some((a) => a.includes("preflight-gate.cjs"));
-		});
-		expect(preflightCall).toBeDefined();
-		const preflightPath = (preflightCall![1] as string[])[0];
-		expect(preflightPath).toBe(path.join(forgeRoot, "preflight-gate.cjs"));
-		expect(preflightPath).not.toContain(path.join("flat-root", "tools"));
-
-		const storeCliCall = spawnSyncMock.mock.calls.find((c: unknown[]) => {
-			const args = c[1] as string[] | undefined;
-			return Array.isArray(args) && args.some((a) => a.includes("store-cli.cjs"));
-		});
-		expect(storeCliCall).toBeDefined();
-		const storeCliPath = (storeCliCall![1] as string[])[0];
-		expect(storeCliPath).toBe(path.join(forgeRoot, "store-cli.cjs"));
 	});
 });

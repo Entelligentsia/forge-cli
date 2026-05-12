@@ -32,7 +32,7 @@ const execFileAsync = promisify(execFile);
  *
  * Probe once: if <forgeRoot>/tools/ exists as a directory, use nested; else flat.
  */
-export function resolveToolDir(forgeRoot: string): string {
+function resolveToolDir(forgeRoot: string): string {
 	const nested = path.join(forgeRoot, "tools");
 	try {
 		if (fs.statSync(nested).isDirectory()) return nested;
