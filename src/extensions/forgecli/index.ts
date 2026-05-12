@@ -36,6 +36,7 @@ import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
+import { registerTestOrchestrate } from "./test-orchestrate.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -91,6 +92,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// .forge/config.json is absent. Once /forge:init writes config.json,
 	// the banner is suppressed automatically (no extra guard needed here).
 	registerForgeInit(pi);
+
+	// ── /test-orchestrate (subagent harness e2e probe) ──────────────────────
+	// Registered unconditionally — useful inside or outside a Forge project.
+	// Spawns an in-process pi AgentSession via runForgeSubagent and delegates
+	// the user-supplied prompt. Multi-turn allowed. Status updates streamed.
+	registerTestOrchestrate(pi);
 
 	// ── Ensure forge-dark is in ~/.pi/agent/themes/ (global custom theme dir) ─
 	// Themes in that directory are loaded by pi BEFORE initTheme() runs, so
