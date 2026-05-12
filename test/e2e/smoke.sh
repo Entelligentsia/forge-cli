@@ -207,6 +207,35 @@ else
 	record SKIP "audience-gate-coverage" "src/extensions/forgecli missing"
 fi
 
+# ── E2E-16: IL10 enforcement on run-task.ts (FORGE-S21-T02) ─────────────────
+# Locks IL10 (Orchestrator dispatch via runForgeSubagent) against regression.
+# Grep run-task.ts for runForgeSubagent import + call site (must be present).
+# Grep run-task.ts for sendKickoff call site (must be absent — IL10 violation).
+# Note: comments referencing sendKickoff are stripped before the grep.
+
+echo "▶ smoke gate — IL10 enforcement on run-task.ts (E2E-16)"
+
+RUN_TASK_SRC="$PKG_DIR/src/extensions/forgecli/run-task.ts"
+if [[ -f "$RUN_TASK_SRC" ]]; then
+	if grep -q "runForgeSubagent" "$RUN_TASK_SRC"; then
+		record PASS "E2E-16: runForgeSubagent present in run-task.ts" ""
+	else
+		record FAIL "E2E-16: runForgeSubagent missing from run-task.ts (IL10 violation)" "runForgeSubagent import/call required"
+	fi
+
+	# Strip comment lines, then check for sendKickoff call sites.
+	# A comment reference like "// sendKickoff is NEVER called" should not fail the gate.
+	SEND_KICKOFF_NON_COMMENT=$(grep -v '^\s*//' "$RUN_TASK_SRC" | grep "sendKickoff(" || true)
+	if [[ -z "$SEND_KICKOFF_NON_COMMENT" ]]; then
+		record PASS "E2E-16: sendKickoff absent from run-task.ts non-comment code" "IL10 compliant"
+	else
+		record FAIL "E2E-16: sendKickoff found in run-task.ts non-comment code (IL10 violation)" \
+			"$SEND_KICKOFF_NON_COMMENT"
+	fi
+else
+	record SKIP "E2E-16: IL10 enforcement on run-task.ts" "run-task.ts not found at $RUN_TASK_SRC"
+fi
+
 # ── Auth-required gates (gated on ANTHROPIC_API_KEY) ───────────────────────
 
 echo "▶ smoke gate — auth-required gates"

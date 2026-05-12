@@ -36,6 +36,7 @@ import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
+import { registerRunTask } from "./run-task.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
@@ -263,6 +264,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// is absent (graceful no-op outside Forge project). Prompt-injection
 	// fallback DELETED per T06 AC#4.
 	registerImplement(pi);
+
+	// ── /forge:run-task native Orchestrator handler (FORGE-S21-T02) ──────────
+	// Full TS-driven Orchestrator-archetype handler. Chains 8 phases via
+	// runForgeSubagent (IL10). Registered BEFORE registerAllForgeCommands so
+	// the real handler takes precedence over the auto-stub from the command .md.
+	registerRunTask(pi);
 
 	// ── /forge:read native handler ───────────────────────────────────────────
 	registerReadCommand(pi, forgeRoot);
