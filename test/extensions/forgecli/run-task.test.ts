@@ -291,12 +291,21 @@ function mockStoreCliVerdict(verdictByPhase: Record<string, string> = {}) {
 		// Detect store-cli read task calls
 		if (argArr && argArr[0]?.endsWith("store-cli.cjs") && argArr[1] === "read" && argArr[2] === "task") {
 			const taskId = argArr[3] ?? "";
-			// Return a task record with summaries
+			// Return a task record with summaries. The `approve` phase has no
+			// summaries entry in real workflows — it transitions task.status
+			// to "approved". The mock honors that contract: if verdictByPhase
+			// includes `approve: "approved"`, the record's status is set
+			// accordingly. All other verdicts populate summaries as given.
 			const summaries: Record<string, { verdict: string }> = {};
+			let status = "in-progress";
 			for (const [phase, verdict] of Object.entries(verdictByPhase)) {
+				if (phase === "approve") {
+					if (verdict === "approved") status = "approved";
+					continue;
+				}
 				summaries[phase] = { verdict };
 			}
-			const record = { taskId, status: "in-progress", summaries };
+			const record = { taskId, status, summaries };
 			return {
 				status: 0,
 				stdout: Buffer.from(JSON.stringify(record)),
@@ -345,6 +354,80 @@ describe("Test 1: Happy path — full chain completes", () => {
 		// Should notify completion
 		const completionNotify = ctx.notifications.find(
 			(n) => n.level === "info" && (n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
+		);
+		expect(completionNotify).toBeDefined();
+	});
+});
+
+describe("Test 1b: readVerdict resolves canonical workflow keys (forge#85-followup)", () => {
+	// Regression for the systemic verdict-key mismatch:
+	//   phase.role "review-code" → canonical summary key "code_review" (REVERSED — not "review_code")
+	//   phase.role "validate"    → canonical summary key "validation"   (different word)
+	//   phase.role "approve"     → no summary; task.status === "approved"
+	// Live-observed symptom: chain escalated with "verdict missing for phase review-code"
+	// even though the supervisor subagent had written summaries.code_review.verdict = "approved".
+	it("finds verdict at canonical key for review-code, validate; reads task.status for approve", async () => {
+		const { proj, taskId } = scaffoldProject();
+		mockStoreCliVerdict({
+			review_plan: "approved",     // canonical for review-plan
+			code_review: "approved",     // canonical for review-code (was the broken case)
+			validation: "approved",      // canonical for validate
+			approve: "approved",         // → sets record.status = "approved"
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		const missingNotify = ctx.notifications.find((n) =>
+			n.msg.includes("verdict missing"),
+		);
+		expect(missingNotify).toBeUndefined();
+
+		const completionNotify = ctx.notifications.find(
+			(n) =>
+				n.level === "info" &&
+				(n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
+		);
+		expect(completionNotify).toBeDefined();
+	});
+});
+
+describe("Test 1a: readVerdict tolerates underscore summary keys (forge-cli#?)", () => {
+	// phase.role is "review-plan" (hyphen) but set-summary stores at "review_plan"
+	// (underscore — matches the verb form workflow text uses). readVerdict must
+	// look up the underscore form so a successful review is not falsely
+	// reported as "verdict missing". Regression observed live in
+	// hello/forge-subagent-2026-05-13T03-03-52-970Z__supervisor__HLO-S01-T01__review-plan.json.
+	it("finds verdict stored under underscore key when phase.role uses hyphen", async () => {
+		const { proj, taskId } = scaffoldProject();
+		// NOTE: summary keys are underscore-form (matches set-summary verb).
+		mockStoreCliVerdict({
+			review_plan: "approved",
+			review_code: "approved",
+			validate: "approved",
+			approve: "approved",
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// Should NOT escalate with "verdict missing".
+		const missingNotify = ctx.notifications.find((n) =>
+			n.msg.includes("verdict missing"),
+		);
+		expect(missingNotify).toBeUndefined();
+
+		// And the chain should reach completion.
+		const completionNotify = ctx.notifications.find(
+			(n) =>
+				n.level === "info" &&
+				(n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
 		);
 		expect(completionNotify).toBeDefined();
 	});

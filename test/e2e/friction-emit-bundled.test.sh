@@ -10,14 +10,14 @@
 # double-segment defect in forge-tools.ts; this gate covers the inline
 # emit pattern that ships in generated workflows under
 #   node "$FORGE_ROOT/tools/store-cli.cjs" emit ...
-# A regression in payload bundling (missing .schemas/, broken .tools/lib/,
+# A regression in payload bundling (missing .schemas/, broken tools/lib/,
 # ESM scope mismatch — the BUG-030 family — or forgeRoot misconfiguration)
 # must fail this gate before it reaches a real sprint where workflows
 # would silently lose friction telemetry.
 #
 # Layout under test (post-`/forge:init`, flat-payload bundled):
 #   <forgecli-pkg>/dist/forge-payload/
-#     ├── .tools/
+#     ├── tools/
 #     │   ├── store-cli.cjs       ← invoked by emit
 #     │   ├── store.cjs           ← writes events to disk
 #     │   └── lib/                ← validate.js, project-root.cjs, …
@@ -37,8 +37,9 @@ PKG_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 FIX_BASE=${SMOKE_OUT_DIR:-"$PKG_DIR/.smoke-out"}
 FIX="$FIX_BASE/friction-emit-fixture"
 
-BUNDLED_TOOLS="$PKG_DIR/dist/forge-payload/.tools"
-BUNDLED_SCHEMAS="$PKG_DIR/dist/forge-payload/.schemas"
+BUNDLED_ROOT="$PKG_DIR/dist/forge-payload"
+BUNDLED_TOOLS="$BUNDLED_ROOT/tools"
+BUNDLED_SCHEMAS="$BUNDLED_ROOT/.schemas"
 
 # ── Bundle presence guard ─────────────────────────────────────────────────
 if [[ ! -d "$BUNDLED_TOOLS" || ! -d "$BUNDLED_SCHEMAS" ]]; then
@@ -61,8 +62,10 @@ mkdir -p "$FIX/.forge/schemas" \
 		"$FIX/.forge/store/tasks" \
 		"$FIX/.forge/store/events"
 
-# Config — absolute forgeRoot pointing at the flat .tools layout, which
-# mirrors what /forge:init writes into a real forge-cli project.
+# Config — absolute forgeRoot pointing at the bundle root, which mirrors
+# what /forge:init writes into a real forge-cli project. The canonical
+# Forge convention $FORGE_ROOT/tools/<tool>.cjs resolves through the tools/
+# subdir inside the bundle.
 cat >"$FIX/.forge/config.json" <<EOF
 {
   "version": "1.0",
@@ -74,7 +77,7 @@ cat >"$FIX/.forge/config.json" <<EOF
     "commands": ".claude/commands",
     "templates": ".forge/templates",
     "customCommands": "engineering/commands",
-    "forgeRoot": "$BUNDLED_TOOLS"
+    "forgeRoot": "$BUNDLED_ROOT"
   },
   "pipeline": { "maxReviewIterations": 3 }
 }
@@ -82,7 +85,7 @@ EOF
 
 # Schemas — store-cli's resolution order is .forge/schemas → forge/schemas
 # → __dirname/../schemas. The bundled flat layout has .schemas/ as a
-# *sibling* of .tools/, so __dirname/../schemas (= dist/forge-payload/schemas/)
+# *sibling* of tools/, so __dirname/../schemas (= dist/forge-payload/schemas/)
 # does not exist. We copy the relevant schemas into the fixture's
 # .forge/schemas/ — the same layout `/forge:init` produces.
 for schema in event event-sidecar progress-entry collation-state sprint task bug feature; do
@@ -117,8 +120,8 @@ EOF
 # ── Resolve FORGE_ROOT via the same inline node -e shape meta-workflows use ──
 FORGE_ROOT=$(cd "$FIX" && node -e "console.log(require('./.forge/config.json').paths.forgeRoot)")
 
-if [[ -z "$FORGE_ROOT" || ! -f "$FORGE_ROOT/store-cli.cjs" ]]; then
-	echo "FAIL bootstrap — node -e forgeRoot resolution returned '$FORGE_ROOT'"
+if [[ -z "$FORGE_ROOT" || ! -f "$FORGE_ROOT/tools/store-cli.cjs" ]]; then
+	echo "FAIL bootstrap — node -e forgeRoot resolution returned '$FORGE_ROOT' (no tools/store-cli.cjs)"
 	exit 1
 fi
 
@@ -158,7 +161,7 @@ EOF
 )
 
 # A1: emit exit code 0
-EMIT_OUT=$(cd "$FIX" && node "$FORGE_ROOT/store-cli.cjs" emit FRIC-S01 "$EVENT_JSON" 2>&1)
+EMIT_OUT=$(cd "$FIX" && node "$FORGE_ROOT/tools/store-cli.cjs" emit FRIC-S01 "$EVENT_JSON" 2>&1)
 EMIT_RC=$?
 if [[ $EMIT_RC -eq 0 ]]; then
 	assert_pass "A1 emit exit code 0"
@@ -251,7 +254,7 @@ HAS_SUBKIND_PATTERN=$(node -e '
 	console.log(sk && typeof sk.pattern === "string" ? "yes" : "no");
 ' "$FIX/.forge/schemas/event.schema.json")
 
-BAD_OUT=$(cd "$FIX" && node "$FORGE_ROOT/store-cli.cjs" emit FRIC-S01 "$BAD_JSON" 2>&1)
+BAD_OUT=$(cd "$FIX" && node "$FORGE_ROOT/tools/store-cli.cjs" emit FRIC-S01 "$BAD_JSON" 2>&1)
 BAD_RC=$?
 
 if [[ "$HAS_SUBKIND_PATTERN" == "yes" ]]; then

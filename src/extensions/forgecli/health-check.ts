@@ -43,7 +43,7 @@ const REQUIRED_PATHS = ["engineering", "store", "workflows", "commands", "templa
  * Run a programmatic health check on a Forge project.
  *
  * @param cwd - project working directory (where .forge/ lives)
- * @param bundleRoot - path to dist/forge-payload/ (contains .tools/)
+ * @param bundleRoot - path to dist/forge-payload/ (contains tools/)
  */
 export async function runHealthCheck(cwd: string, bundleRoot: string): Promise<HealthCheckResult> {
 	const gaps: HealthGap[] = [];
@@ -152,7 +152,7 @@ export async function runHealthCheck(cwd: string, bundleRoot: string): Promise<H
 	}
 
 	// 3. Store integrity check
-	const validateStoreTool = path.join(bundleRoot, ".tools", "validate-store.cjs");
+	const validateStoreTool = path.join(bundleRoot, "tools", "validate-store.cjs");
 	if (fs.existsSync(validateStoreTool)) {
 		try {
 			execFileSync("node", [validateStoreTool, "--dry-run"], {

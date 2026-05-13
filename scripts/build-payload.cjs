@@ -5,7 +5,7 @@
 //   Pass 1: invoke substitute-placeholders --target pi to produce:
 //     dist/forge-payload/{personas,skills,templates,workflows}/
 //   Pass 2: selective recursive copy to produce expanded bundle layout:
-//     dist/forge-payload/.tools/         ← selected .cjs tools + lib/
+//     dist/forge-payload/tools/         ← selected .cjs tools + lib/
 //     dist/forge-payload/.init/          ← discovery/*.md + generation/generate-*.md
 //     dist/forge-payload/.base-pack/     ← forge/forge/init/base-pack/** (recursive)
 //     dist/forge-payload/.schemas/       ← forge/forge/schemas/*.schema.json
@@ -22,7 +22,7 @@ const fs = require("node:fs");
 
 // ── Argv ──────────────────────────────────────────────────────────────────
 // `--include-full` restores the historical superset bundle (Pass 1 top-level
-// dirs, every `.tools/lib/*`, every `.init/generation/*.md`, generic
+// dirs, every `tools/lib/*`, every `.init/generation/*.md`, generic
 // `.schemas/*.json`). Default build emits the minimal payload — only files
 // a live forge-cli runtime path actually reads (per
 // engineering/sprints/FORGE-S17/PAYLOAD_AUDIT.md).
@@ -38,7 +38,7 @@ if (argv.includes("--help") || argv.includes("-h")) {
 			"Flags:",
 			"  --include-full  Emit historical superset payload (pre-T04). Adds Pass 1",
 			"                  pre-substituted personas/skills/workflows/templates/ at",
-			"                  the bundle root, the full .tools/lib/ tree (including",
+			"                  the bundle root, the full tools/lib/ tree (including",
 			"                  *.test.cjs and store-{nlp,query-exec,facade}.cjs),",
 			"                  every .init/generation/*.md, and generic .schemas/*.json.",
 			"                  Use only for /forge:enhance precursor work (S18+).",
@@ -162,7 +162,7 @@ function copyDir(srcDir, destDir, filter) {
 // ── Pass 2: selective copy for expanded bundle layout ─────────────────────
 console.log("build-payload: pass 2 — expanded bundle layout");
 
-// 2a: .tools/ — selective list of .cjs tools + full lib/ directory
+// 2a: tools/ — selective list of .cjs tools + full lib/ directory
 const TOOLS_TO_COPY = [
 	"substitute-placeholders.cjs",
 	"build-init-context.cjs",
@@ -179,10 +179,16 @@ const TOOLS_TO_COPY = [
 	"store-cli.cjs",
 	"store.cjs",
 	"store-query.cjs",
+	// Orchestrator-pipeline tools: invoked by every materialized workflow
+	// via "$FORGE_ROOT/tools/<tool>.cjs" and by run-task.ts. Missing any of
+	// these breaks the plan/review/validate phases at the bash boundary.
+	"preflight-gate.cjs",
+	"read-verdict.cjs",
+	"parse-gates.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
-const toolsDestDir = path.join(outDir, ".tools");
+const toolsDestDir = path.join(outDir, "tools");
 fs.mkdirSync(toolsDestDir, { recursive: true });
 
 // FORGE-BUG-030: forge-cli package.json sets "type":"module", which makes
@@ -194,7 +200,7 @@ fs.writeFileSync(
 	path.join(toolsDestDir, "package.json"),
 	`${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,
 );
-console.log("build-payload: .tools/package.json written (type=commonjs scope marker)");
+console.log("build-payload: tools/package.json written (type=commonjs scope marker)");
 
 for (const toolName of TOOLS_TO_COPY) {
 	const src = path.join(toolsSrcDir, toolName);
@@ -229,12 +235,12 @@ const libSrc = path.join(toolsSrcDir, "lib");
 const libDest = path.join(toolsDestDir, "lib");
 if (fs.existsSync(libSrc)) {
 	copyDir(libSrc, libDest, (name) => includeFull || LIB_ALLOWLIST.has(name));
-	console.log(`build-payload: .tools/lib/ copied (${includeFull ? "full" : "allowlist"})`);
+	console.log(`build-payload: tools/lib/ copied (${includeFull ? "full" : "allowlist"})`);
 } else {
 	console.warn("build-payload: forge/forge/tools/lib/ not found — skipping");
 }
 
-console.log(`build-payload: .tools/ — ${TOOLS_TO_COPY.length} tools copied`);
+console.log(`build-payload: tools/ — ${TOOLS_TO_COPY.length} tools copied`);
 
 // 2b: .init/discovery/ — discover-*.md (5 files)
 const discoveryDestDir = path.join(outDir, ".init", "discovery");
@@ -331,23 +337,23 @@ if (fs.existsSync(claudePluginSrc)) {
 	console.warn("build-payload: forge/forge/.claude-plugin/ not found — skipping");
 }
 
-// 2g: .tools/prompts/ and .tools/schemas/ — forge-cli/src/extensions/forgecli/{prompts,schemas}/
+// 2g: tools/prompts/ and tools/schemas/ — forge-cli/src/extensions/forgecli/{prompts,schemas}/
 // These are co-located with the sprint-plan.ts handler (FORGE-S19-T02).
 // Always included (not gated by --include-full) — required for runtime, not historical superset.
 const extensionPromptsSrc = path.join(repoRoot, "src", "extensions", "forgecli", "prompts");
-const extensionPromptsDest = path.join(outDir, ".tools", "prompts");
+const extensionPromptsDest = path.join(outDir, "tools", "prompts");
 if (fs.existsSync(extensionPromptsSrc)) {
 	copyDir(extensionPromptsSrc, extensionPromptsDest);
-	console.log("build-payload: .tools/prompts/ — extension prompts copied");
+	console.log("build-payload: tools/prompts/ — extension prompts copied");
 } else {
 	console.warn("build-payload: src/extensions/forgecli/prompts/ not found — skipping");
 }
 
 const extensionSchemasSrc = path.join(repoRoot, "src", "extensions", "forgecli", "schemas");
-const extensionSchemasDest = path.join(outDir, ".tools", "schemas");
+const extensionSchemasDest = path.join(outDir, "tools", "schemas");
 if (fs.existsSync(extensionSchemasSrc)) {
 	copyDir(extensionSchemasSrc, extensionSchemasDest);
-	console.log("build-payload: .tools/schemas/ — extension schemas copied");
+	console.log("build-payload: tools/schemas/ — extension schemas copied");
 } else {
 	console.warn("build-payload: src/extensions/forgecli/schemas/ not found — skipping");
 }

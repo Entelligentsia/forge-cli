@@ -24,6 +24,7 @@ import { checkMaterialization } from "./plan.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
+import { getSessionRegistry } from "./session-registry.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
 
@@ -59,6 +60,20 @@ export const PHASES: PhaseDescriptor[] = [
 	{ role: "writeback", workflowFile: "collator_agent", personaNoun: "collator", isReview: false, maxIterations: 1 },
 	{ role: "commit", workflowFile: "commit_task", personaNoun: "engineer", isReview: false, maxIterations: 1 },
 ];
+
+// Map phase.role → canonical summary key written by base-pack workflows
+// (see forge/forge/tools/store-cli.cjs VALID_SUMMARY_PHASES). Phases whose
+// workflows do not write a summaries entry (e.g. approve, which transitions
+// task.status=approved instead) map to null and are verdict-checked via
+// task status rather than the summaries map.
+export const SUMMARY_KEY_BY_ROLE: Record<string, string | null> = {
+	plan: "plan",
+	"review-plan": "review_plan",
+	implement: "implementation",
+	"review-code": "code_review",
+	validate: "validation",
+	approve: null,
+};
 
 // ── State persistence ─────────────────────────────────────────────────────
 
@@ -109,6 +124,30 @@ function isStateStale(state: RunTaskState): boolean {
 	return ageMs > sevenDaysMs;
 }
 
+/**
+ * Format an ISO timestamp for human display in the user's local timezone.
+ * Falls back to the raw ISO string if parsing fails.
+ */
+export function formatLocalTime(iso: string): string {
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return iso;
+	const date = d.toLocaleString(undefined, {
+		year: "numeric",
+		month: "short",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hour12: false,
+	});
+	// Append short timezone abbreviation for unambiguous reading.
+	const tz =
+		new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+			.formatToParts(d)
+			.find((p) => p.type === "timeZoneName")?.value ?? "";
+	return tz ? `${date} ${tz}` : date;
+}
+
 // ── Verdict read from store-cli ────────────────────────────────────────────
 
 type Verdict = "approved" | "revision" | "n/a" | "missing";
@@ -124,9 +163,33 @@ function readVerdict(
 	try {
 		const raw: string = typeof result.stdout === "string" ? result.stdout : String(result.stdout);
 		const record = JSON.parse(raw) as {
+			status?: string;
 			summaries?: Record<string, { verdict?: string }>;
 		};
-		const verdict = record.summaries?.[phaseRole]?.verdict;
+
+		// Phases like `approve` do not write a summaries entry; they
+		// transition task.status to "approved" instead. For those, the
+		// verdict source is task.status.
+		const summaryKey = SUMMARY_KEY_BY_ROLE[phaseRole];
+		if (summaryKey === null) {
+			return record.status === "approved" ? "approved" : "missing";
+		}
+
+		// Verdict lookup with three fallbacks:
+		//   1. Canonical mapped summary key (e.g. "code_review" for review-code).
+		//   2. Underscore-swapped phase role ("review_code") — legacy/defensive.
+		//   3. Raw hyphenated phase role ("review-code") — defensive only.
+		const summaries = record.summaries ?? {};
+		const underscoreKey = phaseRole.replace(/-/g, "_");
+		const candidates = [
+			summaryKey ?? "",
+			underscoreKey,
+			phaseRole,
+		].filter(Boolean);
+		let verdict: string | undefined;
+		for (const k of candidates) {
+			if (summaries[k]?.verdict) { verdict = summaries[k].verdict; break; }
+		}
 		if (!verdict) return "missing";
 		if (verdict === "approved") return "approved";
 		if (verdict === "revision") return "revision";
@@ -180,6 +243,29 @@ export interface RegisterRunTaskOptions {
 }
 
 const STATUS_KEY = "forge:run-task";
+const MESSAGE_KEY = "forge:run-task:message";
+
+/**
+ * Extract the last assistant-authored text from a turn_end message and
+ * collapse it to a single-line preview (max 120 chars). Returns "" if the
+ * message has no text content (e.g. all-tool-call turn).
+ */
+export function extractTurnPreview(message: unknown): string {
+	if (!message || typeof message !== "object") return "";
+	const msg = message as { role?: string; content?: unknown };
+	if (msg.role !== "assistant") return "";
+	const content = msg.content;
+	if (!Array.isArray(content)) return "";
+	for (const c of content) {
+		if (!c || typeof c !== "object") continue;
+		const part = c as { type?: string; text?: unknown };
+		if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+			const flat = part.text.replace(/\s+/g, " ").trim();
+			return flat.length > 120 ? `${flat.slice(0, 117)}…` : flat;
+		}
+	}
+	return "";
+}
 
 export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOptions = {}): void {
 	pi.registerCommand("forge:run-task", {
@@ -198,11 +284,17 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 
 			ctx.ui.setStatus?.(STATUS_KEY, `run-task ${taskId}: initializing…`);
 
+			// Register the session in the live monitor (Ctrl+L / /forge:sessions widget).
+			const registry = getSessionRegistry();
+			registry.startSession(taskId);
+
 			// ── Discover forge config ────────────────────────────────────────
 			const forgeConfig = discoverForgeConfig(cwd);
 			if (!forgeConfig) {
 				ctx.ui.notify("× forge:run-task — no Forge project found at cwd. Run /forge:init first.", "error");
+				registry.completeSession(taskId, "failed");
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 				return;
 			}
 			const forgeRoot = forgeConfig.forgeRoot;
@@ -220,7 +312,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				if (isStateStale(existing)) {
 					// Stale state: notify + offer purge
 					ctx.ui.notify(
-						`⚠ forge:run-task — cached state for ${taskId} is stale (>7 days old, saved at ${existing.savedAt}). ` +
+						`⚠ forge:run-task — cached state for ${taskId} is stale (>7 days old, saved at ${formatLocalTime(existing.savedAt)}). ` +
 							"Offering purge.",
 						"warning",
 					);
@@ -233,13 +325,17 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							deleteState(cwd, taskId);
 						} else {
 							ctx.ui.notify("forge:run-task — stale state kept; aborting.", "info");
-							ctx.ui.setStatus?.(STATUS_KEY, undefined);
+							registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 							return;
 						}
 					} else {
 						// Non-interactive: auto-abort on stale state
 						ctx.ui.notify("forge:run-task — stale state; non-interactive mode auto-aborting.", "info");
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
+						registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 						return;
 					}
 				} else {
@@ -247,7 +343,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
 							`Resume ${taskId}?`,
-							`Cached state found at phase ${existing.phaseIndex} (saved at ${existing.savedAt}). Resume from here?`,
+							`Cached state found at phase ${existing.phaseIndex} (saved at ${formatLocalTime(existing.savedAt)}). Resume from here?`,
 						);
 						if (resume) {
 							startPhaseIndex = existing.phaseIndex;
@@ -266,7 +362,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							`forge:run-task — cached state for ${taskId} found but non-interactive mode; aborting.`,
 							"info",
 						);
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
+						registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 						return;
 					}
 				}
@@ -285,6 +383,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				ctx.ui.setStatus?.(
 					STATUS_KEY,
 					`run-task ${taskId}: phase ${currentPhaseIndex + 1}/${PHASES.length} (${phase.role})`,
+				);
+				ctx.ui.notify(
+					`→ ${taskId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${PHASES.length})`,
+					"info",
 				);
 
 				const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
@@ -310,7 +412,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
 						savedAt: new Date().toISOString(),
 					});
-					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 					return;
 				}
 
@@ -330,7 +434,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							lastError: `preflight gate exit 1 for ${phase.role}`,
 							savedAt: new Date().toISOString(),
 						});
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
+						registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 						return;
 					}
 					if (preflightResult === "escalate") {
@@ -346,7 +452,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
 							savedAt: new Date().toISOString(),
 						});
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
+						registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 						return;
 					}
 				}
@@ -360,7 +468,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							"error",
 						);
 					}
-					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 					return;
 				}
 
@@ -379,7 +489,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						lastError: `audience check failed for ${phase.workflowFile}`,
 						savedAt: new Date().toISOString(),
 					});
-					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 					return;
 				}
 
@@ -402,26 +514,172 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						lastError: `persona load failed: ${e.message ?? "unknown"}`,
 						savedAt: new Date().toISOString(),
 					});
-					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 					return;
 				}
 
 				// ── 4. Dispatch via runForgeSubagent (IL10) ───────────────────
 				// NEVER sendKickoff here — that would reproduce issue #30 (same-context inline = no fork).
 				const taskBody = composeTaskBody(subWorkflowMd, taskId);
+
+				// Phase-scoped progress counters (drive the status line + summary notify).
+				const phaseStart = Date.now();
+				let turn = 0;
+				let toolCount = 0;
+				let errCount = 0;
+				let lastTool = "";
+				// Capture tool args at _start so we can echo the failing command on _end isError.
+				// pi's tool_execution_end carries no args field — without this map, error
+				// notifications would tell you a tool failed but not what was attempted.
+				const argsByCallId = new Map<string, unknown>();
+
+				// Stabilization debug log — every subagent event appended as JSONL.
+				// Subagent sessions use SessionManager.inMemory(), so without this file
+				// the only place failures surface is the (ephemeral) ctx.ui.notify
+				// stream. Path: .forge/cache/run-task-debug-<taskId>.jsonl
+				const debugLogPath = path.join(
+					cwd,
+					".forge",
+					"cache",
+					`run-task-debug-${taskId}.jsonl`,
+				);
+				const writeDebug = (rec: Record<string, unknown>) => {
+					try {
+						fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
+						fs.appendFileSync(
+							debugLogPath,
+							`${JSON.stringify({ ts: new Date().toISOString(), phase: phase.role, ...rec })}\n`,
+							"utf8",
+						);
+					} catch {
+						// non-fatal; debug log is best-effort
+					}
+				};
+				writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
+				registry.startPhase(taskId, phase.role, currentPhaseIndex);
+
+				const argHint = (toolName: string, args: unknown): string => {
+					if (!args || typeof args !== "object") return "";
+					const a = args as Record<string, unknown>;
+					const fp = (a.file_path ?? a.path) as unknown;
+					if (typeof fp === "string") return path.basename(fp);
+					if (typeof a.command === "string") {
+						const head = a.command.split(/\s+/).slice(0, 2).join(" ");
+						return head.length > 40 ? `${head.slice(0, 40)}…` : head;
+					}
+					if (typeof a.pattern === "string") return a.pattern.slice(0, 40);
+					if (typeof a.query === "string") return a.query.slice(0, 40);
+					return "";
+				};
+
+				const refreshStatus = () => {
+					const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
+					const tail = lastTool ? ` · ${lastTool}` : "";
+					ctx.ui.setStatus?.(
+						STATUS_KEY,
+						`run-task ${taskId}: ${phase.role} · t${turn} · tools ${toolCount}${errCount ? ` · err ${errCount}` : ""} · ${elapsed}s${tail}`,
+					);
+				};
+
 				let result;
 				try {
 					result = await runForgeSubagent({
 						persona,
 						task: taskBody,
 						cwd,
+						exportTag: `${taskId}__${phase.role}`,
 						onEvent: (event) => {
-							// Live monitor: surface tool calls and turn progress
-							if (event.type === "tool_execution_start") {
-								ctx.ui.setStatus?.(
-									STATUS_KEY,
-									`run-task ${taskId}: ${phase.role} · tool: ${event.toolName ?? "unknown"}`,
-								);
+							switch (event.type) {
+								case "turn_start": {
+									turn++;
+									lastTool = "";
+									registry.bumpTurn(taskId);
+									refreshStatus();
+									break;
+								}
+								case "turn_end": {
+									const preview = extractTurnPreview(event.message);
+									if (preview) {
+										ctx.ui.setStatus?.(MESSAGE_KEY, `  "${preview}"`);
+									}
+									break;
+								}
+								case "tool_execution_start": {
+									toolCount++;
+									argsByCallId.set(event.toolCallId, event.args);
+									const hint = argHint(event.toolName, event.args);
+									lastTool = `${event.toolName}${hint ? ` ${hint}` : ""}`;
+									writeDebug({
+										kind: "tool_start",
+										toolName: event.toolName,
+										toolCallId: event.toolCallId,
+										args: event.args,
+									});
+									registry.recordToolStart(
+										taskId,
+										event.toolCallId,
+										event.toolName,
+										event.args,
+									);
+									refreshStatus();
+									break;
+								}
+								case "tool_execution_end": {
+									const startArgs = argsByCallId.get(event.toolCallId);
+									argsByCallId.delete(event.toolCallId);
+									writeDebug({
+										kind: "tool_end",
+										toolName: event.toolName,
+										toolCallId: event.toolCallId,
+										isError: event.isError,
+										args: startArgs,
+										result: event.result,
+									});
+									registry.recordToolEnd(
+										taskId,
+										event.toolCallId,
+										event.toolName,
+										event.isError,
+										event.result,
+									);
+									if (event.isError) {
+										errCount++;
+										const raw =
+											typeof event.result === "string"
+												? event.result
+												: JSON.stringify(event.result, null, 2);
+										const argsBlock =
+											startArgs !== undefined
+												? `\nargs: ${JSON.stringify(startArgs, null, 2)}`
+												: "";
+										// Stabilization mode: print full tool errors with the
+										// failing command's args. No truncation.
+										ctx.ui.notify(
+											`⚠ ${phase.role}: ${event.toolName} failed${argsBlock}\n${raw}`,
+											"warning",
+										);
+									}
+									refreshStatus();
+									break;
+								}
+								case "compaction_start": {
+									ctx.ui.notify(
+										`◌ ${phase.role}: context compacting (${event.reason})…`,
+										"info",
+									);
+									break;
+								}
+								case "auto_retry_start": {
+									const err = event.errorMessage ?? "";
+									// Stabilization mode: full retry error, no truncation.
+									ctx.ui.notify(
+										`↻ ${phase.role}: model retry ${event.attempt}/${event.maxAttempts}${err ? `\n${err}` : ""}`,
+										"warning",
+									);
+									break;
+								}
 							}
 						},
 					});
@@ -439,7 +697,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 						savedAt: new Date().toISOString(),
 					});
-					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 					return;
 				}
 
@@ -459,8 +719,19 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
 						savedAt: new Date().toISOString(),
 					});
-					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 					return;
+				}
+
+				// Phase-complete liveliness ping (counts + duration).
+				{
+					const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
+					ctx.ui.notify(
+						`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
+						"info",
+					);
 				}
 
 				// ── 6b. Verdict check (review phases only) ────────────────────
@@ -481,7 +752,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							lastError: `verdict missing for ${phase.role}`,
 							savedAt: new Date().toISOString(),
 						});
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
+						registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 						return;
 					}
 
@@ -503,7 +776,9 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 								lastError: `revision cap reached for ${phase.role}`,
 								savedAt: new Date().toISOString(),
 							});
-							ctx.ui.setStatus?.(STATUS_KEY, undefined);
+							registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 							return;
 						}
 
@@ -530,6 +805,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				}
 
 				// ── Advance to next phase ─────────────────────────────────────
+				registry.completePhase(taskId, phase.role, "completed");
 				writeState(cwd, {
 					taskId,
 					phaseIndex: currentPhaseIndex,
@@ -542,7 +818,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 
 			// ── All phases complete ───────────────────────────────────────────
 			deleteState(cwd, taskId);
-			ctx.ui.setStatus?.(STATUS_KEY, undefined);
+			registry.completeSession(taskId, "completed");
+			registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 			ctx.ui.notify(
 				`〇 forge:run-task — ${taskId} pipeline complete (${PHASES.length} phases).`,
 				"info",

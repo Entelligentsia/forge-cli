@@ -135,7 +135,7 @@ if (parsed.forgeAction === "subcommand" && parsed.subcommandTool) {
 		__dirname,
 		"..",
 		"forge-payload",
-		".tools",
+		"tools",
 		parsed.subcommandTool,
 	);
 	if (!fs.existsSync(toolPath)) {

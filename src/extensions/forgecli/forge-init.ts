@@ -51,13 +51,13 @@ export function getBundledPayloadRoot(): string {
 	return path.join(_PKG_ROOT, "dist", "forge-payload");
 }
 
-/** Get the bundled tools directory (dist/forge-payload/.tools/) */
+/** Get the bundled tools directory (dist/forge-payload/tools/) */
 export function getBundledToolsRoot(): string {
-	return path.join(getBundledPayloadRoot(), ".tools");
+	return path.join(getBundledPayloadRoot(), "tools");
 }
 
 /**
- * Resolve the absolute path to dist/forge-payload/.tools and validate it
+ * Resolve the absolute path to dist/forge-payload/tools and validate it
  * contains store-cli.cjs. Throws if the directory is missing or incomplete.
  * Exported for test access and for Phase-4 pi-aware forgeRoot stamp.
  */
@@ -67,7 +67,7 @@ export function resolveBundleToolsRoot(): string {
 	if (!fs.existsSync(storeCli)) {
 		throw new Error(
 			`resolveBundleToolsRoot: bundled tools dir missing store-cli.cjs — expected at ${storeCli}. ` +
-				"Run 'npm run build' to populate dist/forge-payload/.tools/.",
+				"Run 'npm run build' to populate dist/forge-payload/tools/.",
 		);
 	}
 	return toolsRoot;
@@ -299,7 +299,7 @@ Required .forge/config.json structure:
   }
 }
 
-Write the config with: node "${path.join(bundleRoot, ".tools/manage-config.cjs")}" set <key> <value>
+Write the config with: node "${path.join(bundleRoot, "tools/manage-config.cjs")}" set <key> <value>
 Or write .forge/config.json directly as valid JSON.`;
 }
 
@@ -950,17 +950,15 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				const seedStoreTool = path.join(toolsRoot, "seed-store.cjs");
 
 				// Step 4-1: write paths.forgeRoot + copy schemas
-				// BUG-024 fix: under pi runtime stamp paths.forgeRoot to the bundled
-				// tools directory (dist/forge-payload/.tools/) which is the path where
-				// store-cli.cjs and all other tools live. This is always-pi when
-				// forge-init.ts runs (isPiRuntime() === true). Under a hypothetical
-				// future Claude Code path we fall back to bundleRoot.
+				// Stamp paths.forgeRoot to the bundle root (dist/forge-payload/) so
+				// that the canonical Forge convention "$FORGE_ROOT/tools/<tool>.cjs"
+				// resolves correctly. The bundled tools live at
+				// dist/forge-payload/tools/ (renamed from .tools/ — the dot prefix
+				// broke the convention and forced consumers/workflows to special-case
+				// the layout).
 				if (fs.existsSync(manageConfigTool)) {
-					// BUG-024: under pi runtime resolve bundled tools path and validate
-					// store-cli.cjs is present before stamping. manageConfigTool guard
-					// ensures the validation block only runs when we're about to actually
-					// invoke manage-config — avoids false-positive errors in test contexts
-					// where fs is fully mocked and tools don't exist on disk.
+					// Validate that store-cli.cjs is present in the bundled tools dir
+					// before stamping. Guards against half-built dist trees.
 					let forgeRootToStamp: string;
 					if (isPiRuntime()) {
 						const toolsRoot = getBundledToolsRoot();
@@ -968,12 +966,12 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 						if (!fs.existsSync(storeCli)) {
 							ctx.ui.notify(
 								`× step 4-1 paths.forgeRoot: store-cli.cjs missing from bundled tools (expected: ${storeCli}). ` +
-									"Run 'npm run build' to populate dist/forge-payload/.tools/. Aborting Phase 4.",
+									"Run 'npm run build' to populate dist/forge-payload/tools/. Aborting Phase 4.",
 								"error",
 							);
 							return;
 						}
-						forgeRootToStamp = toolsRoot;
+						forgeRootToStamp = bundleRoot;
 					} else {
 						// Claude Code path (not active today — preserved for future use)
 						forgeRootToStamp = bundleRoot;

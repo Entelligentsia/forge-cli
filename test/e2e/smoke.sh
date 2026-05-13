@@ -236,6 +236,38 @@ else
 	record SKIP "E2E-16: IL10 enforcement on run-task.ts" "run-task.ts not found at $RUN_TASK_SRC"
 fi
 
+# ── E2E-17: Project Orientation — single source of truth (forge-cli#6) ─────
+# Asserts that project-orientation.ts exists and is imported by both
+# forge-subagent.ts (subagent path) and index.ts (main-thread path), so the
+# orientation block is sourced from one helper, not duplicated in workflow
+# text or scattered across handlers.
+
+echo "▶ smoke gate — Project Orientation single source of truth (E2E-17)"
+
+ORIENT_SRC="$PKG_DIR/src/extensions/forgecli/project-orientation.ts"
+SUBAGENT_SRC="$PKG_DIR/src/extensions/forgecli/forge-subagent.ts"
+INDEX_SRC="$PKG_DIR/src/extensions/forgecli/index.ts"
+
+if [[ -f "$ORIENT_SRC" ]]; then
+	record PASS "E2E-17: project-orientation.ts present" ""
+else
+	record FAIL "E2E-17: project-orientation.ts missing" "expected at $ORIENT_SRC"
+fi
+
+if [[ -f "$SUBAGENT_SRC" ]] && grep -q "buildProjectOrientation" "$SUBAGENT_SRC"; then
+	record PASS "E2E-17: forge-subagent.ts imports buildProjectOrientation" ""
+else
+	record FAIL "E2E-17: forge-subagent.ts missing buildProjectOrientation import" \
+		"subagent path must source orientation from project-orientation.ts"
+fi
+
+if [[ -f "$INDEX_SRC" ]] && grep -q "buildProjectOrientation" "$INDEX_SRC" && grep -q "before_agent_start" "$INDEX_SRC"; then
+	record PASS "E2E-17: index.ts wires buildProjectOrientation into before_agent_start" ""
+else
+	record FAIL "E2E-17: index.ts missing main-thread orientation wiring" \
+		"index.ts must import buildProjectOrientation and register a before_agent_start handler"
+fi
+
 # ── Auth-required gates (gated on ANTHROPIC_API_KEY) ───────────────────────
 
 echo "▶ smoke gate — auth-required gates"
@@ -333,7 +365,7 @@ if [[ -x "$FORGE_BIN" ]]; then
 	PAYLOAD_DIR="$SMOKE_PREFIX/lib/node_modules/@entelligentsia/forgecli/dist/forge-payload"
 	INIT_E2E_PASS=true
 
-	for subdir in ".tools" ".init" ".base-pack" ".schemas" ".claude-plugin"; do
+	for subdir in "tools" ".init" ".base-pack" ".schemas" ".claude-plugin"; do
 		if [[ -d "$PAYLOAD_DIR/$subdir" ]]; then
 			record PASS "E2E-01: forge-payload/$subdir present" "$PAYLOAD_DIR/$subdir"
 		else
@@ -342,31 +374,31 @@ if [[ -x "$FORGE_BIN" ]]; then
 		fi
 	done
 
-	# Verify .tools/ has key .cjs tools
+	# Verify tools/ has key .cjs tools
 	TOOLS_PRESENT=true
 	for tool in "substitute-placeholders.cjs" "manage-config.cjs" "seed-store.cjs" "banners.cjs"; do
-		if [[ ! -f "$PAYLOAD_DIR/.tools/$tool" ]]; then
-			record FAIL "E2E-01: .tools/$tool bundled" "missing"
+		if [[ ! -f "$PAYLOAD_DIR/tools/$tool" ]]; then
+			record FAIL "E2E-01: tools/$tool bundled" "missing"
 			TOOLS_PRESENT=false
 			INIT_E2E_PASS=false
 		fi
 	done
-	[[ "$TOOLS_PRESENT" == "true" ]] && record PASS "E2E-01: .tools/ key CJS tools bundled" ""
+	[[ "$TOOLS_PRESENT" == "true" ]] && record PASS "E2E-01: tools/ key CJS tools bundled" ""
 
-	# E2E-12 (FORGE-BUG-030): .tools/package.json scope marker must set type=commonjs
+	# E2E-12 (FORGE-BUG-030): tools/package.json scope marker must set type=commonjs
 	# so bundled lib/*.js files (validate.js, result.js) resolve as CJS despite
 	# the outer forge-cli package.json type=module.
-	TOOLS_PKG_JSON="$PAYLOAD_DIR/.tools/package.json"
+	TOOLS_PKG_JSON="$PAYLOAD_DIR/tools/package.json"
 	if [[ -f "$TOOLS_PKG_JSON" ]] && grep -q '"type"[[:space:]]*:[[:space:]]*"commonjs"' "$TOOLS_PKG_JSON"; then
-		record PASS "E2E-12: .tools/package.json scope marker (type=commonjs)" ""
+		record PASS "E2E-12: tools/package.json scope marker (type=commonjs)" ""
 	else
-		record FAIL "E2E-12: .tools/package.json scope marker missing or wrong" "BUG-030 regression"
+		record FAIL "E2E-12: tools/package.json scope marker missing or wrong" "BUG-030 regression"
 	fi
 
 	# E2E-13 (FORGE-BUG-030): bundled store-cli.cjs must run without ESM scope error.
 	# Directly invoke `node store-cli.cjs --help` and verify zero exit + no
 	# "ReferenceError: module is not defined" message.
-	STORE_CLI="$PAYLOAD_DIR/.tools/store-cli.cjs"
+	STORE_CLI="$PAYLOAD_DIR/tools/store-cli.cjs"
 	if [[ -f "$STORE_CLI" ]]; then
 		STORE_CLI_OUT=$(node "$STORE_CLI" --help 2>&1 || true)
 		if grep -q "ReferenceError: module is not defined" <<<"$STORE_CLI_OUT"; then
@@ -426,7 +458,7 @@ fi
 # ── E2E-14: Friction emit bundled (FORGE-S20-T08, BUG-029 extension) ─────
 # Verifies the inline node -e + node store-cli.cjs emit shape stamped into
 # 5 meta-workflows by FORGE-S20-T00 works under the flat-payload bundled
-# .tools/ layout. T01 schema constraints (subkind enum, evidence shape)
+# tools/ layout. T01 schema constraints (subkind enum, evidence shape)
 # are exercised when present in the bundled .schemas/.
 
 echo "▶ smoke gate — friction emit bundled (E2E-14)"
@@ -484,7 +516,7 @@ EOF
 	# Attempt a store-cli write under FORGE_HOOK_AUDIT=1.
 	# The write will likely fail validation (fixture has no seeded sprint), but
 	# the hook intercept fires before the write — the audit log entry is what we check.
-	STORE_CLI_PATH="$PAYLOAD_DIR/.tools/store-cli.cjs"
+	STORE_CLI_PATH="$PAYLOAD_DIR/tools/store-cli.cjs"
 	if [[ -f "$STORE_CLI_PATH" ]]; then
 		(
 			cd "$HOOK_AUDIT_FIXTURE_DIR"

@@ -31,12 +31,15 @@ import { registerHookDispatcher } from "./hook-dispatcher.js";
 import { registerImplement } from "./implement.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { registerPlan } from "./plan.js";
+import { buildProjectOrientation } from "./project-orientation.js";
+import { registerRegenerate } from "./regenerate.js";
 import { registerSprintIntake } from "./sprint-intake.js";
 import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
 import { registerRunTask } from "./run-task.js";
+import { registerSessionMonitor } from "./session-monitor.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
@@ -87,12 +90,35 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	const forgeConfig = discoverForgeConfig();
 	const forgeRoot = forgeConfig?.forgeRoot ?? null;
 
+	// ── Project Orientation — main-thread system prompt context ─────────────
+	// Prepends a project-orientation block to every main-thread turn when
+	// inside a Forge project. Symmetric to the subagent path in
+	// runForgeSubagent. Single source of truth: project-orientation.ts.
+	// Philosophy: context, not enforcement. See forge-cli#6.
+	if (forgeConfig && typeof pi.on === "function") {
+		const projectRoot = path.dirname(path.dirname(forgeConfig.configPath));
+		const orientation = buildProjectOrientation(projectRoot);
+		pi.on("before_agent_start", async (event) => {
+			const existing = event.systemPrompt ?? "";
+			return { systemPrompt: `${orientation}\n${existing}` };
+		});
+	}
+
 	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
 	// Full 4-phase implementation — FORGE-S17-T02.
 	// Banner suppression: outside-Forge banner below only fires when
 	// .forge/config.json is absent. Once /forge:init writes config.json,
 	// the banner is suppressed automatically (no extra guard needed here).
 	registerForgeInit(pi);
+
+	// ── /forge:regenerate — re-materialize .forge/ from bundled payload ────
+	// Deterministic subset of plugin's /forge:regenerate: runs
+	// substitute-placeholders.cjs against bundled .base-pack/. Useful when a
+	// new forge-cli build ships an updated payload and the project's
+	// .forge/workflows/ etc. need to be refreshed. Registered AFTER
+	// registerForgeInit and BEFORE registerAllForgeCommands so the real
+	// handler beats the auto-stub.
+	registerRegenerate(pi);
 
 	// ── /test-orchestrate (subagent harness e2e probe) ──────────────────────
 	// Registered unconditionally — useful inside or outside a Forge project.
@@ -270,6 +296,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// runForgeSubagent (IL10). Registered BEFORE registerAllForgeCommands so
 	// the real handler takes precedence over the auto-stub from the command .md.
 	registerRunTask(pi);
+
+	// ── /forge:sessions widget + Ctrl+L shortcut ─────────────────────────────
+	// Live monitor for run-task subagent sessions: a two-pane TUI rendered
+	// below the input swimline. Subscribes to the in-process SessionRegistry
+	// that run-task pushes into on every subagent event.
+	registerSessionMonitor(pi);
 
 	// ── /forge:read native handler ───────────────────────────────────────────
 	registerReadCommand(pi, forgeRoot);

@@ -29,6 +29,7 @@ import {
 	type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
+import { buildProjectOrientation } from "./project-orientation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,12 @@ export interface RunSubagentOptions {
 	cwd?: string;
 	signal?: AbortSignal;
 	onEvent?: (event: AgentSessionEvent) => void;
+	/**
+	 * Optional tag included in the auto-exported transcript filename for
+	 * greppability — e.g. `${taskId}__${phaseRole}`. Stripped to a safe
+	 * filename slug. See forge-cli#8.
+	 */
+	exportTag?: string;
 }
 
 // ── Persona discovery ─────────────────────────────────────────────────────
@@ -131,10 +138,13 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 
 	// ── spawn channel ─────────────────────────────────────────────────────
 	const cwdAbs = cwd ?? process.cwd();
+	// Project orientation is prepended to the persona system prompt for every
+	// subagent dispatch — see project-orientation.ts and forge-cli#6.
+	const orientation = buildProjectOrientation(cwdAbs);
 	const loader = new DefaultResourceLoader({
 		cwd: cwdAbs,
 		agentDir: getAgentDir(),
-		systemPromptOverride: () => persona.systemPrompt,
+		systemPromptOverride: () => `${orientation}\n${persona.systemPrompt}`,
 		// Persona-only — suppress global pi extensions/skills/prompts to keep
 		// subagent context lean and deterministic.
 		noExtensions: true,
@@ -216,7 +226,65 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	if (result.stopReason === "error" || result.stopReason === "aborted") {
 		result.exitCode = 1;
 	}
+
+	// ── Auto-export subagent transcript (forge-cli#8) ────────────────────
+	// Default-on while stabilizing. Failure is non-fatal — log to stderr
+	// and continue. Filename includes optional tag for greppability.
+	try {
+		writeSubagentTranscript({
+			cwd: cwdAbs,
+			persona: persona.name,
+			tag: opts.exportTag,
+			result,
+		});
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		process.stderr.write(
+			`[forge-subagent] transcript export failed (non-fatal): ${e.message ?? "unknown"}\n`,
+		);
+	}
+
 	return result;
+}
+
+// ── Transcript auto-export (forge-cli#8) ─────────────────────────────────
+
+interface WriteTranscriptOptions {
+	cwd: string;
+	persona: string;
+	tag?: string;
+	result: SubagentResult;
+}
+
+function sanitizeForFilename(s: string): string {
+	return s
+		.replace(/[^a-zA-Z0-9._-]/g, "_")
+		.replace(/\.{2,}/g, "_")
+		.slice(0, 80);
+}
+
+export function writeSubagentTranscript(opts: WriteTranscriptOptions): string {
+	const { cwd, persona, tag, result } = opts;
+	const iso = new Date().toISOString().replace(/[:.]/g, "-");
+	const tagSegment = tag ? `__${sanitizeForFilename(tag)}` : "";
+	const filename = `forge-subagent-${iso}__${sanitizeForFilename(persona)}${tagSegment}.json`;
+	const outPath = path.join(cwd, filename);
+	const payload = {
+		schema: "forge-subagent-transcript/v1",
+		timestamp: new Date().toISOString(),
+		cwd,
+		persona,
+		tag: tag ?? null,
+		model: result.model ?? null,
+		exitCode: result.exitCode,
+		stopReason: result.stopReason ?? null,
+		errorMessage: result.errorMessage ?? null,
+		usage: result.usage,
+		messageCount: result.messages.length,
+		messages: result.messages,
+	};
+	fs.writeFileSync(outPath, JSON.stringify(payload, null, 2), "utf-8");
+	return outPath;
 }
 
 // ── Final-output helper ──────────────────────────────────────────────────

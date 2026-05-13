@@ -1,14 +1,21 @@
-// bug-024-forgeroot-piaware.test.ts — FORGE-BUG-024
+// bug-024-forgeroot-piaware.test.ts — FORGE-BUG-024 (updated)
 //
-// Phase-4 must stamp paths.forgeRoot to the bundled payload tools path
+// Phase-4 must stamp paths.forgeRoot to the bundled payload root
 // (dist/forge-payload/) under pi runtime, NOT to a Claude-Code-only cache path.
+//
+// The canonical Forge convention is "$FORGE_ROOT/tools/<tool>.cjs" — every
+// materialized workflow and every consumer in forge-cli computes tool paths
+// as path.join(forgeRoot, "tools", "<x>.cjs"). The original BUG-024 fix
+// stamped the tools dir itself (then named .tools/), which broke that
+// convention. The tools dir is now named tools/ (no dot) so the canonical
+// convention resolves cleanly when forgeRoot is the bundle root.
 //
 // Asserts:
 //   1. resolveBundleToolsRoot() returns a path that exists on disk
 //   2. That path contains store-cli.cjs
 //   3. isPiRuntime() returns true by default (forge-init.ts runs under pi only)
 //   4. The value stamped as paths.forgeRoot in Phase-4 is the bundled payload root
-//      (getBundledPayloadRoot()), NOT a Claude-Code cache path
+//      (getBundledPayloadRoot()), and ${stamp}/tools/store-cli.cjs resolves
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import * as fs from "node:fs";
@@ -18,6 +25,7 @@ import * as path from "node:path";
 // They are exported from forge-init.ts for test access.
 import {
 	resolveBundleToolsRoot,
+	getBundledPayloadRoot,
 	isPiRuntime,
 } from "../../../src/extensions/forgecli/forge-init.js";
 
@@ -178,16 +186,17 @@ describe("FORGE-BUG-024: Phase-4 stamps pi-aware paths.forgeRoot", () => {
 		expect(stampedValue).not.toMatch(/\.claude\/plugins\/cache/);
 		expect(stampedValue).not.toMatch(/\.claude[/\\]plugins[/\\]cache/);
 
-		// The value stamped must point to dist/forge-payload/.tools
-		// (per FORGE-BUG-024 fix spec: stamp to bundled tools path = .tools dir)
-		const expectedToolsRoot = resolveBundleToolsRoot();
-		expect(stampedValue).toBe(expectedToolsRoot);
+		// The value stamped must point to the bundle root (dist/forge-payload/)
+		// so the canonical Forge convention "$FORGE_ROOT/tools/<tool>.cjs"
+		// resolves through the bundle's tools/ subdir.
+		const expectedBundleRoot = getBundledPayloadRoot();
+		expect(stampedValue).toBe(expectedBundleRoot);
 	});
 
-	it("the stamped forgeRoot path's .tools/ subdir contains store-cli.cjs", () => {
-		// Verify that resolveBundleToolsRoot() returns a .tools/ dir with store-cli.cjs
-		const toolsRoot = resolveBundleToolsRoot();
-		const storeCli = path.join(toolsRoot, "store-cli.cjs");
+	it("the stamped forgeRoot path's tools/ subdir contains store-cli.cjs", () => {
+		// Verify that ${getBundledPayloadRoot()}/tools/store-cli.cjs resolves
+		const bundleRoot = getBundledPayloadRoot();
+		const storeCli = path.join(bundleRoot, "tools", "store-cli.cjs");
 		expect(fs.existsSync(storeCli)).toBe(true);
 	});
 });
