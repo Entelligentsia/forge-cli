@@ -43,4 +43,28 @@ describe("buildProjectOrientation", () => {
 		const out = buildProjectOrientation(cwd);
 		expect(out.endsWith("\n")).toBe(true);
 	});
+
+	it("carries the canonical store-cli verb list and --help hint (forge-cli#9)", () => {
+		const out = buildProjectOrientation(cwd);
+		expect(out).toMatch(/store-cli\.cjs.*read <entity> <id>/);
+		expect(out).toMatch(/store-cli\.cjs.*list <entity>/);
+		expect(out).toMatch(/store-cli\.cjs.*write <entity>/);
+		expect(out).toMatch(/store-cli\.cjs.*emit <sprintId>/);
+		expect(out).toMatch(/update-status <entity>/);
+		expect(out).toMatch(/--help/);
+		expect(out).toMatch(/store-cli verbs:/);
+		expect(out).toMatch(/no get\/set\/find/);
+	});
+
+	it("points _fragments at the workflows subdirectory (forge-cli#9)", () => {
+		const out = buildProjectOrientation(cwd);
+		expect(out).toMatch(/\.forge\/workflows\/_fragments\//);
+		expect(out).toMatch(/NOT `\.forge\/_fragments\/`/);
+	});
+
+	it("advertises MCP tools as preferred over bash (forge-cli#9)", () => {
+		const out = buildProjectOrientation(cwd);
+		expect(out).toMatch(/Prefer named MCP tools/);
+		expect(out).toMatch(/forge_store/);
+	});
 });
