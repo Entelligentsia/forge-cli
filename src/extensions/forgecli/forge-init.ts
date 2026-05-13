@@ -271,17 +271,21 @@ function buildPhase1PromptText(bundleRoot: string, projectName: string): string 
 
 Project: ${projectName}
 
-Please use the **subagent** tool to run 5 discovery scans in parallel (mode: "parallel").
+Run 5 discovery scans concurrently. In a single response, issue 5 parallel tool
+calls — one per discovery topic — using whatever read/search tools you have
+available (Read, Glob, Grep, Bash). If a \`subagent\` tool is exposed in your
+toolset, you MAY dispatch via it (mode: "parallel"); otherwise execute the
+scans inline. Do NOT preface with "I don't have a subagent tool" — either path
+is acceptable, what matters is concurrency and the resulting deliverable.
 
-Each subagent should:
+For each topic:
 1. Read the discovery prompt file at its assigned path (shown below)
 2. Analyze the current project codebase
-3. Return structured findings as JSON
+3. Capture structured findings
 
 Discovery prompt files:
 ${topicLines}
 
-Run all 5 concurrently with mode: "parallel". Collect all results before proceeding.
 After all 5 complete, synthesize the findings into a unified config and write .forge/config.json.
 
 Required .forge/config.json structure:
@@ -314,9 +318,15 @@ Project: ${projectName}
 KB path: ${kbPath}/
 Rulebook: ${generateKbDocPath}
 
-Please use the **subagent** tool to generate 7 knowledge-base documents in parallel (mode: "parallel").
+Generate 7 knowledge-base documents concurrently. In a single response, issue
+7 parallel tool calls — one per document — using whatever read/search/write
+tools you have available (Read, Glob, Grep, Bash, Write). If a \`subagent\`
+tool is exposed in your toolset, you MAY dispatch via it (mode: "parallel");
+otherwise execute the generation inline. Do NOT preface with "I don't have a
+subagent tool" — either path is acceptable, what matters is concurrency and
+the 7 output files.
 
-Each subagent should:
+For each document:
 1. Read the rulebook at: ${generateKbDocPath}
 2. Analyze the project codebase for its assigned topic
 3. Write the resulting document to its assigned output file
@@ -324,7 +334,6 @@ Each subagent should:
 Documents to generate:
 ${docLines}
 
-Run all 7 concurrently with mode: "parallel".
 After all complete, check for any that returned "FAILED:" in their output — retry those once.
 
 Also create these index files after generation:
