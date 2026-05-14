@@ -5,7 +5,10 @@
 // conversation) plus one chip per subagent phase that has run during the
 // active run-task session.
 //
-// Activation: Ctrl+T enters strip-focus mode. While focused:
+// Activation: F12 enters strip-focus mode. (Ctrl+T is reserved by pi-tui,
+// Ctrl+Shift+T is captured by GNOME Terminal / most Linux terminal emulators
+// as "new tab" before it reaches the app. F12 is universally free.)
+// While focused:
 //   ←/→        move cursor between chips
 //   Enter      commit cursor → focused; if non-main, swap chat viewport to
 //              that phase's tail via ctx.ui.setOutputSource(component);
@@ -184,7 +187,7 @@ class ChipStripComponent implements Component {
 		});
 
 		const prefix = this.stripActive ? accent("threads ─ ") : dim("threads ─ ");
-		const hint = this.stripActive ? dim("  ←→ select · enter focus · esc back") : dim("  ctrl+t to navigate");
+		const hint = this.stripActive ? dim("  ←→ select · enter focus · esc back") : dim("  f12 to navigate");
 
 		let line = prefix + parts.join("   ");
 		// pi-tui truncates lines that exceed width, but we want to keep the
@@ -350,14 +353,14 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			"Activate the Forge thread-switcher strip below the editor. " +
 			"While active: ←→ navigate · enter focus a thread in the chat viewport · " +
 			"esc release strip-focus and snap viewport back to main. " +
-			"Shortcut: Ctrl+T.",
+			"Shortcut: F12.",
 		async handler(_args, ctx) {
 			mount(ctx);
 			stripRef?.setStripActive(true);
 		},
 	});
 
-	pi.registerShortcut(Key.ctrl("t"), {
+	pi.registerShortcut(Key.f12, {
 		description: "Activate Forge thread-switcher strip",
 		handler: (ctx) => {
 			mount(ctx);
