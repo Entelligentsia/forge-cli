@@ -574,6 +574,33 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 					return "";
 				};
 
+				// ── Tail-line formatters ─────────────────────────────────────
+				// Format subagent events as compact human-readable lines for the
+				// per-phase tailBuffer. These lines are what the thread-switcher
+				// widget renders in the chat viewport when the user focuses this
+				// phase. Keep them tight — one line per event.
+				const formatTime = (ms: number): string => {
+					const d = new Date(ms);
+					const pad = (n: number) => String(n).padStart(2, "0");
+					return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+				};
+				const tailPrefix = () => `[${phase.role} ${formatTime(Date.now())}]`;
+				const extractErrorSummary = (result: unknown): string => {
+					const raw =
+						typeof result === "string"
+							? result
+							: typeof result === "object" && result !== null
+							? JSON.stringify(result)
+							: String(result);
+					const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0) ?? raw;
+					return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
+				};
+				const appendTail = (line: string, opts?: { warning?: boolean }) => {
+					registry.appendTail(taskId, phase.role, line, opts);
+				};
+
+				appendTail(`${tailPrefix()} ─── phase ${phase.role} begin ───`);
+
 				const refreshStatus = () => {
 					const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
 					const tail = lastTool ? ` · ${lastTool}` : "";
@@ -603,6 +630,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 									const preview = extractTurnPreview(event.message);
 									if (preview) {
 										ctx.ui.setStatus?.(MESSAGE_KEY, `  "${preview}"`);
+										appendTail(`${tailPrefix()} » "${preview}"`);
 									}
 									break;
 								}
@@ -623,6 +651,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 										event.toolName,
 										event.args,
 									);
+									appendTail(`${tailPrefix()} → ${event.toolName}${hint ? ` ${hint}` : ""}`);
 									refreshStatus();
 									break;
 								}
@@ -650,8 +679,16 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 										// thread — they're already captured in the debug JSONL
 										// (writeDebug above) and the session registry, and the
 										// full conversation lands in forge-subagent-*.json.
-										// Surfacing here drowned the orchestration narrative
-										// in JSON dumps.
+										// They are appended to the per-phase tailBuffer with
+										// warning:true so the thread-switcher's ◆ unread marker
+										// signals their presence and a user can focus the
+										// subagent to read them.
+										appendTail(
+											`${tailPrefix()} ⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
+											{ warning: true },
+										);
+									} else {
+										appendTail(`${tailPrefix()} ← ${event.toolName} ok`);
 									}
 									refreshStatus();
 									break;
@@ -661,6 +698,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 										`◌ ${phase.role}: context compacting (${event.reason})…`,
 										"info",
 									);
+									appendTail(`${tailPrefix()} ◌ compacting (${event.reason})`);
 									break;
 								}
 								case "auto_retry_start": {
@@ -669,6 +707,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 									ctx.ui.notify(
 										`↻ ${phase.role}: model retry ${event.attempt}/${event.maxAttempts}${err ? `\n${err}` : ""}`,
 										"warning",
+									);
+									appendTail(
+										`${tailPrefix()} ↻ retry ${event.attempt}/${event.maxAttempts}${err ? `: ${extractErrorSummary(err)}` : ""}`,
+										{ warning: true },
 									);
 									break;
 								}
