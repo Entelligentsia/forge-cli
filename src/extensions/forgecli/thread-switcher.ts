@@ -36,7 +36,7 @@
 // the focused phase and re-renders on the "tail" event.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@entelligentsia/pi-coding-agent";
-import type { Component } from "@entelligentsia/pi-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@entelligentsia/pi-tui";
 
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
 
@@ -70,12 +70,15 @@ class TailViewComponent implements Component {
 		this.dispose = () => registry.off("tail", onTail);
 	}
 
-	render(_width: number): string[] {
+	render(width: number): string[] {
 		const lines = this.registry.getTailLines(this.taskId, this.phaseRole);
 		if (lines.length === 0) {
-			return [`(no output yet for ${this.phaseRole})`];
+			return [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)];
 		}
-		return lines;
+		// pi-tui's render hard-asserts no rendered line exceeds the terminal
+		// width — a long bash command or error summary in our tail buffer
+		// would crash the whole TUI. Truncate each line defensively.
+		return lines.map((line) => (visibleWidth(line) <= width ? line : truncateToWidth(line, width)));
 	}
 
 	invalidate(): void {
@@ -291,6 +294,10 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 
 	function mount(ctx: ExtensionContext): void {
 		if (mounted) return;
+		// Stderr debug trace — visible in pi's debug log so we can confirm the
+		// mount fired and (later) that Down arrow is reaching the handler.
+		// Cheap to leave in for now; remove once UX is stable.
+		process.stderr.write("[forge:threads] mount() invoked\n");
 		try {
 			ctx.ui.setWidget(
 				WIDGET_KEY,
@@ -322,16 +329,24 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 
 				if (!stripRef.getStripActive()) {
 					if (!isDownArrow(data)) return undefined;
-					// Don't steal Down from a multi-line editor.
 					const editorText = ctx.ui.getEditorText();
-					if (editorText.includes("\n")) return undefined;
-					// Don't activate when there are no subagent chips to navigate to.
-					if (stripRef.chipCount() <= 1) return undefined;
+					const editorLines = editorText.split("\n").length;
+					const chipCount = stripRef.chipCount();
+					process.stderr.write(
+						`[forge:threads] saw Down (bytes=${JSON.stringify(data)}); chips=${chipCount} editorLines=${editorLines}\n`,
+					);
+					// Don't steal Down from a multi-line editor.
+					if (editorText.includes("\n")) {
+						process.stderr.write("[forge:threads] passing through (multi-line editor)\n");
+						return undefined;
+					}
 					stripRef.setStripActive(true);
-					// Park the cursor on the first non-main chip — main is already
-					// where the viewport sits by default; the user almost always
-					// wants a subagent.
-					stripRef.setCursor(1);
+					// Park cursor on the first subagent chip when one exists;
+					// otherwise on main (the only chip).
+					stripRef.setCursor(chipCount > 1 ? 1 : 0);
+					process.stderr.write(
+						`[forge:threads] activated strip; cursor=${chipCount > 1 ? 1 : 0}\n`,
+					);
 					return { consume: true };
 				}
 
@@ -413,5 +428,12 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			mount(ctx);
 			stripRef?.setStripActive(true);
 		},
+	});
+
+	// Mount the widget + install the Down-arrow listener at session start so
+	// the spatial activation works on the very first keystroke (no need to
+	// run /forge:threads first). mount() is idempotent (mounted flag guards).
+	pi.on("session_start", async (_event, ctx) => {
+		mount(ctx);
 	});
 }
