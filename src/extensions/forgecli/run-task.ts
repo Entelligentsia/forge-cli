@@ -199,6 +199,167 @@ function readVerdict(
 	}
 }
 
+// ── Task record + summary helpers (Plan 11 / Slice 2) ────────────────────
+
+interface TaskRecord {
+	sprintId?: string;
+	status?: string;
+	summaries?: Record<string, unknown>;
+}
+
+function readTaskRecord(taskId: string, storeCli: string, cwd: string): TaskRecord | null {
+	const result = spawnSync("node", [storeCli, "read", "task", taskId], { cwd, encoding: "utf8" });
+	if (result.status !== 0) return null;
+	try {
+		const raw: string = typeof result.stdout === "string" ? result.stdout : String(result.stdout);
+		return JSON.parse(raw) as TaskRecord;
+	} catch {
+		return null;
+	}
+}
+
+// Map phase.role → action token used in event.action / eventId.
+function actionForRole(role: string): string {
+	return role.replace(/-/g, "_");
+}
+
+// Plan 11 / Slice 2: orchestrator composes the canonical phase event from
+// runtime telemetry (model/provider/usage), known task ctx, bracketed wall
+// times, and the judgement blob the subagent wrote to task.summaries[key].
+// The subagent never calls store-cli emit itself.
+
+interface OrchestratorEmitContext {
+	taskId: string;
+	sprintId: string;
+	phase: PhaseDescriptor;
+	iteration: number;
+	startMs: number;
+	endMs: number;
+	model: string;
+	provider: string;
+	usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	judgement: Record<string, unknown> | undefined;
+	storeCli: string;
+	cwd: string;
+}
+
+function isoCompact(ms: number): string {
+	return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function buildPhaseEvent(ec: OrchestratorEmitContext): Record<string, unknown> {
+	const action = actionForRole(ec.phase.role);
+	const eventId = `${isoCompact(ec.startMs)}_${ec.taskId}_${ec.phase.personaNoun}_${action}`;
+	const durationMs = Math.max(0, ec.endMs - ec.startMs);
+	const event: Record<string, unknown> = {
+		eventId,
+		taskId:          ec.taskId,
+		sprintId:        ec.sprintId,
+		role:            ec.phase.role,
+		action:          `/forge:${action.replace(/_/g, "-")}`,
+		phase:           ec.phase.role,
+		iteration:       ec.iteration,
+		startTimestamp:  new Date(ec.startMs).toISOString(),
+		endTimestamp:    new Date(ec.endMs).toISOString(),
+		durationMinutes: Math.round((durationMs / 60000) * 100) / 100,
+		model:           ec.model,
+		provider:        ec.provider,
+	};
+	if (ec.usage.input > 0 || ec.usage.output > 0 || ec.usage.cacheRead > 0 || ec.usage.cacheWrite > 0) {
+		event.inputTokens      = ec.usage.input;
+		event.outputTokens     = ec.usage.output;
+		event.cacheReadTokens  = ec.usage.cacheRead;
+		event.cacheWriteTokens = ec.usage.cacheWrite;
+		event.tokenSource      = "reported";
+	}
+	if (ec.judgement && typeof ec.judgement === "object") {
+		const j = ec.judgement as Record<string, unknown>;
+		if (typeof j.verdict === "string") event.verdict = j.verdict;
+		if (typeof j.notes   === "string") event.notes   = j.notes;
+	}
+	return event;
+}
+
+function emitEvent(
+	storeCli: string,
+	cwd: string,
+	sprintId: string,
+	event: Record<string, unknown>,
+): { ok: boolean; stderr: string } {
+	const result = spawnSync("node", [storeCli, "emit", sprintId, JSON.stringify(event)], {
+		cwd,
+		encoding: "utf8",
+	});
+	return { ok: result.status === 0, stderr: typeof result.stderr === "string" ? result.stderr : "" };
+}
+
+function judgementFromSummary(
+	record: TaskRecord | null,
+	phaseRole: string,
+): Record<string, unknown> | undefined {
+	if (!record || !record.summaries) return undefined;
+	const summaryKey = SUMMARY_KEY_BY_ROLE[phaseRole];
+	if (!summaryKey) return undefined;
+	const blob = (record.summaries as Record<string, unknown>)[summaryKey];
+	return blob && typeof blob === "object" ? (blob as Record<string, unknown>) : undefined;
+}
+
+// Drain .forge/cache/FRICTION-{phase}.jsonl: stamp each judgement-only record
+// with the subagent's runtime attribution and emit as event type "friction".
+// Truncate only after all emits succeed (Plan-11 open-question A.3).
+function drainFrictionFile(
+	frictionPath: string,
+	ec: OrchestratorEmitContext,
+): { emitted: number; failed: number } {
+	if (!fs.existsSync(frictionPath)) return { emitted: 0, failed: 0 };
+	const raw = fs.readFileSync(frictionPath, "utf8");
+	const lines = raw.split("\n").filter((l) => l.trim().length > 0);
+	if (lines.length === 0) return { emitted: 0, failed: 0 };
+
+	let emitted = 0;
+	let failed = 0;
+	for (let i = 0; i < lines.length; i++) {
+		let judgement: Record<string, unknown>;
+		try {
+			judgement = JSON.parse(lines[i]) as Record<string, unknown>;
+		} catch {
+			failed++;
+			continue;
+		}
+		const action = actionForRole(ec.phase.role);
+		const eventId = `${isoCompact(ec.startMs)}_${ec.taskId}_${ec.phase.personaNoun}_friction_${i}`;
+		const event: Record<string, unknown> = {
+			eventId,
+			taskId:          ec.taskId,
+			sprintId:        ec.sprintId,
+			role:            ec.phase.role,
+			action:          `/forge:${action.replace(/_/g, "-")}`,
+			phase:           ec.phase.role,
+			iteration:       ec.iteration,
+			startTimestamp:  new Date(ec.startMs).toISOString(),
+			endTimestamp:    new Date(ec.endMs).toISOString(),
+			durationMinutes: Math.round(((ec.endMs - ec.startMs) / 60000) * 100) / 100,
+			model:           ec.model,
+			provider:        ec.provider,
+			type:            "friction",
+			workflow:        typeof judgement.workflow === "string" ? judgement.workflow : ec.phase.role,
+			persona:         typeof judgement.persona  === "string" ? judgement.persona  : ec.phase.personaNoun,
+			issue:           judgement.issue,
+		};
+		if (judgement.subkind  !== undefined) event.subkind  = judgement.subkind;
+		if (judgement.evidence !== undefined) event.evidence = judgement.evidence;
+		if (judgement.notes    !== undefined) event.notes    = judgement.notes;
+		const r = emitEvent(ec.storeCli, ec.cwd, ec.sprintId, event);
+		if (r.ok) emitted++;
+		else failed++;
+	}
+
+	if (failed === 0) {
+		try { fs.unlinkSync(frictionPath); } catch { /* non-fatal */ }
+	}
+	return { emitted, failed };
+}
+
 // ── Find predecessor non-review phase for revision loop ───────────────────
 
 function findPredecessorIndex(phases: PhaseDescriptor[], reviewIndex: number): number {
@@ -780,6 +941,69 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 						"info",
 					);
+				}
+
+				// ── Plan 11 / Slice 2: orchestrator emits phase event ─────────
+				// The subagent no longer hand-builds event JSON; we compose the
+				// canonical event from runtime telemetry + the SUMMARY blob the
+				// subagent wrote onto task.summaries.{key}. Then drain any
+				// friction records the subagent appended to
+				// .forge/cache/FRICTION-{phase}.jsonl.
+				const phaseEndMs = Date.now();
+				const taskRecord = readTaskRecord(taskId, storeCli, cwd);
+				const sprintId = taskRecord?.sprintId;
+				if (!sprintId) {
+					ctx.ui.notify(
+						`⚠ forge:run-task — could not resolve sprintId for ${taskId}; ` +
+							`skipping orchestrator emit for phase ${phase.role}`,
+						"warning",
+					);
+					writeDebug({ kind: "emit_skipped", reason: "no-sprintId" });
+				} else {
+					const phaseIteration = (iterationCounts[phase.role] ?? 0) + 1;
+					const emitCtx: OrchestratorEmitContext = {
+						taskId,
+						sprintId,
+						phase,
+						iteration:  phaseIteration,
+						startMs:    phaseStart,
+						endMs:      phaseEndMs,
+						model:      result.model    ?? "unknown",
+						provider:   result.provider ?? "unknown",
+						usage:      {
+							input:      result.usage.input,
+							output:     result.usage.output,
+							cacheRead:  result.usage.cacheRead,
+							cacheWrite: result.usage.cacheWrite,
+						},
+						judgement:  judgementFromSummary(taskRecord, phase.role),
+						storeCli,
+						cwd,
+					};
+					const phaseEvent = buildPhaseEvent(emitCtx);
+					const emitResult = emitEvent(storeCli, cwd, sprintId, phaseEvent);
+					if (!emitResult.ok) {
+						ctx.ui.notify(
+							`⚠ forge:run-task — phase event emit failed for ${phase.role}: ${emitResult.stderr.trim()}`,
+							"warning",
+						);
+						writeDebug({ kind: "emit_failed", stderr: emitResult.stderr });
+					} else {
+						writeDebug({ kind: "emit_ok", eventId: phaseEvent.eventId });
+					}
+
+					// Drain friction file for this phase, if any.
+					const frictionPath = path.join(cwd, ".forge", "cache", `FRICTION-${phase.role}.jsonl`);
+					const drain = drainFrictionFile(frictionPath, emitCtx);
+					if (drain.emitted + drain.failed > 0) {
+						writeDebug({ kind: "friction_drain", ...drain });
+						if (drain.failed > 0) {
+							ctx.ui.notify(
+								`⚠ forge:run-task — friction drain for ${phase.role}: ${drain.emitted} ok, ${drain.failed} failed`,
+								"warning",
+							);
+						}
+					}
 				}
 
 				// ── 6b. Verdict check (review phases only) ────────────────────

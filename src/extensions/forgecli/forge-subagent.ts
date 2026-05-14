@@ -59,6 +59,7 @@ export interface SubagentResult {
 	stopReason?: string;
 	errorMessage?: string;
 	model?: string;
+	provider?: string;
 }
 
 export interface RunSubagentOptions {
@@ -199,6 +200,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 					result.usage.contextTokens = usage.totalTokens ?? result.usage.contextTokens;
 				}
 				if (!result.model && msg.model) result.model = msg.model;
+				if (!result.provider && msg.provider) result.provider = msg.provider;
 				if (msg.stopReason) result.stopReason = msg.stopReason;
 				if (msg.errorMessage) result.errorMessage = msg.errorMessage;
 			}
@@ -276,6 +278,7 @@ export function writeSubagentTranscript(opts: WriteTranscriptOptions): string {
 		persona,
 		tag: tag ?? null,
 		model: result.model ?? null,
+		provider: result.provider ?? null,
 		exitCode: result.exitCode,
 		stopReason: result.stopReason ?? null,
 		errorMessage: result.errorMessage ?? null,

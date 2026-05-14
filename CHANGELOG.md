@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-05-14
+
+Telemetry contract Slice 2 — the runtime emit site. Pairs with
+forge-plugin 0.43.14 (workflow + fragment + friction-emit + backfill).
+
+### Changed
+
+- `runForgeSubagent` now surfaces `provider` on its `SubagentResult` alongside `model` and `usage`. The provider is captured directly from the per-turn `AssistantMessage.provider` field on the pi event stream — no env-var dance, no global state. Composes recursively: depth N records depth N+1's runtime attribution. Auto-exported transcripts include the resolved provider in the JSON header.
+- `run-task.ts` becomes the orchestrator side of the new event-emission contract. After each `runForgeSubagent` returns successfully, the orchestrator:
+  1. Reads the task record once to resolve `sprintId`.
+  2. Composes the canonical phase event from runtime telemetry (`result.model`, `result.provider`, `result.usage`), known task context (`taskId`, `sprintId`, `phase`, `iteration`), bracketed wall times, and the judgement blob the subagent wrote to `task.summaries.{key}`.
+  3. Emits via `node $FORGE_ROOT/tools/store-cli.cjs emit {sprintId} '{...}'` with `tokenSource: "reported"` whenever usage was non-zero.
+  4. Drains `.forge/cache/FRICTION-{phase}.jsonl` (written by the new `friction-emit.cjs` tool on the subagent side), stamps each judgement-only record with the subagent's runtime attribution, emits as event type `"friction"`, and truncates the file only after all emits succeed.
+- Subagents no longer call `store-cli emit` for phase events. The workflow prompts in forge-plugin 0.43.14 enforce this; this change is the runtime that takes over the emission responsibility.
+- `scripts/build-payload.cjs` bundles the two new forge-plugin tools (`friction-emit.cjs`, `backfill-provider.cjs`) so they ship in the global install.
+
+### Bundled
+
+- forge-plugin: 0.43.13 → **0.43.14** (telemetry contract Slice 2 — workflow/fragment rewrites + `friction-emit.cjs` + `backfill-provider.cjs`).
+
 ## [0.6.4] — 2026-05-14
 
 ### Fixed

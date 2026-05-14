@@ -185,6 +185,9 @@ const TOOLS_TO_COPY = [
 	"preflight-gate.cjs",
 	"read-verdict.cjs",
 	"parse-gates.cjs",
+	// Plan-11 / Slice 2: friction recorder (subagent) and provider backfill helper.
+	"friction-emit.cjs",
+	"backfill-provider.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
