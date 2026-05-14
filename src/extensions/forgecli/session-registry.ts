@@ -1,6 +1,6 @@
 // session-registry.ts — in-memory store of live run-task subagent sessions.
 //
-// Single source of truth that the session-monitor widget subscribes to.
+// Single source of truth that the thread-switcher widget subscribes to.
 // run-task.ts pushes events here; the widget renders from here. No disk I/O
 // — the JSONL debug log at .forge/cache/run-task-debug-<taskId>.jsonl handles
 // durable history. This registry is for the live in-process picture only.

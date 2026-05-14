@@ -220,25 +220,36 @@ class ChipStripComponent implements Component {
 		const dim = (s: string) => this.theme.fg("dim", s);
 		const accent = (s: string) => this.theme.fg("accent", s);
 
-		const phase = this.currentPhaseRole(session);
 		const spin = this.spinnerFrame(session);
-		const orchInner = `${session.taskId}${phase ? ` · ${phase}` : ""}${spin ? ` ${spin}` : ""}`;
-		const orchChip = accent(`[${orchInner}]`);
+		const chips = this.chips();
+
+		// Orchestrator chip stays bracketed + accent-colored (anchor identity).
+		// Subagent chips render after it as `<glyph> <role>`, dimmed —
+		// completed phases show ✓, failed ✗, live ◇ (or ◆ with unread).
+		// This makes phase progression visible at a glance without expanding
+		// the strip.
+		const orchChip = accent(`[${session.taskId}]`);
+		const phaseChips = chips
+			.filter((c) => c.id !== "main")
+			.map((c) => dim(`${this.chipGlyph(c)} ${c.label}`));
+		const chipsLine = [orchChip, ...phaseChips].join("  ");
 
 		const prefix = dim("threads ─ ");
 		const hint = dim("  ↓ to navigate");
+		const spinPart = spin ? `  ${spin}` : "";
 		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
-		// Available width for preview = total - (prefix + orchChip + hint reserved).
-		// Use visibleWidth for ANSI-aware sizing.
 		const fixedWidth =
-			visibleWidth(prefix) + visibleWidth(orchChip) + visibleWidth(hint);
+			visibleWidth(prefix) +
+			visibleWidth(chipsLine) +
+			visibleWidth(spinPart) +
+			visibleWidth(hint);
 		const previewBudget = Math.max(0, width - fixedWidth);
-		const preview = previewText
-			? dim(truncateToWidth(previewText, previewBudget))
-			: "";
+		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
 
-		return [`${prefix}${orchChip}${preview}${hint}`];
+		let line = `${prefix}${chipsLine}${spinPart}${preview}${hint}`;
+		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
+		return [line];
 	}
 
 	private renderActive(width: number, session: SessionState, chips: ChipTarget[]): string[] {

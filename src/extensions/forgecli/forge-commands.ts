@@ -214,7 +214,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:sprint-plan", // FORGE-S19-T02: real handler registered in sprint-plan.ts
 	"forge:read", // Real handler registered in index.ts
 	"forge:run-task", // FORGE-S21-T02: real handler registered in run-task.ts
-	"forge:sessions", // Session-monitor widget (Ctrl+L); registered in session-monitor.ts
+	"forge:threads", // Thread-switcher chip strip; registered in thread-switcher.ts
 	"forge:regenerate", // Native handler registered in regenerate.ts — re-materialize .forge/ from bundled payload
 ]);
 

@@ -284,7 +284,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 
 			ctx.ui.setStatus?.(STATUS_KEY, `run-task ${taskId}: initializing…`);
 
-			// Register the session in the live monitor (Ctrl+L / /forge:sessions widget).
+			// Register the session in the live registry that the thread-switcher reads from.
 			const registry = getSessionRegistry();
 			registry.startSession(taskId);
 
