@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-05-14
+
+### Fixed
+
+- `/forge:regenerate` now refreshes `.forge/schemas/` from the bundled `.schemas/` payload. Previously only workflows, personas, skills, templates, and commands were re-materialized — schemas were copied only at install time by `/forge:init`. With this fix, projects pick up forge-plugin schema changes (e.g. the 0.43.13 telemetry contract: `provider` required, `estimatedCostUSD` dropped) on the same `/forge:regenerate` call that updates workflows referencing them. Without this, regenerated workflows assumed the new contract while on-disk schemas still enforced the old one, causing silent validation drift. Notification text now reports the schema-refresh count.
+
+### Bundled
+
+- forge-plugin: 0.43.12 → **0.43.13** (telemetry contract Slice 1 + bundled-`.schemas/` runtime lookup in store-cli).
+
 ## [0.6.3] — 2026-05-14
 
 Thread-switcher UX — single-viewport subagent tail browsing. Activates

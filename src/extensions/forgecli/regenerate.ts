@@ -150,11 +150,40 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				60_000,
 			);
 
+			// 3. Refresh schemas from bundled .schemas/. substitute-placeholders does
+			//    not touch .forge/schemas/, but a forge plugin version bump can ship
+			//    schema changes (e.g. 0.43.13 added `provider` required + dropped
+			//    `estimatedCostUSD`). Without this step, regenerated workflows assume
+			//    the new contract while the schemas on disk still enforce the old one
+			//    — leading to silent validation drift. Mirrors forge-init.ts copy.
+			let schemaCount = 0;
+			if (ok) {
+				const schemasSrc = path.join(bundleRoot, ".schemas");
+				const schemasDest = path.join(cwd, ".forge", "schemas");
+				if (fs.existsSync(schemasSrc)) {
+					fs.mkdirSync(schemasDest, { recursive: true });
+					const files = fs
+						.readdirSync(schemasSrc)
+						.filter((f) => f.endsWith(".json"));
+					for (const f of files) {
+						try {
+							fs.copyFileSync(
+								path.join(schemasSrc, f),
+								path.join(schemasDest, f),
+							);
+							schemaCount++;
+						} catch {
+							// non-fatal — surfaced in count below
+						}
+					}
+				}
+			}
+
 			ctx.ui.setStatus?.("forge:regenerate", undefined);
 			if (ok) {
 				ctx.ui.notify(
 					"〇 forge:regenerate complete — .forge/workflows, .forge/personas, .forge/skills, " +
-						".forge/templates, .claude/commands/ re-materialized from bundled payload.",
+						`.forge/templates, .claude/commands/ re-materialized from bundled payload; ${schemaCount} schemas refreshed.`,
 					"info",
 				);
 			}
