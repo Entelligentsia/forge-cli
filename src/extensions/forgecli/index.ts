@@ -41,6 +41,7 @@ import { registerReadCommand } from "./read-command.js";
 import { registerRunTask } from "./run-task.js";
 import { registerSessionMonitor } from "./session-monitor.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
+import { registerThreadSwitcher } from "./thread-switcher.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -302,6 +303,14 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// below the input swimline. Subscribes to the in-process SessionRegistry
 	// that run-task pushes into on every subagent event.
 	registerSessionMonitor(pi);
+
+		// ── /forge:threads native handler ─────────────────────────────────────────
+		// Single-viewport thread switcher: one-row chip strip below the editor,
+		// Ctrl+T activates. Selecting a subagent chip swaps the chat viewport
+		// to that subagent's tail (via ctx.ui.setOutputSource, added in pi-mono
+		// 0.75.0). Esc snaps back to main. Targeted to replace registerSessionMonitor
+		// once it proves out in dogfood — see Step 6 in the rollout plan.
+		registerThreadSwitcher(pi);
 
 	// ── /forge:read native handler ───────────────────────────────────────────
 	registerReadCommand(pi, forgeRoot);
