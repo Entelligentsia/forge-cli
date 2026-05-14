@@ -15,7 +15,7 @@
  * in Stage 2 once the architectural test passes.
  */
 
-import type { ExtensionAPI, TextContent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, TextContent } from "@entelligentsia/pi-coding-agent";
 import { Type } from "typebox";
 
 // ---------------------------------------------------------------------------

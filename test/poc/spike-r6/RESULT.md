@@ -46,7 +46,7 @@ RUN  v3.2.4 /home/boni/src/forge-engineering/forge-cli
 
 ## Loader Behaviour Confirmed
 
-From `forge-cli/node_modules/@earendil-works/pi-coding-agent/dist/core/skills.js`:
+From `forge-cli/node_modules/@entelligentsia/pi-coding-agent/dist/core/skills.js`:
 
 - `validateName` — enforces `^[a-z0-9-]+$`, ≤64 chars, no leading/trailing
   hyphen, no consecutive hyphens, must equal parent directory basename. All

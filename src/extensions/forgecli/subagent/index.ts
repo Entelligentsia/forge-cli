@@ -5,7 +5,7 @@
  * SHA:     3e5ad67e0f325d4888f82f9b82966218eb4407f5
  * Date:    2026-05-07
  * License: MIT (Copyright (c) 2025 Mario Zechner) — see pi-mono/LICENSE
- * Notes:   Imports rewritten @earendil-works/* → @earendil-works/*.
+ * Notes:   Imports rewritten @entelligentsia/* → @entelligentsia/*.
  *          Upstream promotion: see forge-cli/architectural-review.md §R2.
  */
 
@@ -27,11 +27,11 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import type { AgentToolResult } from "@entelligentsia/pi-coding-agent";
+import type { Message } from "@entelligentsia/pi-ai";
+import { StringEnum } from "@entelligentsia/pi-ai";
+import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@entelligentsia/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@entelligentsia/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 

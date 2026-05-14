@@ -11,7 +11,7 @@
 // call `pi.sendUserMessage` without `deliverAs` — retrofitting them is
 // follow-up work, tracked outside T04.
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@entelligentsia/pi-coding-agent";
 
 /**
  * Send a kickoff message into the agent loop with `deliverAs: "steer"`.

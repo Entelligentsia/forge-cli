@@ -12,7 +12,7 @@
  * tsconfig.spike.json` plus a structural code-read.
  */
 
-import { getModel } from "@earendil-works/pi-ai";
+import { getModel } from "@entelligentsia/pi-ai";
 import {
 	type AgentSession,
 	createAgentSession,
@@ -20,7 +20,7 @@ import {
 	type ExtensionFactory,
 	getAgentDir,
 	SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@entelligentsia/pi-coding-agent";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getEvidence, registerSpikeR3, resetEvidence } from "./spike.js";
 

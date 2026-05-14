@@ -14,7 +14,7 @@
 //     8. subprocess failure → stderr warn emitted, no throw
 
 import * as childProcess from "node:child_process";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@entelligentsia/pi-coding-agent";
 
 // MessageEndEvent is not re-exported from the pi-coding-agent main index.
 // Define a local structural type matching the shape from types.d.ts.

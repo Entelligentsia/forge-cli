@@ -8,7 +8,7 @@ import * as fsSync from "node:fs";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
 
 const execFileAsync = promisify(execFile);
 

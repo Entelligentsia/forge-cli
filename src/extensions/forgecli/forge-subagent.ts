@@ -27,8 +27,8 @@ import {
 	parseFrontmatter,
 	SessionManager,
 	type AgentSessionEvent,
-} from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
+} from "@entelligentsia/pi-coding-agent";
+import type { Message } from "@entelligentsia/pi-ai";
 import { buildProjectOrientation } from "./project-orientation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────

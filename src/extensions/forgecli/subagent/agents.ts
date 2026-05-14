@@ -5,7 +5,7 @@
  * SHA:     3e5ad67e0f325d4888f82f9b82966218eb4407f5
  * Date:    2026-05-07
  * License: MIT (Copyright (c) 2025 Mario Zechner) — see pi-mono/LICENSE
- * Notes:   Imports rewritten @earendil-works/* → @earendil-works/*.
+ * Notes:   Imports rewritten @entelligentsia/* → @entelligentsia/*.
  *          Upstream promotion: see forge-cli/architectural-review.md §R2.
  */
 
@@ -15,7 +15,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter } from "@entelligentsia/pi-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
 

@@ -43,7 +43,7 @@ import type {
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
-} from "@earendil-works/pi-coding-agent";
+} from "@entelligentsia/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseStoreCLIInvocation, registerHookDispatcher } from "../../../src/extensions/forgecli/hook-dispatcher.js";
 

@@ -8,7 +8,7 @@
 // fires without an explicit callerContext param.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "../../../src/extensions/forgecli/audience-gate.js";
 

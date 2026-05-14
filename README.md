@@ -1,6 +1,6 @@
 ## @entelligentsia/forgecli
 
-Forge SDLC on the [pi-coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) runtime. Three bin aliases: `forge`, `forgecli`, `4ge`.
+Forge SDLC on the [pi-coding-agent](https://www.npmjs.com/package/@entelligentsia/pi-coding-agent) runtime. Three bin aliases: `forge`, `forgecli`, `4ge`.
 
 Bundled Forge plugin: **v0.40.3**.
 Bundled pi runtime: pinned in `package.json`.

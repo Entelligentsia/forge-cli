@@ -18,9 +18,9 @@ import {
   SessionManager,
   DefaultResourceLoader,
   getAgentDir,
-} from "@earendil-works/pi-coding-agent";
-import { getModel } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+} from "@entelligentsia/pi-coding-agent";
+import { getModel } from "@entelligentsia/pi-ai";
+import type { ExtensionAPI, ExtensionFactory } from "@entelligentsia/pi-coding-agent";
 
 import registerSubagentTool from "../../../src/extensions/forgecli/subagent/index.js";
 import {

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-05-14
+
+Bundled forge plugin bumped to v0.43.12 — fixes silent fragment drop
+in `/forge:regenerate` output.
+
+### Changed
+
+- `forge.bundledVersion`: `0.43.11` → `0.43.12`. The plugin's
+  `build-base-pack.cjs` previously hardcoded a 4-fragment allowlist,
+  so `_fragments/store-cli-verbs.md` (forge#95) and `_fragments/friction-emit.md`
+  (FORGE-S20-T01) never reached the `.base-pack/workflows/_fragments/`
+  shipped to users. Workflow bodies referenced both fragments but the
+  fragment files were missing after `/forge:regenerate`, regressing
+  store-cli verb fumbles and event-shape iteration that #95/#87 were
+  meant to kill. Both builders now enumerate fragments dynamically.
+- No forge-cli source changes. Carrier-only bump.
+
+## [0.6.1] — 2026-05-13
+
+HLO-S01 friction-fix sweep — bundled forge plugin bumped to v0.43.11.
+
+### Changed
+
+- `forge.bundledVersion`: `0.43.10` → `0.43.11`. New bundle covers ten
+  friction fixes batched from the 2026-05-13 testbench dogfood
+  (umbrella forge#93): meta-review-plan text drift (#78/#76), event.type
+  enum widening (#80), task FSM `planned → implemented` (#79), inline
+  FSM transition tables (#96), store-cli verb cheat-sheet fragment
+  (#95), runtime-conditional `/cost` probe (#84), surfaced
+  `commands.test` in workflow bodies (#94), `--force` gated behind
+  `FORGE_ALLOW_FORCE` + canonical event-shape (#87), commit_task author
+  fix (#82), native `--task-suffix` / `--sprint-suffix` flags
+  (forge-cli#5 tools piece).
+- No forge-cli source changes in this release. Carrier-only bump.
+
 ## [0.5.7] — 2026-05-10
 
 FORGE-S20-T04 sprint-completion gap fix (paired with forge plugin v0.43.3).
@@ -189,7 +224,7 @@ Headline: Native sprint-intake + sprint-plan handlers — forge-cli takes over t
   from `{engineeringDir}/sprints/{SPRINT_ID}/` (config-resolved); verifies sprint is
   in `planning` status. Persona self-load from `.forge/personas/architect.md` (🗻).
   LLM invocation via vendored subagent spawn pattern (`./subagent/index.js`) — confirmed
-  correct by SPIKE_NOTES.md after scanning `@earendil-works/pi-coding-agent` types
+  correct by SPIKE_NOTES.md after scanning `@entelligentsia/pi-coding-agent` types
   (`pi.invokeLLM` absent on ExtensionAPI). Prompt loaded from
   `dist/forge-payload/.tools/prompts/sprint-plan-prompt.md` (new).
   JSON output validated against `dist/forge-payload/.tools/schemas/task-list.schema.json`
@@ -375,24 +410,24 @@ unpacked. Tarball size-budget gate enforced in smoke + CI.
 
 ### Bundled / pinned (unchanged from 0.1.0)
 
-- `@earendil-works/pi-coding-agent@0.74.0`,
-  `@earendil-works/pi-ai@0.74.0`,
-  `@earendil-works/pi-tui@0.74.0` via `bundledDependencies`.
+- `@entelligentsia/pi-coding-agent@0.74.0`,
+  `@entelligentsia/pi-ai@0.74.0`,
+  `@entelligentsia/pi-tui@0.74.0` via `bundledDependencies`.
 - `forge.bundledVersion: 0.40.3` (`Entelligentsia/forge@v0.40.3`) — drift audit
   clean, no upstream movement during sprint.
 
 ## [0.1.0] — 2026-05-08
 
 First public stable release of `@entelligentsia/forgecli` — the Forge SDLC
-ported onto `@earendil-works/pi-coding-agent`.
+ported onto `@entelligentsia/pi-coding-agent`.
 
 ### Added
 
 - **Three bin entries** (`forge`, `forgecli`, `4ge`) all routing to the same
   launcher. `4ge` and `forgecli` exist as collision-free aliases when the
   Foundry `forge` is on `$PATH`.
-- **Bundled pi runtime.** `@earendil-works/pi-coding-agent@0.74.0`,
-  `@earendil-works/pi-ai@0.74.0`, and `@earendil-works/pi-tui@0.74.0` are
+- **Bundled pi runtime.** `@entelligentsia/pi-coding-agent@0.74.0`,
+  `@entelligentsia/pi-ai@0.74.0`, and `@entelligentsia/pi-tui@0.74.0` are
   shipped via `bundledDependencies`, insulating installs from upstream
   npm-scope churn.
 - **Bundled forge plugin payload** at `Entelligentsia/forge@v0.40.3`,

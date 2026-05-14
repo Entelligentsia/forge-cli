@@ -19,7 +19,7 @@
 //
 // Iron Law 6 compliance: no shell-string interpolation. No subprocess spawning.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@entelligentsia/pi-coding-agent";
 import { Type } from "typebox";
 
 // ── Schema ────────────────────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ const { mockSession } = vi.hoisted(() => {
 	return { mockSession };
 });
 
-vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+vi.mock("@entelligentsia/pi-coding-agent", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
 	// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 	class MockDefaultResourceLoader {
@@ -61,7 +61,7 @@ vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn(() => ({ status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") })),
 }));
 
-import { createAgentSession } from "@earendil-works/pi-coding-agent";
+import { createAgentSession } from "@entelligentsia/pi-coding-agent";
 import { spawnSync } from "node:child_process";
 import { registerRunTask } from "../../../src/extensions/forgecli/run-task.js";
 

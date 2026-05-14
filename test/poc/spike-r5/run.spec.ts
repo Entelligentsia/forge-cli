@@ -16,7 +16,7 @@
  *   one per handler variant. Asserts that markers land where expected.
  */
 
-import { getModel } from "@earendil-works/pi-ai";
+import { getModel } from "@entelligentsia/pi-ai";
 import {
 	type AgentSession,
 	type BeforeAgentStartEvent,
@@ -27,7 +27,7 @@ import {
 	type ExtensionFactory,
 	getAgentDir,
 	SessionManager,
-} from "@earendil-works/pi-coding-agent";
+} from "@entelligentsia/pi-coding-agent";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
 	type CapturedCustomMessage,

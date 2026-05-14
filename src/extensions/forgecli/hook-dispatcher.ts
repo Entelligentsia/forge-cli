@@ -22,8 +22,8 @@ import type {
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
-} from "@earendil-works/pi-coding-agent";
-import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+} from "@entelligentsia/pi-coding-agent";
+import { isToolCallEventType } from "@entelligentsia/pi-coding-agent";
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";

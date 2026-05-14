@@ -18,10 +18,10 @@
 
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@entelligentsia/pi-coding-agent";
 
 // MessageEndEvent is not re-exported from the pi-coding-agent main package index
-// (confirmed against @earendil-works/pi-coding-agent@0.74.0 dist/index.d.ts).
+// (confirmed against @entelligentsia/pi-coding-agent@0.74.0 dist/index.d.ts).
 // Use a local structural type for the message_end event — keeps us type-safe
 // without relying on a deep import (blocked by moduleResolution: NodeNext).
 interface LocalMessageEndEvent {

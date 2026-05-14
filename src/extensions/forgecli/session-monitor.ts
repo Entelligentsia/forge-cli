@@ -8,8 +8,8 @@
 // Enter pass through to the editor so the user can still type and submit
 // prompts while monitoring sessions.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@entelligentsia/pi-coding-agent";
+import { Key } from "@entelligentsia/pi-tui";
 
 import {
 	buildSessionMonitorWidget,

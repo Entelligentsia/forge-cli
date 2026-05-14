@@ -4,10 +4,10 @@
 // transitions to the full ANSI-Shadow logo + keybinding hints once startup
 // tasks are complete. The caller calls setStartupDone() to trigger the swap.
 
-import { Container, Loader, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
-import { keyHint, keyText, rawKeyHint } from "@earendil-works/pi-coding-agent";
-import type { AppKeybinding, Theme } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import { Container, Loader, Spacer, Text, type TUI } from "@entelligentsia/pi-tui";
+import { keyHint, keyText, rawKeyHint } from "@entelligentsia/pi-coding-agent";
+import type { AppKeybinding, Theme } from "@entelligentsia/pi-coding-agent";
+import type { Component } from "@entelligentsia/pi-tui";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const LOGO_SEP_WIDTH = 46;

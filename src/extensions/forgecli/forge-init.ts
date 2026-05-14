@@ -25,7 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
 import { runHealthCheck } from "./health-check.js";
 import {
 	buildProjectContext,

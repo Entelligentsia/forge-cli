@@ -82,7 +82,7 @@ vi.mock("node:child_process", () => {
 	return { execFile: execFileMock };
 });
 
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@entelligentsia/pi-coding-agent";
 import { registerForgeTools } from "../../../src/extensions/forgecli/forge-tools.js";
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
