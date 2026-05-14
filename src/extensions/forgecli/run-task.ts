@@ -646,20 +646,12 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 									);
 									if (event.isError) {
 										errCount++;
-										const raw =
-											typeof event.result === "string"
-												? event.result
-												: JSON.stringify(event.result, null, 2);
-										const argsBlock =
-											startArgs !== undefined
-												? `\nargs: ${JSON.stringify(startArgs, null, 2)}`
-												: "";
-										// Stabilization mode: print full tool errors with the
-										// failing command's args. No truncation.
-										ctx.ui.notify(
-											`⚠ ${phase.role}: ${event.toolName} failed${argsBlock}\n${raw}`,
-											"warning",
-										);
+										// Subagent tool errors are NOT surfaced on the main
+										// thread — they're already captured in the debug JSONL
+										// (writeDebug above) and the session registry, and the
+										// full conversation lands in forge-subagent-*.json.
+										// Surfacing here drowned the orchestration narrative
+										// in JSON dumps.
 									}
 									refreshStatus();
 									break;
