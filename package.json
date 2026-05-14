@@ -49,7 +49,7 @@
 		]
 	},
 	"forge": {
-		"bundledVersion": "0.43.14",
+		"bundledVersion": "0.43.15",
 		"forgeRoot": "../forge/forge"
 	},
 	"scripts": {
