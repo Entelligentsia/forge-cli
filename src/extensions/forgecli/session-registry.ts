@@ -52,6 +52,12 @@ export interface SessionState {
 	currentPhaseRole?: string;
 	phases: PhaseSummary[];
 	events: ToolEventRecord[];
+	/**
+	 * Latest assistant-turn preview from any subagent under this session.
+	 * Populated by run-task on `turn_end` via setTurnPreview. Drives the
+	 * trailing "...preview" text in the thread-switcher chip strip.
+	 */
+	currentTurnPreview?: string;
 }
 
 const MAX_SESSIONS = 20;
@@ -242,6 +248,15 @@ export class SessionRegistry extends EventEmitter {
 		if (!p) return [];
 		if (limit === undefined || limit >= p.tailBuffer.length) return p.tailBuffer.slice();
 		return p.tailBuffer.slice(p.tailBuffer.length - limit);
+	}
+
+	setTurnPreview(taskId: string, preview: string): void {
+		const s = this.sessions.get(taskId);
+		if (!s) return;
+		if (s.currentTurnPreview === preview) return;
+		s.currentTurnPreview = preview;
+		s.updatedAt = Date.now();
+		this.emit("preview", { taskId });
 	}
 
 	private evictIfNeeded(): void {

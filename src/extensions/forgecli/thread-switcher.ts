@@ -1,50 +1,60 @@
 // thread-switcher.ts — single-viewport thread switcher for forge:run-task.
 //
-// One-row chip strip below the editor. Each chip represents one thread the
-// user can view in the main chat viewport: "main" (the default pi
-// conversation) plus one chip per subagent phase that has run during the
-// active run-task session.
+// One-row strip below the editor with two render modes:
 //
-// Activation: spatial. Press ↓ in the editor — the chip strip sits right
-// below the editor, so falling out of the editor downward enters strip-focus
-// mode. Activation only fires when:
-//   (a) the editor's content has no newlines (preserves multi-line Down nav)
-//   (b) there's at least one subagent chip to navigate to (main alone is
-//       pointless — it's already focused by default)
+//   INACTIVE (default, ↓ not pressed):
+//     threads ─ [HLO-S01-T04 · plan ⠋]  "Now update the task status…"
 //
-// While focused:
-//   ←/→        move cursor between chips
-//   ↑          exit strip-focus mode, return to editor. Viewport unchanged.
-//   Enter      commit cursor → focused; if non-main, swap chat viewport to
-//              that phase's tail via ctx.ui.setOutputSource(component);
-//              if main, restore default with setOutputSource(null).
-//   Esc        exit strip-focus AND snap viewport back to main (muscle-memory
-//              "go home" shortcut).
+//     Compact summary line — orchestrator chip with current phase + cycling
+//     spinner, followed by the latest assistant-turn preview. Replaces the
+//     legacy ctx.ui.setStatus bottom line (the chip strip IS the live status).
 //
-// /forge:threads slash command is also registered as a discoverable fallback.
+//   ACTIVE (user pressed ↓):
+//     threads ─ ▸● HLO-S01-T04   ◇ plan   ◆ review-plan   ✓ implement   ⠋  "…preview"
+//
+//     Full chip list with cursor/focus glyphs. ←→ navigates; Enter focuses
+//     a chip into the main chat viewport via ctx.ui.setOutputSource; ↑
+//     returns to editor without changing the viewport; Esc returns to
+//     editor AND snaps viewport back to main.
+//
+// The strip is HIDDEN entirely (zero rows) when no run-task session has
+// ever started in this pi conversation — pi default chat occupies the
+// space normally.
+//
+// Activation key: ↓ from the editor when (a) the editor has no newlines
+// (preserves multi-line Down nav) and (b) there's at least one session
+// in the registry. /forge:threads slash command works as a fallback.
 //
 // Chip glyphs:
-//   ▸label     cursor (only one)
-//   ●label     currently the focused source of the chat viewport
-//   ◆label     subagent with unread warnings since last focused
-//   ◇label     live subagent, no unread
-//   ✓label     subagent that completed cleanly
-//   ✗label     subagent that failed
+//   ▸<label>   cursor (only one)
+//   ●<label>   currently the focused source of the chat viewport
+//   ○<label>   orchestrator chip when something else is focused
+//   ◇<label>   live subagent, no unread warnings
+//   ◆<label>   live subagent with unread warnings since last focused
+//   ✓<label>   subagent that completed cleanly
+//   ✗<label>   subagent that failed
 //
-// Data plane: SessionRegistry (session-registry.ts) — chips read phases from
-// the most-recent run-task session; tail-view reads getTailLines(...) for
-// the focused phase and re-renders on the "tail" event.
+// Data plane: SessionRegistry (session-registry.ts) — chips read phases
+// from the most-recent run-task session; tail-view reads getTailLines(...)
+// for the focused phase. All re-renders are driven by tui.requestRender()
+// (registry events → invalidationCb → requestRender → next render tick).
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@entelligentsia/pi-coding-agent";
-import { type Component, truncateToWidth, visibleWidth } from "@entelligentsia/pi-tui";
+import { type Component, type TUI, truncateToWidth, visibleWidth } from "@entelligentsia/pi-tui";
 
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
 
 const WIDGET_KEY = "forge:thread-switcher";
 
+// Braille spinner frames — universally supported, 10 frames feels smooth at
+// 100ms cadence.
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_INTERVAL_MS = 100;
+
 interface ChipTarget {
 	/** "main" sentinel or phaseRole. */
 	id: string;
+	/** Display text (orchestrator taskId for main, phase role for subagents). */
 	label: string;
 	/** Source taskId (null for main). */
 	taskId: string | null;
@@ -66,7 +76,6 @@ class TailViewComponent implements Component {
 			}
 		};
 		registry.on("tail", onTail);
-		// Cache the unsubscribe so dispose() can release it.
 		this.dispose = () => registry.off("tail", onTail);
 	}
 
@@ -75,17 +84,14 @@ class TailViewComponent implements Component {
 		if (lines.length === 0) {
 			return [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)];
 		}
-		// pi-tui's render hard-asserts no rendered line exceeds the terminal
-		// width — a long bash command or error summary in our tail buffer
-		// would crash the whole TUI. Truncate each line defensively.
+		// pi-tui asserts no rendered line exceeds the terminal width — bash
+		// commands and error summaries in our tail buffer can be arbitrary
+		// length, so truncate defensively per line.
 		return lines.map((line) => (visibleWidth(line) <= width ? line : truncateToWidth(line, width)));
 	}
 
 	invalidate(): void {
-		// invalidate is called by pi-tui's render loop; nothing to do here —
-		// the data is always read fresh in render(). The hook is here so the
-		// "tail" event can trigger an upstream re-render via requestRender,
-		// supplied by the registrar.
+		// Re-render is driven by external invalidationCb → tui.requestRender().
 	}
 
 	setInvalidationCallback(cb: () => void): void {
@@ -100,7 +106,7 @@ class TailViewComponent implements Component {
 class ChipStripComponent implements Component {
 	private cursorIdx = 0;
 	/** id of the chip whose tail is currently mirrored in the chat viewport.
-	 *  "main" = default (no override). */
+	 *  "main" = pi default (no override). */
 	private focusedChipId = "main";
 	private stripActive = false;
 	private invalidationCb?: () => void;
@@ -112,9 +118,11 @@ class ChipStripComponent implements Component {
 		const onChange = () => this.invalidationCb?.();
 		registry.on("change", onChange);
 		registry.on("tail", onChange);
+		registry.on("preview", onChange);
 		this.dispose = () => {
 			registry.off("change", onChange);
 			registry.off("tail", onChange);
+			registry.off("preview", onChange);
 		};
 	}
 
@@ -122,35 +130,42 @@ class ChipStripComponent implements Component {
 		this.invalidationCb = cb;
 	}
 
-	/** Snapshot of available chips at render time. */
-	private chips(): ChipTarget[] {
-		const out: ChipTarget[] = [{ id: "main", label: "main", taskId: null }];
-		const session = this.activeSession();
-		if (session) {
-			// Most-recent phase per role wins (review-plan re-runs collapse to one chip).
-			const seen = new Set<string>();
-			for (let i = session.phases.length - 1; i >= 0; i--) {
-				const p = session.phases[i];
-				if (seen.has(p.role)) continue;
-				seen.add(p.role);
-				out.push({ id: p.role, label: p.role, taskId: session.taskId });
-			}
-			// Restore plan-order (phases were declared in pipeline order).
-			out.sort((a, b) => {
-				if (a.id === "main") return -1;
-				if (b.id === "main") return 1;
-				const ia = session.phases.findIndex((p) => p.role === a.id);
-				const ib = session.phases.findIndex((p) => p.role === b.id);
-				return ia - ib;
-			});
-		}
-		return out;
+	private activeSession(): SessionState | undefined {
+		// Most-recently-updated session (running or recently terminal).
+		return this.registry.listSessions()[0];
 	}
 
-	private activeSession(): SessionState | undefined {
-		// Most-recently-updated running or recently-completed session.
-		const all = this.registry.listSessions();
-		return all[0];
+	hasSession(): boolean {
+		return this.activeSession() !== undefined;
+	}
+
+	/** Snapshot of available chips at render time. Empty when no session. */
+	private chips(): ChipTarget[] {
+		const session = this.activeSession();
+		if (!session) return [];
+
+		// Orchestrator chip: label = taskId (the orchestrator's identity in
+		// this pi conversation). id stays "main" so focus/output-source
+		// semantics ("main" = setOutputSource(null) = pi default) are stable.
+		const out: ChipTarget[] = [{ id: "main", label: session.taskId, taskId: null }];
+
+		// Dedupe phases by role, keep most-recent attempt (review loops),
+		// then restore pipeline order via findIndex.
+		const seen = new Set<string>();
+		for (let i = session.phases.length - 1; i >= 0; i--) {
+			const p = session.phases[i];
+			if (seen.has(p.role)) continue;
+			seen.add(p.role);
+			out.push({ id: p.role, label: p.role, taskId: session.taskId });
+		}
+		out.sort((a, b) => {
+			if (a.id === "main") return -1;
+			if (b.id === "main") return 1;
+			const ia = session.phases.findIndex((p) => p.role === a.id);
+			const ib = session.phases.findIndex((p) => p.role === b.id);
+			return ia - ib;
+		});
+		return out;
 	}
 
 	private chipPhase(chip: ChipTarget): PhaseSummary | undefined {
@@ -174,19 +189,65 @@ class ChipStripComponent implements Component {
 		return "◇";
 	}
 
+	private currentPhaseRole(session: SessionState): string | undefined {
+		// Prefer a currently-running phase; else fall back to the most-recent
+		// phase (whatever happened last, even if completed).
+		for (let i = session.phases.length - 1; i >= 0; i--) {
+			if (session.phases[i].status === "running") return session.phases[i].role;
+		}
+		return session.phases[session.phases.length - 1]?.role;
+	}
+
+	private spinnerFrame(session: SessionState): string {
+		if (session.status !== "running") return "";
+		const idx = Math.floor(Date.now() / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length;
+		return SPINNER_FRAMES[idx];
+	}
+
 	render(width: number): string[] {
+		const session = this.activeSession();
+		if (!session) return []; // UX-B: hide entirely when no session.
+
 		const chips = this.chips();
 		// Clamp cursor.
 		if (this.cursorIdx >= chips.length) this.cursorIdx = chips.length - 1;
 		if (this.cursorIdx < 0) this.cursorIdx = 0;
 
-		const theme = this.theme;
-		const dim = (s: string) => theme.fg("dim", s);
-		const accent = (s: string) => theme.fg("accent", s);
-		const bold = (s: string) => theme.bold(s);
+		return this.stripActive ? this.renderActive(width, session, chips) : this.renderInactive(width, session);
+	}
+
+	private renderInactive(width: number, session: SessionState): string[] {
+		const dim = (s: string) => this.theme.fg("dim", s);
+		const accent = (s: string) => this.theme.fg("accent", s);
+
+		const phase = this.currentPhaseRole(session);
+		const spin = this.spinnerFrame(session);
+		const orchInner = `${session.taskId}${phase ? ` · ${phase}` : ""}${spin ? ` ${spin}` : ""}`;
+		const orchChip = accent(`[${orchInner}]`);
+
+		const prefix = dim("threads ─ ");
+		const hint = dim("  ↓ to navigate");
+		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
+
+		// Available width for preview = total - (prefix + orchChip + hint reserved).
+		// Use visibleWidth for ANSI-aware sizing.
+		const fixedWidth =
+			visibleWidth(prefix) + visibleWidth(orchChip) + visibleWidth(hint);
+		const previewBudget = Math.max(0, width - fixedWidth);
+		const preview = previewText
+			? dim(truncateToWidth(previewText, previewBudget))
+			: "";
+
+		return [`${prefix}${orchChip}${preview}${hint}`];
+	}
+
+	private renderActive(width: number, session: SessionState, chips: ChipTarget[]): string[] {
+		const dim = (s: string) => this.theme.fg("dim", s);
+		const accent = (s: string) => this.theme.fg("accent", s);
+		const bold = (s: string) => this.theme.bold(s);
 
 		const parts = chips.map((c, i) => {
-			const isCursor = this.stripActive && i === this.cursorIdx;
+			const isCursor = i === this.cursorIdx;
 			const glyph = this.chipGlyph(c);
 			const label = c.label;
 			const inner = `${glyph} ${label}`;
@@ -195,24 +256,30 @@ class ChipStripComponent implements Component {
 			return dim(inner);
 		});
 
-		const prefix = this.stripActive ? accent("threads ─ ") : dim("threads ─ ");
-		const hint = this.stripActive
-			? dim("  ←→ select · enter focus · ↑ back to editor · esc back+main")
-			: dim("  ↓ to navigate");
+		const prefix = accent("threads ─ ");
+		const hint = dim("  ←→ · enter · ↑ back · esc back+main");
+		const spin = this.spinnerFrame(session);
+		const spinPart = spin ? `  ${spin}` : "";
+		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
-		let line = prefix + parts.join("   ");
-		// pi-tui truncates lines that exceed width, but we want to keep the
-		// hint visible — drop chip labels first if needed. For v0, accept
-		// natural truncation and just append hint.
-		line = `${line}${hint}`;
-		// Hard cap on line length to width (rough — exact ANSI-aware width
-		// is the renderer's job).
-		if (line.length > width) line = line.slice(0, width - 1) + "…";
+		const chipsJoined = parts.join("   ");
+		// Use visibleWidth (strips ANSI) so truncation maths are correct.
+		const fixed =
+			visibleWidth(prefix) +
+			visibleWidth(chipsJoined) +
+			visibleWidth(spinPart) +
+			visibleWidth(hint);
+		const previewBudget = Math.max(0, width - fixed);
+		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
+
+		let line = `${prefix}${chipsJoined}${spinPart}${preview}${hint}`;
+		// Hard cap as last-resort defence (visibleWidth is best-effort).
+		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
 		return [line];
 	}
 
 	invalidate(): void {
-		// no-op; data read fresh in render(). External invalidationCb drives re-renders.
+		// Re-render driven by external invalidationCb → tui.requestRender().
 	}
 
 	dispose: () => void;
@@ -245,7 +312,6 @@ class ChipStripComponent implements Component {
 		return this.chips().length;
 	}
 
-	/** Returns the chip the cursor is currently on. */
 	cursorChip(): ChipTarget | undefined {
 		return this.chips()[this.cursorIdx];
 	}
@@ -253,10 +319,6 @@ class ChipStripComponent implements Component {
 	setFocusedChipId(id: string): void {
 		this.focusedChipId = id;
 		this.invalidationCb?.();
-	}
-
-	getFocusedChipId(): string {
-		return this.focusedChipId;
 	}
 }
 
@@ -278,9 +340,8 @@ function isEnter(d: string): boolean {
 	return d === "\r" || d === "\n";
 }
 function isEsc(d: string): boolean {
-	// Bare ESC. Note: ESC is also the prefix for arrow sequences. The arrow
-	// checks above run first; isEsc only fires if the input is exactly "\x1b"
-	// (a real escape press, not a multi-byte sequence start).
+	// Bare ESC. Multi-byte arrow sequences start with ESC but are matched
+	// by the arrow checks above first.
 	return d === "\x1b";
 }
 
@@ -290,27 +351,38 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	const registry = getSessionRegistry();
 	let stripRef: ChipStripComponent | undefined;
 	let tailRef: TailViewComponent | undefined;
+	let tuiRef: TUI | undefined;
+	let spinnerTimer: NodeJS.Timeout | undefined;
 	let mounted = false;
+
+	function ensureSpinnerTimer(): void {
+		// Tick re-renders while any session is "running" so the spinner
+		// glyph animates and the preview text refreshes between user input.
+		// When all sessions are terminal, the timer stops itself.
+		if (spinnerTimer) return;
+		spinnerTimer = setInterval(() => {
+			const anyRunning = registry.listSessions().some((s) => s.status === "running");
+			if (!anyRunning) {
+				if (spinnerTimer) clearInterval(spinnerTimer);
+				spinnerTimer = undefined;
+				// One last render to settle the spinner into its final frame.
+				tuiRef?.requestRender();
+				return;
+			}
+			tuiRef?.requestRender();
+		}, SPINNER_INTERVAL_MS);
+	}
 
 	function mount(ctx: ExtensionContext): void {
 		if (mounted) return;
-		// Stderr debug trace — visible in pi's debug log so we can confirm the
-		// mount fired and (later) that Down arrow is reaching the handler.
-		// Cheap to leave in for now; remove once UX is stable.
 		process.stderr.write("[forge:threads] mount() invoked\n");
 		try {
 			ctx.ui.setWidget(
 				WIDGET_KEY,
-				(_tui, theme) => {
+				(tui, theme) => {
+					tuiRef = tui;
 					const strip = new ChipStripComponent(registry, theme);
-					strip.setInvalidationCallback(() => {
-						// Trigger pi-tui re-render. setWidget redraws when the factory
-						// component invalidates; we trigger via setStatus key bump as a
-						// lightweight signal (no-op semantically, but ensures the render
-						// tick fires). If pi exposes a direct requestRender on the widget
-						// API, prefer that; for now, the registry events drive re-render
-						// on the next user-input tick.
-					});
+					strip.setInvalidationCallback(() => tui.requestRender());
 					stripRef = strip;
 					return strip;
 				},
@@ -318,39 +390,27 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			);
 			mounted = true;
 
-			// Install raw input interceptor. Two modes:
-			//   1. Strip inactive: only intercept Down (to activate strip), and
-			//      only when the editor has no multi-line content AND there's
-			//      at least one subagent chip to focus.
-			//   2. Strip active: arrows navigate; Up exits; Enter focuses;
-			//      Esc exits + resets viewport to main.
+			// Bootstrap the spinner ticker on any session start so the
+			// inactive-mode summary animates immediately.
+			registry.on("change", () => ensureSpinnerTimer());
+			ensureSpinnerTimer();
+
 			ctx.ui.onTerminalInput((data) => {
 				if (!stripRef) return undefined;
 
 				if (!stripRef.getStripActive()) {
 					if (!isDownArrow(data)) return undefined;
 					const editorText = ctx.ui.getEditorText();
-					const editorLines = editorText.split("\n").length;
-					const chipCount = stripRef.chipCount();
-					process.stderr.write(
-						`[forge:threads] saw Down (bytes=${JSON.stringify(data)}); chips=${chipCount} editorLines=${editorLines}\n`,
-					);
-					// Don't steal Down from a multi-line editor.
-					if (editorText.includes("\n")) {
-						process.stderr.write("[forge:threads] passing through (multi-line editor)\n");
-						return undefined;
-					}
+					if (editorText.includes("\n")) return undefined; // multi-line nav
+					if (!stripRef.hasSession()) return undefined; // strip hidden anyway
 					stripRef.setStripActive(true);
-					// Park cursor on the first subagent chip when one exists;
-					// otherwise on main (the only chip).
-					stripRef.setCursor(chipCount > 1 ? 1 : 0);
-					process.stderr.write(
-						`[forge:threads] activated strip; cursor=${chipCount > 1 ? 1 : 0}\n`,
-					);
+					// UX-G: cursor parks on index 0 (orchestrator chip). User
+					// → to walk to subagents. Preserves the spatial entry-point
+					// expectation: ↓ enters at column 0.
+					stripRef.setCursor(0);
 					return { consume: true };
 				}
 
-				// Strip-active mode.
 				if (isLeftArrow(data)) {
 					stripRef.moveCursor(-1);
 					return { consume: true };
@@ -360,7 +420,6 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					return { consume: true };
 				}
 				if (isUpArrow(data)) {
-					// Return to editor without changing the viewport.
 					stripRef.setStripActive(false);
 					return { consume: true };
 				}
@@ -369,14 +428,10 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					return { consume: true };
 				}
 				if (isEsc(data)) {
-					// Exit strip-focus AND snap viewport back to main.
 					stripRef.setStripActive(false);
 					setFocusToMain(ctx);
 					return { consume: true };
 				}
-				// Other keys: stay in strip-focus, pass through to the editor.
-				// (e.g. user can keep typing while glancing at the strip;
-				// they'll see chip glyph changes update in real time.)
 				return undefined;
 			});
 		} catch (err: unknown) {
@@ -394,20 +449,13 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			setFocusToMain(ctx);
 			return;
 		}
-		// Tear down any prior tail view; build a fresh one for the new phase.
 		tailRef?.dispose?.();
 		const tail = new TailViewComponent(registry, chip.taskId, chip.id);
-		tail.setInvalidationCallback(() => {
-			// Re-rendering of the chat viewport on tail update is driven by
-			// pi-tui's internal render loop noticing the chatContainer's
-			// sourceOverride.invalidate() fires. SourceOverridableContainer
-			// already forwards invalidate(). The "tail" event on registry
-			// triggers TailViewComponent.invalidationCb which here is a no-op;
-			// we rely on next render tick to pick up the new lines.
-		});
+		// Wire the same requestRender hook so new tail lines surface
+		// without needing user input.
+		if (tuiRef) tail.setInvalidationCallback(() => tuiRef?.requestRender());
 		tailRef = tail;
 		ctx.ui.setOutputSource(tail);
-		// Reading the phase clears its unread marker.
 		registry.markRead(chip.taskId, chip.id);
 	}
 
@@ -421,18 +469,16 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	pi.registerCommand("forge:threads", {
 		description:
 			"Activate the Forge thread-switcher strip below the editor. " +
-			"Easier: just press ↓ from the prompt when subagents are running. " +
-			"While active: ←→ navigate · enter focus a thread in the chat viewport · " +
-			"↑ return to editor · esc return to editor and snap viewport back to main.",
+			"Easier: press ↓ from the prompt when a run-task is active. " +
+			"While active: ←→ navigate · enter focus · ↑ back to editor · esc back to editor + viewport to main.",
 		async handler(_args, ctx) {
 			mount(ctx);
 			stripRef?.setStripActive(true);
 		},
 	});
 
-	// Mount the widget + install the Down-arrow listener at session start so
-	// the spatial activation works on the very first keystroke (no need to
-	// run /forge:threads first). mount() is idempotent (mounted flag guards).
+	// Mount at session_start so the Down listener + chip strip are live
+	// from the first keystroke. mount() is idempotent.
 	pi.on("session_start", async (_event, ctx) => {
 		mount(ctx);
 	});

@@ -601,7 +601,13 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 
 				appendTail(`${tailPrefix()} ─── phase ${phase.role} begin ───`);
 
+				// The bottom status line is no longer the live narrative — the
+				// thread-switcher chip strip carries the orchestrator label,
+				// current phase, spinner, and turn preview. refreshStatus is
+				// kept as a no-op so existing call sites compile; FORGE_VERBOSE
+				// (future) could restore the diagnostic line.
 				const refreshStatus = () => {
+					if (process.env.FORGE_VERBOSE !== "1") return;
 					const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
 					const tail = lastTool ? ` · ${lastTool}` : "";
 					ctx.ui.setStatus?.(
@@ -629,7 +635,15 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 								case "turn_end": {
 									const preview = extractTurnPreview(event.message);
 									if (preview) {
-										ctx.ui.setStatus?.(MESSAGE_KEY, `  "${preview}"`);
+										// Route the preview into the registry so the
+										// thread-switcher chip strip renders it as the
+										// trailing "..." text. The legacy setStatus call
+										// (MESSAGE_KEY) is suppressed by default; restore
+										// with FORGE_VERBOSE=1.
+										registry.setTurnPreview(taskId, preview);
+										if (process.env.FORGE_VERBOSE === "1") {
+											ctx.ui.setStatus?.(MESSAGE_KEY, `  "${preview}"`);
+										}
 										appendTail(`${tailPrefix()} » "${preview}"`);
 									}
 									break;
