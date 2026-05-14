@@ -18,6 +18,19 @@ export interface PhaseSummary {
 	turn: number;
 	toolCount: number;
 	errCount: number;
+	/**
+	 * Bounded ring buffer of human-readable tail lines for this phase's
+	 * subagent. Populated by the subagent stream wiring (Step 5). Drives
+	 * the thread-switcher chip's tail viewport when the user focuses
+	 * this phase. Capped at MAX_TAIL_LINES_PER_PHASE.
+	 */
+	tailBuffer: string[];
+	/**
+	 * Count of warning-class events appended to tailBuffer since the user
+	 * last focused this phase. Drives the ◇/◆ chip state in the switcher.
+	 * Zeroed by markRead().
+	 */
+	unreadWarnings: number;
 }
 
 export interface ToolEventRecord {
@@ -43,6 +56,7 @@ export interface SessionState {
 
 const MAX_SESSIONS = 20;
 const MAX_EVENTS_PER_SESSION = 500;
+const MAX_TAIL_LINES_PER_PHASE = 2048;
 
 export class SessionRegistry extends EventEmitter {
 	private sessions = new Map<string, SessionState>();
@@ -90,6 +104,8 @@ export class SessionRegistry extends EventEmitter {
 			turn: 0,
 			toolCount: 0,
 			errCount: 0,
+			tailBuffer: [],
+			unreadWarnings: 0,
 		});
 		this.emit("change", taskId);
 	}
@@ -179,6 +195,53 @@ export class SessionRegistry extends EventEmitter {
 		if (s.events.length > MAX_EVENTS_PER_SESSION) {
 			s.events.splice(0, s.events.length - MAX_EVENTS_PER_SESSION);
 		}
+	}
+
+	// ── Per-phase tail buffer + unread tracking ──────────────────────────────
+	//
+	// These feed the thread-switcher widget. They are decoupled from the
+	// events[] log (which is structured tool-call telemetry); the tail buffer
+	// holds already-formatted lines ready to render in the chat viewport when
+	// the user focuses a subagent.
+
+	private findPhase(taskId: string, phaseRole: string): PhaseSummary | undefined {
+		const s = this.sessions.get(taskId);
+		if (!s) return undefined;
+		// Most recent phase with this role — handles re-runs (e.g. review-plan
+		// iteration). Earlier instances' buffers stay queryable via list inspection
+		// but new appends always target the current attempt.
+		for (let i = s.phases.length - 1; i >= 0; i--) {
+			if (s.phases[i].role === phaseRole) return s.phases[i];
+		}
+		return undefined;
+	}
+
+	appendTail(taskId: string, phaseRole: string, line: string, opts?: { warning?: boolean }): void {
+		const p = this.findPhase(taskId, phaseRole);
+		if (!p) return;
+		p.tailBuffer.push(line);
+		if (p.tailBuffer.length > MAX_TAIL_LINES_PER_PHASE) {
+			p.tailBuffer.splice(0, p.tailBuffer.length - MAX_TAIL_LINES_PER_PHASE);
+		}
+		if (opts?.warning) p.unreadWarnings++;
+		const s = this.sessions.get(taskId);
+		if (s) s.updatedAt = Date.now();
+		this.emit("tail", { taskId, phaseRole });
+	}
+
+	markRead(taskId: string, phaseRole: string): void {
+		const p = this.findPhase(taskId, phaseRole);
+		if (!p) return;
+		if (p.unreadWarnings === 0) return;
+		p.unreadWarnings = 0;
+		this.emit("tail", { taskId, phaseRole });
+	}
+
+	getTailLines(taskId: string, phaseRole: string, limit?: number): string[] {
+		const p = this.findPhase(taskId, phaseRole);
+		if (!p) return [];
+		if (limit === undefined || limit >= p.tailBuffer.length) return p.tailBuffer.slice();
+		return p.tailBuffer.slice(p.tailBuffer.length - limit);
 	}
 
 	private evictIfNeeded(): void {
