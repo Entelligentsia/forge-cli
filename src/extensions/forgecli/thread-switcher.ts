@@ -308,6 +308,28 @@ class ChipStripComponent implements Component {
 		this.invalidationCb?.();
 	}
 
+	/**
+	 * Park the cursor on the currently-running subagent chip if there is one,
+	 * else fall back to the orchestrator chip (index 0). Called on ↓ activation
+	 * so the user lands on the most interesting chip by default — the live
+	 * phase — instead of having to ←→ walk to find it.
+	 */
+	parkCursorOnCurrentPhase(): void {
+		const chips = this.chips();
+		const session = this.activeSession();
+		const runningRole = session ? this.currentPhaseRole(session) : undefined;
+		if (runningRole) {
+			const idx = chips.findIndex((c) => c.id === runningRole);
+			if (idx >= 0) {
+				this.cursorIdx = idx;
+				this.invalidationCb?.();
+				return;
+			}
+		}
+		this.cursorIdx = 0;
+		this.invalidationCb?.();
+	}
+
 	chipCount(): number {
 		return this.chips().length;
 	}
@@ -404,10 +426,10 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					if (editorText.includes("\n")) return undefined; // multi-line nav
 					if (!stripRef.hasSession()) return undefined; // strip hidden anyway
 					stripRef.setStripActive(true);
-					// UX-G: cursor parks on index 0 (orchestrator chip). User
-					// → to walk to subagents. Preserves the spatial entry-point
-					// expectation: ↓ enters at column 0.
-					stripRef.setCursor(0);
+					// Park cursor on the currently-running subagent — that's
+					// the chip the user almost always wants to see. Falls back
+					// to orchestrator (index 0) when no phase is live.
+					stripRef.parkCursorOnCurrentPhase();
 					return { consume: true };
 				}
 
