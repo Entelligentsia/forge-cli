@@ -5,17 +5,23 @@
 // conversation) plus one chip per subagent phase that has run during the
 // active run-task session.
 //
-// Activation: F12 enters strip-focus mode. (Ctrl+T is reserved by pi-tui,
-// Ctrl+Shift+T is captured by GNOME Terminal / most Linux terminal emulators
-// as "new tab" before it reaches the app. F12 is universally free.)
+// Activation: spatial. Press ↓ in the editor — the chip strip sits right
+// below the editor, so falling out of the editor downward enters strip-focus
+// mode. Activation only fires when:
+//   (a) the editor's content has no newlines (preserves multi-line Down nav)
+//   (b) there's at least one subagent chip to navigate to (main alone is
+//       pointless — it's already focused by default)
+//
 // While focused:
 //   ←/→        move cursor between chips
+//   ↑          exit strip-focus mode, return to editor. Viewport unchanged.
 //   Enter      commit cursor → focused; if non-main, swap chat viewport to
 //              that phase's tail via ctx.ui.setOutputSource(component);
 //              if main, restore default with setOutputSource(null).
-//   Esc        exit strip-focus mode (chips stay visible; keys go back to
-//              editor). If currently overriding the viewport, also restores
-//              default (snap-back-to-main muscle memory).
+//   Esc        exit strip-focus AND snap viewport back to main (muscle-memory
+//              "go home" shortcut).
+//
+// /forge:threads slash command is also registered as a discoverable fallback.
 //
 // Chip glyphs:
 //   ▸label     cursor (only one)
@@ -30,7 +36,7 @@
 // the focused phase and re-renders on the "tail" event.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@entelligentsia/pi-coding-agent";
-import { type Component, Key } from "@entelligentsia/pi-tui";
+import type { Component } from "@entelligentsia/pi-tui";
 
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
 
@@ -187,7 +193,9 @@ class ChipStripComponent implements Component {
 		});
 
 		const prefix = this.stripActive ? accent("threads ─ ") : dim("threads ─ ");
-		const hint = this.stripActive ? dim("  ←→ select · enter focus · esc back") : dim("  f12 to navigate");
+		const hint = this.stripActive
+			? dim("  ←→ select · enter focus · ↑ back to editor · esc back+main")
+			: dim("  ↓ to navigate");
 
 		let line = prefix + parts.join("   ");
 		// pi-tui truncates lines that exceed width, but we want to keep the
@@ -224,6 +232,16 @@ class ChipStripComponent implements Component {
 		this.invalidationCb?.();
 	}
 
+	setCursor(idx: number): void {
+		const chips = this.chips();
+		this.cursorIdx = Math.max(0, Math.min(chips.length - 1, idx));
+		this.invalidationCb?.();
+	}
+
+	chipCount(): number {
+		return this.chips().length;
+	}
+
 	/** Returns the chip the cursor is currently on. */
 	cursorChip(): ChipTarget | undefined {
 		return this.chips()[this.cursorIdx];
@@ -242,15 +260,24 @@ class ChipStripComponent implements Component {
 // ── Key recognition ─────────────────────────────────────────────────────────
 
 function isLeftArrow(d: string): boolean {
-	return d === "\x1b[D" || d === "h";
+	return d === "\x1b[D";
 }
 function isRightArrow(d: string): boolean {
-	return d === "\x1b[C" || d === "l";
+	return d === "\x1b[C";
+}
+function isDownArrow(d: string): boolean {
+	return d === "\x1b[B" || d === "\x1bOB";
+}
+function isUpArrow(d: string): boolean {
+	return d === "\x1b[A" || d === "\x1bOA";
 }
 function isEnter(d: string): boolean {
 	return d === "\r" || d === "\n";
 }
 function isEsc(d: string): boolean {
+	// Bare ESC. Note: ESC is also the prefix for arrow sequences. The arrow
+	// checks above run first; isEsc only fires if the input is exactly "\x1b"
+	// (a real escape press, not a multi-byte sequence start).
 	return d === "\x1b";
 }
 
@@ -284,16 +311,42 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			);
 			mounted = true;
 
-			// Install raw input interceptor: only consume keys when the strip
-			// is active. Otherwise pass through to the editor.
+			// Install raw input interceptor. Two modes:
+			//   1. Strip inactive: only intercept Down (to activate strip), and
+			//      only when the editor has no multi-line content AND there's
+			//      at least one subagent chip to focus.
+			//   2. Strip active: arrows navigate; Up exits; Enter focuses;
+			//      Esc exits + resets viewport to main.
 			ctx.ui.onTerminalInput((data) => {
-				if (!stripRef || !stripRef.getStripActive()) return undefined;
+				if (!stripRef) return undefined;
+
+				if (!stripRef.getStripActive()) {
+					if (!isDownArrow(data)) return undefined;
+					// Don't steal Down from a multi-line editor.
+					const editorText = ctx.ui.getEditorText();
+					if (editorText.includes("\n")) return undefined;
+					// Don't activate when there are no subagent chips to navigate to.
+					if (stripRef.chipCount() <= 1) return undefined;
+					stripRef.setStripActive(true);
+					// Park the cursor on the first non-main chip — main is already
+					// where the viewport sits by default; the user almost always
+					// wants a subagent.
+					stripRef.setCursor(1);
+					return { consume: true };
+				}
+
+				// Strip-active mode.
 				if (isLeftArrow(data)) {
 					stripRef.moveCursor(-1);
 					return { consume: true };
 				}
 				if (isRightArrow(data)) {
 					stripRef.moveCursor(1);
+					return { consume: true };
+				}
+				if (isUpArrow(data)) {
+					// Return to editor without changing the viewport.
+					stripRef.setStripActive(false);
 					return { consume: true };
 				}
 				if (isEnter(data)) {
@@ -306,7 +359,9 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					setFocusToMain(ctx);
 					return { consume: true };
 				}
-				// Other keys: stay in strip-focus, pass through.
+				// Other keys: stay in strip-focus, pass through to the editor.
+				// (e.g. user can keep typing while glancing at the strip;
+				// they'll see chip glyph changes update in real time.)
 				return undefined;
 			});
 		} catch (err: unknown) {
@@ -351,20 +406,12 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	pi.registerCommand("forge:threads", {
 		description:
 			"Activate the Forge thread-switcher strip below the editor. " +
+			"Easier: just press ↓ from the prompt when subagents are running. " +
 			"While active: ←→ navigate · enter focus a thread in the chat viewport · " +
-			"esc release strip-focus and snap viewport back to main. " +
-			"Shortcut: F12.",
+			"↑ return to editor · esc return to editor and snap viewport back to main.",
 		async handler(_args, ctx) {
 			mount(ctx);
 			stripRef?.setStripActive(true);
-		},
-	});
-
-	pi.registerShortcut(Key.f12, {
-		description: "Activate Forge thread-switcher strip",
-		handler: (ctx) => {
-			mount(ctx);
-			stripRef?.setStripActive(!stripRef.getStripActive());
 		},
 	});
 }
