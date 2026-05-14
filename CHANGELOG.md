@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-05-14
+
+Thread-switcher UX — single-viewport subagent tail browsing. Activates
+pi-mono fork at @entelligentsia/pi-* @ 0.75.0.
+
+### Added
+
+- `/forge:threads` slash command + Ctrl+T shortcut. One-row chip strip
+  below the editor. While active: ←→ navigate chips, Enter focuses a
+  thread into the main chat viewport, Esc snaps back to main.
+- Per-phase tail buffer in SessionRegistry (bounded ring, 2048 lines).
+  Subagent tool events, assistant-turn previews, compaction, and retry
+  events appended as one-line formatted entries `[<phase> HH:MM:SS] …`.
+- Unread-warning counter per phase: subagent tool errors append with
+  `warning:true`, surfacing as `◆` on the chip strip. Focusing the
+  phase clears the counter.
+
+### Changed
+
+- `forge.bundledVersion`: unchanged (0.43.12).
+- Subagent tool errors no longer surface as multi-line `⚠ … failed`
+  ctx.ui.notify blocks on the main thread. They're captured in the
+  per-phase tail (readable via the switcher) plus the existing debug
+  JSONL + transcript dumps.
+- Pi runtime: forge-cli now consumes @entelligentsia/pi-coding-agent,
+  pi-ai, pi-tui (pi-mono @ 0.75.0) via local file: refs. Adds the
+  ctx.ui.setOutputSource(component | null) extension API needed to
+  swap the chat viewport's render source on user command.
+
+### Notes
+
+- Legacy `/forge:sessions` widget (two-pane session monitor) is still
+  registered. Will be removed after the new switcher proves out.
+
 ## [0.6.2] — 2026-05-14
 
 Bundled forge plugin bumped to v0.43.12 — fixes silent fragment drop

@@ -1,6 +1,6 @@
 {
 	"name": "@entelligentsia/forgecli",
-	"version": "0.6.2",
+	"version": "0.6.3",
 	"description": "Forge SDLC ported onto @earendil-works/pi-coding-agent — production launcher with three bin aliases (forge/forgecli/4ge).",
 	"license": "MIT",
 	"author": "Entelligentsia",
@@ -64,13 +64,15 @@
 	},
 	"bundledDependencies": [
 		"@entelligentsia/pi-coding-agent",
+		"@entelligentsia/pi-agent-core",
 		"@entelligentsia/pi-ai",
 		"@entelligentsia/pi-tui"
 	],
 	"dependencies": {
-		"@entelligentsia/pi-coding-agent": "file:../pi-mono/packages/coding-agent",
-		"@entelligentsia/pi-ai": "file:../pi-mono/packages/ai",
-		"@entelligentsia/pi-tui": "file:../pi-mono/packages/tui",
+		"@entelligentsia/pi-coding-agent": "file:./vendor-pi/entelligentsia-pi-coding-agent-0.75.0.tgz",
+		"@entelligentsia/pi-agent-core": "file:./vendor-pi/entelligentsia-pi-agent-core-0.75.0.tgz",
+		"@entelligentsia/pi-ai": "file:./vendor-pi/entelligentsia-pi-ai-0.75.0.tgz",
+		"@entelligentsia/pi-tui": "file:./vendor-pi/entelligentsia-pi-tui-0.75.0.tgz",
 		"typebox": "^1.1.24"
 	},
 	"peerDependencies": {
