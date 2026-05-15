@@ -7,16 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-05-16
+
+### Changed
+- `run-workflow` now narrates each phase to the main viewport: the engine
+  emits `↪ <role>: "<first meaningful line>"` when the subagent first
+  speaks, and `↩ <role>: "<last meaningful line>"` after the phase
+  terminal — plus `◆ <summary>` when the node emitted one. The chip strip
+  stays compact (glyph + role only); the narrative lives in chip[0] /
+  main viewport so the user can scroll the story of the run.
+
+### Reverted
+- 0.7.4's chip-strip preview enrichment (`"<first>" … "<last>"`). The
+  registry still captures `firstTurnPreview` / `lastTurnPreview` on each
+  `PhaseSummary` — useful for future per-phase rendering — but the strip
+  reverts to showing only `session.currentTurnPreview`.
+
 ## [0.7.4] — 2026-05-16
 
 ### Changed
-- Thread-switcher strip preview now shows `"<first turn>" … "<last turn>"`
-  from the most-recent phase, giving a richer at-a-glance picture of what
-  the subagent has done. Previously only the latest assistant turn was
-  visible. `PhaseSummary` gains `firstTurnPreview` and `lastTurnPreview`
-  fields; `setTurnPreview` populates both. Applies to all orchestrators
-  (`run-task`, `run-sprint`, `fix-bug`, `run-workflow`) since they share
-  the `SessionRegistry` singleton.
+- (Superseded by 0.7.5.) Thread-switcher strip preview was changed to
+  show `"<first turn>" … "<last turn>"` from the most-recent phase. The
+  intended UX target was the main viewport, not the chip strip — the
+  strip change is reverted in 0.7.5. The `PhaseSummary.firstTurnPreview`
+  / `lastTurnPreview` fields survive.
 
 ## [0.7.3] — 2026-05-16
 

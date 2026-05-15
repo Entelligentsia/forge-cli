@@ -189,21 +189,6 @@ class ChipStripComponent implements Component {
 		return "◇";
 	}
 
-	/**
-	 * Trailing preview text for the strip: `"<first>" … "<last>"` from the
-	 * most-recent phase. Falls back to a single `"<last>"` when only one
-	 * preview has been captured, or session-level current when there is no
-	 * phase yet. Empty string when nothing has been said.
-	 */
-	private buildPreviewText(session: SessionState): string {
-		const p = session.phases[session.phases.length - 1];
-		const first = p?.firstTurnPreview;
-		const last = p?.lastTurnPreview ?? session.currentTurnPreview;
-		if (!first && !last) return "";
-		if (!first || first === last) return `  "${last}"`;
-		return `  "${first}" … "${last}"`;
-	}
-
 	private currentPhaseRole(session: SessionState): string | undefined {
 		// Prefer a currently-running phase; else fall back to the most-recent
 		// phase (whatever happened last, even if completed).
@@ -252,7 +237,7 @@ class ChipStripComponent implements Component {
 		const prefix = dim("threads ─ ");
 		const hint = dim("  ↓ to navigate");
 		const spinPart = spin ? `  ${spin}` : "";
-		const previewText = this.buildPreviewText(session);
+		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
 		const fixedWidth =
 			visibleWidth(prefix) +
@@ -286,7 +271,7 @@ class ChipStripComponent implements Component {
 		const hint = dim("  ←→ · enter · ↑ back · esc back+main");
 		const spin = this.spinnerFrame(session);
 		const spinPart = spin ? `  ${spin}` : "";
-		const previewText = this.buildPreviewText(session);
+		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
 		const chipsJoined = parts.join("   ");
 		// Use visibleWidth (strips ANSI) so truncation maths are correct.

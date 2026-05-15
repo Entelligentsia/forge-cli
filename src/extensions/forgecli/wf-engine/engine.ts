@@ -145,18 +145,30 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
       loop:  loopCtx ? { item: loopCtx.item } : undefined,
     });
 
+    // Capture first + last meaningful subagent line for the main-viewport narrative.
+    // Engine emits `↪ <role>: "<first line>"` on the first non-empty preview and
+    // `↩ <role>: "<last line>"` after terminal commit — so the user can watch the
+    // story of each phase scroll past chip[0]/main without expanding any chip.
+    let firstPreview: string | undefined;
+    let lastPreview:  string | undefined;
+
     const argsByCallId = new Map<string, unknown>();
-    const onEvent = registry ? (event: unknown) => {
+    const onEvent = (event: unknown) => {
       const e = event as { type: string; [k: string]: unknown };
       switch (e.type) {
         case "turn_start":
-          registry.bumpTurn(instanceId);
+          registry?.bumpTurn(instanceId);
           break;
         case "turn_end": {
           const preview = extractTurnPreview(e.message);
           if (preview) {
-            registry.setTurnPreview(instanceId, preview);
-            registry.appendTail(instanceId, role, `» "${preview}"`);
+            if (firstPreview === undefined) {
+              firstPreview = preview;
+              notify(`  ↪ ${role}: "${preview}"`);
+            }
+            lastPreview = preview;
+            registry?.setTurnPreview(instanceId, preview);
+            registry?.appendTail(instanceId, role, `» "${preview}"`);
           }
           break;
         }
@@ -164,21 +176,21 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
           const toolName = e.toolName as string;
           const callId = e.toolCallId as string;
           argsByCallId.set(callId, e.args);
-          registry.recordToolStart(instanceId, callId, toolName, e.args);
-          registry.appendTail(instanceId, role, `→ ${toolName}`);
+          registry?.recordToolStart(instanceId, callId, toolName, e.args);
+          registry?.appendTail(instanceId, role, `→ ${toolName}`);
           break;
         }
         case "tool_execution_end": {
           const toolName = e.toolName as string;
           const callId = e.toolCallId as string;
           argsByCallId.delete(callId);
-          registry.recordToolEnd(instanceId, callId, toolName, !!e.isError, e.result);
-          registry.appendTail(instanceId, role, e.isError ? `⚠ ${toolName} failed` : `← ${toolName} ok`,
+          registry?.recordToolEnd(instanceId, callId, toolName, !!e.isError, e.result);
+          registry?.appendTail(instanceId, role, e.isError ? `⚠ ${toolName} failed` : `← ${toolName} ok`,
             e.isError ? { warning: true } : undefined);
           break;
         }
       }
-    } : undefined;
+    };
 
     const result = await workerFn({ compiledPrompt: compiled, cwd: opts.cwd, onEvent });
 
@@ -297,7 +309,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
     }]);
 
     notify(`✓ node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}]` : ""} — ${terminal.type}`);
-    if (terminal.summary) registry?.appendTail(instanceId, role, `✓ ${terminal.summary}`);
+    if (lastPreview && lastPreview !== firstPreview) notify(`  ↩ ${role}: "${lastPreview}"`);
+    if (terminal.summary) {
+      notify(`  ◆ ${terminal.summary}`);
+      registry?.appendTail(instanceId, role, `✓ ${terminal.summary}`);
+    }
     registry?.completePhase(instanceId, role, terminal.type === "success" ? "completed" : "failed");
 
     // Loop iter advance OR cursor advance — first matching edge wins (conditional edges evaluated in YAML order)
