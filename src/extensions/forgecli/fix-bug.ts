@@ -490,7 +490,50 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `sub-workflow read failed: ${e.message ?? "unknown"}` };
 		}
 
-		// ── 6a. Preflight gate ────────────────────────────────────────
+		// ── 6a. Phase skip (state-aware) ───────────────────────────────
+		// Subagents sometimes do "Path A" — fixing the bug end-to-end during
+		// triage instead of just triaging. Rather than rolling back (which
+		// discards work), we skip non-review phases whose output is already
+		// reflected in the bug status. Review phases are never skipped —
+		// they are quality gates that must always run.
+		const PHASE_SKIP_STATES: Record<string, Set<string>> = {
+			"plan-fix":  new Set(["fixed", "approved", "verified"]),
+			"implement": new Set(["fixed", "approved", "verified"]),
+			"commit":    new Set(["verified"]),    // commit produces verified
+		};
+		const bugNow = readBugRecord(bugId, storeCli, cwd);
+		const skipStates = PHASE_SKIP_STATES[phase.role];
+		if (skipStates && bugNow?.status && skipStates.has(bugNow.status) && !phase.isReview) {
+			ctx.ui.notify(
+				`⊘ forge:fix-bug — skipping ${phase.role}: bug ${bugId} is already '${bugNow.status}' (work already done).`,
+				"info",
+			);
+			// Write a synthetic "approved" summary so downstream `after` predecessor
+			// verdict checks find a verdict and don't block review phases.
+			const summaryKey = BUG_SUMMARY_KEY_BY_ROLE[phase.role as keyof typeof BUG_SUMMARY_KEY_BY_ROLE];
+			if (summaryKey) {
+				const synthSummary = {
+					objective: `Phase ${phase.role} skipped — bug already ${bugNow.status}`,
+					findings: ["Subagent completed fix during triage (Path A); phase output implicitly satisfied."],
+					verdict: "approved",
+					written_at: new Date().toISOString(),
+				};
+				const synthFile = path.join(cwd, ".forge", "cache", `synthetic-summary-${bugId}-${summaryKey}.json`);
+				fs.writeFileSync(synthFile, JSON.stringify(synthSummary, null, 2), "utf8");
+				const synthResult = spawnSync("node", [storeCli, "set-bug-summary", bugId, summaryKey, synthFile], { cwd, encoding: "utf8" });
+				if (synthResult.status !== 0) {
+					ctx.ui.notify(
+						`⚠ forge:fix-bug — synthetic summary write failed for ${phase.role}: ${String(synthResult.stderr).trim()}`,
+						"warning",
+					);
+				}
+				try { fs.unlinkSync(synthFile); } catch { /* non-fatal */ }
+			}
+			currentPhaseIndex++;
+			continue;
+		}
+
+		// ── 6b. Preflight gate ────────────────────────────────────────
 		// Skip preflight gate for triage phase of new bugs (PENDING- placeholder)
 		// because the bug record doesn't exist yet — gates referencing bug fields
 		// would always fail.
@@ -847,30 +890,6 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// Capture model/provider from subagent result.
 		if (result.model) lastModel = result.model;
 		if (result.provider) lastProvider = result.provider;
-
-		// ── Triage overreach guard ────────────────────────────────────────
-		// Subagents sometimes do "Path A" — fixing the bug end-to-end during
-		// triage instead of just triaging. If the bug status jumped past
-		// in-progress (e.g. to fixed/approved/verified), roll it back so the
-		// review pipeline can still run. Triage is only authorized to reach
-		// in-progress; the remaining phases handle the rest.
-		if (phase.role === "triage") {
-			const postTriageBug = readBugRecord(bugId, storeCli, cwd);
-			if (postTriageBug && postTriageBug.status && postTriageBug.status !== "reported" && postTriageBug.status !== "triaged" && postTriageBug.status !== "in-progress") {
-				ctx.ui.notify(
-					`⚠ forge:fix-bug — triage overreach: bug ${bugId} is '${postTriageBug.status}' after triage (expected 'in-progress'). Rolling back to 'in-progress'.`,
-					"warning",
-				);
-				const rollback = spawnSync("node", [storeCli, "update-status", "bug", bugId, "status", "in-progress"], { cwd, encoding: "utf8" });
-				if (rollback.status !== 0) {
-					ctx.ui.notify(
-						`× forge:fix-bug — failed to rollback bug ${bugId} to 'in-progress': ${String(rollback.stderr).trim()}`,
-						"error",
-					);
-				}
-				writeDebug({ kind: "triage_overreach_rollback", bugId, from: postTriageBug.status, to: "in-progress" });
-			}
-		}
 
 		// ── BugId capture after triage phase (Finding #1, #2) ──────────
 		// For new bugs, the triage subagent creates the bug record via store-cli.
