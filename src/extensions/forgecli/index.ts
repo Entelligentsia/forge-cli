@@ -314,9 +314,9 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerFixBug(pi);
 
 	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
-	// Reads workflows/<workflowId>/workflow.yaml and runs a node graph with LLM
-	// workers. Registered unconditionally — useful inside or outside Forge project.
-	registerRunWorkflow(pi, { cwd: process.cwd() });
+	// Reads workflows/<workflowId>/workflow.yaml from the bundled package workflows/
+	// dir and runs a node graph with LLM workers. Registered unconditionally.
+	registerRunWorkflow(pi, { cwd: process.cwd(), workflowsDir: path.join(PKG_ROOT, "workflows") });
 
 	// ── /forge:threads native handler ────────────────────────────────────────
 	// Single-viewport thread switcher: one-row chip strip below the editor.
