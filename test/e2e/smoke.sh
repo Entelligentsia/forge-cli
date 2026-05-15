@@ -333,13 +333,17 @@ else
 	record FAIL "E2E-19: runForgeSubagent missing from fix-bug.ts (IL10 violation)" "runForgeSubagent import/call required"
 fi
 
-# E2E-19.2: Zero sendKickoff in fix-bug.ts non-comment code
-# Strip comments then search for sendKickoff( calls
-if grep -v '//.*sendKickoff(' "$FIX_BUG_SRC" 2>/dev/null | grep -c 'sendKickoff(' | grep -q '^0$'; then
+# E2E-19.2: Zero sendKickoff in fix-bug.ts non-comment code.
+# Strip lines where `//` precedes `sendKickoff(` (legitimate comment refs),
+# then search for any remaining `sendKickoff(` call sites. Mirrors the E2E-16
+# pattern (capture-then-test) so the pipeline is pipefail-safe — `grep -c`
+# exits 1 when count is 0, which would otherwise short-circuit the gate.
+SEND_KICKOFF_NON_COMMENT_BUG=$(grep -v '//.*sendKickoff(' "$FIX_BUG_SRC" 2>/dev/null | grep 'sendKickoff(' || true)
+if [[ -z "$SEND_KICKOFF_NON_COMMENT_BUG" ]]; then
 	record PASS "E2E-19: sendKickoff absent from fix-bug.ts non-comment code" "IL10 compliant"
 else
 	record FAIL "E2E-19: sendKickoff found in fix-bug.ts non-comment code (IL10 violation)" \
-		"sendKickoff must never be called from fix-bug.ts"
+		"$SEND_KICKOFF_NON_COMMENT_BUG"
 fi
 
 # E2E-19.3: No orchestrator-runtime import in fix-bug.ts
