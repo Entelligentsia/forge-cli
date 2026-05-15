@@ -9,6 +9,8 @@ import { compilePrompt } from "./prompt-compiler.js";
 import { dispatchLlmWorker, type WorkerResult } from "./worker.js";
 import { evalPredicate } from "./predicate.js";
 import type { EdgeDef, Event, RuntimeState } from "./types.js";
+import type { SessionRegistry } from "../session-registry.js";
+import { extractTurnPreview } from "../run-task.js";
 
 export interface RunWorkflowOptions {
   workflowsDir: string;     // directory containing workflow folders
@@ -16,7 +18,9 @@ export interface RunWorkflowOptions {
   cwd:          string;     // user's cwd (parent of .forge-wf/)
   entryPrompt:  string;     // free-form ARG from /forge:run-workflow
   notify?:      (line: string) => void;
-  workerFn?:    (opts: { compiledPrompt: string; cwd: string }) => Promise<WorkerResult>;
+  workerFn?:    (opts: { compiledPrompt: string; cwd: string; onEvent?: (e: unknown) => void }) => Promise<WorkerResult>;
+  /** Optional live monitor sink. Receives startSession/startPhase/turn/tool/completePhase/completeSession calls. */
+  registry?:    SessionRegistry;
 }
 
 export interface RunWorkflowResult {
@@ -64,7 +68,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
 
   notify(`→ workflow ${wf.id} started: ${instanceId}`);
 
+  const registry = opts.registry;
+  registry?.startSession(instanceId);
+
   const workerFn = opts.workerFn ?? dispatchLlmWorker;
+  let phaseIndex = 0;
 
   // Build group-head lookup: group name -> head node id
   const groupHeads = new Map<string, string>();
@@ -123,6 +131,10 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
       ts:         new Date().toISOString(),
     }]);
 
+    const role = loopCtx ? `${node.id}#${loopCtx.iter}` : node.id;
+    registry?.startPhase(instanceId, role, phaseIndex++);
+    registry?.appendTail(instanceId, role, `─── node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}, item ${loopCtx.itemId}]` : ""} begin ───`);
+
     notify(`→ node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}]` : ""}`);
 
     const promptFile = path.join(workflowDir, node.prompt);
@@ -133,7 +145,42 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
       loop:  loopCtx ? { item: loopCtx.item } : undefined,
     });
 
-    const result = await workerFn({ compiledPrompt: compiled, cwd: opts.cwd });
+    const argsByCallId = new Map<string, unknown>();
+    const onEvent = registry ? (event: unknown) => {
+      const e = event as { type: string; [k: string]: unknown };
+      switch (e.type) {
+        case "turn_start":
+          registry.bumpTurn(instanceId);
+          break;
+        case "turn_end": {
+          const preview = extractTurnPreview(e.message);
+          if (preview) {
+            registry.setTurnPreview(instanceId, preview);
+            registry.appendTail(instanceId, role, `» "${preview}"`);
+          }
+          break;
+        }
+        case "tool_execution_start": {
+          const toolName = e.toolName as string;
+          const callId = e.toolCallId as string;
+          argsByCallId.set(callId, e.args);
+          registry.recordToolStart(instanceId, callId, toolName, e.args);
+          registry.appendTail(instanceId, role, `→ ${toolName}`);
+          break;
+        }
+        case "tool_execution_end": {
+          const toolName = e.toolName as string;
+          const callId = e.toolCallId as string;
+          argsByCallId.delete(callId);
+          registry.recordToolEnd(instanceId, callId, toolName, !!e.isError, e.result);
+          registry.appendTail(instanceId, role, e.isError ? `⚠ ${toolName} failed` : `← ${toolName} ok`,
+            e.isError ? { warning: true } : undefined);
+          break;
+        }
+      }
+    } : undefined;
+
+    const result = await workerFn({ compiledPrompt: compiled, cwd: opts.cwd, onEvent });
 
     store.writeNodeArchive(nodeExecId, {
       "prompt.compiled.md": compiled,
@@ -158,6 +205,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
         reason:     `worker-error in ${node.id}`,
       }]);
       notify(`× workflow halted: worker error in ${node.id}`);
+      registry?.appendTail(instanceId, role, `⚠ worker error: ${result.errorMessage ?? "unknown"}`, { warning: true });
+      registry?.completePhase(instanceId, role, "failed");
+      registry?.completeSession(instanceId, "failed");
       return { status: "halted", instanceId, workingDir, haltReason: `worker-error in ${node.id}` };
     }
 
@@ -175,6 +225,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
         reason:     haltReason,
       }]);
       notify(`× workflow halted: ${haltReason}`);
+      registry?.appendTail(instanceId, role, `⚠ ${haltReason}`, { warning: true });
+      registry?.completePhase(instanceId, role, "failed");
+      registry?.completeSession(instanceId, "failed");
       return { status: "halted", instanceId, workingDir, haltReason };
     }
 
@@ -211,6 +264,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
         reason:     `remit-violation in ${node.id}`,
       }]);
       notify(`× workflow halted: remit-violation in ${node.id} — ${remit.violations.join("; ")}`);
+      registry?.appendTail(instanceId, role, `⚠ remit-violation: ${remit.violations.join("; ")}`, { warning: true });
+      registry?.completePhase(instanceId, role, "failed");
+      registry?.completeSession(instanceId, "failed");
       return { status: "halted", instanceId, workingDir, haltReason: `remit-violation in ${node.id}` };
     }
 
@@ -241,6 +297,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
     }]);
 
     notify(`✓ node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}]` : ""} — ${terminal.type}`);
+    if (terminal.summary) registry?.appendTail(instanceId, role, `✓ ${terminal.summary}`);
+    registry?.completePhase(instanceId, role, terminal.type === "success" ? "completed" : "failed");
 
     // Loop iter advance OR cursor advance — first matching edge wins (conditional edges evaluated in YAML order)
     const onKind: "success" | "failure" = terminal.type === "success" ? "success" : "failure";
@@ -264,6 +322,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
           reason:     haltReason,
         }]);
         notify(`× workflow halted: ${haltReason}`);
+        registry?.completeSession(instanceId, "failed");
         return { status: "halted", instanceId, workingDir, haltReason };
       }
     }
@@ -279,6 +338,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
         ts:         new Date().toISOString(),
       }]);
       notify(`✓ workflow ${wf.id} complete: ${instanceId}`);
+      registry?.completeSession(instanceId, "completed");
       return { status: "completed", instanceId, workingDir };
     }
 
@@ -291,6 +351,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
         reason:     edge.halt,
       }]);
       notify(`× workflow halted: ${edge.halt}`);
+      registry?.completeSession(instanceId, "failed");
       return { status: "halted", instanceId, workingDir, haltReason: edge.halt };
     }
 

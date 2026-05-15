@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-05-16
+
+### Added
+- Workflow engine sessions now flow into the shared `SessionRegistry`, so
+  `/forge:run-workflow` instances appear in the live thread-switcher chip
+  strip alongside `/forge:run-task`, `/forge:run-sprint`, and `/forge:fix-bug`.
+  Engine emits `startSession`/`startPhase`/`bumpTurn`/`setTurnPreview`/
+  `recordToolStart`/`recordToolEnd`/`appendTail`/`completePhase`/
+  `completeSession` at the right boundaries; LLM tool-use events are
+  forwarded from the worker via the existing `onEvent` callback.
+- Each node iteration is its own phase (`<nodeId>#<iter>` for loop bodies)
+  so the chip strip shows per-iteration progress.
+
 ## [0.7.2] — 2026-05-15
 
 ### Fixed

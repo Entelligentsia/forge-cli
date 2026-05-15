@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
 import { runWorkflow } from "./engine.js";
+import { getSessionRegistry } from "../session-registry.js";
 
 export interface RegisterRunWorkflowOptions {
   cwd?:                  string;
@@ -50,6 +51,7 @@ export function registerRunWorkflow(pi: ExtensionAPI, options: RegisterRunWorkfl
           cwd,
           entryPrompt,
           notify: (line) => ctx.ui.notify(line, "info"),
+          registry: getSessionRegistry(),
         });
         if (result.status === "completed") {
           ctx.ui.notify(`✓ workflow complete: ${result.workingDir}`, "info");
