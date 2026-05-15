@@ -846,6 +846,30 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		if (result.model) lastModel = result.model;
 		if (result.provider) lastProvider = result.provider;
 
+		// ── Triage overreach guard ────────────────────────────────────────
+		// Subagents sometimes do "Path A" — fixing the bug end-to-end during
+		// triage instead of just triaging. If the bug status jumped past
+		// in-progress (e.g. to fixed/approved/verified), roll it back so the
+		// review pipeline can still run. Triage is only authorized to reach
+		// in-progress; the remaining phases handle the rest.
+		if (phase.role === "triage") {
+			const postTriageBug = readBugRecord(bugId, storeCli, cwd);
+			if (postTriageBug && postTriageBug.status && postTriageBug.status !== "reported" && postTriageBug.status !== "triaged" && postTriageBug.status !== "in-progress") {
+				ctx.ui.notify(
+					`⚠ forge:fix-bug — triage overreach: bug ${bugId} is '${postTriageBug.status}' after triage (expected 'in-progress'). Rolling back to 'in-progress'.`,
+					"warning",
+				);
+				const rollback = spawnSync("node", [storeCli, "update-status", "bug", bugId, "status", "in-progress"], { cwd, encoding: "utf8" });
+				if (rollback.status !== 0) {
+					ctx.ui.notify(
+						`× forge:fix-bug — failed to rollback bug ${bugId} to 'in-progress': ${String(rollback.stderr).trim()}`,
+						"error",
+					);
+				}
+				writeDebug({ kind: "triage_overreach_rollback", bugId, from: postTriageBug.status, to: "in-progress" });
+			}
+		}
+
 		// ── BugId capture after triage phase (Finding #1, #2) ──────────
 		// For new bugs, the triage subagent creates the bug record via store-cli.
 		// We capture the bugId by scanning tool_execution_end events.
