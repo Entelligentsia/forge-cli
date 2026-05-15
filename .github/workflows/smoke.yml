@@ -38,6 +38,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Sync forge plugin source
+        # build-payload.cjs expects the Forge plugin checkout as a sibling at
+        # ../forge (per package.json#forge.forgeRoot). Clone it at the pinned
+        # bundledVersion tag so the build step can find substitute-placeholders.cjs.
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').forge.bundledVersion")
+          echo "Cloning Entelligentsia/forge@v${VERSION} into ../forge"
+          git clone --depth 1 --branch "v${VERSION}" https://github.com/Entelligentsia/forge.git ../forge
+
       - name: Build
         run: npm run build
 
