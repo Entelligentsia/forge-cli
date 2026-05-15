@@ -1,6 +1,9 @@
 import type { Event } from "./types.js";
 
-const FENCE_RE = /```json\s+events\s*\n([\s\S]*?)\n```\s*$/;
+// Match any ```json events ... ``` block; g flag so we can take the last one.
+// LLMs often emit the block mid-response followed by explanatory prose, so we
+// cannot anchor to $ — we take the last occurrence instead.
+const FENCE_RE = /```json\s+events\s*\n([\s\S]*?)\n```/g;
 
 export interface ParsedEvents {
   events: Event[];
@@ -8,11 +11,17 @@ export interface ParsedEvents {
 }
 
 export function parseEventsBlock(response: string): ParsedEvents {
-  const match = response.match(FENCE_RE);
-  if (!match) {
+  // Scan all matches; keep the last one (the actual output, not prompt examples).
+  let last: RegExpExecArray | null = null;
+  let m: RegExpExecArray | null;
+  const re = new RegExp(FENCE_RE.source, "g");
+  while ((m = re.exec(response)) !== null) {
+    last = m;
+  }
+  if (!last) {
     return { events: [] };
   }
-  const block = match[1];
+  const block = last[1];
   let arr: unknown;
   try {
     arr = JSON.parse(block);
