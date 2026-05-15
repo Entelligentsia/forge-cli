@@ -2,7 +2,7 @@
 
 Forge SDLC on the [pi-coding-agent](https://www.npmjs.com/package/@entelligentsia/pi-coding-agent) runtime. Three bin aliases: `forge`, `forgecli`, `4ge`.
 
-Bundled Forge plugin: **v0.40.3**.
+Bundled Forge plugin: **v0.43.16**.
 Bundled pi runtime: pinned in `package.json`.
 
 ## Install
