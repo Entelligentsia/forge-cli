@@ -197,7 +197,7 @@ On any npm error or version mismatch the script logs a `[warn] registry check fa
 
 | Command                                    | Status              |
 |--------------------------------------------|---------------------|
-| `/forge:enhance` (Phase 2)                 | Shipped (0.5.0)     |
+| `/forge:enhance` (Phase 2)                 | Shipped (0.6.6)     |
 | `/forge:plan`                              | Shipped (0.5.0)     |
 | `/forge:implement`                         | Shipped (0.5.0)     |
 | FS-level two-layer boundary guard          | Shipped (0.5.0)     |
@@ -216,6 +216,19 @@ Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
 | Version | Headline |
 |---------|----------|
+| 0.6.6   | Sprint finalization ceremony — `dispatchSprintCeremony` + `sprint-complete`/`sprint-halted` event variants. Pairs with forge-plugin 0.43.16 |
+| 0.6.5   | Telemetry contract Slice 2 — runtime emit site. Pairs with forge-plugin 0.43.14 |
+| 0.6.4   | Fixes: orchestrator runtime-attribution and event-emission regressions |
+| 0.6.3   | Thread-switcher UX — single-viewport subagent tail browsing |
+| 0.6.2   | Bundled forge plugin bumped to v0.43.12 — fixes silent fragment drop |
+| 0.6.1   | HLO-S01 friction-fix sweep — bundled forge plugin bumped to v0.43.11 |
+| 0.5.7   | `/forge:sprint-plan` completion-gap fix (paired with forge plugin v0.43.3) |
+| 0.5.6   | Pack-06 materialization-marker regression fix (paired with forge plugin v0.43.2) |
+| 0.5.5   | Hot-fix: lands the `/forge:init` per-phase verify+retry+recover implementation that 0.5.4 shipped without |
+| 0.5.4   | `/forge:init` per-phase verify + retry + recover |
+| 0.5.3   | UX: KB-folder confirm question rephrased so default-Yes is the safe path |
+| 0.5.2   | Hot-patch: `forge_ask_user` UI rendering — text/choice prompts now show the question |
+| 0.5.1   | Hot-patch: direct-exec contract for forge tools. Pairs with forge-plugin v0.43.1 |
 | 0.5.0   | Foundation finish — central loaders + 3 native kickoff handlers + FS-level boundary guard |
 | 0.4.0   | Native sprint-intake + sprint-plan handlers — SDLC entry path self-hosted |
 | 0.3.0   | Pi-runtime parity adapters — `forge:ask_user` TUI tool + hook safety net |
