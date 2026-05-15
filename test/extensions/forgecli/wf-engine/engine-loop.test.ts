@@ -230,4 +230,48 @@ describe("engine-loop integration", () => {
     expect(result.status).toBe("halted");
     expect(result.haltReason).toContain("remit-violation");
   });
+
+  it("FORGE-BUG-033: loop state writes into array-backed collection survive JSON round-trip", async () => {
+    // intake writes sources as an array; source-process writes sources.<id>.done via dotted path.
+    // Before the fix, setPath set a named property on the Array object which
+    // JSON.stringify dropped silently — so done flags never appeared in state.json.
+    const items = [
+      { id: "item-a" },
+      { id: "item-b" },
+    ];
+
+    const intakeResponse = eventsBlock([
+      { type: "started" },
+      { type: "success", writes: { state: { items } } },
+    ]);
+
+    let callIdx = 0;
+    const processResponses = [
+      eventsBlock([{ type: "started" }, { type: "success", writes: { state: { "items.item-a.done": true } } }]),
+      eventsBlock([{ type: "started" }, { type: "success", writes: { state: { "items.item-b.done": true } } }]),
+    ];
+    const finalizeResponse = eventsBlock([
+      { type: "started" },
+      { type: "success", writes: { artifact: { path: "artifacts/RESULT.md", content: "# Done" } } },
+    ]);
+
+    const workerFn = async (opts: { compiledPrompt: string; cwd: string }): Promise<WorkerResult> => {
+      if (opts.compiledPrompt.includes("You are intake")) return { responseText: intakeResponse, exitCode: 0 };
+      if (opts.compiledPrompt.includes("You are source-process")) return { responseText: processResponses[callIdx++]!, exitCode: 0 };
+      return { responseText: finalizeResponse, exitCode: 0 };
+    };
+
+    const result = await runWorkflow({ workflowsDir, workflowId: "test-mini", cwd: tmpDir, entryPrompt: "test", workerFn });
+    expect(result.status).toBe("completed");
+
+    const state = JSON.parse(fs.readFileSync(path.join(result.workingDir, "state.json"), "utf8")) as {
+      items: Array<{ id: string; done?: boolean }>;
+    };
+
+    // Both done flags must survive the JSON round-trip (FORGE-BUG-033 regression guard)
+    const a = state.items.find(x => x.id === "item-a");
+    const b = state.items.find(x => x.id === "item-b");
+    expect(a?.done).toBe(true);
+    expect(b?.done).toBe(true);
+  });
 });

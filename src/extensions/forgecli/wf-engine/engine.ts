@@ -285,11 +285,29 @@ function resolvePath(obj: unknown, dotted: string): unknown {
 
 function setPath(obj: Record<string, unknown>, dotted: string, value: unknown): void {
   const parts = dotted.split(".");
-  let cur = obj;
+  let cur: unknown = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const p = parts[i];
-    if (typeof cur[p] !== "object" || cur[p] === null) cur[p] = {};
-    cur = cur[p] as Record<string, unknown>;
+    if (Array.isArray(cur)) {
+      // Navigate into array by matching item.id — avoids setting named properties
+      // on the Array object (which JSON.stringify drops silently, FORGE-BUG-033).
+      const arr = cur as Array<Record<string, unknown>>;
+      let item = arr.find(el => String(el.id) === p);
+      if (!item) {
+        item = { id: p };
+        arr.push(item);
+      }
+      cur = item;
+    } else if (cur !== null && typeof cur === "object") {
+      const rec = cur as Record<string, unknown>;
+      if (typeof rec[p] !== "object" || rec[p] === null) rec[p] = {};
+      cur = rec[p];
+    } else {
+      throw new Error(`setPath: cannot traverse into ${typeof cur} at segment '${p}' (path: ${dotted})`);
+    }
   }
-  cur[parts[parts.length - 1]] = value;
+  if (cur === null || typeof cur !== "object" || Array.isArray(cur)) {
+    throw new Error(`setPath: terminal position is not an object (path: ${dotted})`);
+  }
+  (cur as Record<string, unknown>)[parts[parts.length - 1]] = value;
 }
