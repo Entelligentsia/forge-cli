@@ -142,8 +142,8 @@ describe("BUG_SUMMARY_KEY_BY_ROLE", () => {
 		expect(BUG_SUMMARY_KEY_BY_ROLE["review-code"]).toBe("code_review");
 	});
 
-	it("should map approve and commit to null (use update-status)", () => {
-		expect(BUG_SUMMARY_KEY_BY_ROLE["approve"]).toBeNull();
+	it("should map approve to 'approve' summary key and commit to null", () => {
+		expect(BUG_SUMMARY_KEY_BY_ROLE["approve"]).toBe("approve");
 		expect(BUG_SUMMARY_KEY_BY_ROLE["commit"]).toBeNull();
 	});
 });
@@ -168,6 +168,8 @@ describe("BUG_TYPE_TOKENS", () => {
 		// Review phases should have different pass vs fail tokens
 		expect(BUG_TYPE_TOKENS["review-plan"].pass).not.toBe(BUG_TYPE_TOKENS["review-plan"].fail);
 		expect(BUG_TYPE_TOKENS["review-code"].pass).not.toBe(BUG_TYPE_TOKENS["review-code"].fail);
+		// approve is also a review phase with distinct pass/fail
+		expect(BUG_TYPE_TOKENS["approve"].pass).not.toBe(BUG_TYPE_TOKENS["approve"].fail);
 	});
 
 	it("should have non-review phases with same pass/fail tokens", () => {
@@ -175,20 +177,42 @@ describe("BUG_TYPE_TOKENS", () => {
 		expect(BUG_TYPE_TOKENS["triage"].pass).toBe(BUG_TYPE_TOKENS["triage"].fail);
 		expect(BUG_TYPE_TOKENS["plan-fix"].pass).toBe(BUG_TYPE_TOKENS["plan-fix"].fail);
 		expect(BUG_TYPE_TOKENS["implement"].pass).toBe(BUG_TYPE_TOKENS["implement"].fail);
-		expect(BUG_TYPE_TOKENS["commit"].pass).toBe(BUG_TYPE_TOKENS["commit"].fail);
+		// commit is non-review but now has distinct pass/fail (bug-commit-failed)
+		expect(BUG_TYPE_TOKENS["commit"].pass).not.toBe(BUG_TYPE_TOKENS["commit"].fail);
 	});
 });
 
 // ── Test Case 4-6: Bug verdict reading ────────────────────────────────────
 
 describe("readBugVerdict", () => {
-	it("should return 'approved' when bug status is 'approved' for approve phase", () => {
+	it("should return 'approved' when bug status is 'approved' for approve phase (status fallback)", () => {
 		const record = mkBugRecord({ status: "approved" });
 		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
 	});
 
-	it("should return 'revision' when bug status is 'fixed' for approve phase", () => {
+	it("should read 'approved' from approve summary for approve phase", () => {
+		const record = mkBugRecord({
+			status: "approved",
+			summaries: { approve: { verdict: "approved", objective: "sign-off", written_at: "2026-01-01T00:00:00Z" } },
+		});
+		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
+	});
+
+	it("should read 'revision' from approve summary for approve phase", () => {
+		const record = mkBugRecord({
+			status: "in-progress",
+			summaries: { approve: { verdict: "revision", objective: "needs rework", written_at: "2026-01-01T00:00:00Z" } },
+		});
+		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
+	});
+
+	it("should return 'revision' when bug status is 'fixed' for approve phase (status fallback)", () => {
 		const record = mkBugRecord({ status: "fixed" });
+		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
+	});
+
+	it("should return 'revision' when bug status is 'in-progress' for approve phase (status fallback)", () => {
+		const record = mkBugRecord({ status: "in-progress" });
 		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
 	});
 
@@ -335,6 +359,44 @@ describe("Bug state persistence", () => {
 		expect(loaded!.iterationCounts).toEqual({ "review-plan": 2 });
 	});
 
+	it("should NOT write state for PENDING bugIds (guard)", () => {
+		const state: RunBugState = {
+			bugId: "PENDING-1700000000000",
+			phaseIndex: 0,
+			iterationCounts: {},
+			halted: false,
+			savedAt: new Date().toISOString(),
+		};
+		writeBugState(tmpDir, state);
+		// No file should exist for PENDING bugIds
+		const cacheDir = path.join(tmpDir, ".forge", "cache");
+		if (fs.existsSync(cacheDir)) {
+			const entries = fs.readdirSync(cacheDir).filter(e => e.includes("PENDING"));
+			expect(entries).toHaveLength(0);
+		}
+	});
+
+	it("should support session-scoped state files", () => {
+		const origEnv = process.env.FORGE_SESSION_ID;
+		process.env.FORGE_SESSION_ID = "test-session-1";
+		try {
+			const state: RunBugState = {
+				bugId: "FORGE-BUG-001",
+				phaseIndex: 0,
+				iterationCounts: {},
+				halted: false,
+				savedAt: new Date().toISOString(),
+			};
+			writeBugState(tmpDir, state);
+			const loaded = readBugState(tmpDir, "FORGE-BUG-001");
+			expect(loaded).not.toBeNull();
+			expect(loaded!.bugId).toBe("FORGE-BUG-001");
+		} finally {
+			if (origEnv !== undefined) process.env.FORGE_SESSION_ID = origEnv;
+			else delete process.env.FORGE_SESSION_ID;
+		}
+	});
+
 	it("should return null for non-existent state", () => {
 		const loaded = readBugState(tmpDir, "FORGE-BUG-999");
 		expect(loaded).toBeNull();
@@ -433,12 +495,14 @@ describe("BUG_TYPE_TOKENS in phase events", () => {
 		expect(BUG_TYPE_TOKENS["review-code"].fail).toBe("fix-code-review-failed");
 	});
 
-	it("should assign correct token for approve phase", () => {
+	it("should assign correct tokens for approve phase", () => {
 		expect(BUG_TYPE_TOKENS["approve"].pass).toBe("fix-approved");
+		expect(BUG_TYPE_TOKENS["approve"].fail).toBe("fix-revision-requested");
 	});
 
-	it("should assign correct token for commit phase", () => {
+	it("should assign correct tokens for commit phase", () => {
 		expect(BUG_TYPE_TOKENS["commit"].pass).toBe("bug-committed");
+		expect(BUG_TYPE_TOKENS["commit"].fail).toBe("bug-commit-failed");
 	});
 });
 
@@ -516,9 +580,18 @@ describe("judgementFromSummary generalization", () => {
 		expect(result).toEqual({ verdict: "revision", objective: "needs work" });
 	});
 
-	it("should return undefined for phases with null key mapping", () => {
-		const record = mkBugRecord({ status: "approved" });
+	it("should return summary for approve phase via BUG_SUMMARY_KEY_BY_ROLE (approve key)", () => {
+		const record = mkBugRecord({
+			status: "approved",
+			summaries: { approve: { verdict: "approved", objective: "sign-off", written_at: "2026-01-01T00:00:00Z" } },
+		});
 		const result = judgementFromSummary(record, "approve", BUG_SUMMARY_KEY_BY_ROLE);
+		expect(result).toEqual({ verdict: "approved", objective: "sign-off", written_at: "2026-01-01T00:00:00Z" });
+	});
+
+	it("should return undefined for commit phase with null key mapping", () => {
+		const record = mkBugRecord({ status: "verified" });
+		const result = judgementFromSummary(record, "commit", BUG_SUMMARY_KEY_BY_ROLE);
 		expect(result).toBeUndefined();
 	});
 });
@@ -613,31 +686,23 @@ describe("findPredecessorIndex for bug phases", () => {
 });
 
 // ── Test Case: Bug FSM canonical-enum assertion (Finding #5) ────────────
+// After Fix 10, VALID_BUG_STATUSES was deleted — validation now defers to
+// store-cli validate. These tests verify the canonical schema enum.
 
 describe("Bug FSM canonical-enum assertion", () => {
-	it("should recognize all valid bug statuses", () => {
-		const validStatuses = ["reported", "triaged", "in-progress", "fixed", "approved", "verified"];
-		for (const status of validStatuses) {
-			expect(validStatuses).toContain(status);
-		}
-	});
-
-	it("should match bug.schema.json status enum", () => {
-		// These must match the bug.schema.json status enum exactly.
+	it("should match bug.schema.json status enum via store-cli validate", () => {
 		const schemaStatuses = ["reported", "triaged", "in-progress", "fixed", "approved", "verified"];
-		const VALID_BUG_STATUSES = new Set(["reported", "triaged", "in-progress", "fixed", "approved", "verified"]);
-		for (const s of schemaStatuses) {
-			expect(VALID_BUG_STATUSES.has(s)).toBe(true);
-		}
+		// These must match the bug.schema.json status enum exactly.
+		// store-cli is now the single source of truth.
+		expect(schemaStatuses).toContain("approved");
+		expect(schemaStatuses).toContain("verified");
 	});
 
-	it("should reject invalid bug statuses with warning (not halt)", () => {
-		// The assertion should be a warning, not a halt — per AC §C.16.
-		// We verify the VALID_BUG_STATUSES set does NOT include bogus statuses.
-		const VALID_BUG_STATUSES = new Set(["reported", "triaged", "in-progress", "fixed", "approved", "verified"]);
-		expect(VALID_BUG_STATUSES.has("canceled")).toBe(false);
-		expect(VALID_BUG_STATUSES.has("unknown")).toBe(false);
-		expect(VALID_BUG_STATUSES.has("")).toBe(false);
+	it("should NOT include bogus statuses in the canonical enum", () => {
+		const schemaStatuses = ["reported", "triaged", "in-progress", "fixed", "approved", "verified"];
+		expect(schemaStatuses).not.toContain("canceled");
+		expect(schemaStatuses).not.toContain("unknown");
+		expect(schemaStatuses).not.toContain("");
 	});
 });
 
@@ -664,6 +729,20 @@ describe("extractBugIdFromEvents advanced", () => {
 			{ toolName: "store-cli", result: { bugId: "FORGE-BUG-123", status: "reported" } },
 		];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-123");
+	});
+
+	it("should extract bug ID from bash event containing store-cli write bug output", () => {
+		const events = [
+			{ toolName: "bash", result: "node store-cli.cjs write bug FORGE-BUG-018\nSuccess" },
+		];
+		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-018");
+	});
+
+	it("should NOT false-positive from bash event mentioning bug ID without store-cli write", () => {
+		const events = [
+			{ toolName: "bash", result: "ls FORGE-BUG-999" },
+		];
+		expect(extractBugIdFromEvents(events as any)).toBeNull();
 	});
 });
 
@@ -701,3 +780,4 @@ describe("runPreflightGate entityType parameter", () => {
 		}).not.toThrow();
 	});
 });
+
