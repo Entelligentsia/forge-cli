@@ -34,6 +34,9 @@ const { mockSession } = vi.hoisted(() => {
 		prompt: vi.fn(() => Promise.resolve()),
 		abort: vi.fn(),
 		dispose: vi.fn(),
+		// Mirrors real AgentSession.agent — forge-subagent assigns sessionId
+		// here for prompt-cache affinity.
+		agent: { sessionId: undefined as string | undefined },
 	};
 	return { mockSession };
 });

@@ -128,6 +128,27 @@ if (parsed.forgeAction === "help") {
 // Apply forge env overrides
 Object.assign(process.env, parsed.env);
 
+// Default prompt-cache retention to "long" for all Forge sessions.
+//
+// Rationale: Forge subagent phases (plan, review_plan, implement, review_code,
+// approve, commit) routinely run ~10 minutes per phase, and a sprint chains
+// 4–8 such phases per task across the same persona/system-prompt prefix.
+// Anthropic's default 5-minute cache TTL expires mid-phase; OpenAI's default
+// in-memory cache evicts between phases. "long" gives Anthropic a 1h TTL and
+// OpenAI 24h retention — comfortably covering a phase and the gap to the next.
+//
+// Cost: on Anthropic, 1h cache writes cost 25% more than 5m writes — but a
+// single subsequent cache read (90% cheaper than fresh input) repays that
+// premium ~3.6×, and every Forge phase reads the same prefix many times. On
+// OpenAI, 24h retention is free. On proxies/compat backends, pi-ai ignores
+// this env var, so this default is safe everywhere.
+//
+// Users who want the upstream pi-ai default keep an explicit value:
+//   PI_CACHE_RETENTION=short forge ...
+if (!process.env.PI_CACHE_RETENTION) {
+	process.env.PI_CACHE_RETENTION = "long";
+}
+
 // Fast-path subcommand: spawn the bundled cjs tool directly. This skips
 // the entire pi/agent boot and turns 26s cold-starts into <100ms shells.
 if (parsed.forgeAction === "subcommand" && parsed.subcommandTool) {

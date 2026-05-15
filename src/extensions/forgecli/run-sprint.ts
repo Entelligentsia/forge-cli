@@ -191,6 +191,10 @@ async function dispatchSprintCeremony(params: {
 			cwd,
 			exportTag: `${sprintId}__ceremony`,
 			forgeRoot,
+			// Sprint-scoped prompt-cache key — every subagent spawned across
+			// the sprint (ceremonies + per-task phases) shares this namespace
+			// so the system-prompt + persona prefix stays warm.
+			cacheSessionId: `forge:${sprintId}`,
 		});
 		model    = result.model;
 		provider = result.provider;

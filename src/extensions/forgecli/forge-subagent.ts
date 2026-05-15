@@ -81,6 +81,23 @@ export interface RunSubagentOptions {
 	 * filename slug. See forge-cli#8.
 	 */
 	exportTag?: string;
+	/**
+	 * Optional prompt-cache session identifier forwarded to the underlying pi
+	 * Agent (which forwards it to the LLM provider as a cache namespace key).
+	 *
+	 * Forge sets this to a sprint-scoped value (e.g. `forge:FORGE-S21`) so
+	 * that every persona spawned within a sprint shares a cache prefix on
+	 * Anthropic (system prompt + persona + skills + tools all stay warm) and
+	 * a stable `prompt_cache_key` on OpenAI. Combined with
+	 * `PI_CACHE_RETENTION=long` (defaulted in bin/forge.ts), this captures
+	 * the majority of cacheable mass across a ~10-minute phase and the gaps
+	 * between phases.
+	 *
+	 * When omitted, no sessionId is set and providers fall back to their
+	 * default cache behaviour (Anthropic: implicit prefix match within the
+	 * stream; OpenAI: in-memory, request-scoped).
+	 */
+	cacheSessionId?: string;
 }
 
 // ── Persona discovery ─────────────────────────────────────────────────────
@@ -135,7 +152,7 @@ function emptyUsage(): UsageStats {
  * usage). Total contextTokens are sourced from the latest turn.
  */
 export async function runForgeSubagent(opts: RunSubagentOptions): Promise<SubagentResult> {
-	const { persona, task, cwd, signal, onEvent, forgeRoot } = opts;
+	const { persona, task, cwd, signal, onEvent, forgeRoot, cacheSessionId } = opts;
 
 	// Set FORGE_ROOT in the process environment so the subagent's bash tool
 	// can resolve $FORGE_ROOT paths. This is critical for workflow commands
@@ -182,6 +199,16 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		// Omit field → pi enables default built-ins (read, bash, edit, write).
 		tools: persona.tools,
 	});
+
+	// Apply prompt-cache session affinity. `createAgentSession` in
+	// pi-coding-agent does not yet surface `sessionId` in its options
+	// (CreateAgentSessionOptions exposes neither sessionId nor cacheRetention
+	// as of @entelligentsia/pi-coding-agent@0.74), so we set the underlying
+	// Agent's public mutable field directly. The Agent forwards it to the
+	// provider per stream call.
+	if (cacheSessionId) {
+		session.agent.sessionId = cacheSessionId;
+	}
 
 	// ── terminate channel ────────────────────────────────────────────────
 	const onAbort = () => {

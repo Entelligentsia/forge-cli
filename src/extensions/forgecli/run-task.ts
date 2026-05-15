@@ -503,6 +503,14 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	let lastModel: string | undefined;
 	let lastProvider: string | undefined;
 
+	// Resolve the task's sprintId once for prompt-cache session affinity. All
+	// phases in this task share the cache key `forge:${sprintId}` so the
+	// system-prompt + project orientation prefix (which is identical across
+	// personas) stays warm on Anthropic and shares a stable prompt_cache_key
+	// on OpenAI. Falls back to a task-scoped key if the task is unattached.
+	const taskRecordAtStart = readTaskRecord(taskId, storeCli, cwd);
+	const cacheSessionId = taskRecordAtStart?.sprintId ? `forge:${taskRecordAtStart.sprintId}` : `forge:task:${taskId}`;
+
 	while (currentPhaseIndex < PHASES.length) {
 		const phase = PHASES[currentPhaseIndex];
 		if (!phase) {
@@ -721,6 +729,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				task: taskBody,
 				cwd,
 				exportTag: `${taskId}__${phase.role}`,
+				cacheSessionId,
 				onEvent: (event) => {
 					switch (event.type) {
 						case "turn_start": {
