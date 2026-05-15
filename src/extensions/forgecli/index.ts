@@ -43,6 +43,7 @@ import { registerRunSprint } from "./run-sprint.js";
 import { registerFixBug } from "./fix-bug.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
+import { registerRunWorkflow } from "./wf-engine/register.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -311,6 +312,11 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Registered BEFORE registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub from the command .md.
 	registerFixBug(pi);
+
+	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
+	// Reads workflows/<workflowId>/workflow.yaml and runs a node graph with LLM
+	// workers. Registered unconditionally — useful inside or outside Forge project.
+	registerRunWorkflow(pi, { cwd: process.cwd() });
 
 	// ── /forge:threads native handler ────────────────────────────────────────
 	// Single-viewport thread switcher: one-row chip strip below the editor.

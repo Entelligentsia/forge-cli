@@ -1,0 +1,66 @@
+id: research-brief
+version: 1
+description: Multi-source research brief synthesis — 5-node PoC with 3 loop-body nodes.
+
+nodes:
+  - id: intake
+    prompt: prompts/intake.md
+    expects:
+      success:
+        writes:
+          state: [sources]
+      failure: {}
+
+  - id: source-summarize
+    prompt: prompts/source-summarize.md
+    loop:
+      over:  sources
+      alias: loop.item
+    expects:
+      success:
+        writes:
+          artifact: { pattern: "artifacts/sources/{loop.item.id}.summary.md" }
+          state:    ["sources.{loop.item.id}.summarized"]
+      failure: {}
+
+  - id: source-score
+    prompt: prompts/source-score.md
+    loop:
+      over:  sources
+      alias: loop.item
+    expects:
+      success:
+        writes:
+          state: ["sources.{loop.item.id}.score"]
+      failure: {}
+
+  - id: source-critique
+    prompt: prompts/source-critique.md
+    loop:
+      over:  sources
+      alias: loop.item
+    expects:
+      success:
+        writes:
+          state: ["sources.{loop.item.id}.critique"]
+      failure: {}
+
+  - id: brief-synthesize
+    prompt: prompts/brief-synthesize.md
+    expects:
+      success:
+        writes:
+          artifact: { pattern: "artifacts/BRIEF.md" }
+      failure: {}
+
+edges:
+  - { from: intake,           on: success, to: source-summarize }
+  - { from: intake,           on: failure, halt: intake-failed }
+  - { from: source-summarize, on: success, advance: loop-or-next, next: source-score }
+  - { from: source-summarize, on: failure, halt: source-summarize-failed }
+  - { from: source-score,     on: success, advance: loop-or-next, next: source-critique }
+  - { from: source-score,     on: failure, halt: source-score-failed }
+  - { from: source-critique,  on: success, advance: loop-or-next, next: brief-synthesize }
+  - { from: source-critique,  on: failure, halt: source-critique-failed }
+  - { from: brief-synthesize, on: success, terminal: complete }
+  - { from: brief-synthesize, on: failure, halt: brief-failed }

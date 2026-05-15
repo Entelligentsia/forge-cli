@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-15
+
+### Added
+- Generic workflow execution engine (`/forge:run-workflow <workflowId> [args]`) — PoC.
+  Reads workflow.yaml + prompts/*.md from `workflows/<workflowId>/`. Runs a node graph
+  with LLM workers. Persists state, events, and artifacts under `.forge-wf/runs/<instanceId>/`.
+  Includes the `research-brief` example workflow (5 nodes, 3 in a loop).
+  Plan 14.
+
 ## [0.6.6] — 2026-05-15
 
 Sprint finalization ceremony (Plan 12). Pairs with forge-plugin 0.43.16.

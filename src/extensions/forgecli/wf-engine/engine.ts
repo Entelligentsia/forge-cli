@@ -1,0 +1,295 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { loadWorkflow } from "./loader.js";
+import { makeInstanceId, makeNodeExecId, makeEventId } from "./id-gen.js";
+import { parseEventsBlock } from "./event-parser.js";
+import { checkRemit } from "./remit-check.js";
+import { StateStore } from "./state-store.js";
+import { compilePrompt } from "./prompt-compiler.js";
+import { dispatchLlmWorker, type WorkerResult } from "./worker.js";
+import type { Event, RuntimeState } from "./types.js";
+
+export interface RunWorkflowOptions {
+  workflowsDir: string;     // directory containing workflow folders
+  workflowId:   string;     // name of the folder under workflowsDir
+  cwd:          string;     // user's cwd (parent of .forge-wf/)
+  entryPrompt:  string;     // free-form ARG from /forge:run-workflow
+  notify?:      (line: string) => void;
+  workerFn?:    (opts: { compiledPrompt: string; cwd: string }) => Promise<WorkerResult>;
+}
+
+export interface RunWorkflowResult {
+  status:      "completed" | "halted";
+  instanceId:  string;
+  workingDir:  string;
+  haltReason?: string;
+}
+
+export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflowResult> {
+  const notify = opts.notify ?? (() => {});
+  const workflowDir = path.join(opts.workflowsDir, opts.workflowId);
+  const wf = loadWorkflow(workflowDir);
+
+  const instanceId = makeInstanceId(wf.id);
+  const workingDir = path.join(opts.cwd, ".forge-wf", "runs", instanceId);
+  const store = new StateStore(workingDir);
+
+  const firstNode = wf.nodes[0];
+  store.initialState({
+    cursor:      firstNode.id,
+    loopCursor:  {},
+    entryPrompt: opts.entryPrompt,
+  });
+
+  fs.writeFileSync(
+    path.join(workingDir, "manifest.json"),
+    JSON.stringify({
+      workflowId: wf.id,
+      version:    wf.version,
+      instanceId,
+      startedAt:  new Date().toISOString(),
+      entryPrompt: opts.entryPrompt,
+    }, null, 2)
+  );
+
+  store.appendEvents([{
+    eventId:    makeEventId(instanceId, 0, "workflow.started"),
+    nodeExecId: instanceId,
+    type:       "workflow.started",
+    ts:         new Date().toISOString(),
+    workflowId: wf.id,
+    instanceId,
+  }]);
+
+  notify(`→ workflow ${wf.id} started: ${instanceId}`);
+
+  const workerFn = opts.workerFn ?? dispatchLlmWorker;
+
+  // Main loop
+  while (true) {
+    const state = store.readState();
+    const cursor = state.cursor;
+    const node = wf.nodes.find(n => n.id === cursor);
+    if (!node) {
+      throw new Error(`cursor references unknown node: ${cursor}`);
+    }
+
+    // Resolve loop context
+    let loopCtx: { iter: number; itemId: string; item: unknown } | undefined;
+    if (node.loop) {
+      const collection = resolvePath(state, node.loop.over) as Array<{ id: string }> | undefined;
+      if (!Array.isArray(collection)) {
+        throw new Error(`loop.over '${node.loop.over}' did not resolve to an array`);
+      }
+      const iter = state.loopCursor[node.id] ?? 0;
+      if (iter >= collection.length) {
+        // Loop exhausted — follow advance edge
+        const edge = wf.edges.find(e => e.from === node.id && e.advance === "loop-or-next");
+        if (!edge || !edge.next) {
+          throw new Error(`loop exhausted but no advance edge from ${node.id}`);
+        }
+        state.cursor = edge.next;
+        store.writeState(state);
+        continue;
+      }
+      const item = collection[iter];
+      const itemId = (item.id as string) ?? String(iter);
+      loopCtx = { iter, itemId, item };
+    }
+
+    const nodeExecId = makeNodeExecId(instanceId, node.id, loopCtx);
+
+    store.appendEvents([{
+      eventId:    makeEventId(nodeExecId, 0, "node.dispatched"),
+      nodeExecId,
+      type:       "node.dispatched",
+      ts:         new Date().toISOString(),
+    }]);
+
+    notify(`→ node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}]` : ""}`);
+
+    const promptFile = path.join(workflowDir, node.prompt);
+    const compiled = compilePrompt(promptFile, {
+      wf:    { instanceId, workingDir },
+      node:  { execId: nodeExecId, id: node.id },
+      state,
+      loop:  loopCtx ? { item: loopCtx.item } : undefined,
+    });
+
+    const result = await workerFn({ compiledPrompt: compiled, cwd: opts.cwd });
+
+    store.writeNodeArchive(nodeExecId, {
+      "prompt.compiled.md": compiled,
+      "response.txt":       result.responseText,
+    });
+
+    if (result.exitCode !== 0) {
+      const haltEvent: Event = {
+        eventId:    makeEventId(nodeExecId, 1, "failure"),
+        nodeExecId,
+        type:       "failure",
+        ts:         new Date().toISOString(),
+        reason:     "worker-error",
+        details:    result.errorMessage ?? "unknown",
+      };
+      store.appendEvents([haltEvent]);
+      store.appendEvents([{
+        eventId:    makeEventId(instanceId, 999, "workflow.halted"),
+        nodeExecId: instanceId,
+        type:       "workflow.halted",
+        ts:         new Date().toISOString(),
+        reason:     `worker-error in ${node.id}`,
+      }]);
+      notify(`× workflow halted: worker error in ${node.id}`);
+      return { status: "halted", instanceId, workingDir, haltReason: `worker-error in ${node.id}` };
+    }
+
+    // Parse emitted events
+    let parsed;
+    try {
+      parsed = parseEventsBlock(result.responseText);
+    } catch (err) {
+      const haltReason = `events-block-parse-error in ${node.id}: ${(err as Error).message}`;
+      store.appendEvents([{
+        eventId:    makeEventId(instanceId, 999, "workflow.halted"),
+        nodeExecId: instanceId,
+        type:       "workflow.halted",
+        ts:         new Date().toISOString(),
+        reason:     haltReason,
+      }]);
+      notify(`× workflow halted: ${haltReason}`);
+      return { status: "halted", instanceId, workingDir, haltReason };
+    }
+
+    // Stamp engine-side fields on emitted events
+    const stamped: Event[] = parsed.events.map((e, i) => ({
+      ...e,
+      eventId:    e.eventId    ?? makeEventId(nodeExecId, i + 10, e.type),
+      nodeExecId: e.nodeExecId ?? nodeExecId,
+      ts:         e.ts         ?? new Date().toISOString(),
+    }));
+
+    fs.writeFileSync(
+      path.join(workingDir, "nodes", nodeExecId, "events.emitted.jsonl"),
+      stamped.map(e => JSON.stringify(e)).join("\n") + "\n"
+    );
+
+    // Remit check
+    const remit = checkRemit(stamped, node, loopCtx?.itemId);
+    if (!remit.ok) {
+      const haltEvent: Event = {
+        eventId:      makeEventId(nodeExecId, 998, "node.remit-violation"),
+        nodeExecId,
+        type:         "node.remit-violation",
+        ts:           new Date().toISOString(),
+        reason:       "remit-violation",
+        details:      remit.violations.join("; "),
+      };
+      store.appendEvents([haltEvent]);
+      store.appendEvents([{
+        eventId:    makeEventId(instanceId, 999, "workflow.halted"),
+        nodeExecId: instanceId,
+        type:       "workflow.halted",
+        ts:         new Date().toISOString(),
+        reason:     `remit-violation in ${node.id}`,
+      }]);
+      notify(`× workflow halted: remit-violation in ${node.id} — ${remit.violations.join("; ")}`);
+      return { status: "halted", instanceId, workingDir, haltReason: `remit-violation in ${node.id}` };
+    }
+
+    // Commit emitted events to log
+    store.appendEvents(stamped);
+
+    // Apply terminal event payload
+    const terminal = stamped.find(e => e.type === "success" || e.type === "failure")!;
+
+    if (terminal.type === "success") {
+      if (terminal.writes?.state) {
+        const updated = { ...state };
+        for (const [key, value] of Object.entries(terminal.writes.state)) {
+          setPath(updated, key, value);
+        }
+        store.writeState(updated);
+      }
+      if (terminal.writes?.artifact) {
+        store.writeArtifact(terminal.writes.artifact.path, terminal.writes.artifact.content);
+      }
+    }
+
+    store.appendEvents([{
+      eventId:    makeEventId(nodeExecId, 999, "node.committed"),
+      nodeExecId,
+      type:       "node.committed",
+      ts:         new Date().toISOString(),
+    }]);
+
+    notify(`✓ node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}]` : ""} — ${terminal.type}`);
+
+    // Loop iter advance OR cursor advance
+    const onKind = terminal.type === "success" ? "success" : "failure";
+    const edge = wf.edges.find(e => e.from === node.id && e.on === onKind);
+    if (!edge) {
+      throw new Error(`no edge from ${node.id} on ${onKind}`);
+    }
+
+    if (edge.terminal === "complete") {
+      store.appendEvents([{
+        eventId:    makeEventId(instanceId, 999, "workflow.completed"),
+        nodeExecId: instanceId,
+        type:       "workflow.completed",
+        ts:         new Date().toISOString(),
+      }]);
+      notify(`✓ workflow ${wf.id} complete: ${instanceId}`);
+      return { status: "completed", instanceId, workingDir };
+    }
+
+    if (edge.halt) {
+      store.appendEvents([{
+        eventId:    makeEventId(instanceId, 999, "workflow.halted"),
+        nodeExecId: instanceId,
+        type:       "workflow.halted",
+        ts:         new Date().toISOString(),
+        reason:     edge.halt,
+      }]);
+      notify(`× workflow halted: ${edge.halt}`);
+      return { status: "halted", instanceId, workingDir, haltReason: edge.halt };
+    }
+
+    if (edge.advance === "loop-or-next") {
+      const newState = store.readState();
+      newState.loopCursor[node.id] = (newState.loopCursor[node.id] ?? 0) + 1;
+      store.writeState(newState);
+      continue;
+    }
+
+    if (edge.to) {
+      const newState = store.readState();
+      newState.cursor = edge.to;
+      store.writeState(newState);
+      continue;
+    }
+
+    throw new Error(`edge from ${node.id} has no resolvable continuation`);
+  }
+}
+
+function resolvePath(obj: unknown, dotted: string): unknown {
+  const parts = dotted.split(".");
+  let cur: unknown = obj;
+  for (const p of parts) {
+    if (cur === null || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[p];
+  }
+  return cur;
+}
+
+function setPath(obj: Record<string, unknown>, dotted: string, value: unknown): void {
+  const parts = dotted.split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    if (typeof cur[p] !== "object" || cur[p] === null) cur[p] = {};
+    cur = cur[p] as Record<string, unknown>;
+  }
+  cur[parts[parts.length - 1]] = value;
+}

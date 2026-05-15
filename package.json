@@ -1,6 +1,6 @@
 {
   "name": "@entelligentsia/forgecli",
-  "version": "0.6.6",
+  "version": "0.7.0",
   "description": "Forge SDLC ported onto @earendil-works/pi-coding-agent \u2014 production launcher with three bin aliases (forge/forgecli/4ge).",
   "license": "MIT",
   "author": "Entelligentsia",
@@ -80,7 +80,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.3.0",
+    "js-yaml": "^4.1.0",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
   },
