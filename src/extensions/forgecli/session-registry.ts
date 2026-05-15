@@ -31,6 +31,16 @@ export interface PhaseSummary {
 	 * Zeroed by markRead().
 	 */
 	unreadWarnings: number;
+	/**
+	 * First non-empty assistant-turn preview captured during this phase.
+	 * Set once on the first setTurnPreview call after startPhase.
+	 */
+	firstTurnPreview?: string;
+	/**
+	 * Most recent assistant-turn preview captured during this phase.
+	 * Updated on every setTurnPreview call.
+	 */
+	lastTurnPreview?: string;
 }
 
 export interface ToolEventRecord {
@@ -255,6 +265,14 @@ export class SessionRegistry extends EventEmitter {
 		if (!s) return;
 		if (s.currentTurnPreview === preview) return;
 		s.currentTurnPreview = preview;
+		// Also stamp first/last on the current phase so the chip strip can
+		// render "<first> … <last>" per phase — the first meaningful line a
+		// subagent emits and the most recent one.
+		const p = s.phases[s.phases.length - 1];
+		if (p) {
+			if (p.firstTurnPreview === undefined) p.firstTurnPreview = preview;
+			p.lastTurnPreview = preview;
+		}
 		s.updatedAt = Date.now();
 		this.emit("preview", { taskId });
 	}

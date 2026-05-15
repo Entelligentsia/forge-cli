@@ -1,6 +1,6 @@
 {
   "name": "@entelligentsia/forgecli",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Forge SDLC ported onto @earendil-works/pi-coding-agent \u2014 production launcher with three bin aliases (forge/forgecli/4ge).",
   "license": "MIT",
   "author": "Entelligentsia",

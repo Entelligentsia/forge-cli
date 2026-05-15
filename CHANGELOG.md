@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-05-16
+
+### Changed
+- Thread-switcher strip preview now shows `"<first turn>" … "<last turn>"`
+  from the most-recent phase, giving a richer at-a-glance picture of what
+  the subagent has done. Previously only the latest assistant turn was
+  visible. `PhaseSummary` gains `firstTurnPreview` and `lastTurnPreview`
+  fields; `setTurnPreview` populates both. Applies to all orchestrators
+  (`run-task`, `run-sprint`, `fix-bug`, `run-workflow`) since they share
+  the `SessionRegistry` singleton.
+
 ## [0.7.3] — 2026-05-16
 
 ### Added
