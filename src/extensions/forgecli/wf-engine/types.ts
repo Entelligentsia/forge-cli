@@ -18,6 +18,8 @@ export interface LoopSpec {
   over:               string;  // dotted-path into state, e.g. "sources"
   alias:              string;  // e.g. "loop.item"
   alsoEmitsItemId?:   boolean;
+  group?:             string;  // multi-node loop: all members share one cursor
+  head?:              boolean; // true on the single entry/exit node of the group
 }
 
 export interface ExpectsSpec {
@@ -34,12 +36,13 @@ export interface ExpectsSpec {
 
 export interface EdgeDef {
   from:      string;
-  on:        "success" | "failure";
+  on:        "success" | "failure" | "exhausted";
   to?:       string;
   halt?:     string;
   terminal?: "complete";
   advance?:  "loop-or-next";
-  next?:     string;    // for advance: loop-or-next, what to go to after loop end
+  next?:     string;    // for advance: loop-or-next on non-grouped loops, what to go to after loop end
+  when?:     string;    // predicate, e.g. "loop.item.score >= 4" — first matching success edge wins
 }
 
 // Runtime state (persisted as state.json)

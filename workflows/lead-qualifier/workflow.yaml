@@ -1,0 +1,95 @@
+id: lead-qualifier
+version: 1
+description: >
+  Per-lead pipeline demo. For each lead in state.leads: enrich → score → branch on score
+  (>=4: draft outreach; else: mark cold) → next lead. Final digest summarizes the cohort.
+  Exercises: (a) `loop.group` per-item pipeline, (b) `when:` conditional edges.
+
+nodes:
+  - id: intake
+    prompt: prompts/intake.md
+    expects:
+      success:
+        writes:
+          state: [leads]
+      failure: {}
+
+  - id: enrich
+    prompt: prompts/enrich.md
+    loop:
+      over:  leads
+      alias: loop.item
+      group: per-lead
+      head:  true
+    expects:
+      success:
+        writes:
+          state: ["leads.{loop.item.id}.enriched"]
+      failure: {}
+
+  - id: score
+    prompt: prompts/score.md
+    loop:
+      over:  leads
+      alias: loop.item
+      group: per-lead
+    expects:
+      success:
+        writes:
+          state: ["leads.{loop.item.id}.score"]
+      failure: {}
+
+  - id: draft-outreach
+    prompt: prompts/draft-outreach.md
+    loop:
+      over:  leads
+      alias: loop.item
+      group: per-lead
+    expects:
+      success:
+        writes:
+          artifact: { pattern: "artifacts/outreach/{loop.item.id}.md" }
+          state:    ["leads.{loop.item.id}.outcome"]
+      failure: {}
+
+  - id: mark-cold
+    prompt: prompts/mark-cold.md
+    loop:
+      over:  leads
+      alias: loop.item
+      group: per-lead
+    expects:
+      success:
+        writes:
+          state: ["leads.{loop.item.id}.outcome"]
+      failure: {}
+
+  - id: digest
+    prompt: prompts/digest.md
+    expects:
+      success:
+        writes:
+          artifact: { pattern: "artifacts/BRIEF.md" }
+      failure: {}
+
+edges:
+  - { from: intake,         on: success,    to: enrich }
+  - { from: intake,         on: failure,    halt: intake-failed }
+
+  - { from: enrich,         on: success,    to: score }
+  - { from: enrich,         on: failure,    advance: loop-or-next }
+  - { from: enrich,         on: exhausted,  to: digest }
+
+  # Conditional: warm leads (score >= 4) get an outreach draft; everyone else is marked cold.
+  - { from: score,          on: success,    when: "loop.item.score >= 4", to: draft-outreach }
+  - { from: score,          on: success,    to: mark-cold }
+  - { from: score,          on: failure,    advance: loop-or-next }
+
+  - { from: draft-outreach, on: success,    advance: loop-or-next }
+  - { from: draft-outreach, on: failure,    advance: loop-or-next }
+
+  - { from: mark-cold,      on: success,    advance: loop-or-next }
+  - { from: mark-cold,      on: failure,    advance: loop-or-next }
+
+  - { from: digest,         on: success,    terminal: complete }
+  - { from: digest,         on: failure,    halt: digest-failed }

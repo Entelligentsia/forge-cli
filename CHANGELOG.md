@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-15
+
+### Added
+- Workflow engine: conditional edges via `when: "<path> <op> <literal>"` — first matching
+  success edge wins, falls back to unconditional edge. Supports `==`, `!=`, `<`, `<=`, `>`, `>=`
+  against dotted paths into `state.*` or `loop.item.*`.
+- Workflow engine: `loop.group` + `loop.head` for per-item pipelines. Multiple nodes
+  sharing a `group` share one cursor — execution flows item-by-item through the
+  pipeline rather than node-by-node across all items. Group exit is expressed as
+  `edges: - { from: <head>, on: exhausted, to: <next> }`.
+- `workflows/lead-qualifier/` — demo workflow exercising both features. Intake produces
+  N leads; each lead flows `enrich → score → (warm: draft-outreach | cold: mark-cold)` per
+  the `score >= 4` predicate; final `digest` writes `BRIEF.md`.
+
 ## [0.7.0] — 2026-05-15
 
 ### Added

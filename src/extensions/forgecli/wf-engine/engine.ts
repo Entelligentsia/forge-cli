@@ -7,7 +7,8 @@ import { checkRemit } from "./remit-check.js";
 import { StateStore } from "./state-store.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import { dispatchLlmWorker, type WorkerResult } from "./worker.js";
-import type { Event, RuntimeState } from "./types.js";
+import { evalPredicate } from "./predicate.js";
+import type { EdgeDef, Event, RuntimeState } from "./types.js";
 
 export interface RunWorkflowOptions {
   workflowsDir: string;     // directory containing workflow folders
@@ -65,6 +66,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
 
   const workerFn = opts.workerFn ?? dispatchLlmWorker;
 
+  // Build group-head lookup: group name -> head node id
+  const groupHeads = new Map<string, string>();
+  for (const n of wf.nodes) {
+    if (n.loop?.group && n.loop?.head) groupHeads.set(n.loop.group, n.id);
+  }
+
   // Main loop
   while (true) {
     const state = store.readState();
@@ -75,26 +82,36 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
     }
 
     // Resolve loop context
-    let loopCtx: { iter: number; itemId: string; item: unknown } | undefined;
+    let loopCtx: { iter: number; itemId: string; item: unknown; cursorKey: string; group?: string } | undefined;
     if (node.loop) {
+      const group = node.loop.group;
+      const cursorKey = group ?? node.id;
+      const isHead = !group || node.loop.head === true;
       const collection = resolvePath(state, node.loop.over) as Array<{ id: string }> | undefined;
       if (!Array.isArray(collection)) {
         throw new Error(`loop.over '${node.loop.over}' did not resolve to an array`);
       }
-      const iter = state.loopCursor[node.id] ?? 0;
-      if (iter >= collection.length) {
-        // Loop exhausted — follow advance edge
-        const edge = wf.edges.find(e => e.from === node.id && e.advance === "loop-or-next");
-        if (!edge || !edge.next) {
-          throw new Error(`loop exhausted but no advance edge from ${node.id}`);
+      const iter = state.loopCursor[cursorKey] ?? 0;
+      if (isHead && iter >= collection.length) {
+        // Loop exhausted — for grouped loops, use on:exhausted edge; for non-grouped, use advance: loop-or-next
+        let exitTarget: string | undefined;
+        if (group) {
+          const exitEdge = wf.edges.find(e => e.from === node.id && e.on === "exhausted");
+          exitTarget = exitEdge?.to;
+        } else {
+          const exitEdge = wf.edges.find(e => e.from === node.id && e.advance === "loop-or-next");
+          exitTarget = exitEdge?.next;
         }
-        state.cursor = edge.next;
+        if (!exitTarget) {
+          throw new Error(`loop exhausted but no exit target from ${node.id}`);
+        }
+        state.cursor = exitTarget;
         store.writeState(state);
         continue;
       }
       const item = collection[iter];
       const itemId = (item.id as string) ?? String(iter);
-      loopCtx = { iter, itemId, item };
+      loopCtx = { iter, itemId, item, cursorKey, group };
     }
 
     const nodeExecId = makeNodeExecId(instanceId, node.id, loopCtx);
@@ -225,11 +242,33 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
 
     notify(`✓ node ${node.id}${loopCtx ? ` [iter ${loopCtx.iter}]` : ""} — ${terminal.type}`);
 
-    // Loop iter advance OR cursor advance
-    const onKind = terminal.type === "success" ? "success" : "failure";
-    const edge = wf.edges.find(e => e.from === node.id && e.on === onKind);
+    // Loop iter advance OR cursor advance — first matching edge wins (conditional edges evaluated in YAML order)
+    const onKind: "success" | "failure" = terminal.type === "success" ? "success" : "failure";
+    const candidates = wf.edges.filter(e => e.from === node.id && e.on === onKind);
+    let edge: EdgeDef | undefined;
+    const postState = store.readState();   // reflects state writes just applied
+    for (const e of candidates) {
+      if (!e.when) { edge = e; break; }
+      try {
+        if (evalPredicate(e.when, { state: postState, loop: loopCtx ? { item: loopCtx.item } : undefined })) {
+          edge = e;
+          break;
+        }
+      } catch (err) {
+        const haltReason = `predicate-error in ${node.id} '${e.when}': ${(err as Error).message}`;
+        store.appendEvents([{
+          eventId:    makeEventId(instanceId, 999, "workflow.halted"),
+          nodeExecId: instanceId,
+          type:       "workflow.halted",
+          ts:         new Date().toISOString(),
+          reason:     haltReason,
+        }]);
+        notify(`× workflow halted: ${haltReason}`);
+        return { status: "halted", instanceId, workingDir, haltReason };
+      }
+    }
     if (!edge) {
-      throw new Error(`no edge from ${node.id} on ${onKind}`);
+      throw new Error(`no matching edge from ${node.id} on ${onKind}`);
     }
 
     if (edge.terminal === "complete") {
@@ -257,7 +296,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflow
 
     if (edge.advance === "loop-or-next") {
       const newState = store.readState();
-      newState.loopCursor[node.id] = (newState.loopCursor[node.id] ?? 0) + 1;
+      const cursorKey = loopCtx?.cursorKey ?? node.id;
+      newState.loopCursor[cursorKey] = (newState.loopCursor[cursorKey] ?? 0) + 1;
+      if (loopCtx?.group) {
+        const head = groupHeads.get(loopCtx.group);
+        if (!head) throw new Error(`group ${loopCtx.group} has no head`);
+        newState.cursor = head;
+      }
       store.writeState(newState);
       continue;
     }
