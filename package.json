@@ -66,13 +66,15 @@
     "@entelligentsia/pi-coding-agent",
     "@entelligentsia/pi-agent-core",
     "@entelligentsia/pi-ai",
-    "@entelligentsia/pi-tui"
+    "@entelligentsia/pi-tui",
+    "js-yaml"
   ],
   "dependencies": {
     "@entelligentsia/pi-coding-agent": "file:./vendor-pi/entelligentsia-pi-coding-agent-0.75.0.tgz",
     "@entelligentsia/pi-agent-core": "file:./vendor-pi/entelligentsia-pi-agent-core-0.75.0.tgz",
     "@entelligentsia/pi-ai": "file:./vendor-pi/entelligentsia-pi-ai-0.75.0.tgz",
     "@entelligentsia/pi-tui": "file:./vendor-pi/entelligentsia-pi-tui-0.75.0.tgz",
+    "js-yaml": "^4.1.0",
     "typebox": "^1.1.24"
   },
   "peerDependencies": {
@@ -82,7 +84,6 @@
     "@biomejs/biome": "^2.3.5",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.3.0",
-    "js-yaml": "^4.1.0",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
   },
