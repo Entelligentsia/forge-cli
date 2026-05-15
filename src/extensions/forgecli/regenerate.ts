@@ -181,6 +181,33 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 
 			ctx.ui.setStatus?.("forge:regenerate", undefined);
 			if (ok) {
+				// 4. Update forgeRoot in .forge/config.json to point to the bundled payload.
+				//    Without this, projects initialized under a different runtime (e.g. Claude
+				//    Code plugin cache) keep pointing to the stale forgeRoot. This causes
+				//    subagent bash calls to $FORGE_ROOT to hit outdated store-cli, schema
+				//    validators, etc. that lack new enum values and status transitions.
+				if (bundleRoot) {
+					try {
+						const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+						const oldRoot = config?.paths?.forgeRoot;
+						if (oldRoot !== bundleRoot) {
+							config.paths = config.paths || {};
+							config.paths.forgeRoot = bundleRoot;
+							fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+							ctx.ui.notify(
+								`Updated forgeRoot in config.json: ${oldRoot ?? "(unset)"} → ${bundleRoot}`,
+								"info",
+							);
+						}
+					} catch (e: unknown) {
+						const msg = e instanceof Error ? e.message : String(e);
+						ctx.ui.notify(
+							`⚠ forge:regenerate — could not update forgeRoot in config.json: ${msg}`,
+							"warning",
+						);
+					}
+				}
+
 				ctx.ui.notify(
 					"〇 forge:regenerate complete — .forge/workflows, .forge/personas, .forge/skills, " +
 						`.forge/templates, .claude/commands/ re-materialized from bundled payload; ${schemaCount} schemas refreshed.`,

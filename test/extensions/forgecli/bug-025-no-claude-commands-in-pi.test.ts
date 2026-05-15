@@ -148,12 +148,13 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// (native TS handler registered in implement.ts). It is no longer a stub.
 		// Note: forge:run-task was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S21-T02
 		// (native TS Orchestrator handler registered in run-task.ts). It is no longer a stub.
+		// Note: forge:run-sprint was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S21-T03
+		// (native TS Orchestrator handler registered in run-sprint.ts). It is no longer a stub.
 		const expectedStubCommands = [
 			"forge:fix-bug",
 			"forge:approve",
 			"forge:validate",
 			"forge:commit",
-			"forge:run-sprint",
 		];
 
 		for (const cmd of expectedStubCommands) {
@@ -186,6 +187,12 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
 		// MUST NOT register it (would clobber the real handler).
 		expect(registeredCommands.has("forge:run-task")).toBe(false);
+
+		// forge:run-sprint: as of FORGE-S21-T03, the native Orchestrator handler is
+		// registered separately via registerRunSprint(pi) in index.ts. It now
+		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
+		// MUST NOT register it (would clobber the real handler).
+		expect(registeredCommands.has("forge:run-sprint")).toBe(false);
 	});
 
 	it("after Phase-4, .claude/commands/ is cleaned up in pi mode (isPiRuntime=true)", async () => {

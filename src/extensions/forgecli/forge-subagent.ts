@@ -67,6 +67,13 @@ export interface RunSubagentOptions {
 	task: string;
 	cwd?: string;
 	signal?: AbortSignal;
+	/**
+	 * Forge root directory. When provided, FORGE_ROOT is set in the subagent's
+	 * process environment so that $FORGE_ROOT in workflow tool paths resolves
+	 * correctly. Without this, subagent bash calls to store-cli etc. will fail
+	 * with "Cannot find module '/tools/store-cli.cjs'".
+	 */
+	forgeRoot?: string;
 	onEvent?: (event: AgentSessionEvent) => void;
 	/**
 	 * Optional tag included in the auto-exported transcript filename for
@@ -128,7 +135,15 @@ function emptyUsage(): UsageStats {
  * usage). Total contextTokens are sourced from the latest turn.
  */
 export async function runForgeSubagent(opts: RunSubagentOptions): Promise<SubagentResult> {
-	const { persona, task, cwd, signal, onEvent } = opts;
+	const { persona, task, cwd, signal, onEvent, forgeRoot } = opts;
+
+	// Set FORGE_ROOT in the process environment so the subagent's bash tool
+	// can resolve $FORGE_ROOT paths. This is critical for workflow commands
+	// that cite $FORGE_ROOT/tools/store-cli.cjs etc. Without it, every
+	// subagent that shells out to store-cli fails.
+	if (forgeRoot) {
+		process.env.FORGE_ROOT = forgeRoot;
+	}
 
 	const result: SubagentResult = {
 		exitCode: 0,

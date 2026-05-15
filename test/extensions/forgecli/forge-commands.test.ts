@@ -225,7 +225,7 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		//   - forge:plan (FORGE-S20-T05)
 		//   - forge:implement (FORGE-S20-T06)
 		//   - forge:run-task (FORGE-S21-T02)
-		const REAL_HANDLER_CMD_FILES = 5; // commands with .md files AND real handlers
+		const REAL_HANDLER_CMD_FILES = 6; // commands with .md files AND real handlers (added run-sprint T03)
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
 		// Total calls = stub count + forge:refresh-kb-links + forge:enhance

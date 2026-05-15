@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-05-15
+
+Sprint finalization ceremony (Plan 12). Pairs with forge-plugin 0.43.16.
+
+### Added
+
+- `dispatchSprintCeremony` helper in `run-sprint.ts` dispatches architect subagent
+  against the materialized `architect_review_sprint_completion` workflow for sprint
+  finalization. The orchestrator (not the subagent) owns event emission (Slice-2
+  contract). Three exit branches per the Plan 12 truth table:
+  - **Clean-complete**: architect ceremony in `mode: "complete"`, sprint transitions
+    to `completed`, emit `sprint-complete` event with `verdict: "complete"`.
+  - **User-paused** (>=1 task done): architect ceremony in `mode: "partial"`, sprint
+    transitions to `partially-completed`, emit `sprint-complete` event with
+    `verdict: "partial"` and `pausedAfterTaskIndex`.
+  - **User-paused** (0 tasks done): no ceremony, no event, state persisted.
+  - **Halted-on-failure**: no ceremony, emit `sprint-halted` event with
+    `haltedAtTaskIndex`, `haltedAtTaskId`, `lastError`; state persisted with
+    `halted: true`.
+- `sprint-halted` event emission on task failure (no ceremony dispatch, per Plan 12 section 3).
+- Schema-validated `sprint-complete` and `sprint-halted` events with forward-compat
+  `waveCount` and `maxConcurrency` fields (always 1 for sequential).
+
+### Changed
+
+- Removed broken `sprint-collate-complete` event type (was rejected by schema
+  validation). Replaced with schema-valid `sprint-complete` and `sprint-halted`
+  variants via conditional `allOf`/`if`/`then` branches in `event.schema.json`.
+- Workflow `architect_review_sprint_completion` step-4 now gates status transition
+  on verdict: `Approved` -> `completed`, `Revision Required` + `partial` ->
+  `partially-completed`, `Revision Required` + `complete` -> no transition.
+- `validate-store.cjs` allOf interpreter now supports `enum` predicates in
+  `if.properties` (not just `const`). Required for the task-scoped event type
+  branch that uses an enum list instead of a single const.
+
+### Bundled
+
+- forge-plugin: 0.43.15 -> **0.43.16** (schema variants, workflow gating, validator
+  enum support).
+
 ## [0.6.5] — 2026-05-14
 
 Telemetry contract Slice 2 — the runtime emit site. Pairs with

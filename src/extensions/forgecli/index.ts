@@ -39,6 +39,7 @@ import { triggerUpdateCheck } from "./update-check.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
 import { registerRunTask } from "./run-task.js";
+import { registerRunSprint } from "./run-sprint.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 
@@ -296,6 +297,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// runForgeSubagent (IL10). Registered BEFORE registerAllForgeCommands so
 	// the real handler takes precedence over the auto-stub from the command .md.
 	registerRunTask(pi);
+
+	// ── /forge:run-sprint native Orchestrator handler (FORGE-S21-T03) ────────
+	// Sprint-level orchestrator: iterates sprint tasks via runTaskPipeline.
+	// Registered BEFORE registerAllForgeCommands so the real handler takes
+	// precedence over the auto-stub from the command .md.
+	registerRunSprint(pi);
 
 	// ── /forge:threads native handler ────────────────────────────────────────
 	// Single-viewport thread switcher: one-row chip strip below the editor.

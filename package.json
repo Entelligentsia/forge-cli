@@ -1,90 +1,90 @@
 {
-	"name": "@entelligentsia/forgecli",
-	"version": "0.6.5",
-	"description": "Forge SDLC ported onto @earendil-works/pi-coding-agent — production launcher with three bin aliases (forge/forgecli/4ge).",
-	"license": "MIT",
-	"author": "Entelligentsia",
-	"homepage": "https://github.com/Entelligentsia/forge-cli#readme",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/Entelligentsia/forge-cli.git"
-	},
-	"bugs": {
-		"url": "https://github.com/Entelligentsia/forge-cli/issues"
-	},
-	"type": "module",
-	"bin": {
-		"forge":    "./dist/bin/forge.js",
-		"forgecli": "./dist/bin/forge.js",
-		"4ge":      "./dist/bin/forge.js"
-	},
-	"main": "./dist/extensions/forgecli/index.js",
-	"types": "./dist/extensions/forgecli/index.d.ts",
-	"files": [
-		"dist",
-		"agents",
-		"prompts",
-		"registry",
-		"skills",
-		"themes",
-		"README.md",
-		"CHANGELOG.md",
-		"LICENSE"
-	],
-	"publishConfig": {
-		"access": "public"
-	},
-	"pi": {
-		"extensions": [
-			"./dist/extensions/forgecli/index.js"
-		],
-		"skills": [
-			"./skills"
-		],
-		"prompts": [
-			"./prompts"
-		],
-		"themes": [
-			"./themes"
-		]
-	},
-	"forge": {
-		"bundledVersion": "0.43.15",
-		"forgeRoot": "../forge/forge"
-	},
-	"scripts": {
-		"build": "node scripts/build-payload.cjs && tsc",
-		"prepack": "node scripts/prepack-fix-bundled.cjs",
-		"postpack": "node scripts/prepack-fix-bundled.cjs --restore",
-		"build:tsc-only": "tsc",
-		"typecheck": "tsc --noEmit",
-		"test": "vitest run",
-		"lint": "biome check src test",
-		"sync-forge": "node scripts/sync-forge.cjs"
-	},
-	"bundledDependencies": [
-		"@entelligentsia/pi-coding-agent",
-		"@entelligentsia/pi-agent-core",
-		"@entelligentsia/pi-ai",
-		"@entelligentsia/pi-tui"
-	],
-	"dependencies": {
-		"@entelligentsia/pi-coding-agent": "file:./vendor-pi/entelligentsia-pi-coding-agent-0.75.0.tgz",
-		"@entelligentsia/pi-agent-core": "file:./vendor-pi/entelligentsia-pi-agent-core-0.75.0.tgz",
-		"@entelligentsia/pi-ai": "file:./vendor-pi/entelligentsia-pi-ai-0.75.0.tgz",
-		"@entelligentsia/pi-tui": "file:./vendor-pi/entelligentsia-pi-tui-0.75.0.tgz",
-		"typebox": "^1.1.24"
-	},
-	"peerDependencies": {
-		"@entelligentsia/pi-coding-agent": "0.75.0"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.3.5",
-		"@types/node": "^24.3.0",
-		"typescript": "^5.7.3",
-		"vitest": "^3.2.4"
-	},
-	"engines": {
-		"node": ">=20.6.0"
-	}
+  "name": "@entelligentsia/forgecli",
+  "version": "0.6.6",
+  "description": "Forge SDLC ported onto @earendil-works/pi-coding-agent \u2014 production launcher with three bin aliases (forge/forgecli/4ge).",
+  "license": "MIT",
+  "author": "Entelligentsia",
+  "homepage": "https://github.com/Entelligentsia/forge-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Entelligentsia/forge-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Entelligentsia/forge-cli/issues"
+  },
+  "type": "module",
+  "bin": {
+    "forge": "./dist/bin/forge.js",
+    "forgecli": "./dist/bin/forge.js",
+    "4ge": "./dist/bin/forge.js"
+  },
+  "main": "./dist/extensions/forgecli/index.js",
+  "types": "./dist/extensions/forgecli/index.d.ts",
+  "files": [
+    "dist",
+    "agents",
+    "prompts",
+    "registry",
+    "skills",
+    "themes",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/extensions/forgecli/index.js"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "forge": {
+    "bundledVersion": "0.43.16",
+    "forgeRoot": "../forge/forge"
+  },
+  "scripts": {
+    "build": "node scripts/build-payload.cjs && tsc",
+    "prepack": "node scripts/prepack-fix-bundled.cjs",
+    "postpack": "node scripts/prepack-fix-bundled.cjs --restore",
+    "build:tsc-only": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check src test",
+    "sync-forge": "node scripts/sync-forge.cjs"
+  },
+  "bundledDependencies": [
+    "@entelligentsia/pi-coding-agent",
+    "@entelligentsia/pi-agent-core",
+    "@entelligentsia/pi-ai",
+    "@entelligentsia/pi-tui"
+  ],
+  "dependencies": {
+    "@entelligentsia/pi-coding-agent": "file:./vendor-pi/entelligentsia-pi-coding-agent-0.75.0.tgz",
+    "@entelligentsia/pi-agent-core": "file:./vendor-pi/entelligentsia-pi-agent-core-0.75.0.tgz",
+    "@entelligentsia/pi-ai": "file:./vendor-pi/entelligentsia-pi-ai-0.75.0.tgz",
+    "@entelligentsia/pi-tui": "file:./vendor-pi/entelligentsia-pi-tui-0.75.0.tgz",
+    "typebox": "^1.1.24"
+  },
+  "peerDependencies": {
+    "@entelligentsia/pi-coding-agent": "0.75.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.5",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  }
 }

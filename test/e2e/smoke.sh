@@ -268,6 +268,53 @@ else
 		"index.ts must import buildProjectOrientation and register a before_agent_start handler"
 fi
 
+# ── E2E-18: run-sprint.ts orchestrator enforcement (FORGE-S21-T03) ────────
+# 1. runTaskPipeline indirection present
+# 2. Zero sendKickoff in run-sprint.ts
+# 3. runTaskPipeline exported from run-task.ts
+# 4. model/provider on RunTaskPipelineResult
+
+echo "▶ smoke gate — run-sprint.ts orchestrator enforcement (E2E-18)"
+
+RUN_SPRINT_SRC="$PKG_DIR/src/extensions/forgecli/run-sprint.ts"
+RUN_TASK_SRC="$PKG_DIR/src/extensions/forgecli/run-task.ts"
+
+if [[ -f "$RUN_SPRINT_SRC" ]]; then
+	record PASS "E2E-18: run-sprint.ts present" ""
+else
+	record FAIL "E2E-18: run-sprint.ts missing" "expected at $RUN_SPRINT_SRC"
+fi
+
+# E2E-18.1: runTaskPipeline indirection present
+if grep -q "runTaskPipeline" "$RUN_SPRINT_SRC" 2>/dev/null; then
+	record PASS "E2E-18: runTaskPipeline call present in run-sprint.ts" ""
+else
+	record FAIL "E2E-18: runTaskPipeline call missing from run-sprint.ts" "IL10 violation: sprint must delegate to runTaskPipeline"
+fi
+
+# E2E-18.2: Zero sendKickoff in run-sprint.ts
+SEND_KICKOFF_SPRINT=$(grep -v '^\s*//' "$RUN_SPRINT_SRC" 2>/dev/null | grep "sendKickoff(" || true)
+if [[ -z "$SEND_KICKOFF_SPRINT" ]]; then
+	record PASS "E2E-18: sendKickoff absent from run-sprint.ts non-comment code" "IL10 compliant"
+else
+	record FAIL "E2E-18: sendKickoff found in run-sprint.ts non-comment code (IL10 violation)" \
+		"$SEND_KICKOFF_SPRINT"
+fi
+
+# E2E-18.3: runTaskPipeline exported from run-task.ts
+if grep -q "export async function runTaskPipeline" "$RUN_TASK_SRC" 2>/dev/null; then
+	record PASS "E2E-18: runTaskPipeline export present in run-task.ts" ""
+else
+	record FAIL "E2E-18: runTaskPipeline export missing from run-task.ts" "refactor not done"
+fi
+
+# E2E-18.4: model/provider on RunTaskPipelineResult
+if grep -q "model" "$RUN_TASK_SRC" 2>/dev/null; then
+	record PASS "E2E-18: RunTaskPipelineResult has model field" ""
+else
+	record FAIL "E2E-18: RunTaskPipelineResult missing model field" "review fix #1 not done"
+fi
+
 # ── Auth-required gates (gated on ANTHROPIC_API_KEY) ───────────────────────
 
 echo "▶ smoke gate — auth-required gates"
