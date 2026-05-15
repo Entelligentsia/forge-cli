@@ -315,6 +315,8 @@ export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: 
 		`- Approve phase: on approval, run \`node "$FORGE_ROOT/tools/store-cli.cjs" update-status bug ${bugId} status approved\``,
 		`- Commit phase: on success, run \`node "$FORGE_ROOT/tools/store-cli.cjs" update-status bug ${bugId} status verified\``,
 		`- Do NOT reference task-specific status values (e.g., \"committed\") or task entity kind.`,
+		"- CRITICAL: All `set-summary` calls must use `set-bug-summary` (not `set-summary`).",
+		`  e.g. node "$FORGE_ROOT/tools/store-cli.cjs" set-bug-summary ${bugId} review_plan <jsonFile>`,
 		"Any workflow text that says \"task\" should be read as \"bug\" for this context.",
 	];
 
