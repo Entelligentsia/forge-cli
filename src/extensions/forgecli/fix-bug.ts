@@ -317,6 +317,8 @@ export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: 
 		`- Do NOT reference task-specific status values (e.g., \"committed\") or task entity kind.`,
 		"- CRITICAL: All `set-summary` calls must use `set-bug-summary` (not `set-summary`).",
 		`  e.g. node "$FORGE_ROOT/tools/store-cli.cjs" set-bug-summary ${bugId} review_plan <jsonFile>`,
+		`- Preflight gate: use \`--bug\` flag (not \`--task\`). e.g. node "$FORGE_ROOT/tools/preflight-gate.cjs" --phase review-plan --bug ${bugId}`,
+		"- Skip re-running preflight-gate — the orchestrator already checked it. Proceed directly to the review.",
 		"Any workflow text that says \"task\" should be read as \"bug\" for this context.",
 	];
 
