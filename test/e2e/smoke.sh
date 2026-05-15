@@ -315,6 +315,82 @@ else
 	record FAIL "E2E-18: RunTaskPipelineResult missing model field" "review fix #1 not done"
 fi
 
+# ── E2E-19: fix-bug.ts orchestrator enforcement (FORGE-S21-T07) ──────────
+
+FIX_BUG_SRC="$PKG_DIR/dist/extensions/forgecli/fix-bug.js"
+echo "▶ smoke gate — fix-bug.ts orchestrator enforcement (E2E-19)"
+
+if [[ -f "$FIX_BUG_SRC" ]]; then
+	record PASS "E2E-19: fix-bug.ts present" ""
+else
+	record FAIL "E2E-19: fix-bug.ts missing" "expected at $FIX_BUG_SRC"
+fi
+
+# E2E-19.1: runForgeSubagent import present in fix-bug.ts
+if grep -q "runForgeSubagent" "$FIX_BUG_SRC" 2>/dev/null; then
+	record PASS "E2E-19: runForgeSubagent present in fix-bug.ts" ""
+else
+	record FAIL "E2E-19: runForgeSubagent missing from fix-bug.ts (IL10 violation)" "runForgeSubagent import/call required"
+fi
+
+# E2E-19.2: Zero sendKickoff in fix-bug.ts non-comment code
+# Strip comments then search for sendKickoff( calls
+if grep -v '//.*sendKickoff(' "$FIX_BUG_SRC" 2>/dev/null | grep -c 'sendKickoff(' | grep -q '^0$'; then
+	record PASS "E2E-19: sendKickoff absent from fix-bug.ts non-comment code" "IL10 compliant"
+else
+	record FAIL "E2E-19: sendKickoff found in fix-bug.ts non-comment code (IL10 violation)" \
+		"sendKickoff must never be called from fix-bug.ts"
+fi
+
+# E2E-19.3: No orchestrator-runtime import in fix-bug.ts
+if grep -q 'orchestrator-runtime' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: orchestrator-runtime reference found in fix-bug.ts" "no new module import"
+else
+	record PASS "E2E-19: no orchestrator-runtime reference in fix-bug.ts" ""
+fi
+
+# E2E-19.4: Bug type tokens mapping present
+if grep -q 'BUG_TYPE_TOKENS' "$FIX_BUG_SRC" 2>/dev/null; then
+	record PASS "E2E-19: BUG_TYPE_TOKENS mapping exists" ""
+else
+	record FAIL "E2E-19: BUG_TYPE_TOKENS missing from fix-bug.ts" "type token mapping required"
+fi
+
+# E2E-19.5: Entity-kind override in composeBugBody
+if grep -q 'entity.kind\|ENTITY KIND OVERRIDE' "$FIX_BUG_SRC" 2>/dev/null; then
+	record PASS "E2E-19: entity-kind override in composeBugBody" ""
+else
+	record FAIL "E2E-19: entity-kind override missing from composeBugBody" "override required for bug-specific update-status commands"
+fi
+
+# E2E-19.6: Correct module boundaries (imports from actual sources)
+RUN_TASK_SRC="$PKG_DIR/dist/extensions/forgecli/run-task.js"
+FORGE_SUBAGENT_SRC="$PKG_DIR/dist/extensions/forgecli/forge-subagent.js"
+AUDIENCE_GATE_SRC="$PKG_DIR/dist/extensions/forgecli/audience-gate.js"
+PLAN_SRC="$PKG_DIR/dist/extensions/forgecli/plan.js"
+
+# Check imports from correct modules
+MODULE_BOUNDARY_PASS=true
+if ! grep -q '"./forge-subagent.js"' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: forge-subagent import missing" "must import from ./forge-subagent.js"
+	MODULE_BOUNDARY_PASS=false
+fi
+if ! grep -q '"./audience-gate.js"' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: audience-gate import missing" "must import from ./audience-gate.js"
+	MODULE_BOUNDARY_PASS=false
+fi
+if ! grep -q '"./plan.js"' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: plan import missing" "must import from ./plan.js"
+	MODULE_BOUNDARY_PASS=false
+fi
+if ! grep -q '"./run-task.js"' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: run-task import missing" "must import helpers from ./run-task.js"
+	MODULE_BOUNDARY_PASS=false
+fi
+if [[ "$MODULE_BOUNDARY_PASS" == true ]]; then
+	record PASS "E2E-19: all module boundary imports correct" ""
+fi
+
 # ── Auth-required gates (gated on ANTHROPIC_API_KEY) ───────────────────────
 
 echo "▶ smoke gate — auth-required gates"

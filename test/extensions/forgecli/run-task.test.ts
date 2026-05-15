@@ -63,7 +63,7 @@ vi.mock("node:child_process", () => ({
 
 import { createAgentSession } from "@entelligentsia/pi-coding-agent";
 import { spawnSync } from "node:child_process";
-import { registerRunTask } from "../../../src/extensions/forgecli/run-task.js";
+import { registerRunTask, runPreflightGate } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
 
@@ -758,5 +758,57 @@ describe("Test 11: Persona loaded per phase via loadForgePersona", () => {
 
 		// Verify createAgentSession was called for all 8 phases (each required a persona)
 		expect(vi.mocked(createAgentSession).mock.calls.length).toBe(8);
+	});
+});
+
+// ── Test 12: runPreflightGate entityType parameter (Code Review Finding #1 for FORGE-S21-T07) ──
+//
+// The preflight gate must use --bug for bug entities and --task for task entities.
+// This test verifies the generalized runPreflightGate function produces
+// the correct CLI flag based on the entityType parameter.
+
+describe("Test 12: runPreflightGate entityType parameter", () => {
+	it("should pass --task flag for entityType 'task'", () => {
+		vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: "", stderr: "" } as any);
+
+		const result = runPreflightGate("/fake/preflight-gate.cjs", "plan", "FORGE-S21-T01", "/tmp", "task");
+
+		expect(result).toBe("proceed");
+		const lastCall = vi.mocked(spawnSync).mock.calls[vi.mocked(spawnSync).mock.calls.length - 1];
+		const args = lastCall[1] as string[];
+		expect(args).toContain("--task");
+		expect(args).toContain("FORGE-S21-T01");
+		expect(args).not.toContain("--bug");
+
+		vi.mocked(spawnSync).mockClear();
+	});
+
+	it("should default to --task when entityType is omitted (backward compat)", () => {
+		vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: "", stderr: "" } as any);
+
+		const result = runPreflightGate("/fake/preflight-gate.cjs", "plan", "FORGE-S21-T01", "/tmp");
+
+		expect(result).toBe("proceed");
+		const lastCall = vi.mocked(spawnSync).mock.calls[vi.mocked(spawnSync).mock.calls.length - 1];
+		const args = lastCall[1] as string[];
+		expect(args).toContain("--task");
+		expect(args).not.toContain("--bug");
+
+		vi.mocked(spawnSync).mockClear();
+	});
+
+	it("should pass --bug flag for entityType 'bug'", () => {
+		vi.mocked(spawnSync).mockReturnValue({ status: 0, stdout: "", stderr: "" } as any);
+
+		const result = runPreflightGate("/fake/preflight-gate.cjs", "triage", "FORGE-BUG-042", "/tmp", "bug");
+
+		expect(result).toBe("proceed");
+		const lastCall = vi.mocked(spawnSync).mock.calls[vi.mocked(spawnSync).mock.calls.length - 1];
+		const args = lastCall[1] as string[];
+		expect(args).toContain("--bug");
+		expect(args).toContain("FORGE-BUG-042");
+		expect(args).not.toContain("--task");
+
+		vi.mocked(spawnSync).mockClear();
 	});
 });

@@ -150,8 +150,9 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// (native TS Orchestrator handler registered in run-task.ts). It is no longer a stub.
 		// Note: forge:run-sprint was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S21-T03
 		// (native TS Orchestrator handler registered in run-sprint.ts). It is no longer a stub.
+		// Note: forge:fix-bug was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S21-T07
+		// (native TS Orchestrator handler registered in fix-bug.ts). It is no longer a stub.
 		const expectedStubCommands = [
-			"forge:fix-bug",
 			"forge:approve",
 			"forge:validate",
 			"forge:commit",

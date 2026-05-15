@@ -262,7 +262,7 @@ export function readTaskRecord(taskId: string, storeCli: string, cwd: string): T
 }
 
 // Map phase.role → action token used in event.action / eventId.
-function actionForRole(role: string): string {
+export function actionForRole(role: string): string {
 	return role.replace(/-/g, "_");
 }
 
@@ -272,7 +272,12 @@ function actionForRole(role: string): string {
 // The subagent never calls store-cli emit itself.
 
 export interface OrchestratorEmitContext {
-	taskId: string;
+	/** Entity identifier — required when entityType is "task". */
+	taskId?: string;
+	/** Entity identifier — required when entityType is "bug". */
+	bugId?: string;
+	/** Discriminator for entity-keyed event construction. */
+	entityType: "task" | "bug";
 	sprintId: string;
 	phase: PhaseDescriptor;
 	iteration: number;
@@ -292,11 +297,11 @@ export function isoCompact(ms: number): string {
 
 export function buildPhaseEvent(ec: OrchestratorEmitContext): Record<string, unknown> {
 	const action = actionForRole(ec.phase.role);
-	const eventId = `${isoCompact(ec.startMs)}_${ec.taskId}_${ec.phase.personaNoun}_${action}`;
+	const entityId = ec.entityType === "bug" ? ec.bugId! : ec.taskId!;
+	const eventId = `${isoCompact(ec.startMs)}_${entityId}_${ec.phase.personaNoun}_${action}`;
 	const durationMs = Math.max(0, ec.endMs - ec.startMs);
 	const event: Record<string, unknown> = {
 		eventId,
-		taskId:          ec.taskId,
 		sprintId:        ec.sprintId,
 		role:            ec.phase.role,
 		action:          `/forge:${action.replace(/_/g, "-")}`,
@@ -308,6 +313,11 @@ export function buildPhaseEvent(ec: OrchestratorEmitContext): Record<string, unk
 		model:           ec.model,
 		provider:        ec.provider,
 	};
+	if (ec.entityType === "bug") {
+		event.bugId = ec.bugId;
+	} else {
+		event.taskId = ec.taskId;
+	}
 	if (ec.usage.input > 0 || ec.usage.output > 0 || ec.usage.cacheRead > 0 || ec.usage.cacheWrite > 0) {
 		event.inputTokens      = ec.usage.input;
 		event.outputTokens     = ec.usage.output;
@@ -336,12 +346,14 @@ export function emitEvent(
 	return { ok: result.status === 0, stderr: typeof result.stderr === "string" ? result.stderr : "" };
 }
 
-function judgementFromSummary(
+export function judgementFromSummary(
 	record: TaskRecord | null,
 	phaseRole: string,
+	summaryKeyByRole?: Record<string, string | null>,
 ): Record<string, unknown> | undefined {
 	if (!record || !record.summaries) return undefined;
-	const summaryKey = SUMMARY_KEY_BY_ROLE[phaseRole];
+	const keyMap = summaryKeyByRole ?? SUMMARY_KEY_BY_ROLE;
+	const summaryKey = keyMap[phaseRole];
 	if (!summaryKey) return undefined;
 	const blob = (record.summaries as Record<string, unknown>)[summaryKey];
 	return blob && typeof blob === "object" ? (blob as Record<string, unknown>) : undefined;
@@ -370,10 +382,10 @@ export function drainFrictionFile(
 			continue;
 		}
 		const action = actionForRole(ec.phase.role);
-		const eventId = `${isoCompact(ec.startMs)}_${ec.taskId}_${ec.phase.personaNoun}_friction_${i}`;
+		const entityId = ec.entityType === "bug" ? ec.bugId! : ec.taskId!;
+		const eventId = `${isoCompact(ec.startMs)}_${entityId}_${ec.phase.personaNoun}_friction_${i}`;
 		const event: Record<string, unknown> = {
 			eventId,
-			taskId:          ec.taskId,
 			sprintId:        ec.sprintId,
 			role:            ec.phase.role,
 			action:          `/forge:${action.replace(/_/g, "-")}`,
@@ -389,6 +401,11 @@ export function drainFrictionFile(
 			persona:         typeof judgement.persona  === "string" ? judgement.persona  : ec.phase.personaNoun,
 			issue:           judgement.issue,
 		};
+		if (ec.entityType === "bug") {
+			event.bugId = ec.bugId;
+		} else {
+			event.taskId = ec.taskId;
+		}
 		if (judgement.subkind  !== undefined) event.subkind  = judgement.subkind;
 		if (judgement.evidence !== undefined) event.evidence = judgement.evidence;
 		if (judgement.notes    !== undefined) event.notes    = judgement.notes;
@@ -433,8 +450,10 @@ export function runPreflightGate(
 	role: string,
 	taskId: string,
 	cwd: string,
+	entityType?: "task" | "bug",
 ): PreflightResult {
-	const result = spawnSync("node", [preflightGate, "--phase", role, "--task", taskId], { cwd });
+	const entityFlag = entityType === "bug" ? "--bug" : "--task";
+	const result = spawnSync("node", [preflightGate, "--phase", role, entityFlag, taskId], { cwd });
 	if (result.status === 0) return "proceed";
 	if (result.status === 2) return "escalate";
 	return "halt";
@@ -859,6 +878,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		} else {
 			const phaseIteration = (iterationCounts[phase.role] ?? 0) + 1;
 			const emitCtx: OrchestratorEmitContext = {
+				entityType: "task",
 				taskId,
 				sprintId,
 				phase,
