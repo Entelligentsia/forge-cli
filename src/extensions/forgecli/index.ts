@@ -151,15 +151,22 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// the user-supplied prompt. Multi-turn allowed. Status updates streamed.
 	registerTestOrchestrate(pi);
 
-	// ── Ensure forge-dark is in ~/.pi/agent/themes/ (global custom theme dir) ─
+	// ── Install bundled themes into ~/.pi/agent/themes/ ──────────────────────
 	// Themes in that directory are loaded by pi BEFORE initTheme() runs, so
-	// setTheme("forge-dark") will reliably find it by name in session_start.
-	const forgeDarkSrc = path.join(PKG_ROOT, "themes", "forge-dark.json");
+	// pi's /settings > theme picker lists them and setTheme(name) finds them
+	// by name in session_start. We ship one or more JSON themes under
+	// forge-cli/themes/ and copy each one into the global theme directory.
+	const bundledThemesDir = path.join(PKG_ROOT, "themes");
 	const globalThemesDir = path.join(getAgentDir(), "themes");
-	const forgeDarkDest = path.join(globalThemesDir, "forge-dark.json");
 	try {
 		fs.mkdirSync(globalThemesDir, { recursive: true });
-		fs.copyFileSync(forgeDarkSrc, forgeDarkDest);
+		const themeFiles = fs.readdirSync(bundledThemesDir).filter((f) => f.endsWith(".json"));
+		for (const file of themeFiles) {
+			fs.copyFileSync(
+				path.join(bundledThemesDir, file),
+				path.join(globalThemesDir, file),
+			);
+		}
 	} catch {
 		// Non-fatal — theme install skipped, fall back to default
 	}
