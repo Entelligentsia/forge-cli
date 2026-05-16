@@ -360,8 +360,10 @@ for (const spec of COMMANDS) {
 		// ── AC7.4: Audience behaviour ────────────────────────────────────────────
 
 		if (spec.isSubagentAudience) {
-			it(`audience:subagent → standalone invocation refused (no dispatch)`, async () => {
+			it(`audience:subagent → standalone invocation succeeds (advisory only)`, async () => {
 				// Real audience from workflow frontmatter (not overridden to "any").
+				// Post-T10 relaxation: subagent audience is advisory; users may
+				// invoke any chain step manually from the orchestrator (CLI) context.
 				const proj = scaffoldProject({
 					workflowFile: spec.workflowFile,
 					workflowContent: makeWorkflow(spec.personaName, "subagent"),
@@ -371,13 +373,9 @@ for (const spec of COMMANDS) {
 				spec.register(stub.pi, { cwd: proj });
 				await stub.invoke(cmdName, "");
 
-				// assertAudience returns false (caller is "orchestrator", audience is "subagent").
-				expect(stub.pi.sendUserMessage).not.toHaveBeenCalled();
-				expect(
-					stub.notifications.some(
-						(n) => n.level === "error" && n.msg.includes(spec.workflowFile.replace(".md", "").replace("_", "_")),
-					),
-				).toBe(true);
+				// assertAudience returns true for subagent audience from any caller.
+				expect(stub.pi.sendUserMessage).toHaveBeenCalledTimes(1);
+				expect(stub.notifications.filter((n) => n.level === "error")).toHaveLength(0);
 			});
 		} else {
 			it(`audience:any → standalone invocation succeeds`, async () => {

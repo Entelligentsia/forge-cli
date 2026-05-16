@@ -5,10 +5,11 @@
 // (Pack-04 + Pack-06): single LLM handoff in current context, no fork.
 //
 // Note: The materialized workflow (review_plan.md) declares
-// `audience: subagent`. Standalone human invocation will receive a
-// refusal from assertAudience — this IS the contract. Orchestrator chains
-// (run-task, run-sprint, fix-bug) dispatch via runForgeSubagent directly
-// and do NOT route through this handler.
+// `audience: subagent` — advisory only. Users may invoke this command
+// manually from the CLI; assertAudience never refuses subagent-audience
+// workflows. Orchestrator chains (run-task, run-sprint, fix-bug) still
+// dispatch via runForgeSubagent directly and do NOT route through this
+// handler.
 //
 // Iron Laws:
 //   IL1 — code only under forge-cli/src/extensions/forgecli/.

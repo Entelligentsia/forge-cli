@@ -38,6 +38,10 @@ export interface AudienceCheckInput {
  *
  * Refusal message for orchestrator-only violations (AC#3 verbatim):
  *   "× workflow <name> is orchestrator-only; cannot run from subagent context"
+ *
+ * Note: `subagent` audience is advisory only — users may invoke any
+ * `subagent`-audience workflow manually from the orchestrator (CLI) context.
+ * Only `orchestrator-only` produces refusals.
  */
 export function assertAudience(input: AudienceCheckInput, ctx: ExtensionCommandContext): boolean {
 	const { workflowName, audience } = input;
@@ -55,14 +59,9 @@ export function assertAudience(input: AudienceCheckInput, ctx: ExtensionCommandC
 		return false;
 	}
 
-	// "subagent" — allowed only from subagent context.
-	if (audience === "subagent" && callerContext === "orchestrator") {
-		ctx.ui.notify(
-			`× workflow ${workflowName} is subagent-only; cannot run from orchestrator context`,
-			"error",
-		);
-		return false;
-	}
-
+	// "subagent" — advisory hint, allowed from any caller.
+	// Users must be able to run every step manually (orchestrators are auto-mode);
+	// this audience is preserved in workflow front-matter for documentation but
+	// no longer enforced against orchestrator callers.
 	return true;
 }

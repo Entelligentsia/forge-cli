@@ -84,6 +84,30 @@ describe("assertAudience", () => {
 		expect(notifyCalls).toHaveLength(0);
 	});
 
+	// Test 3c: audience "subagent" is advisory — orchestrator caller is allowed.
+	// Users must be able to run every chain step manually (orchestrators are
+	// auto-mode). Pinned after the post-T10 relaxation.
+	it("allows orchestrator caller when audience is 'subagent' (advisory)", () => {
+		const { ctx, notifyCalls } = makeCtx();
+		const result = assertAudience(
+			{ workflowName: "review_plan", audience: "subagent", callerContext: "orchestrator" },
+			ctx,
+		);
+		expect(result).toBe(true);
+		expect(notifyCalls).toHaveLength(0);
+	});
+
+	// Test 3d: audience "subagent" also unrestricted from subagent context.
+	it("allows subagent caller when audience is 'subagent'", () => {
+		const { ctx, notifyCalls } = makeCtx();
+		const result = assertAudience(
+			{ workflowName: "review_plan", audience: "subagent", callerContext: "subagent" },
+			ctx,
+		);
+		expect(result).toBe(true);
+		expect(notifyCalls).toHaveLength(0);
+	});
+
 	// Test 4: refusal-message format pinned (AC#3 verbatim)
 	it("refusal message exactly matches AC#3 prescribed format", () => {
 		const { ctx, notifyCalls } = makeCtx();
