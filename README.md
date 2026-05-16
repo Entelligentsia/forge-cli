@@ -197,6 +197,11 @@ On any npm error or version mismatch the script logs a `[warn] registry check fa
 
 | Command                                    | Status              |
 |--------------------------------------------|---------------------|
+| Generic workflow engine (`/forge:run-workflow`) | Shipped (0.7.5) |
+| `/forge:run-task` orchestrator handler     | Shipped (0.7.5)     |
+| `/forge:run-sprint` orchestrator handler   | Shipped (0.7.5)     |
+| `/forge:fix-bug` orchestrator handler      | Shipped (0.7.5)     |
+| Atomic chain sub-workflow Kickoff Shims ×6 | Shipped (0.7.5)     |
 | `/forge:enhance` (Phase 2)                 | Shipped (0.6.6)     |
 | `/forge:plan`                              | Shipped (0.5.0)     |
 | `/forge:implement`                         | Shipped (0.5.0)     |
@@ -216,6 +221,12 @@ Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
 | Version | Headline |
 |---------|----------|
+| 0.7.5   | Workflow engine UX — phase narration in main viewport; chip strip stays compact |
+| 0.7.4   | (Superseded by 0.7.5) Thread-switcher chip-strip preview enrichment |
+| 0.7.3   | Workflow engine sessions in shared SessionRegistry — live thread-switcher chip strip |
+| 0.7.2   | `/forge:run-workflow` CWD-first workflow resolution |
+| 0.7.1   | Workflow engine: conditional edges + `loop.group` / `loop.head` per-item pipelines |
+| 0.7.0   | Generic workflow execution engine (`/forge:run-workflow`) PoC — Plan 14 |
 | 0.6.6   | Sprint finalization ceremony — `dispatchSprintCeremony` + `sprint-complete`/`sprint-halted` event variants. Pairs with forge-plugin 0.43.16 |
 | 0.6.5   | Telemetry contract Slice 2 — runtime emit site. Pairs with forge-plugin 0.43.14 |
 | 0.6.4   | Fixes: orchestrator runtime-attribution and event-emission regressions |
