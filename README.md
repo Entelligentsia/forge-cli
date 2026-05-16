@@ -103,6 +103,8 @@ ASK      /forge:health        KB freshness + store integrity
 
 | Up next                                            | Status              |
 |----------------------------------------------------|---------------------|
+| 4ge brand wordmark in CLI banner + 3 themes        | Shipped (0.7.7)     |
+| Slim README + docs/ split                          | Shipped (0.7.7)     |
 | Subagent audience relaxed to advisory              | Shipped (0.7.6)     |
 | Bundled plugin command markdowns                   | Shipped (0.7.6)     |
 | `/forge:run-task`, `run-sprint`, `fix-bug`         | Shipped (0.7.5)     |
@@ -137,6 +139,6 @@ MIT © Entelligentsia
   Shipped: 0.2.0 · 0.2.1 · 0.3.0 · 0.4.0 ·
   0.5.0 · 0.5.1 · 0.5.2 · 0.5.3 · 0.5.4 · 0.5.5 · 0.5.6 · 0.5.7 ·
   0.6.1 · 0.6.2 · 0.6.3 · 0.6.4 · 0.6.5 · 0.6.6 ·
-  0.7.0 · 0.7.1 · 0.7.2 · 0.7.3 · 0.7.4 · 0.7.5 · 0.7.6
+  0.7.0 · 0.7.1 · 0.7.2 · 0.7.3 · 0.7.4 · 0.7.5 · 0.7.6 · 0.7.7
 -->
 

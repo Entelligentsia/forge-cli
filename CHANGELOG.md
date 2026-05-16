@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] — 2026-05-16
+
+### Added
+- **4ge brand identity in the CLI banner.** The startup header now
+  renders the pixel `4ge` wordmark in place of the previous ANSI-Shadow
+  "FORGE" block letters, aligning the terminal experience with the
+  README/npm hero art.
+- **Two new themes shipped — forge-mono and forge-matrix.** Auto-
+  installed into `~/.pi/agent/themes/` on session start, so pi's
+  `/settings > theme` picker lists all three (forge-dark default,
+  forge-mono refined monochrome, forge-matrix phosphor-green Matrix
+  aesthetic).
+- **Slim README with brand assets.** Marketing-facing README rebuilt
+  around the 4ge hero image and a categorized command grid; deep
+  technical content (CLI flags, hook safety net, custom tools,
+  publishing) moved to `docs/`.
+
+### Changed
+- Tightened vertical spacing around the header (removed redundant
+  leading Spacer, exactly one blank line above and below the wordmark).
+- Theme install step is now generalized: every JSON under
+  `forge-cli/themes/` is copied to the pi global theme dir (previously
+  only `forge-dark.json` was).
+
 ## [0.7.6] — 2026-05-16
 
 ### Fixed
