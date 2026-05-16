@@ -227,7 +227,13 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		//   - forge:run-task (FORGE-S21-T02)
 		//   - forge:run-sprint (FORGE-S21-T03)
 		//   - forge:fix-bug (FORGE-S21-T07)
-		const REAL_HANDLER_CMD_FILES = 7; // commands with .md files AND real handlers (added fix-bug T07)
+		//   - forge:review-plan (FORGE-S21-T10)
+		//   - forge:review-code (FORGE-S21-T10)
+		//   - forge:approve (FORGE-S21-T10)
+		//   - forge:commit (FORGE-S21-T10)
+		//   - forge:validate (FORGE-S21-T10)
+		//   - forge:collate (FORGE-S21-T10)
+		const REAL_HANDLER_CMD_FILES = 13; // commands with .md files AND real handlers (added T10 chain shims)
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
 		// Total calls = stub count + forge:refresh-kb-links + forge:enhance

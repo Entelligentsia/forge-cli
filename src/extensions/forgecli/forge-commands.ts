@@ -216,6 +216,12 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:run-task", // FORGE-S21-T02: real handler registered in run-task.ts
 	"forge:run-sprint", // FORGE-S21-T03: real handler registered in run-sprint.ts
 	"forge:fix-bug",    // FORGE-S21-T07: real handler registered in fix-bug.ts
+	"forge:review-plan", // FORGE-S21-T10: real kickoff shim registered in review-plan.ts
+	"forge:review-code", // FORGE-S21-T10: real kickoff shim registered in review-code.ts
+	"forge:approve",     // FORGE-S21-T10: real kickoff shim registered in approve.ts
+	"forge:commit",      // FORGE-S21-T10: real kickoff shim registered in commit.ts
+	"forge:validate",    // FORGE-S21-T10: real kickoff shim registered in validate.ts
+	"forge:collate",     // FORGE-S21-T10: real kickoff shim registered in collate.ts
 	"forge:threads", // Thread-switcher chip strip; registered in thread-switcher.ts
 	"forge:regenerate", // Native handler registered in regenerate.ts — re-materialize .forge/ from bundled payload
 ]);

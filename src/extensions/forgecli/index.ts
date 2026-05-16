@@ -41,6 +41,12 @@ import { registerReadCommand } from "./read-command.js";
 import { registerRunTask } from "./run-task.js";
 import { registerRunSprint } from "./run-sprint.js";
 import { registerFixBug } from "./fix-bug.js";
+import { registerReviewPlan } from "./review-plan.js";
+import { registerReviewCode } from "./review-code.js";
+import { registerApprove } from "./approve.js";
+import { registerCommit } from "./commit.js";
+import { registerValidate } from "./validate.js";
+import { registerCollate } from "./collate.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
@@ -328,6 +334,22 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Registered BEFORE registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub from the command .md.
 	registerFixBug(pi);
+
+	// ── Chain sub-workflow Kickoff Shims (FORGE-S21-T10) ─────────────────────
+	// Six native kickoff handlers replacing auto-generated stubs. Each is a
+	// Kickoff Shim (Pack-04 + Pack-06): reads the materialized workflow, runs
+	// marker checks, assertAudience, then sendKickoff. Standalone invocations
+	// of subagent-only workflows (review-plan, review-code, approve, commit,
+	// validate) receive audience refusal — this IS the contract.
+	// Orchestrator chains (run-task, run-sprint, fix-bug) MUST NOT route
+	// through these handlers — they dispatch via runForgeSubagent directly (IL10).
+	// Registered BEFORE registerAllForgeCommands so real handlers take precedence.
+	registerReviewPlan(pi);
+	registerReviewCode(pi);
+	registerApprove(pi);
+	registerCommit(pi);
+	registerValidate(pi);
+	registerCollate(pi);
 
 	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
 	// Resolution order: CWD/workflows/<id> first (user-authored workflows),

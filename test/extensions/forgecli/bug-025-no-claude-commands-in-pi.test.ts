@@ -152,15 +152,11 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// (native TS Orchestrator handler registered in run-sprint.ts). It is no longer a stub.
 		// Note: forge:fix-bug was moved to EXPLICITLY_REGISTERED_NAMES in FORGE-S21-T07
 		// (native TS Orchestrator handler registered in fix-bug.ts). It is no longer a stub.
-		const expectedStubCommands = [
-			"forge:approve",
-			"forge:validate",
-			"forge:commit",
-		];
-
-		for (const cmd of expectedStubCommands) {
-			expect(registeredCommands.has(cmd), `Expected command ${cmd} to be registered`).toBe(true);
-		}
+		// Note: forge:review-plan, forge:review-code, forge:approve, forge:commit,
+		// forge:validate, forge:collate were moved to EXPLICITLY_REGISTERED_NAMES in
+		// FORGE-S21-T10 (native kickoff shim handlers). They are no longer stubs.
+		// All chain sub-workflow commands now have real handlers — no expectedStubCommands
+		// remain from this category.
 
 		// refresh-kb-links is registered by registerAllForgeCommands.
 		expect(registeredCommands.has("forge:refresh-kb-links")).toBe(true);
@@ -194,6 +190,18 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
 		// MUST NOT register it (would clobber the real handler).
 		expect(registeredCommands.has("forge:run-sprint")).toBe(false);
+
+			// forge:review-plan, forge:review-code, forge:approve, forge:commit,
+			// forge:validate, forge:collate: as of FORGE-S21-T10, native kickoff shim
+			// handlers are registered separately in their respective .ts files.
+			// They appear in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
+			// MUST NOT register them (would clobber real handlers).
+			expect(registeredCommands.has("forge:review-plan")).toBe(false);
+			expect(registeredCommands.has("forge:review-code")).toBe(false);
+			expect(registeredCommands.has("forge:approve")).toBe(false);
+			expect(registeredCommands.has("forge:commit")).toBe(false);
+			expect(registeredCommands.has("forge:validate")).toBe(false);
+			expect(registeredCommands.has("forge:collate")).toBe(false);
 	});
 
 	it("after Phase-4, .claude/commands/ is cleaned up in pi mode (isPiRuntime=true)", async () => {
