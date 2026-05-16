@@ -33,6 +33,18 @@ import { loadWorkflow } from "./loaders/workflow-loader.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import type { StreamFn } from "@entelligentsia/pi-agent-core";
+
+/**
+ * Test-only seam (forge-cli#17). Resolves a StreamFn for a given dispatch
+ * context — ceremony or per-phase. Production callers leave this undefined.
+ */
+export type SprintStreamFnFactory = (ctx: {
+	kind: "task-phase" | "ceremony";
+	persona: string;
+	phase?: string;
+	taskId?: string;
+}) => StreamFn | undefined;
 import {
 	runTaskPipeline,
 	isNonInteractive,
@@ -140,8 +152,9 @@ async function dispatchSprintCeremony(params: {
 	forgeRoot:          string;
 	ctx:                ExtensionCommandContext;
 	registry:           ReturnType<typeof getSessionRegistry>;
+	streamFnFactory?:   SprintStreamFnFactory;
 }): Promise<SprintCeremonyResult> {
-	const { sprintId, mode, completedTaskIds, pausedAfterIndex, cwd, forgeRoot, ctx, registry } = params;
+	const { sprintId, mode, completedTaskIds, pausedAfterIndex, cwd, forgeRoot, ctx, registry, streamFnFactory } = params;
 	const startMs = Date.now();
 
 	// Materialized workflow path — already shipped from base pack.
@@ -191,6 +204,7 @@ async function dispatchSprintCeremony(params: {
 			cwd,
 			exportTag: `${sprintId}__ceremony`,
 			forgeRoot,
+			streamFn: streamFnFactory?.({ kind: "ceremony", persona: personaName }),
 			// Sprint-scoped prompt-cache key — every subagent spawned across
 			// the sprint (ceremonies + per-task phases) shares this namespace
 			// so the system-prompt + persona prefix stays warm.
@@ -239,6 +253,13 @@ async function dispatchSprintCeremony(params: {
 
 export interface RegisterRunSprintOptions {
 	cwd?: string;
+	/**
+	 * Test-only seam (forge-cli#17). When set, each `runForgeSubagent` call
+	 * spawned by the sprint handler (ceremony) and by the per-task pipeline
+	 * (each phase) is dispatched with `streamFn = factory({...})`. Production
+	 * callers leave this undefined.
+	 */
+	streamFnFactory?: SprintStreamFnFactory;
 }
 
 const SPRINT_STATUS_KEY = "forge:run-sprint";
@@ -489,6 +510,14 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					preflightGate,
 					registry,
 					resumeFromState,
+					streamFnFactory: options.streamFnFactory
+						? (c) => options.streamFnFactory?.({
+							kind: "task-phase",
+							persona: c.persona,
+							phase: c.phase,
+							taskId: c.taskId,
+						})
+						: undefined,
 				});
 
 				// Capture model/provider from last task result (REVIEW FIX #1)
@@ -564,6 +593,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 								forgeRoot,
 								ctx,
 								registry,
+								streamFnFactory: options.streamFnFactory,
 							});
 						}
 
@@ -617,6 +647,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				forgeRoot,
 				ctx,
 				registry,
+				streamFnFactory: options.streamFnFactory,
 			});
 
 			const sprintEvent: Record<string, unknown> = {

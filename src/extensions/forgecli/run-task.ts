@@ -176,6 +176,13 @@ export interface RunTaskPipelineOptions {
 	resumeFromState?: RunTaskState;
 	/** Optional observer for phase events; called after emitEvent. */
 	onPhaseEvent?: (event: Record<string, unknown>) => void;
+	/**
+	 * Test-only seam (forge-cli#17). When set, each phase's `runForgeSubagent`
+	 * call receives `streamFn = streamFnFactory({...})`. Production callers
+	 * leave this undefined. See helpers/scripted-subagent.ts and
+	 * fixtures/sprint-fixture.ts.
+	 */
+	streamFnFactory?: (ctx: { kind: "task-phase"; persona: string; phase: string; taskId: string }) => import("@entelligentsia/pi-agent-core").StreamFn | undefined;
 }
 
 export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed";
@@ -730,6 +737,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				cwd,
 				exportTag: `${taskId}__${phase.role}`,
 				cacheSessionId,
+				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
 				onEvent: (event) => {
 					switch (event.type) {
 						case "turn_start": {

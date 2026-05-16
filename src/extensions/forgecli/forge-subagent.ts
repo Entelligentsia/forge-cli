@@ -28,6 +28,7 @@ import {
 	SessionManager,
 	type AgentSessionEvent,
 } from "@entelligentsia/pi-coding-agent";
+import type { StreamFn } from "@entelligentsia/pi-agent-core";
 import type { Message } from "@entelligentsia/pi-ai";
 import { buildProjectOrientation } from "./project-orientation.js";
 
@@ -98,6 +99,17 @@ export interface RunSubagentOptions {
 	 * stream; OpenAI: in-memory, request-scoped).
 	 */
 	cacheSessionId?: string;
+	/**
+	 * Test-only seam: when set, replaces the underlying pi Agent's `streamFn`
+	 * after `createAgentSession`. The agent loop still executes real tool calls
+	 * — only the LLM provider is replaced with a scripted fake. Used by
+	 * `test/helpers/scripted-subagent.ts` to drive ceremony / pipeline tests
+	 * without mocking `forge-subagent` itself. See forge-cli#17.
+	 *
+	 * MUST be `undefined` in production code. Setting this in production code
+	 * would silently route a real subagent dispatch through a fake provider.
+	 */
+	streamFn?: StreamFn;
 }
 
 // ── Persona discovery ─────────────────────────────────────────────────────
@@ -208,6 +220,11 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// provider per stream call.
 	if (cacheSessionId) {
 		session.agent.sessionId = cacheSessionId;
+	}
+
+	// Test-only seam — see RunSubagentOptions.streamFn doc (forge-cli#17).
+	if (opts.streamFn) {
+		session.agent.streamFn = opts.streamFn;
 	}
 
 	// ── terminate channel ────────────────────────────────────────────────
