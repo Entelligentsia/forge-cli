@@ -33,6 +33,7 @@ import { loadWorkflow } from "./loaders/workflow-loader.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
 import type { StreamFn } from "@entelligentsia/pi-agent-core";
 
 /**
@@ -672,6 +673,25 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			if (!emitResult.ok) {
 				ctx.ui.notify(
 					`⚠ forge:run-sprint — sprint-complete event emit failed: ${emitResult.stderr.trim()}`,
+					"warning",
+				);
+			}
+
+			// ── Emit synthetic sprint-collate-complete event (FORGE-S21-T05) ──
+			// Fires the in-process hook for post-sprint-hook.ts to consume.
+			// Best-effort: failure-to-emit notifies but does NOT halt — sprint is
+			// already complete at this point.
+			try {
+				const collateEvent: SprintCollateCompleteEvent = {
+					type: "sprint-collate-complete",
+					sprintId,
+					cwd,
+				};
+				await emitSyntheticEvent(collateEvent, ctx);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				ctx.ui.notify(
+					`⚠ forge:run-sprint — sprint-collate-complete synthetic event emit failed: ${e.message ?? "unknown"}`,
 					"warning",
 				);
 			}

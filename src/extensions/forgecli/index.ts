@@ -45,6 +45,7 @@ import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
+import { registerPostSprintHook } from "./hooks/post-sprint-hook.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -113,6 +114,14 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// The hook fires after Phase 4 closure via the `init-complete` synthetic
 	// event and triggers /forge:enhance --phase 1 --auto with idempotency.
 	registerPostInitHook(pi);
+
+	// ── post-sprint hook (FORGE-S21-T05) ─────────────────────────────────────
+	// Registered BEFORE registerRunSprint to prevent emit-before-consumer race.
+	// The hook fires after sprint collate phase via the `sprint-collate-complete`
+	// synthetic event and triggers /forge:enhance --phase 2 with idempotency.
+	// Sprint-ID regex gate ^[A-Z]+-S\d+$ prevents bug-fix collate runs from
+	// triggering sprint-level enhancement.
+	registerPostSprintHook(pi);
 
 	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
 	// Full 4-phase implementation — FORGE-S17-T02.

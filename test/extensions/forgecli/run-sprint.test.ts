@@ -944,8 +944,10 @@ describe("Test 10: Slice-2 emit smoke — sprint-complete event structure (Plan 
 		// IL10: dispatchSprintCeremony via runForgeSubagent, not sendKickoff
 		expect(source).toMatch(/dispatchSprintCeremony/);
 		expect(source).toMatch(/runForgeSubagent/);
-		// Sentinel: old event name must be gone
-		expect(source).not.toMatch(/sprint.collate.complete/);
+		// FORGE-S21-T05: sprint-collate-complete synthetic event IS emitted (T05 consumer wired)
+		// The store event remains type "sprint-complete"; the synthetic event is "sprint-collate-complete"
+		expect(source).toMatch(/sprint-collate-complete/);
+		expect(source).toMatch(/emitSyntheticEvent/);
 	});
 });
 

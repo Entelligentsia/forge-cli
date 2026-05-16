@@ -57,8 +57,28 @@ export interface InitCompleteEvent {
 	cwd: string;
 }
 
+/**
+ * Payload for the sprint-collate-complete synthetic event (FORGE-S21-T05).
+ *
+ * Emitted by run-sprint.ts after the sprint's collate phase completes
+ * successfully. Consumed by hooks/post-sprint-hook.ts to trigger
+ * /forge:enhance --phase 2.
+ *
+ * Sprint-ID shape gate: `^[A-Z]+-S\d+$` — bug IDs (FORGE-BUG-015,
+ * BUG-031, etc.) are excluded so bug-fix collate runs do NOT trigger
+ * sprint-level enhancement. Parity with forge/forge/hooks/post-sprint.cjs
+ * trigger regex `\S*-S\d+`.
+ */
+export interface SprintCollateCompleteEvent {
+	type: "sprint-collate-complete";
+	/** Sprint ID — must match ^[A-Z]+-S\d+$ */
+	sprintId: string;
+	/** Absolute path to the project root (process.cwd() at emit time). */
+	cwd: string;
+}
+
 /** Union of all synthetic event payloads. Extend here as new events are added. */
-export type SyntheticEvent = InitCompleteEvent;
+export type SyntheticEvent = InitCompleteEvent | SprintCollateCompleteEvent;
 
 /**
  * Handler signature for synthetic events.
