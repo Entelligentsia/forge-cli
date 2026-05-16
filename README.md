@@ -197,6 +197,8 @@ On any npm error or version mismatch the script logs a `[warn] registry check fa
 
 | Command                                    | Status              |
 |--------------------------------------------|---------------------|
+| Subagent audience relaxed to advisory      | Shipped (0.7.6)     |
+| Bundle plugin command markdowns in payload | Shipped (0.7.6)     |
 | Generic workflow engine (`/forge:run-workflow`) | Shipped (0.7.5) |
 | `/forge:run-task` orchestrator handler     | Shipped (0.7.5)     |
 | `/forge:run-sprint` orchestrator handler   | Shipped (0.7.5)     |
@@ -221,6 +223,7 @@ Track via [issues](https://github.com/Entelligentsia/forge-cli/issues).
 
 | Version | Headline |
 |---------|----------|
+| 0.7.6   | Fix: bundle plugin command markdowns (`/forge:health`, `/forge:config` no longer ENOENT). Subagent audience relaxed to advisory — users can invoke every chain step manually |
 | 0.7.5   | Workflow engine UX — phase narration in main viewport; chip strip stays compact |
 | 0.7.4   | (Superseded by 0.7.5) Thread-switcher chip-strip preview enrichment |
 | 0.7.3   | Workflow engine sessions in shared SessionRegistry — live thread-switcher chip strip |

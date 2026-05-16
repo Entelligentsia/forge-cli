@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6] — 2026-05-16
+
+### Fixed
+- `build-payload` now bundles the forge plugin command markdowns
+  (`forge/forge/commands/*.md`) into `dist/forge-payload/commands/`.
+  Without this step, `/forge:health`, `/forge:config`, and any other
+  command routed via `delegateMarkdownCommand` failed with `ENOENT`
+  against the installed payload.
+
+### Changed
+- `assertAudience` now treats `subagent` audience as advisory. Users
+  can invoke every chain step manually (`/forge:review-plan`,
+  `/forge:review-code`, `/forge:approve`, `/forge:commit`,
+  `/forge:validate`) from the CLI — orchestrators are an auto-mode
+  convenience, not the sole legitimate caller. `orchestrator-only`
+  workflows still refuse subagent invocation as before. Workflow
+  front-matter is unchanged; the audience field remains for
+  documentation.
+
 ## [0.7.5] — 2026-05-16
 
 ### Changed
