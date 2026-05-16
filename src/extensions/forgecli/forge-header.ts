@@ -12,13 +12,22 @@ import type { Component } from "@entelligentsia/pi-tui";
 const SPINNER_FRAMES = ["⠋", "⠙", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const LOGO_SEP_WIDTH = 46;
 
-const LOGO_LINES = [
+const LOGO_LINES_FORGE = [
 	"███████╗  ██████╗ ██████╗   ██████╗ ███████╗",
 	"██╔════╝ ██╔═══██╗██╔══██╗ ██╔════╝ ██╔════╝",
 	"█████╗   ██║   ██║██████╔╝ ██║  ███╗█████╗  ",
 	"██╔══╝   ██║   ██║██╔══██╗ ██║   ██║██╔══╝  ",
 	"██║      ╚██████╔╝██║  ██║ ╚██████╔╝███████╗",
 	"╚═╝       ╚═════╝ ╚═╝  ╚═╝  ╚═════╝ ╚══════╝",
+];
+
+const LOGO_LINES = [
+	"     ▄██                     ",
+	"   ▄█▀██   ▄▄▄▄▄▄▄   ▄▄▄▄▄▄▄ ",
+	" ▄█▀  ██  ██     ██ ██     ██",
+	"██▄▄▄▄██▄ ▀█▄▄▄▄▄██ ██▀▀▀▀▀▀▀",
+	"      ██         ██ ▀█▄▄▄▄▄█▀",
+	"      ▀▀  ▀▀▀▀▀▀▀▀           ",
 ];
 
 class ExpandableText extends Text {
@@ -76,7 +85,7 @@ class ForgeHeaderContainer extends Container implements ForgeHeader {
 			"  " +
 			theme.fg("dim", `(forgecli v${versions.cliVersion}, forge-plugin v${versions.bundledForgeVersion}, pi v${versions.piVersion})`);
 
-		const logoBlock = `${asciiLogo}\n${sep}\n${versionLine}`;
+		const logoBlock = `\n${asciiLogo}\n${sep}\n${versionLine}`;
 
 		const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
 		const dot = theme.fg("muted", " · ");
@@ -131,7 +140,6 @@ class ForgeHeaderContainer extends Container implements ForgeHeader {
 			0,
 		);
 
-		this.addChild(new Spacer(1));
 		this.addChild(this.loader);
 		this.addChild(new Spacer(1));
 		this.loader.start();
@@ -143,7 +151,6 @@ class ForgeHeaderContainer extends Container implements ForgeHeader {
 
 		this.loader.stop();
 		this.clear();
-		this.addChild(new Spacer(1));
 		this.addChild(this.builtInHeader);
 		this.addChild(new Spacer(1));
 		this.tui.requestRender();
