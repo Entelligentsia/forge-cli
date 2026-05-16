@@ -1,10 +1,13 @@
-// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03
+// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04
 //
 // Wires Forge's hook semantics onto pi's tool_call / tool_result events.
 // T02: Provides audit-only observation scaffolding.
 // T03: Adds enforcement — validates store-cli write payloads via store-validator,
 //      checks status transitions via transition-guard, and blocks on violation
 //      by returning { block: true, reason } from the tool_call handler.
+// T04: Adds typed synthetic event taxonomy (InitCompleteEvent) with
+//      onSyntheticEvent / emitSyntheticEvent for in-process hook dispatch
+//      that bridges deterministic TS handler phases to registered hook handlers.
 //
 // Audit logging: set FORGE_HOOK_AUDIT=1 to write to .forge/logs/hooks.log.
 // In enforcement mode (default): violations are blocked.
@@ -19,6 +22,7 @@ import * as path from "node:path";
 import type {
 	BashToolCallEvent,
 	ExtensionAPI,
+	ExtensionCommandContext,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
@@ -27,6 +31,92 @@ import { isToolCallEventType } from "@entelligentsia/pi-coding-agent";
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
+
+// ── Synthetic event taxonomy (FORGE-S21-T04) ─────────────────────────────────
+//
+// In-process synthetic events bridge deterministic TS handler phases to
+// registered hook handlers. Unlike pi's tool_call/tool_result events (which
+// respond to LLM tool invocations), synthetic events are emitted by forge-cli
+// TS handler code directly (e.g. forge-init.ts after Phase 4 closure).
+//
+// Design constraints:
+//   - No external dependencies. Simple Map-based dispatcher.
+//   - Handlers receive the event payload AND the ExtensionCommandContext from
+//     the emitting phase, so they can call ctx.ui.notify/setStatus.
+//   - Emit is sequential (await each handler). Error in one handler is caught
+//     per handler; does not abort remaining handlers.
+//   - Registration is module-level (singleton). Handlers persist for the
+//     lifetime of the extension process (which is the pi session lifetime).
+
+/** Payload for the init-complete synthetic event. */
+export interface InitCompleteEvent {
+	type: "init-complete";
+	/** Project prefix from .forge/config.json project.prefix */
+	projectPrefix: string;
+	/** Absolute path to the project root (process.cwd() at init time). */
+	cwd: string;
+}
+
+/** Union of all synthetic event payloads. Extend here as new events are added. */
+export type SyntheticEvent = InitCompleteEvent;
+
+/**
+ * Handler signature for synthetic events.
+ * ctx is the ExtensionCommandContext of the emitting phase — callers must
+ * forward the context object they received from pi at handler invocation time.
+ */
+export type SyntheticEventHandler<T extends SyntheticEvent = SyntheticEvent> = (
+	event: T,
+	ctx: ExtensionCommandContext,
+) => void | Promise<void>;
+
+// Module-level registry. Pi extension processes are single-session; the
+// registry lives for the lifetime of the process.
+const _syntheticHandlers = new Map<string, SyntheticEventHandler<SyntheticEvent>[]>();
+
+/**
+ * Register a handler for a synthetic event type.
+ * Handlers are called in registration order when emitSyntheticEvent fires.
+ * Exported for use by hooks/post-init-hook.ts and future hook modules.
+ */
+export function onSyntheticEvent<T extends SyntheticEvent>(
+	eventType: T["type"],
+	handler: SyntheticEventHandler<T>,
+): void {
+	const existing = _syntheticHandlers.get(eventType) ?? [];
+	existing.push(handler as SyntheticEventHandler<SyntheticEvent>);
+	_syntheticHandlers.set(eventType, existing);
+}
+
+/**
+ * Emit a synthetic event, invoking all registered handlers sequentially.
+ * Each handler error is caught and logged to stderr (fail-open) — a
+ * misbehaving hook MUST NOT block the emitting phase.
+ */
+export async function emitSyntheticEvent(event: SyntheticEvent, ctx: ExtensionCommandContext): Promise<void> {
+	const handlers = _syntheticHandlers.get(event.type) ?? [];
+	for (const handler of handlers) {
+		try {
+			await handler(event, ctx);
+		} catch (err: unknown) {
+			// Fail-open: log to stderr, never propagate.
+			const msg = err instanceof Error ? err.message : String(err);
+			try {
+				process.stderr.write(`[hook-dispatcher] synthetic event handler error (${event.type}): ${msg}\n`);
+			} catch {
+				// even stderr write failing should not crash the process
+			}
+		}
+	}
+}
+
+/**
+ * Reset the synthetic handler registry.
+ * Exported for use in unit tests — do NOT call in production code.
+ */
+export function _resetSyntheticHandlers(): void {
+	_syntheticHandlers.clear();
+}
 
 // ── Exported types — used by T03 to layer validation ─────────────────────────
 

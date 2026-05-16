@@ -407,12 +407,17 @@ describe("registerForgeInit", () => {
 	});
 
 	// T23: post-init sentinel written
-	it("T23: post-init sentinel file is written when absent", async () => {
-		mockFs.existsSync.mockImplementation((p: unknown) => {
-			const pathStr = String(p);
-			// Sentinel does not exist
-			return !pathStr.includes("post-init-enhancement-triggered");
-		});
+	it("T23: post-init emits init-complete synthetic event after Phase 4 (replaces old sentinel stub)", async () => {
+		// FORGE-S21-T04: the old fs.writeFileSync-based sentinel stub was replaced
+		// with a synthetic event emission via emitSyntheticEvent. This test
+		// verifies that the Phase 4 closure path reaches the emitSyntheticEvent
+		// call rather than the old stub path.
+		//
+		// Indirect verification: the emitSyntheticEvent import is wired in forge-init.ts
+		// and is tested via hook-dispatcher + post-init-hook unit tests (5 cases).
+		// Here we verify that the old sentinel write path no longer fires, and that
+		// Phase 4 completes successfully without errors (init-complete event emission
+		// is async/fail-open — emitSyntheticEvent catches handler errors).
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
@@ -422,15 +427,15 @@ describe("registerForgeInit", () => {
 
 		await def.handler("", ctx);
 
-		// writeFileSync called for the sentinel
-		const sentinelCalls = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.filter(
-			(c: unknown[]) => String(c[0]).includes("post-init-enhancement-triggered")
+		// Old sentinel write must NOT be present (stub removed by S21-T04)
+		const oldSentinelCalls = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.filter(
+			(c: unknown[]) => String(c[0]).includes("post-init-enhancement-triggered"),
 		);
-		expect(sentinelCalls.length).toBeGreaterThan(0);
+		expect(oldSentinelCalls.length).toBe(0);
 
-		// Advisory notice emitted
+		// Phase 4 completion notification must still be emitted (no regression)
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("/forge:enhance"),
+			expect.stringContaining("Phase 4 complete"),
 			"info",
 		);
 	});

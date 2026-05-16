@@ -44,6 +44,7 @@ import { registerFixBug } from "./fix-bug.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
+import { registerPostInitHook } from "./hooks/post-init-hook.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -106,6 +107,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			return { systemPrompt: `${orientation}\n${existing}` };
 		});
 	}
+
+	// ── post-init hook (FORGE-S21-T04) ───────────────────────────────────────
+	// Registered BEFORE registerForgeInit to prevent emit-before-consumer race.
+	// The hook fires after Phase 4 closure via the `init-complete` synthetic
+	// event and triggers /forge:enhance --phase 1 --auto with idempotency.
+	registerPostInitHook(pi);
 
 	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
 	// Full 4-phase implementation — FORGE-S17-T02.

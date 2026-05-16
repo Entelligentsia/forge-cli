@@ -36,6 +36,7 @@ import {
 } from "./init-context.js";
 import { deleteInitProgress, readInitProgress, writeInitProgress } from "./init-progress.js";
 import { getRefreshKbLinksHandler } from "./refresh-kb-links.js";
+import { emitSyntheticEvent } from "./hook-dispatcher.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -1219,20 +1220,23 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				}
 			}
 
-			// ── post-init sentinel ────────────────────────────────────────────
-			const sentinelPath = path.join(cwd, ".forge", "cache", "post-init-enhancement-triggered");
-			if (!fs.existsSync(sentinelPath)) {
+			// ── post-init: emit synthetic event for registered hooks (FORGE-S21-T04) ──
+			// Replaces the old sentinel-writing stub. The init-complete event is
+			// consumed by hooks/post-init-hook.ts which handles idempotency,
+			// materialization-marker checks, audience gates, and dispatch.
+			// Errors inside hooks are caught by emitSyntheticEvent — fail-open.
+			{
+				let projectPrefixForHook = "";
 				try {
-					fs.mkdirSync(path.dirname(sentinelPath), { recursive: true });
-					fs.writeFileSync(sentinelPath, new Date().toISOString() + "\n", "utf8");
-					ctx.ui.notify(
-						"〇 /forge:enhance — full implementation in S18+. " +
-							"Sentinel written; auto-trigger will fire when it lands.",
-						"info",
-					);
+					const cfgRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
+					const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
+					const proj = cfg.project as Record<string, unknown> | undefined;
+					if (proj && typeof proj.prefix === "string") projectPrefixForHook = proj.prefix;
 				} catch {
-					// non-fatal
+					// Non-fatal: if config read fails, emit with empty prefix
+					// (hook will write sentinel under post-init-fired-.json)
 				}
+				await emitSyntheticEvent({ type: "init-complete", projectPrefix: projectPrefixForHook, cwd }, ctx);
 			}
 
 			// ── Report ────────────────────────────────────────────────────────
