@@ -325,6 +325,24 @@ if (fs.existsSync(schemasSrc)) {
 	console.warn("build-payload: forge/forge/schemas/ not found — skipping");
 }
 
+// 2e2: commands/ — forge/forge/commands/*.md (plugin slash-command markdowns
+// like health.md, config.md, status.md). delegateMarkdownCommand reads them
+// from <forgeRoot>/commands/<name>.md at runtime. Distinct from
+// .base-pack/commands/ which holds per-project sprint workflow commands.
+const pluginCommandsSrc = path.join(forgeRoot, "commands");
+const pluginCommandsDest = path.join(outDir, "commands");
+fs.mkdirSync(pluginCommandsDest, { recursive: true });
+
+if (fs.existsSync(pluginCommandsSrc)) {
+	const cmdFiles = fs.readdirSync(pluginCommandsSrc).filter((f) => f.endsWith(".md"));
+	for (const file of cmdFiles) {
+		copyFile(path.join(pluginCommandsSrc, file), path.join(pluginCommandsDest, file));
+	}
+	console.log(`build-payload: commands/ — ${cmdFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/commands/ not found — skipping");
+}
+
 // 2f: .claude-plugin/ — plugin.json
 const claudePluginSrc = path.join(forgeRoot, ".claude-plugin");
 const claudePluginDest = path.join(outDir, ".claude-plugin");
