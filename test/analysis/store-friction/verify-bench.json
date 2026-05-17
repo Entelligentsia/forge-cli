@@ -1,0 +1,12 @@
+{
+  "n_tx": 107,
+  "n_ops": 894,
+  "n_replayable": 837,
+  "n_force_baseline": 12,
+  "baseline_pass_now_pass": 508,
+  "baseline_pass_now_fail": 133,
+  "baseline_fail_now_pass": 22,
+  "baseline_fail_now_fail": 174,
+  "baseline_rate": 0.23416965352449223,
+  "current_rate": 0.36678614097968937
+}

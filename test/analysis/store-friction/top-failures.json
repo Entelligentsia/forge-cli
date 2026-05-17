@@ -1,0 +1,376 @@
+{
+  "total": 927,
+  "errors": 202,
+  "errRate": 0.21790722761596548,
+  "byChannel": {
+    "bash-store-cli": 894,
+    "bash-collate": 24,
+    "bash-manage-config": 9
+  },
+  "errByChannel": {
+    "bash-store-cli": 201,
+    "bash-collate": 1
+  },
+  "topSubcommandFailures": [
+    {
+      "key": "bash-store-cli::get",
+      "ops": 39,
+      "errors": 35,
+      "errRate": 0.8974358974358975
+    },
+    {
+      "key": "bash-store-cli::emit",
+      "ops": 168,
+      "errors": 66,
+      "errRate": 0.39285714285714285
+    },
+    {
+      "key": "bash-store-cli::update-status",
+      "ops": 170,
+      "errors": 59,
+      "errRate": 0.34705882352941175
+    },
+    {
+      "key": "bash-store-cli::list",
+      "ops": 26,
+      "errors": 8,
+      "errRate": 0.3076923076923077
+    },
+    {
+      "key": "bash-store-cli::set-bug-summary",
+      "ops": 37,
+      "errors": 10,
+      "errRate": 0.2702702702702703
+    },
+    {
+      "key": "bash-store-cli::write",
+      "ops": 9,
+      "errors": 1,
+      "errRate": 0.1111111111111111
+    },
+    {
+      "key": "bash-store-cli::set-summary",
+      "ops": 69,
+      "errors": 7,
+      "errRate": 0.10144927536231885
+    },
+    {
+      "key": "bash-store-cli::describe",
+      "ops": 69,
+      "errors": 4,
+      "errRate": 0.057971014492753624
+    },
+    {
+      "key": "bash-collate::?",
+      "ops": 24,
+      "errors": 1,
+      "errRate": 0.041666666666666664
+    },
+    {
+      "key": "bash-store-cli::nlp",
+      "ops": 28,
+      "errors": 1,
+      "errRate": 0.03571428571428571
+    },
+    {
+      "key": "bash-store-cli::read",
+      "ops": 187,
+      "errors": 3,
+      "errRate": 0.016042780748663103
+    },
+    {
+      "key": "bash-store-cli::--help",
+      "ops": 62,
+      "errors": 0,
+      "errRate": 0.0
+    },
+    {
+      "key": "bash-manage-config::?",
+      "ops": 9,
+      "errors": 0,
+      "errRate": 0.0
+    },
+    {
+      "key": "bash-store-cli::2>/dev/null",
+      "ops": 8,
+      "errors": 0,
+      "errRate": 0.0
+    },
+    {
+      "key": "bash-store-cli::|",
+      "ops": 7,
+      "errors": 0,
+      "errRate": 0.0
+    }
+  ],
+  "errKeys": [
+    [
+      "other",
+      75
+    ],
+    [
+      "unknown_subcommand:get",
+      39
+    ],
+    [
+      "missing_required_field:role",
+      16
+    ],
+    [
+      "missing_required_field:iteration",
+      16
+    ],
+    [
+      "missing_required_field:action",
+      15
+    ],
+    [
+      "missing_required_field:sprintId",
+      14
+    ],
+    [
+      "missing_required_field:eventId",
+      13
+    ],
+    [
+      "missing_required_field:phase",
+      12
+    ],
+    [
+      "missing_required_field:type",
+      11
+    ],
+    [
+      "entity_or_path_not_found",
+      11
+    ],
+    [
+      "unknown_entity:type",
+      8
+    ],
+    [
+      "illegal_transition:task:plan-approved->implemented",
+      7
+    ],
+    [
+      "illegal_transition:bug:verified->fixed",
+      6
+    ],
+    [
+      "missing_required_field:taskId",
+      5
+    ],
+    [
+      "missing_required_field:Command",
+      4
+    ],
+    [
+      "illegal_transition:task:plan-revision-required->planned",
+      4
+    ],
+    [
+      "missing_required_field:objective",
+      4
+    ],
+    [
+      "illegal_transition:task:plan-approved->planned",
+      3
+    ],
+    [
+      "illegal_transition:task:code-revision-required->implemented",
+      3
+    ],
+    [
+      "illegal_transition:task:code-revision-required->implementing",
+      3
+    ],
+    [
+      "illegal_transition:task:code-revision-required->review-approved",
+      3
+    ],
+    [
+      "missing_required_field:written_at",
+      3
+    ],
+    [
+      "illegal_transition:task:planned->review-approved",
+      2
+    ],
+    [
+      "illegal_transition:task:plan-revision-required->draft",
+      2
+    ],
+    [
+      "illegal_transition:task:plan-revision-required->plan-approved",
+      2
+    ],
+    [
+      "unknown_subcommand:describe",
+      2
+    ],
+    [
+      "illegal_transition:bug:verified->approved",
+      2
+    ],
+    [
+      "illegal_transition:task:review-approved->implemented",
+      1
+    ],
+    [
+      "illegal_transition:task:review-approved->implementing",
+      1
+    ],
+    [
+      "missing_required_field:status",
+      1
+    ],
+    [
+      "missing_required_field:event",
+      1
+    ],
+    [
+      "missing_required_field:eventType",
+      1
+    ],
+    [
+      "illegal_transition:task:plan-approved->review-approved",
+      1
+    ],
+    [
+      "illegal_transition:task:plan-approved->in-progress",
+      1
+    ],
+    [
+      "missing_required_field:task",
+      1
+    ],
+    [
+      "missing_required_field:taskCompleted",
+      1
+    ],
+    [
+      "illegal_transition:task:code-revision-required->plan-approved",
+      1
+    ],
+    [
+      "illegal_transition:task:approved->completed",
+      1
+    ],
+    [
+      "illegal_transition:task:approved->in_progress",
+      1
+    ],
+    [
+      "illegal_transition:sprint:planning->completed",
+      1
+    ],
+    [
+      "illegal_transition:bug:fixed->verified",
+      1
+    ],
+    [
+      "illegal_transition:bug:verified->review-approved",
+      1
+    ],
+    [
+      "illegal_transition:bug:fixed->plan-approved",
+      1
+    ],
+    [
+      "missing_required_field:findings",
+      1
+    ]
+  ],
+  "preflightPattern": {
+    "write_without_tpl_or_describe": 13,
+    "reactive_template_or_describe_after_failure": 10,
+    "preflight_template_or_describe": 36,
+    "no_write_in_transcript": 50
+  },
+  "retryEvents": 115,
+  "retryByErrKey": {
+    "other": 62,
+    "illegal_transition:task:planned->review-approved": 2,
+    "missing_required_field:sprintId": 14,
+    "missing_required_field:role": 16,
+    "missing_required_field:action": 15,
+    "missing_required_field:iteration": 16,
+    "missing_required_field:type": 11,
+    "illegal_transition:task:review-approved->implemented": 1,
+    "illegal_transition:task:review-approved->implementing": 1,
+    "missing_required_field:eventId": 13,
+    "missing_required_field:status": 1,
+    "missing_required_field:taskId": 5,
+    "missing_required_field:phase": 12,
+    "entity_or_path_not_found": 7,
+    "missing_required_field:event": 1,
+    "missing_required_field:eventType": 1,
+    "illegal_transition:task:plan-approved->implemented": 7,
+    "illegal_transition:task:plan-approved->in-progress": 1,
+    "missing_required_field:Command": 4,
+    "missing_required_field:task": 1,
+    "missing_required_field:taskCompleted": 1,
+    "illegal_transition:task:plan-revision-required->plan-approved": 2,
+    "illegal_transition:task:plan-revision-required->planned": 2,
+    "illegal_transition:task:plan-revision-required->draft": 1,
+    "illegal_transition:task:code-revision-required->implementing": 2,
+    "illegal_transition:task:code-revision-required->review-approved": 2,
+    "unknown_entity:type": 2,
+    "illegal_transition:sprint:planning->completed": 1,
+    "missing_required_field:objective": 4,
+    "missing_required_field:written_at": 3,
+    "illegal_transition:bug:verified->fixed": 1,
+    "missing_required_field:findings": 1
+  },
+  "threeArgWriteOccurrences": 0,
+  "emitBareSprintOccurrences": 168,
+  "byPersona": [
+    [
+      "engineer",
+      363,
+      77
+    ],
+    [
+      "supervisor",
+      234,
+      56
+    ],
+    [
+      "qa-engineer",
+      60,
+      13
+    ],
+    [
+      "architect",
+      92,
+      24
+    ],
+    [
+      "collator",
+      53,
+      15
+    ],
+    [
+      "bug-fixer",
+      125,
+      17
+    ]
+  ],
+  "byModel": [
+    [
+      "glm-5.1:cloud",
+      862,
+      188
+    ],
+    [
+      "gemma4:31b-cloud",
+      27,
+      8
+    ],
+    [
+      "claude-haiku-4-5",
+      38,
+      6
+    ]
+  ]
+}
