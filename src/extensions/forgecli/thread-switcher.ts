@@ -439,7 +439,40 @@ function isEsc(d: string): boolean {
 
 // ── Registrar ───────────────────────────────────────────────────────────────
 
+/**
+ * Custom renderer for the `forge:turn` chat-history rows we append on every
+ * subagent turn_end. Paints the `[displayRole]` prefix accent + bold, the
+ * `tN` marker dim, and leaves the preview body in the default text colour.
+ */
+function registerTurnMessageRenderer(pi: ExtensionAPI): void {
+	pi.registerMessageRenderer<{ displayRole?: string; turn?: number }>(
+		"forge:turn",
+		(message, _opts, theme) => {
+			const rawContent =
+				typeof message.content === "string"
+					? message.content
+					: message.content
+						.map((c) => ((c as { text?: string }).text ?? ""))
+						.join("");
+			const m = rawContent.match(/^\[([^\]]+)\]\s+t(\d+)\s+(.*)$/);
+			let line: string;
+			if (m) {
+				const [, role, turn, body] = m;
+				line = `${theme.bold(theme.fg("accent", `[${role}]`))} ${theme.fg("dim", `t${turn}`)} ${body}`;
+			} else {
+				line = rawContent;
+			}
+			return {
+				render: (_w: number) => [line],
+				invalidate: () => {},
+				setInvalidationCallback: () => {},
+			};
+		},
+	);
+}
+
 export function registerThreadSwitcher(pi: ExtensionAPI): void {
+	registerTurnMessageRenderer(pi);
 	const registry = getSessionRegistry();
 	let stripRef: ChipStripComponent | undefined;
 	let tailRef: TailViewComponent | undefined;
@@ -499,12 +532,31 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			);
 
 			// Bubble each subagent's turn-complete event into the parent
-			// (main) viewport as an attributed notification. Users see live
-			// activity from every subagent in one place, identified by
-			// displayRole, regardless of which chip (if any) is focused.
+			// (main) viewport as a new custom message — pi APPENDS one row per
+			// call rather than replacing a single notification line. Users see
+			// every subagent's turns stream into the main chat history in
+			// order, identified by `[displayRole]`. triggerTurn:false so no
+			// LLM round-trip; the message is render-only.
 			registry.on("turn", (evt) => {
-				const body = evt.preview ? `"${evt.preview}"` : (evt.thinking ? `✱ ${evt.thinking}` : "(silent turn)");
-				ctx.ui.notify(`[${evt.displayRole}] t${evt.turn} ${body}`, "info");
+				const body = evt.preview
+					? `"${evt.preview}"`
+					: evt.thinking
+					? `✱ ${evt.thinking}`
+					: "(silent turn)";
+				try {
+					pi.sendMessage(
+						{
+							customType: "forge:turn",
+							content: `[${evt.displayRole}] t${evt.turn} ${body}`,
+							display: true,
+							details: { ...evt },
+						},
+						{ triggerTurn: false },
+					);
+				} catch {
+					// pi.sendMessage may throw if called before session is
+					// fully ready or if the session has shut down — non-fatal.
+				}
 			});
 
 			mounted = true;
