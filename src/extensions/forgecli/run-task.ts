@@ -29,7 +29,6 @@ import {
 	argHint as fmtArgHint,
 	extractThinkingOneLiner,
 	fmtPhaseSummary,
-	fmtTokenMeter,
 	readUsage,
 	resultShape,
 	RISKY_TAG,
@@ -711,8 +710,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// marker at turn_end (we don't know it's a batch until we see >1 start).
 		let toolsThisTurn = 0;
 
+		// Per-line prefix omits the token meter — token usage is rendered as a
+		// sticky footer at the bottom of the tail view (driven by
+		// registry.setPhaseUsage + viewport-theme footer). Keeps each tail line
+		// compact and avoids redundant numbers on every line.
 		const tailPrefix = () =>
-			`[${phase.role} ${formatTime(Date.now())} t${turn} ${fmtTokenMeter(cumUsage)}]`;
+			`[${phase.role} ${formatTime(Date.now())} t${turn}]`;
 		const extractErrorSummary = (result: unknown): string => {
 			const raw =
 				typeof result === "string"
@@ -761,12 +764,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							break;
 						}
 						case "turn_end": {
-							// Accumulate token usage before we render anything so the
-							// prefix on these emitted lines reflects current burn.
+							// Accumulate cumulative phase usage for the sticky footer.
 							const delta = readUsage(event.message);
 							cumUsage.input += delta.input;
 							cumUsage.output += delta.output;
 							cumUsage.cacheRead += delta.cacheRead;
+							registry.setPhaseUsage(taskId, phase.role, cumUsage);
 
 							// Surface model thinking as a one-liner — diagnostic value
 							// is usually high and otherwise hidden from the viewport.

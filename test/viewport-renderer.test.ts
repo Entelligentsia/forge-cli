@@ -16,6 +16,7 @@ import {
 	argHint,
 	extractThinkingOneLiner,
 	fmtPhaseSummary,
+	fmtTokenFooter,
 	fmtTokenMeter,
 	readUsage,
 	resultShape,
@@ -253,6 +254,22 @@ describe("fmtPhaseSummary", () => {
 			usage: { input: 100, output: 50, cacheRead: 0 },
 		});
 		expect(out.includes("model=")).toBe(false);
+	});
+});
+
+describe("fmtTokenFooter", () => {
+	it("returns empty for undefined usage", () => {
+		expect(fmtTokenFooter(undefined)).toBe("");
+	});
+
+	it("omits cache when zero", () => {
+		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 0 })).toBe("↑1.44M ↓6.5k");
+	});
+
+	it("includes cache when nonzero", () => {
+		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 320_000 })).toBe(
+			"↑1.44M ↓6.5k ⇪320k",
+		);
 	});
 });
 

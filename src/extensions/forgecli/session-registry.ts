@@ -41,6 +41,16 @@ export interface PhaseSummary {
 	 * Updated on every setTurnPreview call.
 	 */
 	lastTurnPreview?: string;
+	/**
+	 * Cumulative token usage across all assistant turns in this phase.
+	 * Populated by run-task on every turn_end. Drives the sticky token
+	 * footer rendered at the bottom of the tail view.
+	 */
+	usage?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+	};
 }
 
 export interface ToolEventRecord {
@@ -230,6 +240,21 @@ export class SessionRegistry extends EventEmitter {
 			if (s.phases[i].role === phaseRole) return s.phases[i];
 		}
 		return undefined;
+	}
+
+	setPhaseUsage(
+		taskId: string,
+		phaseRole: string,
+		usage: { input: number; output: number; cacheRead: number },
+	): void {
+		const p = this.findPhase(taskId, phaseRole);
+		if (!p) return;
+		p.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead };
+		const s = this.sessions.get(taskId);
+		if (s) s.updatedAt = Date.now();
+		// Reuse the "tail" event so TailViewComponent re-renders the footer
+		// without needing a new event channel.
+		this.emit("tail", { taskId, phaseRole });
 	}
 
 	appendTail(taskId: string, phaseRole: string, line: string, opts?: { warning?: boolean }): void {

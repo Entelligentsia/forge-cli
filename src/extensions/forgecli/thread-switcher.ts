@@ -43,7 +43,8 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
-import { paintTailLine } from "./viewport-theme.js";
+import { fmtTokenFooter } from "./viewport-renderer.js";
+import { paintFooterLine, paintTailLine } from "./viewport-theme.js";
 
 const WIDGET_KEY = "forge:thread-switcher";
 
@@ -83,16 +84,24 @@ class TailViewComponent implements Component {
 
 	render(width: number): string[] {
 		const lines = this.registry.getTailLines(this.taskId, this.phaseRole);
-		if (lines.length === 0) {
-			return [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)];
-		}
-		// Paint each plain-text tail line with the current theme. Truncate AFTER
-		// painting because truncateToWidth is ANSI-aware (visibleWidth strips
-		// SGR), so width math stays correct.
-		return lines.map((line) => {
-			const painted = paintTailLine(line, this.theme);
-			return visibleWidth(painted) <= width ? painted : truncateToWidth(painted, width);
-		});
+		const session = this.registry.getSession(this.taskId);
+		const phase = session?.phases.find((p) => p.role === this.phaseRole);
+		const footerText = fmtTokenFooter(phase?.usage);
+
+		const bodyLines = lines.length === 0
+			? [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)]
+			: lines.map((line) => {
+				const painted = paintTailLine(line, this.theme);
+				return visibleWidth(painted) <= width ? painted : truncateToWidth(painted, width);
+			});
+
+		if (!footerText) return bodyLines;
+
+		// Footer = right-aligned token summary on its own line. Sits at the
+		// bottom of the tail view (right above the prompt) when pi-tui autoscroll
+		// is at the tail end, which is the default after new output.
+		const footer = paintFooterLine(footerText, width, this.theme);
+		return [...bodyLines, footer];
 	}
 
 	invalidate(): void {

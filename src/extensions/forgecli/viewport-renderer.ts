@@ -174,6 +174,17 @@ export function fmtPhaseSummary(opts: {
 	return `▣ ${role}: turns=${turns} tools=${tools}${errPart} ${fmtTokenMeter(usage)} wall=${fmtWall(wallSeconds)}${modelPart}`;
 }
 
+/**
+ * Build the sticky footer line shown at the bottom of the tail view.
+ * Includes cacheRead only when nonzero — most non-Anthropic providers (ollama,
+ * glm, etc.) return 0 for cache fields and we don't want the noise.
+ */
+export function fmtTokenFooter(usage: UsageDelta | undefined): string {
+	if (!usage) return "";
+	const cache = usage.cacheRead > 0 ? ` ⇪${humanTokens(usage.cacheRead)}` : "";
+	return `↑${humanTokens(usage.input)} ↓${humanTokens(usage.output)}${cache}`;
+}
+
 function fmtWall(seconds: number): string {
 	if (seconds < 60) return `${seconds}s`;
 	const m = Math.floor(seconds / 60);

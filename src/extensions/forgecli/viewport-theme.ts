@@ -31,6 +31,7 @@
 //   `─── phase X/Y …`            → accent bold
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 /**
  * Parse one tail line into prefix + body, then colour both halves.
@@ -53,6 +54,18 @@ export function paintTailLine(line: string, theme: Theme | undefined): string {
 	const paintedPrefix = theme.fg("dim", prefix);
 	const paintedBody = paintBody(body, theme);
 	return `${paintedPrefix}${paintedBody}`;
+}
+
+/**
+ * Build the sticky token-meter footer. Right-aligned to the viewport width,
+ * preceded by a thin separator line so it visually anchors to the prompt.
+ */
+export function paintFooterLine(text: string, width: number, theme: Theme | undefined): string {
+	const w = Math.max(visibleWidth(text), 0);
+	const padLen = Math.max(0, width - w);
+	const pad = " ".repeat(padLen);
+	if (!theme) return `${pad}${text}`;
+	return `${pad}${theme.bold(theme.fg("accent", text))}`;
 }
 
 function paintBody(body: string, theme: Theme): string {

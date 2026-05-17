@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { paintTailLine } from "../src/extensions/forgecli/viewport-theme.js";
+import { paintFooterLine, paintTailLine } from "../src/extensions/forgecli/viewport-theme.js";
 
 interface StubCall {
 	method: string;
@@ -146,5 +146,30 @@ describe("paintTailLine", () => {
 		const { theme } = makeStub();
 		const out = paintTailLine("✱ no prefix", theme as never);
 		expect(out).toMatch(/<i><thinkingText>✱ no prefix<\/thinkingText><\/i>/);
+	});
+});
+
+describe("paintFooterLine", () => {
+	it("returns plain right-padded text when theme undefined", () => {
+		const out = paintFooterLine("↑1.44M ↓6.5k", 30, undefined);
+		expect(out.length).toBe(30);
+		expect(out.endsWith("↑1.44M ↓6.5k")).toBe(true);
+		expect(out.startsWith(" ")).toBe(true);
+	});
+
+	it("paints text bold + accent and right-aligns", () => {
+		const { theme } = makeStub();
+		const out = paintFooterLine("↑1.44M ↓6.5k", 30, theme as never);
+		expect(out).toContain("<b><accent>↑1.44M ↓6.5k</accent></b>");
+		// padding still present before the painted text
+		expect(out.startsWith(" ")).toBe(true);
+	});
+
+	it("handles width smaller than text without overflow padding", () => {
+		const { theme } = makeStub();
+		const out = paintFooterLine("↑1.44M ↓6.5k", 5, theme as never);
+		// width < visibleWidth ⇒ no leading padding, but text still rendered
+		expect(out.includes("<b><accent>↑1.44M ↓6.5k</accent></b>")).toBe(true);
+		expect(out.startsWith(" ")).toBe(false);
 	});
 });
