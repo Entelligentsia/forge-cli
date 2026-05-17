@@ -71,15 +71,15 @@
     "js-yaml"
   ],
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "file:./vendor-pi/earendil-works-pi-coding-agent-0.74.1.tgz",
-    "@earendil-works/pi-agent-core": "file:./vendor-pi/earendil-works-pi-agent-core-0.74.1.tgz",
-    "@earendil-works/pi-ai": "file:./vendor-pi/earendil-works-pi-ai-0.74.1.tgz",
-    "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.74.1.tgz",
+    "@earendil-works/pi-coding-agent": "file:./vendor-pi/earendil-works-pi-coding-agent-0.74.2.tgz",
+    "@earendil-works/pi-agent-core": "file:./vendor-pi/earendil-works-pi-agent-core-0.74.2.tgz",
+    "@earendil-works/pi-ai": "file:./vendor-pi/earendil-works-pi-ai-0.74.2.tgz",
+    "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.74.2.tgz",
     "js-yaml": "^4.1.0",
     "typebox": "^1.1.24"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "0.74.1"
+    "@earendil-works/pi-coding-agent": "0.74.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
