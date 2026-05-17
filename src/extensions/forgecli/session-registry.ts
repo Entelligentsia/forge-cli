@@ -242,6 +242,24 @@ export class SessionRegistry extends EventEmitter {
 		return undefined;
 	}
 
+	/**
+	 * Sum of `phase.usage` across every phase of every active session in the
+	 * registry. Drives the top-level `Σ ↑X ↓Y ⇪Z` meter so users see the
+	 * process-wide token burn regardless of which subagent is foregrounded.
+	 */
+	getAggregateUsage(): { input: number; output: number; cacheRead: number } {
+		const agg = { input: 0, output: 0, cacheRead: 0 };
+		for (const s of this.sessions.values()) {
+			for (const p of s.phases) {
+				if (!p.usage) continue;
+				agg.input += p.usage.input;
+				agg.output += p.usage.output;
+				agg.cacheRead += p.usage.cacheRead;
+			}
+		}
+		return agg;
+	}
+
 	setPhaseUsage(
 		taskId: string,
 		phaseRole: string,
@@ -252,9 +270,10 @@ export class SessionRegistry extends EventEmitter {
 		p.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead };
 		const s = this.sessions.get(taskId);
 		if (s) s.updatedAt = Date.now();
-		// Reuse the "tail" event so TailViewComponent re-renders the footer
-		// without needing a new event channel.
+		// "tail" → TailViewComponent re-renders the per-phase footer.
+		// "change" → ChipStripComponent re-renders the aggregate Σ meter.
 		this.emit("tail", { taskId, phaseRole });
+		this.emit("change", taskId);
 	}
 
 	appendTail(taskId: string, phaseRole: string, line: string, opts?: { warning?: boolean }): void {

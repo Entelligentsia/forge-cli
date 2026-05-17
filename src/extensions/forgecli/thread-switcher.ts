@@ -253,15 +253,23 @@ class ChipStripComponent implements Component {
 		const spinPart = spin ? `  ${spin}` : "";
 		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
+		// Top-level aggregate token meter — sum of phase.usage across every
+		// session in the registry. Shown only when nonzero so cold start UI
+		// stays clean. Acts as the "Σ" panel users see regardless of which
+		// subagent is foregrounded.
+		const aggText = fmtTokenFooter(this.registry.getAggregateUsage());
+		const aggPart = aggText ? `  ${this.theme.bold(this.theme.fg("accent", `Σ ${aggText}`))}` : "";
+
 		const fixedWidth =
 			visibleWidth(prefix) +
 			visibleWidth(chipsLine) +
 			visibleWidth(spinPart) +
+			visibleWidth(aggPart) +
 			visibleWidth(hint);
 		const previewBudget = Math.max(0, width - fixedWidth);
 		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
 
-		let line = `${prefix}${chipsLine}${spinPart}${preview}${hint}`;
+		let line = `${prefix}${chipsLine}${spinPart}${preview}${aggPart}${hint}`;
 		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
 		return [line];
 	}

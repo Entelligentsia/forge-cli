@@ -25,16 +25,8 @@ import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
-import {
-	argHint as fmtArgHint,
-	extractThinkingOneLiner,
-	fmtPhaseSummary,
-	readUsage,
-	resultShape,
-	RISKY_TAG,
-	toolGlyph,
-	type UsageDelta,
-} from "./viewport-renderer.js";
+import { attachViewportObserver } from "./viewport-events.js";
+import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
 
@@ -485,27 +477,9 @@ export function runPreflightGate(
 const STATUS_KEY = "forge:run-task";
 const MESSAGE_KEY = "forge:run-task:message";
 
-/**
- * Extract the last assistant-authored text from a turn_end message and
- * collapse it to a single-line preview (max 120 chars). Returns "" if the
- * message has no text content (e.g. all-tool-call turn).
- */
-export function extractTurnPreview(message: unknown): string {
-	if (!message || typeof message !== "object") return "";
-	const msg = message as { role?: string; content?: unknown };
-	if (msg.role !== "assistant") return "";
-	const content = msg.content;
-	if (!Array.isArray(content)) return "";
-	for (const c of content) {
-		if (!c || typeof c !== "object") continue;
-		const part = c as { type?: string; text?: unknown };
-		if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
-			const flat = part.text.replace(/\s+/g, " ").trim();
-			return flat.length > 120 ? `${flat.slice(0, 117)}…` : flat;
-		}
-	}
-	return "";
-}
+// extractTurnPreview moved to viewport-renderer.ts; re-exported below for
+// backwards-compatibility with existing imports (e.g. tests).
+export { extractTurnPreview } from "./viewport-renderer.js";
 
 // ── runTaskPipeline ──────────────────────────────────────────────────────
 
@@ -661,14 +635,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// NEVER sendKickoff here — that would reproduce issue #30 (same-context inline = no fork).
 		const taskBody = composeTaskBody(subWorkflowMd, taskId);
 
-		// Phase-scoped progress counters (drive the status line + summary notify).
 		const phaseStart = Date.now();
-		let turn = 0;
-		let toolCount = 0;
-		let errCount = 0;
-		let lastTool = "";
-		// Capture tool args at _start so we can echo the failing command on _end isError.
-		const argsByCallId = new Map<string, unknown>();
 
 		// Stabilization debug log — every subagent event appended as JSONL.
 		const debugLogPath = path.join(
@@ -692,96 +659,27 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
 		registry.startPhase(taskId, phase.role, currentPhaseIndex);
 
-		const argHint = (toolName: string, args: unknown): string =>
-			fmtArgHint(toolName, args);
-
-		// ── Tail-line formatters ─────────────────────────────────────
-		const formatTime = (ms: number): string => {
-			const d = new Date(ms);
-			const pad = (n: number) => String(n).padStart(2, "0");
-			return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-		};
-
-		// Rolling cumulative token usage across all assistant turns in this phase.
-		// Updated on every `turn_end` from `message.usage`; surfaced in the tail
-		// prefix so users see context burn in real time, not after the run finishes.
-		const cumUsage: UsageDelta = { input: 0, output: 0, cacheRead: 0 };
-		// Tool-calls emitted in the current assistant turn — drives the parallel-batch
-		// marker at turn_end (we don't know it's a batch until we see >1 start).
-		let toolsThisTurn = 0;
-		// Tree-connector state. Each turn renders as a box-drawing block:
-		//   [phase HH:MM:SS tN] ╭ first line of the turn
-		//                       │ middle lines  (prefix collapsed to whitespace
-		//                       │                so the trunk runs visually
-		//                       ╰ last line       continuous)
-		// Streaming-friendly: `╭` on the first line, `│` on mid lines, `╰` on
-		// the closing line (or `─` if first & last). Lines outside a turn
-		// (phase begin/summary, retry, compaction) skip the tree entirely.
-		let firstLineOfTurn = true;
-		// Captured at the first emit of the turn so subsequent lines pad to the
-		// exact same visible width. Prefix is pure ASCII (no ANSI in tail buffer;
-		// painting happens at render time), so `.length` == visible width.
-		let currentTurnPrefixWidth = 0;
-
-		const emitTurnLine = (
-			body: string,
-			opts?: { warning?: boolean; closing?: boolean },
-		): void => {
-			const isFirst = firstLineOfTurn;
-			const isClosing = opts?.closing === true;
-			let branch: string;
-			if (isFirst && isClosing) branch = "─"; // single-line turn
-			else if (isFirst) branch = "╭";
-			else if (isClosing) branch = "╰";
-			else branch = "│";
-
-			let prefix: string;
-			if (isFirst) {
-				prefix = tailPrefix();
-				currentTurnPrefixWidth = prefix.length;
-			} else {
-				prefix = " ".repeat(currentTurnPrefixWidth);
-			}
-			firstLineOfTurn = false;
-			appendTail(
-				`${prefix} ${branch} ${body}`,
-				opts?.warning ? { warning: true } : undefined,
-			);
-		};
-
-		// Per-line prefix omits the token meter — token usage is rendered as a
-		// sticky footer at the bottom of the tail view (driven by
-		// registry.setPhaseUsage + viewport-theme footer). Keeps each tail line
-		// compact and avoids redundant numbers on every line.
-		const tailPrefix = () =>
-			`[${phase.role} ${formatTime(Date.now())} t${turn}]`;
-		const extractErrorSummary = (result: unknown): string => {
-			const raw =
-				typeof result === "string"
-					? result
-					: typeof result === "object" && result !== null
-					? JSON.stringify(result)
-					: String(result);
-			const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0) ?? raw;
-			return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
-		};
-		const appendTail = (line: string, opts?: { warning?: boolean }) => {
-			registry.appendTail(taskId, phase.role, line, opts);
-		};
-
-		appendTail(
-			`${tailPrefix()} ─── phase ${currentPhaseIndex + 1}/${PHASES.length} ${phase.role} begin · ${taskId} ───`,
-		);
-
 		const refreshStatus = () => {
 			if (process.env.FORGE_VERBOSE !== "1") return;
 			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
-			const tail = lastTool ? ` · ${lastTool}` : "";
+			const tail = observer.state.lastTool ? ` · ${observer.state.lastTool}` : "";
 			ctx.ui.setStatus?.(
 				STATUS_KEY,
-				`run-task ${taskId}: ${phase.role} · t${turn} · tools ${toolCount}${errCount ? ` · err ${errCount}` : ""} · ${elapsed}s${tail}`,
+				`run-task ${taskId}: ${phase.role} · t${observer.state.turn} · tools ${observer.state.toolCount}${observer.state.errCount ? ` · err ${observer.state.errCount}` : ""} · ${elapsed}s${tail}`,
 			);
 		};
+
+		const observer = attachViewportObserver({
+			registry,
+			sessionId: taskId,
+			phaseRole: phase.role,
+			beginHeader: `─── phase ${currentPhaseIndex + 1}/${PHASES.length} ${phase.role} begin · ${taskId} ───`,
+			writeDebug,
+			notify: (msg, level) => ctx.ui.notify(msg, level),
+			setStatusVerbose: process.env.FORGE_VERBOSE === "1" ? (k, v) => ctx.ui.setStatus?.(k, v) : undefined,
+			verboseKeys: { messageKey: MESSAGE_KEY },
+			afterEach: refreshStatus,
+		});
 
 		let result;
 		try {
@@ -792,131 +690,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				exportTag: `${taskId}__${phase.role}`,
 				cacheSessionId,
 				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
-				onEvent: (event) => {
-					switch (event.type) {
-						case "turn_start": {
-							turn++;
-							lastTool = "";
-							toolsThisTurn = 0;
-							firstLineOfTurn = true;
-							registry.bumpTurn(taskId);
-							refreshStatus();
-							break;
-						}
-						case "turn_end": {
-							// Accumulate cumulative phase usage for the sticky footer.
-							const delta = readUsage(event.message);
-							cumUsage.input += delta.input;
-							cumUsage.output += delta.output;
-							cumUsage.cacheRead += delta.cacheRead;
-							registry.setPhaseUsage(taskId, phase.role, cumUsage);
-
-							// Gather closing content (thinking, preview, batch marker) so
-							// we can mark the last one with the `╰` connector — closing
-							// the turn block visually.
-							const closingBodies: string[] = [];
-							const thinking = extractThinkingOneLiner(event.message);
-							if (thinking) closingBodies.push(`✱ ${thinking}`);
-
-							const preview = extractTurnPreview(event.message);
-							if (preview) {
-								registry.setTurnPreview(taskId, preview);
-								if (process.env.FORGE_VERBOSE === "1") {
-									ctx.ui.setStatus?.(MESSAGE_KEY, `  "${preview}"`);
-								}
-								closingBodies.push(`» "${preview}"`);
-							}
-							if (toolsThisTurn > 1) {
-								closingBodies.push(`⇉ batched ${toolsThisTurn} tool calls in turn ${turn}`);
-							}
-
-							for (let i = 0; i < closingBodies.length; i++) {
-								const isLast = i === closingBodies.length - 1;
-								emitTurnLine(closingBodies[i], { closing: isLast });
-							}
-							refreshStatus();
-							break;
-						}
-						case "tool_execution_start": {
-							toolCount++;
-							toolsThisTurn++;
-							argsByCallId.set(event.toolCallId, event.args);
-							const hint = argHint(event.toolName, event.args);
-							const { glyph, risky } = toolGlyph(event.toolName, event.args);
-							lastTool = `${event.toolName}${hint ? ` ${hint}` : ""}`;
-							writeDebug({
-								kind: "tool_start",
-								toolName: event.toolName,
-								toolCallId: event.toolCallId,
-								args: event.args,
-							});
-							registry.recordToolStart(
-								taskId,
-								event.toolCallId,
-								event.toolName,
-								event.args,
-							);
-							const riskPrefix = risky ? `${RISKY_TAG} ` : "";
-							emitTurnLine(
-								`${riskPrefix}${glyph} ${event.toolName}${hint ? ` ${hint}` : ""}`,
-								risky ? { warning: true } : undefined,
-							);
-							refreshStatus();
-							break;
-						}
-						case "tool_execution_end": {
-							const startArgs = argsByCallId.get(event.toolCallId);
-							argsByCallId.delete(event.toolCallId);
-							writeDebug({
-								kind: "tool_end",
-								toolName: event.toolName,
-								toolCallId: event.toolCallId,
-								isError: event.isError,
-								args: startArgs,
-								result: event.result,
-							});
-							registry.recordToolEnd(
-								taskId,
-								event.toolCallId,
-								event.toolName,
-								event.isError,
-								event.result,
-							);
-							if (event.isError) {
-								errCount++;
-								emitTurnLine(
-									`⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
-									{ warning: true },
-								);
-							} else {
-								const shape = resultShape(event.toolName, event.result);
-								emitTurnLine(`← ${event.toolName} ok${shape ? ` ${shape}` : ""}`);
-							}
-							refreshStatus();
-							break;
-						}
-						case "compaction_start": {
-							ctx.ui.notify(
-								`◌ ${phase.role}: context compacting (${event.reason})…`,
-								"info",
-							);
-							appendTail(`${tailPrefix()} ◌ compacting (${event.reason})`);
-							break;
-						}
-						case "auto_retry_start": {
-							const err = event.errorMessage ?? "";
-							ctx.ui.notify(
-								`↻ ${phase.role}: model retry ${event.attempt}/${event.maxAttempts}${err ? `\n${err}` : ""}`,
-								"warning",
-							);
-							appendTail(
-								`${tailPrefix()} ↻ retry ${event.attempt}/${event.maxAttempts}${err ? `: ${extractErrorSummary(err)}` : ""}`,
-								{ warning: true },
-							);
-							break;
-						}
-					}
-				},
+				onEvent: observer.onEvent,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -961,11 +735,14 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// Phase-complete liveliness ping (counts + duration).
 		{
 			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
+			const { turn, toolCount, errCount, cumUsage } = observer.state;
 			ctx.ui.notify(
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
 			);
-			appendTail(
+			registry.appendTail(
+				taskId,
+				phase.role,
 				fmtPhaseSummary({
 					role: phase.role,
 					turns: turn,

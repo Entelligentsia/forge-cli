@@ -25,6 +25,8 @@ import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { attachViewportObserver } from "./viewport-events.js";
+import { fmtPhaseSummary } from "./viewport-renderer.js";
 import {
 	type PhaseDescriptor,
 	validateId,
@@ -656,11 +658,6 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 		// Phase-scoped progress counters
 		const phaseStart = Date.now();
-		let turn = 0;
-		let toolCount = 0;
-		let errCount = 0;
-		let lastTool = "";
-		const argsByCallId = new Map<string, unknown>();
 
 		// Track tool_execution_end events for bugId capture (Findings #1, #2).
 		const toolExecutionEvents: Array<{ toolName?: string; result?: unknown }> = [];
@@ -705,51 +702,35 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
 		registry.startPhase(bugId, phase.role, currentPhaseIndex);
 
-		const argHint = (toolName: string, args: unknown): string => {
-			if (!args || typeof args !== "object") return "";
-			const a = args as Record<string, unknown>;
-			const fp = (a.file_path ?? a.path) as unknown;
-			if (typeof fp === "string") return path.basename(fp);
-			if (typeof a.command === "string") {
-				const head = a.command.split(/\s+/).slice(0, 2).join(" ");
-				return head.length > 40 ? `${head.slice(0, 40)}…` : head;
-			}
-			if (typeof a.pattern === "string") return a.pattern.slice(0, 40);
-			if (typeof a.query === "string") return a.query.slice(0, 40);
-			return "";
-		};
-
-		// Tail-line formatters
-		const formatTime = (ms: number): string => {
-			const d = new Date(ms);
-			const pad = (n: number) => String(n).padStart(2, "0");
-			return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-		};
-		const tailPrefix = () => `[${phase.role} ${formatTime(Date.now())}]`;
-		const extractErrorSummary = (result: unknown): string => {
-			const raw =
-				typeof result === "string"
-					? result
-					: typeof result === "object" && result !== null
-					? JSON.stringify(result)
-					: String(result);
-			const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0) ?? raw;
-			return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
-		};
-		const appendTail = (line: string, opts?: { warning?: boolean }) => {
-			registry.appendTail(bugId, phase.role, line, opts);
-		};
-
-		appendTail(`${tailPrefix()} ─── phase ${phase.role} begin ───`);
-
 		const refreshStatus = () => {
 			if (process.env.FORGE_VERBOSE !== "1") return;
 			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
-			const tail = lastTool ? ` · ${lastTool}` : "";
+			const tail = observer.state.lastTool ? ` · ${observer.state.lastTool}` : "";
 			ctx.ui.setStatus?.(
 				STATUS_KEY,
-				`fix-bug ${bugId}: ${phase.role} · t${turn} · tools ${toolCount}${errCount ? ` · err ${errCount}` : ""} · ${elapsed}s${tail}`,
+				`fix-bug ${bugId}: ${phase.role} · t${observer.state.turn} · tools ${observer.state.toolCount}${observer.state.errCount ? ` · err ${observer.state.errCount}` : ""} · ${elapsed}s${tail}`,
 			);
+		};
+
+		const observer = attachViewportObserver({
+			registry,
+			sessionId: bugId,
+			phaseRole: phase.role,
+			beginHeader: `─── phase ${phase.role} begin ───`,
+			writeDebug,
+			notify: (msg, level) => ctx.ui.notify(msg, level),
+			setStatusVerbose: process.env.FORGE_VERBOSE === "1" ? (k, v) => ctx.ui.setStatus?.(k, v) : undefined,
+			verboseKeys: { messageKey: `${STATUS_KEY}:message` },
+			afterEach: refreshStatus,
+		});
+
+		// Wrap the observer's onEvent to also capture tool_execution_end events
+		// for bugId capture downstream (findings #1, #2).
+		const onSubagentEvent = (event: any) => {
+			if (event?.type === "tool_execution_end") {
+				toolExecutionEvents.push({ toolName: event.toolName, result: event.result });
+			}
+			observer.onEvent(event);
 		};
 
 		let result;
@@ -764,94 +745,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				// namespace so the system-prompt + persona prefix stays warm
 				// across the ~10-minute phases.
 				cacheSessionId: typeof bugRecordBefore?.sprintId === "string" ? `forge:${bugRecordBefore.sprintId}` : `forge:bug:${bugId}`,
-				onEvent: (event) => {
-					switch (event.type) {
-						case "turn_start": {
-							turn++;
-							lastTool = "";
-							registry.bumpTurn(bugId);
-							refreshStatus();
-							break;
-						}
-						case "turn_end": {
-							// Extract turn preview from assistant message
-							break;
-						}
-						case "tool_execution_start": {
-							toolCount++;
-							argsByCallId.set(event.toolCallId, event.args);
-							const hint = argHint(event.toolName, event.args);
-							lastTool = `${event.toolName}${hint ? ` ${hint}` : ""}`;
-							writeDebug({
-								kind: "tool_start",
-								toolName: event.toolName,
-								toolCallId: event.toolCallId,
-								args: event.args,
-							});
-							registry.recordToolStart(
-								bugId,
-								event.toolCallId,
-								event.toolName,
-								event.args,
-							);
-							appendTail(`${tailPrefix()} → ${event.toolName}${hint ? ` ${hint}` : ""}`);
-							refreshStatus();
-							break;
-						}
-						case "tool_execution_end": {
-							const startArgs = argsByCallId.get(event.toolCallId);
-							argsByCallId.delete(event.toolCallId);
-							// Collect tool_execution_end events for bugId capture (Findings #1, #2).
-							toolExecutionEvents.push({ toolName: event.toolName, result: event.result });
-							writeDebug({
-								kind: "tool_end",
-								toolName: event.toolName,
-								toolCallId: event.toolCallId,
-								isError: event.isError,
-								args: startArgs,
-								result: event.result,
-							});
-							registry.recordToolEnd(
-								bugId,
-								event.toolCallId,
-								event.toolName,
-								event.isError,
-								event.result,
-							);
-							if (event.isError) {
-								errCount++;
-								appendTail(
-									`${tailPrefix()} ⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
-									{ warning: true },
-								);
-							} else {
-								appendTail(`${tailPrefix()} ← ${event.toolName} ok`);
-							}
-							refreshStatus();
-							break;
-						}
-						case "compaction_start": {
-							ctx.ui.notify(
-								`◌ ${phase.role}: context compacting (${event.reason})…`,
-								"info",
-							);
-							appendTail(`${tailPrefix()} ◌ compacting (${event.reason})`);
-							break;
-						}
-						case "auto_retry_start": {
-							const err = event.errorMessage ?? "";
-							ctx.ui.notify(
-								`↻ ${phase.role}: model retry ${event.attempt}/${event.maxAttempts}${err ? `\n${err}` : ""}`,
-								"warning",
-							);
-							appendTail(
-								`${tailPrefix()} ↻ retry ${event.attempt}/${event.maxAttempts}${err ? `: ${extractErrorSummary(err)}` : ""}`,
-								{ warning: true },
-							);
-							break;
-						}
-					}
-				},
+				onEvent: onSubagentEvent,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -967,9 +861,24 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 		{
 			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
+			const { turn, toolCount, errCount, cumUsage } = observer.state;
 			ctx.ui.notify(
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
+			);
+			registry.appendTail(
+				bugId,
+				phase.role,
+				fmtPhaseSummary({
+					role: phase.role,
+					turns: turn,
+					tools: toolCount,
+					errors: errCount,
+					wallSeconds: elapsed,
+					usage: cumUsage,
+					model: result.model,
+					provider: result.provider,
+				}),
 			);
 		}
 

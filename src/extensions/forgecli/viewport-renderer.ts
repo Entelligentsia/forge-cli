@@ -146,6 +146,28 @@ export function readUsage(message: AgentMessage | undefined): UsageDelta {
 	};
 }
 
+/**
+ * Extract the last assistant-authored text from a turn_end message and
+ * collapse to a single-line preview (max 120 chars). Returns "" if the
+ * message has no text content (e.g. all-tool-call turn).
+ */
+export function extractTurnPreview(message: unknown): string {
+	if (!message || typeof message !== "object") return "";
+	const msg = message as { role?: string; content?: unknown };
+	if (msg.role !== "assistant") return "";
+	const content = msg.content;
+	if (!Array.isArray(content)) return "";
+	for (const c of content) {
+		if (!c || typeof c !== "object") continue;
+		const part = c as { type?: string; text?: unknown };
+		if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+			const flat = part.text.replace(/\s+/g, " ").trim();
+			return flat.length > 120 ? `${flat.slice(0, 117)}…` : flat;
+		}
+	}
+	return "";
+}
+
 export function fmtTokenMeter(u: UsageDelta): string {
 	return `↑${humanTokens(u.input)}↓${humanTokens(u.output)}`;
 }

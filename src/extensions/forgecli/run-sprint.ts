@@ -33,6 +33,7 @@ import { loadWorkflow } from "./loaders/workflow-loader.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { attachViewportObserver } from "./viewport-events.js";
 import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 
@@ -193,10 +194,19 @@ async function dispatchSprintCeremony(params: {
 	// as a sprint-scoped chip distinct from per-task sessions.
 	const sessionId = `${sprintId}:ceremony`;
 	registry.startSession(sessionId);
+	registry.startPhase(sessionId, "ceremony", 0);
 
 	let model: string | undefined;
 	let provider: string | undefined;
 	let errorMessage: string | undefined;
+
+	const observer = attachViewportObserver({
+		registry,
+		sessionId,
+		phaseRole: "ceremony",
+		displayRole: "ceremony",
+		beginHeader: `─── sprint ${sprintId} ceremony begin · ${personaName} ───`,
+	});
 
 	try {
 		const result = await runForgeSubagent({
@@ -210,6 +220,7 @@ async function dispatchSprintCeremony(params: {
 			// the sprint (ceremonies + per-task phases) shares this namespace
 			// so the system-prompt + persona prefix stays warm.
 			cacheSessionId: `forge:${sprintId}`,
+			onEvent: observer.onEvent,
 		});
 		model    = result.model;
 		provider = result.provider;
