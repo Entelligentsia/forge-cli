@@ -25,6 +25,17 @@ import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
+import {
+	argHint as fmtArgHint,
+	extractThinkingOneLiner,
+	fmtPhaseSummary,
+	fmtTokenMeter,
+	readUsage,
+	resultShape,
+	RISKY_TAG,
+	toolGlyph,
+	type UsageDelta,
+} from "./viewport-renderer.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
 
@@ -682,19 +693,8 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
 		registry.startPhase(taskId, phase.role, currentPhaseIndex);
 
-		const argHint = (toolName: string, args: unknown): string => {
-			if (!args || typeof args !== "object") return "";
-			const a = args as Record<string, unknown>;
-			const fp = (a.file_path ?? a.path) as unknown;
-			if (typeof fp === "string") return path.basename(fp);
-			if (typeof a.command === "string") {
-				const head = a.command.split(/\s+/).slice(0, 2).join(" ");
-				return head.length > 40 ? `${head.slice(0, 40)}…` : head;
-			}
-			if (typeof a.pattern === "string") return a.pattern.slice(0, 40);
-			if (typeof a.query === "string") return a.query.slice(0, 40);
-			return "";
-		};
+		const argHint = (toolName: string, args: unknown): string =>
+			fmtArgHint(toolName, args);
 
 		// ── Tail-line formatters ─────────────────────────────────────
 		const formatTime = (ms: number): string => {
@@ -702,7 +702,17 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			const pad = (n: number) => String(n).padStart(2, "0");
 			return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 		};
-		const tailPrefix = () => `[${phase.role} ${formatTime(Date.now())}]`;
+
+		// Rolling cumulative token usage across all assistant turns in this phase.
+		// Updated on every `turn_end` from `message.usage`; surfaced in the tail
+		// prefix so users see context burn in real time, not after the run finishes.
+		const cumUsage: UsageDelta = { input: 0, output: 0, cacheRead: 0 };
+		// Tool-calls emitted in the current assistant turn — drives the parallel-batch
+		// marker at turn_end (we don't know it's a batch until we see >1 start).
+		let toolsThisTurn = 0;
+
+		const tailPrefix = () =>
+			`[${phase.role} ${formatTime(Date.now())} t${turn} ${fmtTokenMeter(cumUsage)}]`;
 		const extractErrorSummary = (result: unknown): string => {
 			const raw =
 				typeof result === "string"
@@ -717,7 +727,9 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			registry.appendTail(taskId, phase.role, line, opts);
 		};
 
-		appendTail(`${tailPrefix()} ─── phase ${phase.role} begin ───`);
+		appendTail(
+			`${tailPrefix()} ─── phase ${currentPhaseIndex + 1}/${PHASES.length} ${phase.role} begin · ${taskId} ───`,
+		);
 
 		const refreshStatus = () => {
 			if (process.env.FORGE_VERBOSE !== "1") return;
@@ -743,11 +755,26 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						case "turn_start": {
 							turn++;
 							lastTool = "";
+							toolsThisTurn = 0;
 							registry.bumpTurn(taskId);
 							refreshStatus();
 							break;
 						}
 						case "turn_end": {
+							// Accumulate token usage before we render anything so the
+							// prefix on these emitted lines reflects current burn.
+							const delta = readUsage(event.message);
+							cumUsage.input += delta.input;
+							cumUsage.output += delta.output;
+							cumUsage.cacheRead += delta.cacheRead;
+
+							// Surface model thinking as a one-liner — diagnostic value
+							// is usually high and otherwise hidden from the viewport.
+							const thinking = extractThinkingOneLiner(event.message);
+							if (thinking) {
+								appendTail(`${tailPrefix()} ✱ ${thinking}`);
+							}
+
 							const preview = extractTurnPreview(event.message);
 							if (preview) {
 								registry.setTurnPreview(taskId, preview);
@@ -756,12 +783,22 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 								}
 								appendTail(`${tailPrefix()} » "${preview}"`);
 							}
+
+							// Parallel-batch marker: only emitted when >1 tool was called
+							// in this assistant message. Comes after the individual tool
+							// lines so users see the batch was deliberate.
+							if (toolsThisTurn > 1) {
+								appendTail(`${tailPrefix()} ⇉ batched ${toolsThisTurn} tool calls in turn ${turn}`);
+							}
+							refreshStatus();
 							break;
 						}
 						case "tool_execution_start": {
 							toolCount++;
+							toolsThisTurn++;
 							argsByCallId.set(event.toolCallId, event.args);
 							const hint = argHint(event.toolName, event.args);
+							const { glyph, risky } = toolGlyph(event.toolName, event.args);
 							lastTool = `${event.toolName}${hint ? ` ${hint}` : ""}`;
 							writeDebug({
 								kind: "tool_start",
@@ -775,7 +812,11 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 								event.toolName,
 								event.args,
 							);
-							appendTail(`${tailPrefix()} → ${event.toolName}${hint ? ` ${hint}` : ""}`);
+							const riskPrefix = risky ? `${RISKY_TAG} ` : "";
+							appendTail(
+								`${tailPrefix()} ${riskPrefix}${glyph} ${event.toolName}${hint ? ` ${hint}` : ""}`,
+								risky ? { warning: true } : undefined,
+							);
 							refreshStatus();
 							break;
 						}
@@ -804,7 +845,10 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 									{ warning: true },
 								);
 							} else {
-								appendTail(`${tailPrefix()} ← ${event.toolName} ok`);
+								const shape = resultShape(event.toolName, event.result);
+								appendTail(
+									`${tailPrefix()} ← ${event.toolName} ok${shape ? ` ${shape}` : ""}`,
+								);
 							}
 							refreshStatus();
 							break;
@@ -878,6 +922,18 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			ctx.ui.notify(
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
+			);
+			appendTail(
+				fmtPhaseSummary({
+					role: phase.role,
+					turns: turn,
+					tools: toolCount,
+					errors: errCount,
+					wallSeconds: elapsed,
+					usage: cumUsage,
+					model: result.model,
+					provider: result.provider,
+				}),
 			);
 		}
 
