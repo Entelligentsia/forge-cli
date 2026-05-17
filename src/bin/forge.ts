@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { main } from "@earendil-works/pi-coding-agent";
 import forgecli from "../extensions/forgecli/index.js";
 import { isParseError, parseForgeArgv } from "./argv.js";
+import { runDoctor } from "./doctor.js";
 
 // ---------------------------------------------------------------------------
 // Version information (resolved at startup from package.json files)
@@ -94,6 +95,9 @@ Pi options (forwarded verbatim):
 
 Unknown flags are rejected — forge performs strict argv ownership.
 
+Subcommands:
+  doctor [--json]          Preflight check — pi auth, model availability, settings
+
 Slash commands (inside a Forge project):
   /forge:init              Bootstrap a new Forge SDLC project
   /forge:*                 Full Forge command set (when inside a Forge project)
@@ -125,6 +129,16 @@ if (parsed.forgeAction === "help") {
 	process.exit(0);
 }
 
+if (parsed.forgeAction === "doctor") {
+	const pkg = readForgeCliPkg();
+	const exitCode = await runDoctor(parsed.subcommandArgs ?? [], {
+		forgeCli: pkg.version ?? "unknown",
+		forgePlugin: pkg.forge?.bundledVersion ?? "unknown",
+		pi: await readPiVersion(),
+	});
+	process.exit(exitCode);
+}
+
 // Apply forge env overrides
 Object.assign(process.env, parsed.env);
 
@@ -152,13 +166,7 @@ if (!process.env.PI_CACHE_RETENTION) {
 // Fast-path subcommand: spawn the bundled cjs tool directly. This skips
 // the entire pi/agent boot and turns 26s cold-starts into <100ms shells.
 if (parsed.forgeAction === "subcommand" && parsed.subcommandTool) {
-	const toolPath = path.resolve(
-		__dirname,
-		"..",
-		"forge-payload",
-		"tools",
-		parsed.subcommandTool,
-	);
+	const toolPath = path.resolve(__dirname, "..", "forge-payload", "tools", parsed.subcommandTool);
 	if (!fs.existsSync(toolPath)) {
 		process.stderr.write(
 			`forge: fast-path tool not found at ${toolPath}. Bundle may be corrupt — try \`forge --version\` and reinstall.\n`,

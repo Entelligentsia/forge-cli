@@ -20,8 +20,8 @@
 //   --model, --tools, --append-system-prompt, --no-tools, --thinking,
 //   --no-thinking, and bare non-flag arguments.
 
-/** Parsed result when `--version`, `--help`, or a fast-path subcommand is requested. */
-export type ForgeAction = "version" | "help" | "subcommand" | null;
+/** Parsed result when `--version`, `--help`, `doctor`, or a fast-path subcommand is requested. */
+export type ForgeAction = "version" | "help" | "doctor" | "subcommand" | null;
 
 /**
  * Whitelist of bare subcommands that bypass pi and exec a bundled cjs tool
@@ -150,15 +150,23 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 			continue;
 		}
 
+		// ── `forge doctor` — preflight onboarding check ─────────────────────
+		// Probes pi auth/model state via the exported APIs. Only matches the
+		// first bare token, no flags collected yet.
+		if (token === "doctor" && piArgv.length === 0) {
+			return {
+				forgeAction: "doctor",
+				piArgv: [],
+				env,
+				subcommandArgs: argv.slice(i + 1),
+			};
+		}
+
 		// ── Fast-path subcommand (forge store, forge collate, etc.) ──────────
 		// Only matches the FIRST bare token, and only when no flags have
 		// been collected yet (so `forge --cwd /tmp store ...` still treats
 		// `store` as a fast-path; forgeAction overrides piArgv in that case).
-		if (
-			!token.startsWith("-") &&
-			Object.hasOwn(FAST_PATH_SUBCOMMANDS, token) &&
-			piArgv.length === 0
-		) {
+		if (!token.startsWith("-") && Object.hasOwn(FAST_PATH_SUBCOMMANDS, token) && piArgv.length === 0) {
 			return {
 				forgeAction: "subcommand",
 				piArgv: [],

@@ -213,4 +213,29 @@ describe("parseForgeArgv", () => {
 		expect(result.forgeAction).toBeNull();
 		expect(result.piArgv).toEqual(["--cwd", "/tmp", "store", "list"]);
 	});
+
+	it("doctor → forgeAction = doctor, no piArgv", () => {
+		const result = parseForgeArgv(["doctor"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("doctor");
+		expect(result.piArgv).toEqual([]);
+		expect(result.subcommandArgs).toEqual([]);
+	});
+
+	it("doctor --json → forgeAction = doctor, --json in subcommandArgs", () => {
+		const result = parseForgeArgv(["doctor", "--json"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("doctor");
+		expect(result.subcommandArgs).toEqual(["--json"]);
+	});
+
+	it("pi flag before doctor → doctor is treated as pi arg, not forge-owned", () => {
+		const result = parseForgeArgv(["--cwd", "/tmp", "doctor"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual(["--cwd", "/tmp", "doctor"]);
+	});
 });
