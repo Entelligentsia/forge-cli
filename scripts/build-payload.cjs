@@ -229,6 +229,7 @@ const LIB_ALLOWLIST = new Set([
 	"pricing.cjs",
 	"project-root.cjs",
 	"result.js",
+	"suggest.cjs",
 	"validate.js",
 	"store-facade.cjs",
 	"store-nlp.cjs",

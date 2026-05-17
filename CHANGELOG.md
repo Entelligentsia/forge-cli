@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.10] — 2026-05-17
+
+### Fixed
+- **FORGE-BUG-036 (critical):** Bundled `dist/forge-payload/tools/lib/`
+  now includes `suggest.cjs`. Without it, every invocation of the bundled
+  `store-cli.cjs` crashed with `Error: Cannot find module './suggest.cjs'`
+  because `validate.js` requires it. Root cause: `LIB_ALLOWLIST` in
+  `scripts/build-payload.cjs` was not updated when FORGE-S22-T03 added the
+  suggest module. All store operations (read/write/emit/update-status) from
+  forge-cli now work; agents no longer have to fall back to manual JSON
+  writes that bypass schema validation.
+- **bundledVersion alignment.** `package.json` `forge.bundledVersion` now
+  reports `0.43.19` (matches actual bundled plugin source).
+
+### Added
+- **Regression test** `test/extensions/forgecli/bug-036-payload-lib-completeness.test.ts`
+  walks every `require('./X')` in bundled `tools/lib/` and asserts each target
+  exists in the bundle. Catches future LIB_ALLOWLIST omissions on every build.
+
 ## [0.7.9] — 2026-05-17
 
 ### Added
