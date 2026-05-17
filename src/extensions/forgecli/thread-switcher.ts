@@ -43,6 +43,7 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
+import { paintTailLine } from "./viewport-theme.js";
 
 const WIDGET_KEY = "forge:thread-switcher";
 
@@ -69,6 +70,7 @@ class TailViewComponent implements Component {
 		private readonly registry: SessionRegistry,
 		private readonly taskId: string,
 		private readonly phaseRole: string,
+		private readonly theme: Theme | undefined,
 	) {
 		const onTail = (e: { taskId: string; phaseRole: string }) => {
 			if (e.taskId === this.taskId && e.phaseRole === this.phaseRole) {
@@ -84,10 +86,13 @@ class TailViewComponent implements Component {
 		if (lines.length === 0) {
 			return [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)];
 		}
-		// pi-tui asserts no rendered line exceeds the terminal width — bash
-		// commands and error summaries in our tail buffer can be arbitrary
-		// length, so truncate defensively per line.
-		return lines.map((line) => (visibleWidth(line) <= width ? line : truncateToWidth(line, width)));
+		// Paint each plain-text tail line with the current theme. Truncate AFTER
+		// painting because truncateToWidth is ANSI-aware (visibleWidth strips
+		// SGR), so width math stays correct.
+		return lines.map((line) => {
+			const painted = paintTailLine(line, this.theme);
+			return visibleWidth(painted) <= width ? painted : truncateToWidth(painted, width);
+		});
 	}
 
 	invalidate(): void {
@@ -385,6 +390,9 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	let stripRef: ChipStripComponent | undefined;
 	let tailRef: TailViewComponent | undefined;
 	let tuiRef: TUI | undefined;
+	// Theme captured at widget mount — needed for paintTailLine in the tail
+	// component, which is constructed lazily on chip focus (not at mount time).
+	let themeRef: Theme | undefined;
 	let spinnerTimer: NodeJS.Timeout | undefined;
 	let mounted = false;
 
@@ -414,6 +422,7 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 				WIDGET_KEY,
 				(tui, theme) => {
 					tuiRef = tui;
+					themeRef = theme;
 					const strip = new ChipStripComponent(registry, theme);
 					strip.setInvalidationCallback(() => tui.requestRender());
 					stripRef = strip;
@@ -483,7 +492,7 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			return;
 		}
 		tailRef?.dispose?.();
-		const tail = new TailViewComponent(registry, chip.taskId, chip.id);
+		const tail = new TailViewComponent(registry, chip.taskId, chip.id, themeRef);
 		// Wire the same requestRender hook so new tail lines surface
 		// without needing user input.
 		if (tuiRef) tail.setInvalidationCallback(() => tuiRef?.requestRender());
