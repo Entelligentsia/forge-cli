@@ -174,6 +174,20 @@ describe("paintTailLine — tree connectors", () => {
 		expect(out).toMatch(/<i><thinkingText>✱ analysing preflight gate failure<\/thinkingText><\/i>/);
 	});
 
+	it("paints ─ single-line-turn connector (not confused with phase boundary)", () => {
+		const { theme } = makeStub();
+		const out = paintTailLine("[plan 14:09:40 t11] ─ ✱ silent turn", theme as never);
+		expect(out).toContain("<dim>─</dim>");
+		expect(out).toMatch(/<i><thinkingText>✱ silent turn<\/thinkingText><\/i>/);
+	});
+
+	it("still paints ─── phase boundary as bold accent (not as connector)", () => {
+		const { theme } = makeStub();
+		const out = paintTailLine("─── phase 1/7 plan begin ───", theme as never);
+		expect(out).toMatch(/<b><accent>─── phase 1\/7 plan begin ───<\/accent><\/b>/);
+		expect(out.includes("<dim>─</dim>")).toBe(false);
+	});
+
 	it("paints ╰ connector with preview line", () => {
 		const { theme } = makeStub();
 		const out = paintTailLine(

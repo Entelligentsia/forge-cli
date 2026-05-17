@@ -710,18 +710,43 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// marker at turn_end (we don't know it's a batch until we see >1 start).
 		let toolsThisTurn = 0;
 		// Tree-connector state. Each turn renders as a box-drawing block:
-		//   ╭ first line of the turn (first tool_call_start or first turn_end content)
-		//   │ middle lines
-		//   ╰ last line (final turn_end content)
-		// Streaming-friendly: we emit `╭` on the first line of a turn, `│` on
-		// subsequent live tool_call/result lines, and explicitly `╰` on the very
-		// last closing line emitted at turn_end. Lines outside a turn boundary
+		//   [phase HH:MM:SS tN] ╭ first line of the turn
+		//                       │ middle lines  (prefix collapsed to whitespace
+		//                       │                so the trunk runs visually
+		//                       ╰ last line       continuous)
+		// Streaming-friendly: `╭` on the first line, `│` on mid lines, `╰` on
+		// the closing line (or `─` if first & last). Lines outside a turn
 		// (phase begin/summary, retry, compaction) skip the tree entirely.
 		let firstLineOfTurn = true;
-		const branchMid = (): string => {
-			const c = firstLineOfTurn ? "╭" : "│";
+		// Captured at the first emit of the turn so subsequent lines pad to the
+		// exact same visible width. Prefix is pure ASCII (no ANSI in tail buffer;
+		// painting happens at render time), so `.length` == visible width.
+		let currentTurnPrefixWidth = 0;
+
+		const emitTurnLine = (
+			body: string,
+			opts?: { warning?: boolean; closing?: boolean },
+		): void => {
+			const isFirst = firstLineOfTurn;
+			const isClosing = opts?.closing === true;
+			let branch: string;
+			if (isFirst && isClosing) branch = "─"; // single-line turn
+			else if (isFirst) branch = "╭";
+			else if (isClosing) branch = "╰";
+			else branch = "│";
+
+			let prefix: string;
+			if (isFirst) {
+				prefix = tailPrefix();
+				currentTurnPrefixWidth = prefix.length;
+			} else {
+				prefix = " ".repeat(currentTurnPrefixWidth);
+			}
 			firstLineOfTurn = false;
-			return c;
+			appendTail(
+				`${prefix} ${branch} ${body}`,
+				opts?.warning ? { warning: true } : undefined,
+			);
 		};
 
 		// Per-line prefix omits the token meter — token usage is rendered as a
@@ -805,17 +830,9 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 								closingBodies.push(`⇉ batched ${toolsThisTurn} tool calls in turn ${turn}`);
 							}
 
-							if (closingBodies.length === 0) {
-								// Silent turn or first-of-turn content was already used —
-								// nothing more to emit. The next turn's `╭` will visually
-								// separate.
-							} else {
-								for (let i = 0; i < closingBodies.length; i++) {
-									const isLast = i === closingBodies.length - 1;
-									const branch = isLast ? "╰" : branchMid();
-									if (isLast) firstLineOfTurn = false;
-									appendTail(`${tailPrefix()} ${branch} ${closingBodies[i]}`);
-								}
+							for (let i = 0; i < closingBodies.length; i++) {
+								const isLast = i === closingBodies.length - 1;
+								emitTurnLine(closingBodies[i], { closing: isLast });
 							}
 							refreshStatus();
 							break;
@@ -840,8 +857,8 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 								event.args,
 							);
 							const riskPrefix = risky ? `${RISKY_TAG} ` : "";
-							appendTail(
-								`${tailPrefix()} ${branchMid()} ${riskPrefix}${glyph} ${event.toolName}${hint ? ` ${hint}` : ""}`,
+							emitTurnLine(
+								`${riskPrefix}${glyph} ${event.toolName}${hint ? ` ${hint}` : ""}`,
 								risky ? { warning: true } : undefined,
 							);
 							refreshStatus();
@@ -867,15 +884,13 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							);
 							if (event.isError) {
 								errCount++;
-								appendTail(
-									`${tailPrefix()} ${branchMid()} ⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
+								emitTurnLine(
+									`⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
 									{ warning: true },
 								);
 							} else {
 								const shape = resultShape(event.toolName, event.result);
-								appendTail(
-									`${tailPrefix()} ${branchMid()} ← ${event.toolName} ok${shape ? ` ${shape}` : ""}`,
-								);
+								emitTurnLine(`← ${event.toolName} ok${shape ? ` ${shape}` : ""}`);
 							}
 							refreshStatus();
 							break;

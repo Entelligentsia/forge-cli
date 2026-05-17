@@ -73,10 +73,11 @@ function paintBody(body: string, theme: Theme): string {
 	if (trimmed.length === 0) return body;
 	const leadingWs = body.slice(0, body.length - trimmed.length);
 
-	// Tree connector at the start (`╭`/`│`/`╰`): paint dim then recurse so the
-	// inner glyph still gets its category colour. Phase-boundary `─` lines are
-	// matched as a category below.
-	const conn = trimmed.match(/^([╭│╰])\s+(.*)$/);
+	// Tree connector at the start (`╭`/`│`/`╰`/`─`): paint dim then recurse so
+	// the inner glyph still gets its category colour. `─` only when followed by
+	// whitespace and NOT another `─` — that disambiguates a single-line-turn
+	// connector from a phase-boundary line (`─── phase X/Y …`).
+	const conn = trimmed.match(/^([╭│╰]|─(?=\s))\s+(.*)$/);
 	if (conn) {
 		const connector = conn[1];
 		const rest = conn[2];
