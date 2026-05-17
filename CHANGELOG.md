@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8] — 2026-05-17
+
+### Changed
+- **Docs:** README links to the 4ge.sh marketing site and `curl | sh`
+  installer one-liner.
+- **Internal:** reverted the experimental `@entelligentsia/pi-*`
+  rescope in vendor-pi; bundled tarballs keep the upstream
+  `@earendil-works/pi-*` namespace so weekly pi-mono syncs stay
+  conflict-free.
+
 ## [0.7.7] — 2026-05-16
 
 ### Added
