@@ -50,7 +50,7 @@
     ]
   },
   "forge": {
-    "bundledVersion": "0.43.16",
+    "bundledVersion": "0.43.19",
     "forgeRoot": "../forge/forge"
   },
   "scripts": {
