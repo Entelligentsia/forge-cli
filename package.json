@@ -25,7 +25,6 @@
     "agents",
     "prompts",
     "registry",
-    "skills",
     "themes",
     "workflows",
     "README.md",
@@ -40,7 +39,7 @@
       "./dist/extensions/forgecli/index.js"
     ],
     "skills": [
-      "./skills"
+      "./dist/forge-payload/skills"
     ],
     "prompts": [
       "./prompts"

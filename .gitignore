@@ -3,6 +3,7 @@ dist/
 *.tsbuildinfo
 .vitest/
 coverage/
+__pycache__/
 
 # Smoke gate output (FORGE-S16-T11)
 .smoke-out/
