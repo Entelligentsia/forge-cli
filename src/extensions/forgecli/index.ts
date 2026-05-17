@@ -25,6 +25,7 @@ import { registerAllForgeCommands, registerForgeCommands } from "./forge-command
 import { registerForgeInit } from "./forge-init.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { registerForgeTools } from "./forge-tools.js";
+import { loadSkillsFromDir, type LoadSkillsResult } from "@earendil-works/pi-coding-agent";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
@@ -302,6 +303,36 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		// guarantee: forgeRoot captured at init; projectRoot passed as cwd to execFile.
 		const projectRoot = path.dirname(path.dirname(forgeConfig!.configPath));
 		registerForgeTools(pi, forgeRoot, projectRoot);
+
+		// T04: Load bundled skills from dist/forge-payload/skills/ and validate.
+		// In dev mode (vitest), the payload isn't built yet, so the directory
+		// won't exist — fail-soft with a warning, don't crash.
+		const EXPECTED_SKILL_COUNT = 4;
+		const payloadSkillsDir = path.join(PKG_ROOT, "dist", "forge-payload", "skills");
+		if (existsSync(payloadSkillsDir)) {
+			try {
+				const result: LoadSkillsResult = loadSkillsFromDir({
+					dir: payloadSkillsDir,
+					source: "forge-payload",
+				});
+				if (result.diagnostics.length > 0) {
+					for (const diag of result.diagnostics) {
+						console.warn(
+							`[forge-cli] skill diagnostic: ${diag.type} ${diag.path ?? "(unknown)"}: ${diag.message}`,
+						);
+					}
+				}
+				if (result.skills.length !== EXPECTED_SKILL_COUNT) {
+					console.warn(
+						`[forge-cli] expected ${EXPECTED_SKILL_COUNT} bundled skills, loaded ${result.skills.length}`,
+					);
+				}
+			} catch (err) {
+				console.warn("[forge-cli] failed to load bundled skills:", err);
+			}
+		} else {
+			console.warn("[forge-cli] bundled skills directory not found — skipping skill load (dev mode?)");
+		}
 		// T05 → T02 (FORGE-S18-T02): hook dispatcher wired — audit-only, no blocking.
 		registerHookDispatcher(pi, forgeRoot);
 		// T04 (FORGE-S18-T04): forge:ask_user interactive prompt tool.

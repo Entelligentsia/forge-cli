@@ -2,12 +2,31 @@
 """Stage 1 — extract store-touching tool ops from forge subagent transcripts.
 
 Emits one JSON record per store op to store-ops.jsonl.
+
+Usage:
+    python3 filter-store-ops.py                                  # legacy hardcoded paths
+    python3 filter-store-ops.py --root <dir> --out <file>        # explicit paths (Mode C)
+
+CLI args are optional and backward-compatible; omitting them falls through to the
+original hardcoded paths.
 """
-import json, os, re, sys
+import argparse, json, os, re, sys
 from pathlib import Path
 
-ROOT = Path("/home/boni/src/forge-engineering/tmp/transcripts/hello")
-OUT  = Path("/home/boni/src/forge-engineering/tmp/transcripts-analysis/store-ops.jsonl")
+_DEFAULT_ROOT = Path("/home/boni/src/forge-engineering/tmp/transcripts/hello")
+_DEFAULT_OUT  = Path("/home/boni/src/forge-engineering/tmp/transcripts-analysis/store-ops.jsonl")
+
+def _parse_args():
+    p = argparse.ArgumentParser(description="Extract store-cli ops from Forge subagent transcripts", add_help=True)
+    p.add_argument("--root", type=Path, default=_DEFAULT_ROOT,
+                   help="Root directory of transcript JSON files (default: legacy hardcoded path)")
+    p.add_argument("--out",  type=Path, default=_DEFAULT_OUT,
+                   help="Output JSONL file path (default: legacy hardcoded path)")
+    return p.parse_args()
+
+_args = _parse_args()
+ROOT = _args.root
+OUT  = _args.out
 
 # MCP-tool channels (pi-runtime)
 MCP_STORE_TOOLS = {

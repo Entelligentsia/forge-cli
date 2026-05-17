@@ -409,5 +409,53 @@ if (fs.existsSync(piChangelogSrc)) {
 	console.warn("build-payload: pi-coding-agent CHANGELOG.md not found in node_modules — /whats-new will skip pi");
 }
 
+// 2i: skills/ — forge/forge/skills/{store-custodian,store-query-grammar,store-query-nlp,refresh-kb-links}/
+// Bundle 4 plugin SKILL.md skill directories into the payload so forge-cli agents
+// auto-load store-custodian and related skills at runtime. Each directory contains
+// only SKILL.md (no subdirectories). Source of truth remains in forge/forge/skills/.
+//
+// Two-destination copy:
+//   1. dist/forge-payload/skills/<name>/  — programmatic loadSkillsFromDir() path
+//   2. skills/<name>/                   — pi.skills auto-discovery path (package root)
+//
+// The .gitkeep placeholder in skills/ is removed before copying.
+const SKILLS_TO_COPY = [
+	"store-custodian",
+	"store-query-grammar",
+	"store-query-nlp",
+	"refresh-kb-links",
+];
+
+const skillsSrcDir = path.join(forgeRoot, "skills");
+const skillsPayloadDestDir = path.join(outDir, "skills");
+const skillsPkgRootDestDir = path.join(repoRoot, "skills");
+
+// Remove legacy .gitkeep from package-root skills/ so only real skill dirs remain.
+const gitkeepPath = path.join(skillsPkgRootDestDir, ".gitkeep");
+if (fs.existsSync(gitkeepPath)) {
+	fs.unlinkSync(gitkeepPath);
+	console.log("build-payload: removed skills/.gitkeep");
+}
+
+let skillsCopiedCount = 0;
+for (const skillName of SKILLS_TO_COPY) {
+	const srcDir = path.join(skillsSrcDir, skillName);
+	if (!fs.existsSync(srcDir)) {
+		console.warn(`build-payload: skill directory not found (skipping): ${skillName}`);
+		continue;
+	}
+
+	// Destination 1: dist/forge-payload/skills/<name>/
+	const payloadDest = path.join(skillsPayloadDestDir, skillName);
+	copyDir(srcDir, payloadDest);
+
+	// Destination 2: skills/<name>/ (package root, for pi.skills auto-discovery)
+	const pkgRootDest = path.join(skillsPkgRootDestDir, skillName);
+	copyDir(srcDir, pkgRootDest);
+
+	skillsCopiedCount++;
+}
+console.log(`build-payload: skills/ — ${skillsCopiedCount}/${SKILLS_TO_COPY.length} skill directories copied (payload + pkg-root)`);
+
 console.log("build-payload: forge-payload written to", outDir);
 console.log("build-payload: expanded bundle layout complete");
