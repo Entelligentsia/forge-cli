@@ -173,6 +173,21 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					const isLast = i === closingBodies.length - 1;
 					emitTurnLine(closingBodies[i], { closing: isLast });
 				}
+
+				// Bubble one consolidated event up to the registry so the
+				// top-level viewport can surface activity from any subagent
+				// with subagent-identified attribution.
+				registry.recordTurnEvent({
+					sessionId,
+					phaseRole,
+					displayRole: role,
+					turn: state.turn,
+					preview: preview ?? "",
+					thinking: thinking ?? "",
+					deltaUsage: { ...delta },
+					cumUsage: { ...state.cumUsage },
+					timestamp: Date.now(),
+				});
 				break;
 			}
 			case "tool_execution_start": {

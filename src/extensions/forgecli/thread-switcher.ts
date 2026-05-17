@@ -133,10 +133,12 @@ class ChipStripComponent implements Component {
 		registry.on("change", onChange);
 		registry.on("tail", onChange);
 		registry.on("preview", onChange);
+		registry.on("turn", onChange);
 		this.dispose = () => {
 			registry.off("change", onChange);
 			registry.off("tail", onChange);
 			registry.off("preview", onChange);
+			registry.off("turn", onChange);
 		};
 	}
 
@@ -251,7 +253,16 @@ class ChipStripComponent implements Component {
 		const prefix = dim("threads ─ ");
 		const hint = dim("  ↓ to navigate");
 		const spinPart = spin ? `  ${spin}` : "";
-		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
+		// Prefer the latest cross-session turn event over the focused session's
+		// preview so users see activity from any subagent identified by
+		// `[displayRole]`. Falls back to the focused-session preview when no
+		// global event has been recorded yet (cold start / single-subagent run).
+		const latest = this.registry.getLatestTurnEvent();
+		const previewText = latest && latest.preview
+			? `  ${accent(`[${latest.displayRole}]`)} ${dim(`t${latest.turn}`)} "${latest.preview}"`
+			: session.currentTurnPreview
+			? `  "${session.currentTurnPreview}"`
+			: "";
 
 		// Top-level aggregate token meter — sum of phase.usage across every
 		// session in the registry. Shown only when nonzero so cold start UI
@@ -267,7 +278,14 @@ class ChipStripComponent implements Component {
 			visibleWidth(aggPart) +
 			visibleWidth(hint);
 		const previewBudget = Math.max(0, width - fixedWidth);
-		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
+		// When previewText comes from the global feed it's already painted
+		// (accent prefix + dim turn marker); just truncate to fit. Otherwise
+		// it's plain text from the session preview, so dim it.
+		const preview = !previewText
+			? ""
+			: latest && latest.preview
+			? truncateToWidth(previewText, previewBudget)
+			: dim(truncateToWidth(previewText, previewBudget));
 
 		let line = `${prefix}${chipsLine}${spinPart}${preview}${aggPart}${hint}`;
 		if (visibleWidth(line) > width) line = truncateToWidth(line, width);

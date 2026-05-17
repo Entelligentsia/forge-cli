@@ -109,6 +109,61 @@ describe("attachViewportObserver", () => {
 		expect(calls).toBe(3);
 	});
 
+	it("emits a global turn event on every turn_end with attribution", () => {
+		const { registry, observer } = bootstrap();
+		const events: any[] = [];
+		registry.on("turn", (e) => events.push(e));
+
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({
+			type: "turn_end",
+			message: makeAssistantMessage({ input: 1000, output: 50, text: "doing the plan", thinking: "weighing options" }),
+		});
+
+		expect(events.length).toBe(1);
+		expect(events[0]).toMatchObject({
+			sessionId: "T1",
+			phaseRole: "plan",
+			displayRole: "plan",
+			turn: 1,
+			preview: "doing the plan",
+			thinking: "weighing options",
+			deltaUsage: { input: 1000, output: 50, cacheRead: 0 },
+			cumUsage: { input: 1000, output: 50, cacheRead: 0 },
+		});
+		expect(typeof events[0].timestamp).toBe("number");
+
+		// Second turn — deltaUsage is per-turn, cumUsage accumulates.
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({
+			type: "turn_end",
+			message: makeAssistantMessage({ input: 500, output: 25, text: "step 2" }),
+		});
+		expect(events[1].deltaUsage).toEqual({ input: 500, output: 25, cacheRead: 0 });
+		expect(events[1].cumUsage).toEqual({ input: 1500, output: 75, cacheRead: 0 });
+	});
+
+	it("honours displayRole when provided", () => {
+		const registry = new SessionRegistry();
+		registry.startSession("S1:ceremony");
+		registry.startPhase("S1:ceremony", "ceremony", 0);
+		const observer = attachViewportObserver({
+			registry,
+			sessionId: "S1:ceremony",
+			phaseRole: "ceremony",
+			displayRole: "sprint-architect",
+		});
+		const events: any[] = [];
+		registry.on("turn", (e) => events.push(e));
+
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({
+			type: "turn_end",
+			message: makeAssistantMessage({ input: 100, output: 10, text: "hi" }),
+		});
+		expect(events[0].displayRole).toBe("sprint-architect");
+	});
+
 	it("flags risky bash commands with warning", () => {
 		const { registry, observer } = bootstrap();
 		observer.onEvent({ type: "turn_start" });
@@ -145,6 +200,63 @@ describe("SessionRegistry.getAggregateUsage", () => {
 		reg.startPhase("A", "plan", 0);
 		// no setPhaseUsage call
 		expect(reg.getAggregateUsage()).toEqual({ input: 0, output: 0, cacheRead: 0 });
+	});
+
+	it("recordTurnEvent appends to the ring buffer and emits 'turn'", () => {
+		const reg = new SessionRegistry();
+		let fired = 0;
+		reg.on("turn", () => fired++);
+		reg.recordTurnEvent({
+			sessionId: "A",
+			phaseRole: "plan",
+			displayRole: "plan",
+			turn: 1,
+			preview: "a",
+			thinking: "",
+			deltaUsage: { input: 100, output: 10, cacheRead: 0 },
+			cumUsage: { input: 100, output: 10, cacheRead: 0 },
+			timestamp: 1,
+		});
+		reg.recordTurnEvent({
+			sessionId: "B",
+			phaseRole: "implement",
+			displayRole: "implement",
+			turn: 1,
+			preview: "b",
+			thinking: "",
+			deltaUsage: { input: 200, output: 20, cacheRead: 0 },
+			cumUsage: { input: 200, output: 20, cacheRead: 0 },
+			timestamp: 2,
+		});
+		expect(fired).toBe(2);
+
+		// Latest = newest; recent = newest first.
+		expect(reg.getLatestTurnEvent()?.sessionId).toBe("B");
+		const recent = reg.getRecentTurnEvents(10);
+		expect(recent[0].sessionId).toBe("B");
+		expect(recent[1].sessionId).toBe("A");
+	});
+
+	it("ring buffer caps at MAX_TURN_LOG (50)", () => {
+		const reg = new SessionRegistry();
+		for (let i = 0; i < 75; i++) {
+			reg.recordTurnEvent({
+				sessionId: `S${i}`,
+				phaseRole: "plan",
+				displayRole: "plan",
+				turn: 1,
+				preview: "",
+				thinking: "",
+				deltaUsage: { input: 1, output: 1, cacheRead: 0 },
+				cumUsage: { input: 1, output: 1, cacheRead: 0 },
+				timestamp: i,
+			});
+		}
+		const recent = reg.getRecentTurnEvents(100);
+		expect(recent.length).toBe(50);
+		// Newest (i=74) should be first.
+		expect(recent[0].sessionId).toBe("S74");
+		expect(recent[49].sessionId).toBe("S25");
 	});
 
 	it("emits both tail and change events on setPhaseUsage", () => {

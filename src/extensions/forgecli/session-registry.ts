@@ -83,9 +83,35 @@ export interface SessionState {
 const MAX_SESSIONS = 20;
 const MAX_EVENTS_PER_SESSION = 500;
 const MAX_TAIL_LINES_PER_PHASE = 2048;
+const MAX_TURN_LOG = 50;
+
+/**
+ * One bubble-up record per assistant turn from any subagent in the process.
+ * Lets top-level viewports (the chip strip) surface a unified "what's
+ * happening right now" feed identified by subagent, regardless of which
+ * subagent is foregrounded.
+ */
+export interface TurnEvent {
+	sessionId: string;
+	phaseRole: string;
+	/** Human-friendly role label (defaults to phaseRole when caller doesn't
+	 * pass one). Drives the `[displayRole]` prefix in the global feed. */
+	displayRole: string;
+	turn: number;
+	preview: string;
+	thinking: string;
+	/** Per-turn token delta (from `message.usage`). */
+	deltaUsage: { input: number; output: number; cacheRead: number };
+	/** Cumulative phase usage at this turn. */
+	cumUsage: { input: number; output: number; cacheRead: number };
+	timestamp: number;
+}
 
 export class SessionRegistry extends EventEmitter {
 	private sessions = new Map<string, SessionState>();
+	/** Ring buffer of cross-session turn events. Capped at MAX_TURN_LOG.
+	 * Newest at the end. */
+	private turnLog: TurnEvent[] = [];
 
 	getSession(taskId: string): SessionState | undefined {
 		return this.sessions.get(taskId);
@@ -240,6 +266,35 @@ export class SessionRegistry extends EventEmitter {
 			if (s.phases[i].role === phaseRole) return s.phases[i];
 		}
 		return undefined;
+	}
+
+	/**
+	 * Append a per-turn bubble-up event from any subagent. The observer in
+	 * viewport-events.ts calls this once on every `turn_end`. ChipStrip
+	 * subscribes to the emitted `turn` event to refresh its global preview
+	 * panel; other consumers can read `getRecentTurnEvents()`.
+	 */
+	recordTurnEvent(evt: TurnEvent): void {
+		this.turnLog.push(evt);
+		if (this.turnLog.length > MAX_TURN_LOG) {
+			this.turnLog.splice(0, this.turnLog.length - MAX_TURN_LOG);
+		}
+		this.emit("turn", evt);
+	}
+
+	/** Most-recent turn events across all sessions, newest first. */
+	getRecentTurnEvents(limit = MAX_TURN_LOG): TurnEvent[] {
+		const n = Math.min(limit, this.turnLog.length);
+		const out: TurnEvent[] = [];
+		for (let i = this.turnLog.length - 1; i >= this.turnLog.length - n; i--) {
+			out.push(this.turnLog[i]);
+		}
+		return out;
+	}
+
+	/** Convenience: latest turn event from any subagent, or undefined. */
+	getLatestTurnEvent(): TurnEvent | undefined {
+		return this.turnLog.length > 0 ? this.turnLog[this.turnLog.length - 1] : undefined;
 	}
 
 	/**
