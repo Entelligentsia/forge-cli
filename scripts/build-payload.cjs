@@ -379,5 +379,35 @@ if (fs.existsSync(extensionSchemasSrc)) {
 	console.warn("build-payload: src/extensions/forgecli/schemas/ not found — skipping");
 }
 
+// 2h: CHANGELOG sources for /whats-new — pin to bundled versions at build
+// time so the runtime doesn't have to chase node_modules layout. Fail-soft:
+// missing sources just disable that component in the /whats-new panel.
+const distDir = path.resolve(repoRoot, "dist");
+fs.mkdirSync(distDir, { recursive: true });
+
+const forgePluginChangelogSrc = path.join(forgeRoot, "..", "CHANGELOG.md");
+const forgePluginChangelogDest = path.join(distDir, "CHANGELOG-forge-plugin.md");
+if (fs.existsSync(forgePluginChangelogSrc)) {
+	copyFile(forgePluginChangelogSrc, forgePluginChangelogDest);
+	console.log("build-payload: CHANGELOG-forge-plugin.md bundled");
+} else {
+	console.warn("build-payload: forge plugin CHANGELOG.md not found — /whats-new will skip forge-plugin");
+}
+
+const piChangelogSrc = path.join(
+	repoRoot,
+	"node_modules",
+	"@earendil-works",
+	"pi-coding-agent",
+	"CHANGELOG.md",
+);
+const piChangelogDest = path.join(distDir, "CHANGELOG-pi.md");
+if (fs.existsSync(piChangelogSrc)) {
+	copyFile(piChangelogSrc, piChangelogDest);
+	console.log("build-payload: CHANGELOG-pi.md bundled");
+} else {
+	console.warn("build-payload: pi-coding-agent CHANGELOG.md not found in node_modules — /whats-new will skip pi");
+}
+
 console.log("build-payload: forge-payload written to", outDir);
 console.log("build-payload: expanded bundle layout complete");

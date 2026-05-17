@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9] — 2026-05-17
+
+### Added
+- **What's New strip.** Single-row interactive widget below the editor
+  (same surface as the thread-switcher) that summarizes change counts
+  across pi, forge-plugin, and forge-cli since last login. Auto-mounts
+  on `session_start` when any of the three has advanced; ↓ activates,
+  ←→ navigates between component chips, Enter expands the focused
+  component's full changelog into the chat viewport, Esc dismisses and
+  collapses the replay baseline.
+- **`/whats-new` slash command.** Echoes the overall summary into the
+  main chat container and re-mounts the strip for drill-down. Falls
+  back to a text-only notify in headless / RPC mode. Subcommands:
+  `/whats-new dismiss` clears the replay baseline.
+- **Dual-baseline replay state.** `~/.cache/forgecli/whats-new-seen.json`
+  tracks `seen` (auto-dismiss versions), `prev*` (replay baseline before
+  explicit dismiss), and `lastShownFrom*` (frozen from-versions of the
+  most recently shown set). `/whats-new` after dismissal replays the
+  last-shown set indefinitely until the next version bump refreshes it.
+- **Bundled CHANGELOG sources.** `build-payload.cjs` now copies
+  `forge/CHANGELOG.md` → `dist/CHANGELOG-forge-plugin.md` and the
+  installed `@earendil-works/pi-coding-agent/CHANGELOG.md` →
+  `dist/CHANGELOG-pi.md`, pinning changelog content to the bundled
+  versions and avoiding `node_modules` archaeology at runtime.
+
 ## [0.7.8] — 2026-05-17
 
 ### Changed

@@ -36,6 +36,7 @@ import { registerRegenerate } from "./regenerate.js";
 import { registerSprintIntake } from "./sprint-intake.js";
 import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
+import { mountWhatsNewWidgetOnStartup, registerWhatsNewWidgetCommand } from "./whats-new-widget.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
 import { registerRunTask } from "./run-task.js";
@@ -239,6 +240,26 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			});
 		}
 
+		// 4b. What's-New strip — single-row widget below the editor, arrow-key
+		// navigable across pi / forge-plugin / forge-cli changelog summaries.
+		// Mirrors the thread-switcher pattern (setWidget + onTerminalInput +
+		// setOutputSource for the per-component detail view). Marks versions
+		// as seen so subsequent sessions don't re-mount.
+		if (PKG_VERSIONS.cliVersion && PKG_VERSIONS.bundledForgeVersion && PI_VERSION) {
+			void mountWhatsNewWidgetOnStartup(pi, ctx, {
+				pkgRoot: PKG_ROOT,
+				current: {
+					pi: PI_VERSION,
+					forgePlugin: PKG_VERSIONS.bundledForgeVersion,
+					forgeCli: PKG_VERSIONS.cliVersion,
+				},
+			}).catch((err) => {
+				if (process.env.FORGE_DEBUG_WHATS_NEW === "1") {
+					console.error("[forge-cli whats-new]", err);
+				}
+			});
+		}
+
 		// 5. Bundled-forge drift prompt (FORGE-S16-T15, issue #18 part 2 / Q7).
 		// Detect+prompt only — never auto-applies migrations.
 		if (PKG_VERSIONS.bundledForgeVersion) {
@@ -400,6 +421,18 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		registerForgeUpdateCommand(pi, {
 			pkgRoot: PKG_ROOT,
 			currentCliVersion: PKG_VERSIONS.cliVersion,
+		});
+	}
+
+	// /whats-new — replay summary as text (widget itself auto-mounts on session_start).
+	if (PKG_VERSIONS.cliVersion && PKG_VERSIONS.bundledForgeVersion && PI_VERSION) {
+		registerWhatsNewWidgetCommand(pi, {
+			pkgRoot: PKG_ROOT,
+			current: {
+				pi: PI_VERSION,
+				forgePlugin: PKG_VERSIONS.bundledForgeVersion,
+				forgeCli: PKG_VERSIONS.cliVersion,
+			},
 		});
 	}
 
