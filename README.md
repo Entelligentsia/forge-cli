@@ -4,6 +4,7 @@
 
 <br>
 
+[![website](https://img.shields.io/badge/4ge.sh-ff8c42?style=flat-square&labelColor=2a1d2f&color=ff8c42)](https://4ge.sh)
 [![npm](https://img.shields.io/npm/v/@entelligentsia/forgecli?style=flat-square&color=000&label=npm)](https://www.npmjs.com/package/@entelligentsia/forgecli)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-000?style=flat-square)](#)
 [![license](https://img.shields.io/badge/license-MIT-000?style=flat-square)](#)
@@ -26,10 +27,16 @@ forge-cli generates a project-specific engineering knowledge base, sprint workfl
 ## Install
 
 ```sh
+curl -fsSL https://4ge.sh | sh
+```
+
+Or via npm directly:
+
+```sh
 npm install -g @entelligentsia/forgecli
 ```
 
-Node 20 or higher.
+Node 20 or higher. The curl installer checks prerequisites, runs the npm install, and verifies `forge` is on your PATH.
 
 ## Quick start
 
@@ -115,6 +122,7 @@ ASK      /forge:health        KB freshness + store integrity
 
 ## Links
 
+- Website — [4ge.sh](https://4ge.sh)
 - npm — [`@entelligentsia/forgecli`](https://www.npmjs.com/package/@entelligentsia/forgecli)
 - GitHub — [Entelligentsia/forge-cli](https://github.com/Entelligentsia/forge-cli)
 - Plugin source — [Entelligentsia/forge](https://github.com/Entelligentsia/forge)
