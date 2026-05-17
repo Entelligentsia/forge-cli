@@ -709,6 +709,20 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// Tool-calls emitted in the current assistant turn — drives the parallel-batch
 		// marker at turn_end (we don't know it's a batch until we see >1 start).
 		let toolsThisTurn = 0;
+		// Tree-connector state. Each turn renders as a box-drawing block:
+		//   ╭ first line of the turn (first tool_call_start or first turn_end content)
+		//   │ middle lines
+		//   ╰ last line (final turn_end content)
+		// Streaming-friendly: we emit `╭` on the first line of a turn, `│` on
+		// subsequent live tool_call/result lines, and explicitly `╰` on the very
+		// last closing line emitted at turn_end. Lines outside a turn boundary
+		// (phase begin/summary, retry, compaction) skip the tree entirely.
+		let firstLineOfTurn = true;
+		const branchMid = (): string => {
+			const c = firstLineOfTurn ? "╭" : "│";
+			firstLineOfTurn = false;
+			return c;
+		};
 
 		// Per-line prefix omits the token meter — token usage is rendered as a
 		// sticky footer at the bottom of the tail view (driven by
@@ -759,6 +773,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							turn++;
 							lastTool = "";
 							toolsThisTurn = 0;
+							firstLineOfTurn = true;
 							registry.bumpTurn(taskId);
 							refreshStatus();
 							break;
@@ -771,12 +786,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							cumUsage.cacheRead += delta.cacheRead;
 							registry.setPhaseUsage(taskId, phase.role, cumUsage);
 
-							// Surface model thinking as a one-liner — diagnostic value
-							// is usually high and otherwise hidden from the viewport.
+							// Gather closing content (thinking, preview, batch marker) so
+							// we can mark the last one with the `╰` connector — closing
+							// the turn block visually.
+							const closingBodies: string[] = [];
 							const thinking = extractThinkingOneLiner(event.message);
-							if (thinking) {
-								appendTail(`${tailPrefix()} ✱ ${thinking}`);
-							}
+							if (thinking) closingBodies.push(`✱ ${thinking}`);
 
 							const preview = extractTurnPreview(event.message);
 							if (preview) {
@@ -784,14 +799,23 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 								if (process.env.FORGE_VERBOSE === "1") {
 									ctx.ui.setStatus?.(MESSAGE_KEY, `  "${preview}"`);
 								}
-								appendTail(`${tailPrefix()} » "${preview}"`);
+								closingBodies.push(`» "${preview}"`);
+							}
+							if (toolsThisTurn > 1) {
+								closingBodies.push(`⇉ batched ${toolsThisTurn} tool calls in turn ${turn}`);
 							}
 
-							// Parallel-batch marker: only emitted when >1 tool was called
-							// in this assistant message. Comes after the individual tool
-							// lines so users see the batch was deliberate.
-							if (toolsThisTurn > 1) {
-								appendTail(`${tailPrefix()} ⇉ batched ${toolsThisTurn} tool calls in turn ${turn}`);
+							if (closingBodies.length === 0) {
+								// Silent turn or first-of-turn content was already used —
+								// nothing more to emit. The next turn's `╭` will visually
+								// separate.
+							} else {
+								for (let i = 0; i < closingBodies.length; i++) {
+									const isLast = i === closingBodies.length - 1;
+									const branch = isLast ? "╰" : branchMid();
+									if (isLast) firstLineOfTurn = false;
+									appendTail(`${tailPrefix()} ${branch} ${closingBodies[i]}`);
+								}
 							}
 							refreshStatus();
 							break;
@@ -817,7 +841,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							);
 							const riskPrefix = risky ? `${RISKY_TAG} ` : "";
 							appendTail(
-								`${tailPrefix()} ${riskPrefix}${glyph} ${event.toolName}${hint ? ` ${hint}` : ""}`,
+								`${tailPrefix()} ${branchMid()} ${riskPrefix}${glyph} ${event.toolName}${hint ? ` ${hint}` : ""}`,
 								risky ? { warning: true } : undefined,
 							);
 							refreshStatus();
@@ -844,13 +868,13 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							if (event.isError) {
 								errCount++;
 								appendTail(
-									`${tailPrefix()} ⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
+									`${tailPrefix()} ${branchMid()} ⚠ ${event.toolName} failed: ${extractErrorSummary(event.result)}`,
 									{ warning: true },
 								);
 							} else {
 								const shape = resultShape(event.toolName, event.result);
 								appendTail(
-									`${tailPrefix()} ← ${event.toolName} ok${shape ? ` ${shape}` : ""}`,
+									`${tailPrefix()} ${branchMid()} ← ${event.toolName} ok${shape ? ` ${shape}` : ""}`,
 								);
 							}
 							refreshStatus();

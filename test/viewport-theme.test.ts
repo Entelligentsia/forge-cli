@@ -149,6 +149,42 @@ describe("paintTailLine", () => {
 	});
 });
 
+describe("paintTailLine — tree connectors", () => {
+	it("paints ╭ connector dim and recurses into the body glyph", () => {
+		const { theme } = makeStub();
+		const out = paintTailLine("[plan 14:09:40 t11] ╭ $ bash ls", theme as never);
+		expect(out).toContain("<dim>╭</dim>");
+		expect(out).toContain("<bashMode>$</bashMode>");
+	});
+
+	it("paints │ connector dim and recurses into tool-result body", () => {
+		const { theme } = makeStub();
+		const out = paintTailLine("[plan 14:09:40 t11] │ ← bash ok 29L", theme as never);
+		expect(out).toContain("<dim>│</dim>");
+		expect(out).toContain("<success>← bash ok 29L</success>");
+	});
+
+	it("paints ╰ connector dim and recurses into thinking body", () => {
+		const { theme } = makeStub();
+		const out = paintTailLine(
+			"[plan 14:09:40 t11] ╰ ✱ analysing preflight gate failure",
+			theme as never,
+		);
+		expect(out).toContain("<dim>╰</dim>");
+		expect(out).toMatch(/<i><thinkingText>✱ analysing preflight gate failure<\/thinkingText><\/i>/);
+	});
+
+	it("paints ╰ connector with preview line", () => {
+		const { theme } = makeStub();
+		const out = paintTailLine(
+			'[plan 14:09:40 t11] ╰ » "now let me read the architecture"',
+			theme as never,
+		);
+		expect(out).toContain("<dim>╰</dim>");
+		expect(out).toMatch(/<i><muted>» "now let me read the architecture"<\/muted><\/i>/);
+	});
+});
+
 describe("paintFooterLine", () => {
 	it("returns plain right-padded text when theme undefined", () => {
 		const out = paintFooterLine("↑1.44M ↓6.5k", 30, undefined);

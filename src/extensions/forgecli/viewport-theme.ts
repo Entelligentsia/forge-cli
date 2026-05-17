@@ -69,11 +69,25 @@ export function paintFooterLine(text: string, width: number, theme: Theme | unde
 }
 
 function paintBody(body: string, theme: Theme): string {
-	// Body always starts with whitespace + glyph + payload, except phase-boundary
-	// lines which start with `─`. Find the first non-space char to classify.
 	const trimmed = body.replace(/^\s+/, "");
 	if (trimmed.length === 0) return body;
 	const leadingWs = body.slice(0, body.length - trimmed.length);
+
+	// Tree connector at the start (`╭`/`│`/`╰`): paint dim then recurse so the
+	// inner glyph still gets its category colour. Phase-boundary `─` lines are
+	// matched as a category below.
+	const conn = trimmed.match(/^([╭│╰])\s+(.*)$/);
+	if (conn) {
+		const connector = conn[1];
+		const rest = conn[2];
+		return `${leadingWs}${theme.fg("dim", connector)} ${paintInner(rest, theme)}`;
+	}
+
+	return `${leadingWs}${paintInner(trimmed, theme)}`;
+}
+
+function paintInner(trimmed: string, theme: Theme): string {
+	if (trimmed.length === 0) return trimmed;
 	// Use codePointAt so non-BMP emoji like 🔒 (U+1F512, surrogate pair in
 	// UTF-16) match correctly. `trimmed[0]` returns only the high surrogate.
 	const cp = trimmed.codePointAt(0);
@@ -81,36 +95,36 @@ function paintBody(body: string, theme: Theme): string {
 
 	switch (first) {
 		case "$": // bash
-			return `${leadingWs}${theme.fg("bashMode", "$")}${trimmed.slice(1)}`;
+			return `${theme.fg("bashMode", "$")}${trimmed.slice(1)}`;
 		case "⌕": // read/grep/glob
-			return `${leadingWs}${theme.fg("accent", "⌕")}${trimmed.slice(1)}`;
+			return `${theme.fg("accent", "⌕")}${trimmed.slice(1)}`;
 		case "✎": // write/edit
-			return `${leadingWs}${theme.fg("warning", "✎")}${trimmed.slice(1)}`;
+			return `${theme.fg("warning", "✎")}${trimmed.slice(1)}`;
 		case "⚙": // store-cli
-			return `${leadingWs}${theme.fg("toolTitle", "⚙")}${trimmed.slice(1)}`;
+			return `${theme.fg("toolTitle", "⚙")}${trimmed.slice(1)}`;
 		case "→": // fallback tool
-			return `${leadingWs}${theme.fg("muted", "→")}${trimmed.slice(1)}`;
+			return `${theme.fg("muted", "→")}${trimmed.slice(1)}`;
 		case "←": // tool result OK
-			return `${leadingWs}${theme.fg("success", trimmed)}`;
+			return theme.fg("success", trimmed);
 		case "⚠": // tool failed
-			return `${leadingWs}${theme.fg("error", trimmed)}`;
+			return theme.fg("error", trimmed);
 		case "🔒": // risky bash
-			return `${leadingWs}${theme.bold(theme.fg("error", trimmed))}`;
+			return theme.bold(theme.fg("error", trimmed));
 		case "✱": // thinking
-			return `${leadingWs}${theme.italic(theme.fg("thinkingText", trimmed))}`;
+			return theme.italic(theme.fg("thinkingText", trimmed));
 		case "»": // model preview text
-			return `${leadingWs}${theme.italic(theme.fg("muted", trimmed))}`;
+			return theme.italic(theme.fg("muted", trimmed));
 		case "⇉": // batched
-			return `${leadingWs}${theme.fg("dim", trimmed)}`;
+			return theme.fg("dim", trimmed);
 		case "▣": // phase summary
-			return `${leadingWs}${theme.bold(theme.fg("accent", trimmed))}`;
+			return theme.bold(theme.fg("accent", trimmed));
 		case "─": // phase boundary line `─── phase X/Y begin · taskId ───`
-			return `${leadingWs}${theme.bold(theme.fg("accent", trimmed))}`;
+			return theme.bold(theme.fg("accent", trimmed));
 		case "↻": // auto retry
-			return `${leadingWs}${theme.fg("warning", trimmed)}`;
+			return theme.fg("warning", trimmed);
 		case "◌": // compaction
-			return `${leadingWs}${theme.fg("muted", trimmed)}`;
+			return theme.fg("muted", trimmed);
 		default:
-			return body;
+			return trimmed;
 	}
 }
