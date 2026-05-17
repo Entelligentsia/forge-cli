@@ -538,11 +538,10 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			// order, identified by `[displayRole]`. triggerTurn:false so no
 			// LLM round-trip; the message is render-only.
 			registry.on("turn", (evt) => {
-				const body = evt.preview
-					? `"${evt.preview}"`
-					: evt.thinking
-					? `✱ ${evt.thinking}`
-					: "(silent turn)";
+				// Skip silent turns (no preview, no thinking) — would just add
+				// noise rows to the parent chat history.
+				if (!evt.preview && !evt.thinking) return;
+				const body = evt.preview ? `"${evt.preview}"` : `✱ ${evt.thinking}`;
 				try {
 					pi.sendMessage(
 						{
