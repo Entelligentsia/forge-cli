@@ -47,6 +47,7 @@ import { fmtTokenFooter } from "./viewport-renderer.js";
 import { paintFooterLine, paintTailLine } from "./viewport-theme.js";
 
 const WIDGET_KEY = "forge:thread-switcher";
+const FOOTER_WIDGET_KEY = "forge:viewport-footer";
 
 // Braille spinner frames — universally supported, 10 frames feels smooth at
 // 100ms cadence.
@@ -106,6 +107,48 @@ class TailViewComponent implements Component {
 
 	invalidate(): void {
 		// Re-render is driven by external invalidationCb → tui.requestRender().
+	}
+
+	setInvalidationCallback(cb: () => void): void {
+		this.invalidationCb = cb;
+	}
+
+	dispose: () => void;
+}
+
+// ── Main-viewport footer: sticky Σ aggregate token meter ──
+//
+// Rendered as a widget at `aboveEditor` placement so it sits at the bottom
+// of the main chat viewport (matching the position of the per-phase TailView
+// footer). Subscribes to registry events and right-aligns
+// `Σ ↑input ↓output ⇪cacheRead`.
+
+class ViewportFooterComponent implements Component {
+	private invalidationCb?: () => void;
+
+	constructor(
+		private readonly registry: SessionRegistry,
+		private readonly theme: Theme,
+	) {
+		const onChange = () => this.invalidationCb?.();
+		registry.on("change", onChange);
+		registry.on("tail", onChange);
+		registry.on("turn", onChange);
+		this.dispose = () => {
+			registry.off("change", onChange);
+			registry.off("tail", onChange);
+			registry.off("turn", onChange);
+		};
+	}
+
+	render(width: number): string[] {
+		const text = fmtTokenFooter(this.registry.getAggregateUsage());
+		if (!text) return []; // cold-start: render nothing rather than blank row.
+		return [paintFooterLine(`Σ ${text}`, width, this.theme)];
+	}
+
+	invalidate(): void {
+		// Re-render driven by external invalidationCb → tui.requestRender().
 	}
 
 	setInvalidationCallback(cb: () => void): void {
@@ -253,41 +296,17 @@ class ChipStripComponent implements Component {
 		const prefix = dim("threads ─ ");
 		const hint = dim("  ↓ to navigate");
 		const spinPart = spin ? `  ${spin}` : "";
-		// Prefer the latest cross-session turn event over the focused session's
-		// preview so users see activity from any subagent identified by
-		// `[displayRole]`. Falls back to the focused-session preview when no
-		// global event has been recorded yet (cold start / single-subagent run).
-		const latest = this.registry.getLatestTurnEvent();
-		const previewText = latest && latest.preview
-			? `  ${accent(`[${latest.displayRole}]`)} ${dim(`t${latest.turn}`)} "${latest.preview}"`
-			: session.currentTurnPreview
-			? `  "${session.currentTurnPreview}"`
-			: "";
-
-		// Top-level aggregate token meter — sum of phase.usage across every
-		// session in the registry. Shown only when nonzero so cold start UI
-		// stays clean. Acts as the "Σ" panel users see regardless of which
-		// subagent is foregrounded.
-		const aggText = fmtTokenFooter(this.registry.getAggregateUsage());
-		const aggPart = aggText ? `  ${this.theme.bold(this.theme.fg("accent", `Σ ${aggText}`))}` : "";
+		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
 		const fixedWidth =
 			visibleWidth(prefix) +
 			visibleWidth(chipsLine) +
 			visibleWidth(spinPart) +
-			visibleWidth(aggPart) +
 			visibleWidth(hint);
 		const previewBudget = Math.max(0, width - fixedWidth);
-		// When previewText comes from the global feed it's already painted
-		// (accent prefix + dim turn marker); just truncate to fit. Otherwise
-		// it's plain text from the session preview, so dim it.
-		const preview = !previewText
-			? ""
-			: latest && latest.preview
-			? truncateToWidth(previewText, previewBudget)
-			: dim(truncateToWidth(previewText, previewBudget));
+		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
 
-		let line = `${prefix}${chipsLine}${spinPart}${preview}${aggPart}${hint}`;
+		let line = `${prefix}${chipsLine}${spinPart}${preview}${hint}`;
 		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
 		return [line];
 	}
@@ -465,6 +484,29 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 				},
 				{ placement: "belowEditor" },
 			);
+
+			// Aggregate Σ token meter — sticky right-bottom of the main chat
+			// viewport (mirrors the per-phase footer rendered inside TailView
+			// when a subagent chip is focused).
+			ctx.ui.setWidget(
+				FOOTER_WIDGET_KEY,
+				(tui, theme) => {
+					const footer = new ViewportFooterComponent(registry, theme);
+					footer.setInvalidationCallback(() => tui.requestRender());
+					return footer;
+				},
+				{ placement: "aboveEditor" },
+			);
+
+			// Bubble each subagent's turn-complete event into the parent
+			// (main) viewport as an attributed notification. Users see live
+			// activity from every subagent in one place, identified by
+			// displayRole, regardless of which chip (if any) is focused.
+			registry.on("turn", (evt) => {
+				const body = evt.preview ? `"${evt.preview}"` : (evt.thinking ? `✱ ${evt.thinking}` : "(silent turn)");
+				ctx.ui.notify(`[${evt.displayRole}] t${evt.turn} ${body}`, "info");
+			});
+
 			mounted = true;
 
 			// Bootstrap the spinner ticker on any session start so the
