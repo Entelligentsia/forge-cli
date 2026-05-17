@@ -18,7 +18,7 @@
  */
 
 import path from "node:path";
-import { getModel } from "@entelligentsia/pi-ai";
+import { getModel } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	createAgentSession,
@@ -33,7 +33,7 @@ import {
 	SessionManager,
 	type ToolCallEvent,
 	type WriteToolCallEvent,
-} from "@entelligentsia/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { getCaptured, getEvidence, registerSpikeR4, resetEvidence } from "./spike.js";
 

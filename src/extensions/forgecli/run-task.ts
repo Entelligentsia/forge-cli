@@ -17,7 +17,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { ExtensionAPI, ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { checkMaterialization } from "./plan.js";
@@ -182,7 +182,7 @@ export interface RunTaskPipelineOptions {
 	 * leave this undefined. See helpers/scripted-subagent.ts and
 	 * fixtures/sprint-fixture.ts.
 	 */
-	streamFnFactory?: (ctx: { kind: "task-phase"; persona: string; phase: string; taskId: string }) => import("@entelligentsia/pi-agent-core").StreamFn | undefined;
+	streamFnFactory?: (ctx: { kind: "task-phase"; persona: string; phase: string; taskId: string }) => import("@earendil-works/pi-agent-core").StreamFn | undefined;
 }
 
 export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed";

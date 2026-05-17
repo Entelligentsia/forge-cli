@@ -30,7 +30,7 @@
 //         continuation.
 
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
 import { sendKickoff } from "./kickoff.js";

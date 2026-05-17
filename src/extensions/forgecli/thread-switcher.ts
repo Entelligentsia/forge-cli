@@ -39,8 +39,8 @@
 // for the focused phase. All re-renders are driven by tui.requestRender()
 // (registry events → invalidationCb → requestRender → next render tick).
 
-import type { ExtensionAPI, ExtensionContext, Theme } from "@entelligentsia/pi-coding-agent";
-import { type Component, type TUI, truncateToWidth, visibleWidth } from "@entelligentsia/pi-tui";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
 

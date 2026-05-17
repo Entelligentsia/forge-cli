@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULT_PATH = path.join(__dirname, "RESULT.md");
-const PI_VERSION = "0.73.1"; // @entelligentsia/pi-coding-agent installed version
+const PI_VERSION = "0.73.1"; // @earendil-works/pi-coding-agent installed version
 
 // ---------------------------------------------------------------------------
 // Assertion helpers

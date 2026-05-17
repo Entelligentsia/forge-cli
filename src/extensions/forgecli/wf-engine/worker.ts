@@ -6,8 +6,8 @@ import {
   ModelRegistry,
   SessionManager,
   type AgentSessionEvent,
-} from "@entelligentsia/pi-coding-agent";
-import type { Message } from "@entelligentsia/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { Message } from "@earendil-works/pi-ai";
 
 export interface WorkerResult {
   responseText: string;

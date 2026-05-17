@@ -27,7 +27,7 @@
 //   headless mode (ctx.hasUI = false):
 //    14. confirm, no default → returns "Y" without calling ctx.ui
 
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@entelligentsia/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserTool } from "../../../src/extensions/forgecli/ask-user-tool.js";
 

@@ -27,9 +27,9 @@ import {
 	parseFrontmatter,
 	SessionManager,
 	type AgentSessionEvent,
-} from "@entelligentsia/pi-coding-agent";
-import type { StreamFn } from "@entelligentsia/pi-agent-core";
-import type { Message } from "@entelligentsia/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import { buildProjectOrientation } from "./project-orientation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// Apply prompt-cache session affinity. `createAgentSession` in
 	// pi-coding-agent does not yet surface `sessionId` in its options
 	// (CreateAgentSessionOptions exposes neither sessionId nor cacheRetention
-	// as of @entelligentsia/pi-coding-agent@0.74), so we set the underlying
+	// as of @earendil-works/pi-coding-agent@0.74), so we set the underlying
 	// Agent's public mutable field directly. The Agent forwards it to the
 	// provider per stream call.
 	if (cacheSessionId) {

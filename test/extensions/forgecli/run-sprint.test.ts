@@ -34,7 +34,7 @@ const { mockSession, mockRunTaskPipeline, mockStartSession, mockCompleteSession,
 	return { mockSession, mockRunTaskPipeline, mockStartSession, mockCompleteSession, mockRunForgeSubagent, mockLoadForgePersona };
 });
 
-vi.mock("@entelligentsia/pi-coding-agent", async (importOriginal) => {
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
 	// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 	class MockDefaultResourceLoader {
@@ -95,7 +95,7 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", async (importOrigi
 	};
 });
 
-import { createAgentSession } from "@entelligentsia/pi-coding-agent";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
 import { registerRunSprint } from "../../../src/extensions/forgecli/run-sprint.js";
 

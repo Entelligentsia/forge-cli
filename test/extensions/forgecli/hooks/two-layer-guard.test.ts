@@ -23,7 +23,7 @@ import type {
 	ToolCallEvent,
 	ToolCallEventResult,
 	WriteToolCallEvent,
-} from "@entelligentsia/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerHookDispatcher } from "../../../../src/extensions/forgecli/hook-dispatcher.js";
 import { checkTwoLayerBoundary } from "../../../../src/extensions/forgecli/hooks/two-layer-guard.js";

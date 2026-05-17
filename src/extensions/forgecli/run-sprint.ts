@@ -25,7 +25,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { ExtensionAPI, ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
 import { checkMaterialization } from "./plan.js";
@@ -34,7 +34,7 @@ import { discoverForgeConfig } from "./forge-root.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
-import type { StreamFn } from "@entelligentsia/pi-agent-core";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
 
 /**
  * Test-only seam (forge-cli#17). Resolves a StreamFn for a given dispatch

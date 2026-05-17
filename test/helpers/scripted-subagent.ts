@@ -17,9 +17,9 @@
 // task status from the real store after the subagent returns — set the
 // status in the fixture to control the verdict the orchestrator resolves.
 
-import { createAssistantMessageEventStream } from "@entelligentsia/pi-ai";
-import type { AssistantMessage, Api, Provider } from "@entelligentsia/pi-ai";
-import type { StreamFn } from "@entelligentsia/pi-agent-core";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Api, Provider } from "@earendil-works/pi-ai";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
 
 // ── Shared assistant-message builder ─────────────────────────────────────
 

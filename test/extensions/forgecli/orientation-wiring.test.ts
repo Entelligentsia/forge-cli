@@ -24,7 +24,7 @@ const { capturedOptions, mockSession } = vi.hoisted(() => {
 	return { capturedOptions: captured, mockSession: session };
 });
 
-vi.mock("@entelligentsia/pi-coding-agent", async (importOriginal) => {
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>;
 	class CapturingLoader {
 		constructor(options: Record<string, unknown>) {

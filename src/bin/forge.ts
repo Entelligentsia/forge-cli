@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { main } from "@entelligentsia/pi-coding-agent";
+import { main } from "@earendil-works/pi-coding-agent";
 import forgecli from "../extensions/forgecli/index.js";
 import { isParseError, parseForgeArgv } from "./argv.js";
 
@@ -41,7 +41,7 @@ function readForgeCliPkg(): ForgePkg {
 async function readPiVersion(): Promise<string> {
 	try {
 		// Use import.meta.resolve to find the ESM package, then navigate to package.json
-		const piEntryUrl = import.meta.resolve("@entelligentsia/pi-coding-agent");
+		const piEntryUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
 		const piDir = path.dirname(fileURLToPath(piEntryUrl));
 		const pkgPath = path.resolve(piDir, "..", "package.json");
 		const raw = fs.readFileSync(pkgPath, "utf8");

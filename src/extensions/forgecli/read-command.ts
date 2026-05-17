@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@entelligentsia/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { startReviewServer } from "./review-server.js";
 import { resolveEntityRef, resolveToolDir } from "./store-resolver.js";
 
