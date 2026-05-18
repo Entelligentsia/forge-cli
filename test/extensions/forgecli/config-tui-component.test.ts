@@ -166,6 +166,96 @@ describe("ConfigTuiComponent — navigate to personas list (via advanced/top-men
     expect(out).toContain("Step 1 of 3");
   });
 });
+
+describe("ConfigTuiComponent — tier-picker flow (Phase A)", () => {
+  it("'1' from tier-menu opens Heavy tier-picker", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "engineer", "supervisor"],
+      pipelineCatalogue: ["default"],
+      availableModels: [
+        { provider: "anthropic", id: "claude-opus-4-5" },
+        { provider: "ollama", id: "glm-5.1:cloud" },
+      ],
+      authenticatedProviders: ["anthropic", "ollama"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1"); // tier-menu → Heavy tier-picker
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("Heavy");
+    expect(out).toContain("pick provider");
+    expect(out).toContain("architect");
+    expect(out).toContain("supervisor");
+  });
+
+  it("pick provider → model writes all tier personas and persists", () => {
+    const { h, onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "engineer", "supervisor", "collator",
+        "bug-fixer", "qa-engineer", "product-manager", "librarian", "orchestrator"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1"); // Heavy tier-picker
+    comp.handleInput("\r"); // pick anthropic
+    comp.handleInput("\r"); // pick claude-opus-4-5 → commit
+
+    // Writes architect + supervisor to project (default scope)
+    expect(h.saved.length).toBe(1);
+    const written = JSON.parse(fs.readFileSync(h.saved[0], "utf-8"));
+    expect(written["persona-models"]["architect"]).toEqual({
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+    });
+    expect(written["persona-models"]["supervisor"]).toEqual({
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+    });
+  });
+
+  it("tab toggles scope before commit", () => {
+    const { h, onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "supervisor"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    // Toggle scope to global before picking
+    comp.handleInput("\t"); // tab → scope = global
+    comp.handleInput("1"); // Heavy tier-picker
+    comp.handleInput("\r"); // pick anthropic
+    comp.handleInput("\r"); // pick model → commit to global
+
+    expect(h.saved.length).toBe(1);
+    expect(h.saved[0]).toContain("agent/forge-cli/config.json");
+    const written = JSON.parse(fs.readFileSync(h.saved[0], "utf-8"));
+    expect(written["persona-models"]["architect"]).toBeDefined();
+    expect(written["persona-models"]["supervisor"]).toBeDefined();
+  });
+});
+
 describe("ConfigTuiComponent — full edit flow with persistence (top-menu path)", () => {
   it("pick provider → model → project layer → writes file + onSaved fires", () => {
     const { h, onExit, onSaved, onError } = makeHarness();

@@ -29,7 +29,7 @@ import {
 import { CANONICAL_PHASES } from "./state/constants.js";
 
 import { TierMenuScreen } from "./screens/tier-menu.js";
-// Phase B: import { TierPickerScreen } from "./screens/tier-picker.js";
+import { TierPickerScreen } from "./screens/tier-picker.js";
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
 import { TopMenuScreen } from "./screens/top-menu.js";
 import { PersonasListScreen } from "./screens/personas-list.js";
@@ -67,7 +67,7 @@ function hexEscape(s: string): string {
 const SCREEN_INSTANCES: Record<string, Screen> = {
   "confirm-quit": new ConfirmQuitScreen(),
   "tier-menu": new TierMenuScreen(),
-  "tier-picker": new TopMenuScreen(),  // Phase B placeholder: TierPickerScreen replaces this
+  "tier-picker": new TierPickerScreen(),
   "top-menu": new TopMenuScreen(),
   "empty-state": new TopMenuScreen(),  // same screen handles both
   "no-project": new TopMenuScreen(),    // same screen handles both
