@@ -307,6 +307,9 @@ export class ConfigTuiComponent implements Component, Focusable {
         cwd: this.state.cwd,
         buffer,
       });
+      // Clear dirty flag + record last-saved path so the TUI can surface
+      // confirmation in-overlay (ctx.ui.notify gets clipped by the modal).
+      this.dispatch({ kind: "mark-clean", lastSaved: { target, layer } });
       this.opts.onSaved?.(target);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

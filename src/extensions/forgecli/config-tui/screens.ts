@@ -13,6 +13,31 @@ function rule(width: number): string {
   return RULE.repeat(Math.max(0, width));
 }
 
+/**
+ * Compute a windowed slice of `items` around `cursor` so that long lists fit
+ * inside `maxRows`. Returns the visible items, their absolute start index,
+ * and a `tail` count for the scroll-indicator. Default window: 10 rows.
+ */
+function windowList<T>(
+  items: T[],
+  cursor: number,
+  maxRows = 10,
+): { visible: T[]; start: number; aboveCount: number; belowCount: number } {
+  if (items.length <= maxRows) {
+    return { visible: items, start: 0, aboveCount: 0, belowCount: 0 };
+  }
+  // Keep cursor in the middle when possible.
+  const half = Math.floor(maxRows / 2);
+  let start = Math.max(0, cursor - half);
+  if (start + maxRows > items.length) start = items.length - maxRows;
+  return {
+    visible: items.slice(start, start + maxRows),
+    start,
+    aboveCount: start,
+    belowCount: items.length - start - maxRows,
+  };
+}
+
 function padRight(text: string, width: number): string {
   if (text.length >= width) return text;
   return text + " ".repeat(width - text.length);
@@ -220,11 +245,15 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
     lines.push("");
     lines.push(`  Provider                                                  AUTH`);
     const providers = uniqueProviders(state);
-    providers.forEach((p, i) => {
-      const cursor = i === view.cursor ? "▸" : " ";
+    const win = windowList(providers, view.cursor);
+    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+    win.visible.forEach((p, i) => {
+      const absoluteIdx = win.start + i;
+      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
       const auth = authBadgeFor(state, p);
       lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
     });
+    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
     lines.push("");
     lines.push(`  ↑/↓ select   enter advance   esc back`);
   } else if (view.step === "pick-model") {
@@ -235,10 +264,14 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
       lines.push(`  No models available for this provider.`);
       lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
     } else {
-      models.forEach((m, i) => {
-        const cursor = i === view.cursor ? "▸" : " ";
+      const win = windowList(models, view.cursor);
+      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+      win.visible.forEach((m, i) => {
+        const absoluteIdx = win.start + i;
+        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
         lines.push(`  ${cursor} ${m.id}`);
       });
+      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
     }
     lines.push("");
     lines.push(`  ↑/↓ select   enter advance   esc back`);
@@ -264,25 +297,56 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
   return lines;
 }
 
+// ── Overlay decorations (last-saved banner, confirm-quit modal) ─────────────
+
+function renderConfirmQuitOverlay(state: ConfigTuiState, _width: number): string[] {
+  if (!state.confirmQuit) return [];
+  return [
+    "",
+    `  ┌─────────────────────────────────────────────────────────┐`,
+    `  │  Unsaved changes — discard and quit?                    │`,
+    `  │                                                         │`,
+    `  │  y / enter — discard and quit                           │`,
+    `  │  n / esc   — cancel (stay in TUI)                       │`,
+    `  └─────────────────────────────────────────────────────────┘`,
+  ];
+}
+
+function renderSaveBanner(state: ConfigTuiState, _width: number): string[] {
+  if (!state.lastSaved) return [];
+  return [
+    "",
+    `  ✓ Saved → ${state.lastSaved.target}  (${state.lastSaved.layer})`,
+  ];
+}
+
 // ── Top-level router ─────────────────────────────────────────────────────────
 
 export function renderActive(state: ConfigTuiState, width: number): string[] {
   const view = getActiveView(state);
+  let lines: string[];
   switch (view.kind) {
     case "no-project":
-      return renderNoProject(state, width);
+      lines = renderNoProject(state, width);
+      break;
     case "empty-state":
-      return renderEmptyState(state, width);
+      lines = renderEmptyState(state, width);
+      break;
     case "top-menu":
-      return renderTopMenu(state, width);
+      lines = renderTopMenu(state, width);
+      break;
     case "personas-list":
-      return renderPersonasList(state, width);
+      lines = renderPersonasList(state, width);
+      break;
     case "persona-editor":
-      return renderPersonaEditor(state, width);
+      lines = renderPersonaEditor(state, width);
+      break;
     default: {
       const _exhaustive: never = view;
       void _exhaustive;
       return [];
     }
   }
+  // Decorations: save banner stacks at the bottom, confirm-quit modal on top.
+  return [...lines, ...renderSaveBanner(state, width), ...renderConfirmQuitOverlay(state, width)];
 }

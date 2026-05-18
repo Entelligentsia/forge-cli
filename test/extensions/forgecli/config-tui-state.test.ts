@@ -179,11 +179,62 @@ describe("reducer — persona edit", () => {
   });
 });
 
+describe("reducer — mark-clean (Slice 4c polish)", () => {
+  it("mark-clean resets dirty and records lastSaved", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
+    s = reducer(s, { kind: "set-persona-provider", provider: "anthropic" });
+    s = reducer(s, { kind: "set-persona-model", model: "claude-opus-4-5" });
+    s = reducer(s, { kind: "commit-persona-edit", layer: "project" });
+    expect(s.dirty).toBe(true);
+    expect(s.lastSaved).toBeNull();
+
+    s = reducer(s, {
+      kind: "mark-clean",
+      lastSaved: { target: "/tmp/x/.pi/forge-cli/config.json", layer: "project" },
+    });
+    expect(s.dirty).toBe(false);
+    expect(s.lastSaved).toEqual({
+      target: "/tmp/x/.pi/forge-cli/config.json",
+      layer: "project",
+    });
+  });
+
+  it("clear-status clears lastSaved without touching dirty", () => {
+    let s = emptyState();
+    s = reducer(s, {
+      kind: "mark-clean",
+      lastSaved: { target: "/tmp/x", layer: "global" },
+    });
+    expect(s.lastSaved).not.toBeNull();
+    s = reducer(s, { kind: "clear-status" });
+    expect(s.lastSaved).toBeNull();
+  });
+});
+
 describe("reducer — quit prompt", () => {
   it("request-quit on a clean state immediately marks shouldExit", () => {
     let s = emptyState();
     s = reducer(s, { kind: "request-quit" });
     expect(s.shouldExit).toBe(true);
+  });
+
+  it("request-quit while confirmQuit modal is open is a no-op (no re-trigger)", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
+    s = reducer(s, { kind: "set-persona-provider", provider: "ollama" });
+    s = reducer(s, { kind: "set-persona-model", model: "glm-5.1:cloud" });
+    s = reducer(s, { kind: "commit-persona-edit", layer: "project" });
+    // dirty is true (no mark-clean dispatched in this reducer-only test)
+    s = reducer(s, { kind: "request-quit" });
+    expect(s.confirmQuit).toBe(true);
+    expect(s.shouldExit).toBe(false);
+
+    // Second request-quit should be a no-op — does NOT toggle confirmQuit off
+    // or re-enter shouldExit logic.
+    const before = s;
+    s = reducer(s, { kind: "request-quit" });
+    expect(s).toBe(before); // referential equality — reducer returned same object
   });
 
   it("request-quit on a dirty state opens a confirm overlay; confirming exits", () => {

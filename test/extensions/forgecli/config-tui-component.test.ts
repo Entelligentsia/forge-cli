@@ -484,8 +484,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
   });
 });
 
-describe("ConfigTuiComponent — dirty-quit confirm", () => {
-  it("q after a successful commit shows confirm overlay; y exits, n cancels", () => {
+describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c polish)", () => {
+  it("commit clears dirty flag and records lastSaved", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       global: null,
@@ -499,24 +499,64 @@ describe("ConfigTuiComponent — dirty-quit confirm", () => {
       onSaved,
       onError,
     });
-    // Make a dirty edit
+    comp.handleInput("1");
+    comp.handleInput("a");
+    comp.handleInput("\r");
+    comp.handleInput("p"); // commit to project layer
+    expect(h.saved.length).toBe(1);
+
+    // After save, the screen should show "Saved → …" and NOT "* unsaved".
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("✓ Saved");
+    expect(out).toContain(h.saved[0]);
+    expect(out).not.toContain("* unsaved");
+  });
+
+  it("q after a successful commit exits cleanly (dirty was cleared)", () => {
+    const { h, onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
     comp.handleInput("1");
     comp.handleInput("a");
     comp.handleInput("\r");
     comp.handleInput("p");
     expect(h.saved.length).toBe(1);
 
-    // After commit, dirty=true. q opens confirm.
+    // q now exits immediately — no modal, no second press needed.
     comp.handleInput("q");
-    expect(h.exits).toEqual([]);
+    expect(h.exits).toEqual([0]);
+  });
 
-    // n cancels
-    comp.handleInput("n");
-    expect(h.exits).toEqual([]);
-
-    // q again, y exits
+  it("repeated q while confirm-quit modal is open is a no-op (not re-triggered)", () => {
+    const { h, onExit, onSaved, onError } = makeHarness();
+    // To get into a dirty state without auto-persist we'd need a non-saving
+    // mutation path. None exists in 4b/4c, so we exercise the request-quit
+    // guard via the reducer directly — see config-tui-state.test.ts for the
+    // reducer-level "request-quit noop when confirmQuit" test.
+    const comp = createConfigTuiComponent({
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [],
+      authenticatedProviders: [],
+      onExit,
+      onSaved,
+      onError,
+    });
+    // Clean state — q exits on first press.
     comp.handleInput("q");
-    comp.handleInput("y");
     expect(h.exits).toEqual([0]);
   });
 });

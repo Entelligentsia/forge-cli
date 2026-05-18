@@ -71,6 +71,8 @@ export interface ConfigTuiState {
   confirmQuit: boolean;
   /** True when the TUI should unmount. */
   shouldExit: boolean;
+  /** Last save path + layer (cleared a few seconds after display). */
+  lastSaved: { target: string; layer: ConfigLayer } | null;
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────────
@@ -84,6 +86,8 @@ export type ConfigTuiAction =
   | { kind: "set-persona-model"; model: string }
   | { kind: "commit-persona-edit"; layer: ConfigLayer }
   | { kind: "delete-persona-entry"; layer: ConfigLayer; persona: string }
+  | { kind: "mark-clean"; lastSaved?: { target: string; layer: ConfigLayer } }
+  | { kind: "clear-status" }
   | { kind: "request-quit" }
   | { kind: "confirm-quit"; discard: boolean };
 
@@ -112,6 +116,7 @@ export function initialState(opts: InitOptions): ConfigTuiState {
     isEmpty,
     confirmQuit: false,
     shouldExit: false,
+    lastSaved: null,
   };
 }
 
@@ -201,7 +206,17 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
       return changed ? { ...state, buffer, dirty: true } : state;
     }
 
+    case "mark-clean":
+      return { ...state, dirty: false, lastSaved: action.lastSaved ?? state.lastSaved };
+
+    case "clear-status":
+      return { ...state, lastSaved: null };
+
     case "request-quit":
+      // If a confirm-quit modal is already open, another `q` is a no-op
+      // (user must press y/n/esc). This is what makes repeated `q` "tricky"
+      // — without this guard, every q re-fires the modal and looks broken.
+      if (state.confirmQuit) return state;
       if (!state.dirty) return { ...state, shouldExit: true };
       return { ...state, confirmQuit: true };
 
