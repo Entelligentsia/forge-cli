@@ -1,8 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
+import { Ajv } from "ajv";
 import schema from "./forge-cli-schema.json" with { type: "json" };
 
 export interface PersonaModel {
@@ -50,7 +49,6 @@ export interface LayeredConfig {
 }
 
 const ajv = new Ajv({ allErrors: true });
-addFormats(ajv);
 const validate = ajv.compile(schema);
 
 function validateConfig(
@@ -69,7 +67,7 @@ function validateConfig(
 function readJsonFile(filePath: string): unknown | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-  } catch {
+  } catch (_err: unknown) {
     return null;
   }
 }

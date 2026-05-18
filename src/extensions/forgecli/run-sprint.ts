@@ -33,6 +33,8 @@ import { loadWorkflow } from "./loaders/workflow-loader.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { loadLayeredConfig } from "./config-layer.js";
+import { lookupPersonaModel } from "./model-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
@@ -208,6 +210,10 @@ async function dispatchSprintCeremony(params: {
 		beginHeader: `─── sprint ${sprintId} ceremony begin · ${personaName} ───`,
 	});
 
+	// Resolve model routing for the ceremony's architect persona (Plan 16 Slice 2).
+	const { merged: ceremonyModelConfig } = loadLayeredConfig(cwd);
+	const ceremonyModelLookup = lookupPersonaModel(personaName, "default", ceremonyModelConfig);
+
 	try {
 		const result = await runForgeSubagent({
 			persona,
@@ -221,6 +227,7 @@ async function dispatchSprintCeremony(params: {
 			// so the system-prompt + persona prefix stays warm.
 			cacheSessionId: `forge:${sprintId}`,
 			onEvent: observer.onEvent,
+			requestedModel: ceremonyModelLookup.model,
 		});
 		model    = result.model;
 		provider = result.provider;

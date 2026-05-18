@@ -23,6 +23,8 @@ import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { checkMaterialization } from "./plan.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
+import { loadLayeredConfig } from "./config-layer.js";
+import { resolveModelForPhase } from "./model-resolver.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { attachViewportObserver } from "./viewport-events.js";
@@ -486,6 +488,10 @@ export { extractTurnPreview } from "./viewport-renderer.js";
 export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<RunTaskPipelineResult> {
 	const { taskId, cwd, ctx, forgeRoot, storeCli, preflightGate, registry, resumeFromState, onPhaseEvent } = opts;
 
+	// Load per-phase model routing config once at task entry (Plan 16 Slice 2).
+	// Empty / absent config produces inherit for every phase — no behaviour change.
+	const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+
 	// Determine starting phase from resumeFromState (if provided) or phase 0.
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
 	let iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
@@ -635,6 +641,17 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// NEVER sendKickoff here — that would reproduce issue #30 (same-context inline = no fork).
 		const taskBody = composeTaskBody(subWorkflowMd, taskId);
 
+		// Resolve per-phase model from layered config (Plan 16 Slice 2).
+		// Pipeline name "default" matches the Forge plugin's shipped pipeline.
+		// When config is absent or cascade bottoms out, resolves to inherit
+		// (model: undefined) — setModel is skipped and pi's current model is used.
+		const modelResolution = resolveModelForPhase(
+			"default",
+			currentPhaseIndex,
+			phase.personaNoun,
+			modelRoutingConfig,
+		);
+
 		const phaseStart = Date.now();
 
 		// Stabilization debug log — every subagent event appended as JSONL.
@@ -691,6 +708,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				cacheSessionId,
 				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
 				onEvent: observer.onEvent,
+				requestedModel: modelResolution.model,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };

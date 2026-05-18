@@ -75,6 +75,16 @@ export interface RunSubagentOptions {
 	 * with "Cannot find module '/tools/store-cli.cjs'".
 	 */
 	forgeRoot?: string;
+	/**
+	 * Per-phase model routing (Plan 16 Slice 2). When set, forge-cli calls
+	 * `session.agent.setModel(registry.find(provider, model))` after session
+	 * creation. If the model isn't in the registry, or setModel throws, the
+	 * phase falls through to inherit pi's current model — no crash.
+	 *
+	 * result.model / result.provider always reflect what the stream returned
+	 * (not this field) — IL10 emit path reads runtime telemetry, not the request.
+	 */
+	requestedModel?: { provider: string; model: string };
 	onEvent?: (event: AgentSessionEvent) => void;
 	/**
 	 * Optional tag included in the auto-exported transcript filename for
@@ -225,6 +235,28 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// Test-only seam — see RunSubagentOptions.streamFn doc (forge-cli#17).
 	if (opts.streamFn) {
 		session.agent.streamFn = opts.streamFn;
+	}
+
+	// ── Model routing (Plan 16 Slice 2) ──────────────────────────────────
+	// Apply requestedModel via the async setter. Falls through to inherit on
+	// any failure — never crashes the phase. result.model/provider are read
+	// from the stream after the fact (IL10 invariant preserved).
+	if (opts.requestedModel) {
+		const m = modelRegistry.find(opts.requestedModel.provider, opts.requestedModel.model);
+		if (m) {
+			try {
+				await session.setModel(m);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				process.stderr.write(
+					`[forge-subagent] setModel failed for ${opts.requestedModel.provider}:${opts.requestedModel.model} (non-fatal, inheriting pi current model): ${e.message ?? "unknown"}\n`,
+				);
+			}
+		} else {
+			process.stderr.write(
+				`[forge-subagent] requestedModel not in registry: ${opts.requestedModel.provider}:${opts.requestedModel.model} — inheriting pi current model\n`,
+			);
+		}
 	}
 
 	// ── terminate channel ────────────────────────────────────────────────
