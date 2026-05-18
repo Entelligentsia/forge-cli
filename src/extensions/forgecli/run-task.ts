@@ -744,7 +744,34 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			}
 		};
 		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
+		writeDebug({
+			kind: "requested_model",
+			requested: modelResolution.model ?? null,
+			source: modelResolution.source,
+			persona: phase.personaNoun,
+		});
 		registry.startPhase(taskId, phase.role, currentPhaseIndex);
+
+		// Capture the first stream-observed model on turn_end (IL10 visibility).
+		// If pi auto-substitutes or setModel silently no-ops, this line will diverge
+		// from requested_model — exactly the diagnostic signal we want.
+		let modelObservedLogged = false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const wrappedOnEvent = (event: any) => {
+			if (
+				!modelObservedLogged &&
+				event?.type === "turn_end" &&
+				typeof event?.message?.model === "string"
+			) {
+				modelObservedLogged = true;
+				writeDebug({
+					kind: "model_observed",
+					provider: event.message.provider ?? null,
+					model: event.message.model,
+				});
+			}
+			observer.onEvent(event);
+		};
 
 		const refreshStatus = () => {
 			if (process.env.FORGE_VERBOSE !== "1") return;
@@ -777,7 +804,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				exportTag: `${taskId}__${phase.role}`,
 				cacheSessionId,
 				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
-				onEvent: observer.onEvent,
+				onEvent: wrappedOnEvent,
 				requestedModel: modelResolution.model,
 			});
 		} catch (err: unknown) {

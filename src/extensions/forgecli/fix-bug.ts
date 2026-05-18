@@ -798,10 +798,20 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		});
 
 		// Wrap the observer's onEvent to also capture tool_execution_end events
-		// for bugId capture downstream (findings #1, #2).
+		// for bugId capture downstream (findings #1, #2), plus the first turn_end
+		// per phase (IL10 visibility — stream-observed model id).
+		let modelObservedLogged = false;
 		const onSubagentEvent = (event: any) => {
 			if (event?.type === "tool_execution_end") {
 				toolExecutionEvents.push({ toolName: event.toolName, result: event.result });
+			}
+			if (!modelObservedLogged && event?.type === "turn_end" && event.message?.model) {
+				modelObservedLogged = true;
+				writeDebug({
+					kind: "model_observed",
+					provider: event.message.provider ?? null,
+					model: event.message.model,
+				});
 			}
 			observer.onEvent(event);
 		};
@@ -816,6 +826,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			phase.personaNoun,
 			modelRoutingConfig,
 		);
+		writeDebug({
+			kind: "requested_model",
+			requested: modelResolution.model ?? null,
+			source: modelResolution.source,
+			persona: phase.personaNoun,
+		});
 
 		let result;
 		try {
