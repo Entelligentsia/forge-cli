@@ -16,8 +16,13 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { loadLayeredConfig } from "./config-layer.js";
+import { resolveModelForPhase } from "./model-resolver.js";
+import { validateModelConfig } from "./model-validator.js";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { checkMaterialization } from "./plan.js";
@@ -48,6 +53,31 @@ import {
 // Decoded from .forge/workflows/fix_bug.md and the task prompt's BUG_PHASES.
 // triage / plan-fix / implement all read the same fix_bug.md body — the
 // workflow handles all three phases through prose.
+
+function readPersonaDirBug(dir: string): string[] {
+	try {
+		return fs.readdirSync(dir)
+			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
+			.map((f) => f.replace(/\.md$/, ""));
+	} catch {
+		return [];
+	}
+}
+
+function readPipelineNamesBug(forgeCfgPath: string): string[] | null {
+	try {
+		const raw = fs.readFileSync(forgeCfgPath, "utf-8");
+		const cfg = JSON.parse(raw) as unknown;
+		if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
+			const pipelines = (cfg as { pipelines?: unknown }).pipelines;
+			if (pipelines && typeof pipelines === "object") return Object.keys(pipelines);
+			return [];
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
 
 export const BUG_PHASES: PhaseDescriptor[] = [
 	{ role: "triage",      workflowFile: "fix_bug",          personaNoun: "bug-fixer",  isReview: false, maxIterations: 1 },
@@ -452,6 +482,49 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	let lastModel: string | undefined;
 	let lastProvider: string | undefined;
 
+	// ── Per-persona model routing (Plan 16) ─────────────────────────────────
+	// Load layered routing config once at bug-pipeline entry. Empty / absent
+	// config produces inherit for every phase — no behaviour change. Pipeline
+	// name "fix-bug" lets users configure per-phase overrides distinctly from
+	// task pipelines under pipelines["fix-bug"] in their routing config.
+	const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+
+	// Pre-flight validation — same shape as run-task / run-sprint.
+	{
+		const personasDir = path.resolve(
+			path.dirname(fileURLToPath(import.meta.url)),
+			"..", "..", "forge-payload", ".base-pack", "personas",
+		);
+		const personaCatalogue = readPersonaDirBug(personasDir);
+		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
+		const pipelineCatalogue = readPipelineNamesBug(forgeCfgPath);
+		const modelRegistry = ModelRegistry.create(AuthStorage.create());
+		const availableModels = modelRegistry.getAvailable?.() ?? [];
+		const strict = process.env.FORGE_STRICT_MODELS === "1";
+
+		const { errors, warnings } = validateModelConfig(
+			personaCatalogue,
+			pipelineCatalogue,
+			modelRoutingConfig,
+			availableModels.map((m) => ({ provider: m.provider, id: m.id })),
+			strict,
+		);
+		for (const w of warnings) {
+			ctx.ui.notify(`⚠ forge:fix-bug — model routing: ${w.message}`, "warning");
+		}
+		if (errors.length > 0) {
+			for (const e of errors) {
+				ctx.ui.notify(`× forge:fix-bug — model routing: ${e.message}`, "error");
+			}
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `model config validation failed: ${errors.map((e) => e.code).join(", ")}`,
+			};
+		}
+	}
+
 	while (currentPhaseIndex < BUG_PHASES.length) {
 		const phase = BUG_PHASES[currentPhaseIndex];
 		if (!phase) {
@@ -733,6 +806,17 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			observer.onEvent(event);
 		};
 
+		// Per-phase model resolution. When config is absent or cascade bottoms
+		// out, resolves to inherit (model: undefined) — setModel is skipped and
+		// pi's current model is used. IL10 still holds: result.model below is
+		// the stream-observed runtime model, not whatever we requested here.
+		const modelResolution = resolveModelForPhase(
+			"fix-bug",
+			phase.role,
+			phase.personaNoun,
+			modelRoutingConfig,
+		);
+
 		let result;
 		try {
 			result = await runForgeSubagent({
@@ -746,6 +830,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				// across the ~10-minute phases.
 				cacheSessionId: typeof bugRecordBefore?.sprintId === "string" ? `forge:${bugRecordBefore.sprintId}` : `forge:bug:${bugId}`,
 				onEvent: onSubagentEvent,
+				requestedModel: modelResolution.model,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
