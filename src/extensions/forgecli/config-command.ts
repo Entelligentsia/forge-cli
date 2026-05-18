@@ -26,13 +26,15 @@ export function registerConfigCommand(pi: ExtensionAPI, _opts: RegisterConfigCom
       const argv = args.trim().length === 0 ? [] : args.trim().split(/\s+/);
 
       const mountConfigTui = async (init: InitOptions): Promise<number> => {
-        const exitCode = await ctx.ui.custom<number>((_tui, _theme, _kb, done) => {
+        const exitCode = await ctx.ui.custom<number>((tui, _theme, _kb, done) => {
           // Component drives done() on q or successful confirm-quit.
+          // Pi TUI key rule 3: call tui.requestRender() after state changes.
           const component = createConfigTuiComponent({
             ...init,
             onExit: (code) => done(code),
             onSaved: (target) => ctx.ui.notify(`forge config: saved → ${target}`, "info"),
             onError: (msg) => ctx.ui.notify(`forge config: ${msg}`, "error"),
+            requestRender: () => tui.requestRender(),
           });
           return component;
         }, { overlay: true });

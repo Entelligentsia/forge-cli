@@ -10,7 +10,7 @@
 // Rendering is intentionally render-to-string: the test surface (screens tests)
 // matches what the user sees character-for-character, modulo styling.
 
-import { getKeybindings, matchesKey } from "@earendil-works/pi-tui";
+import { Key, matchesKey } from "@earendil-works/pi-tui";
 import type { Component, Focusable } from "@earendil-works/pi-tui";
 import { writeRoutingConfig } from "../config-writer.js";
 import type { ConfigLayer } from "../config-writer.js";
@@ -63,7 +63,6 @@ export class ConfigTuiComponent implements Component, Focusable {
     if (this.state.shouldExit) return;
 
     const view = getActiveView(this.state);
-    const kb = getKeybindings();
 
     // Universal: q always requests quit
     if (matchesKey(data, "q")) {
@@ -74,16 +73,16 @@ export class ConfigTuiComponent implements Component, Focusable {
 
     // confirmQuit modal hijacks subsequent input
     if (this.state.confirmQuit) {
-      if (matchesKey(data, "y") || kb.matches(data, "tui.select.confirm")) {
+      if (matchesKey(data, "y") || matchesKey(data, Key.enter)) {
         this.dispatch({ kind: "confirm-quit", discard: true });
         this.maybeExit();
-      } else if (matchesKey(data, "n") || kb.matches(data, "tui.select.cancel")) {
+      } else if (matchesKey(data, "n") || matchesKey(data, Key.escape)) {
         this.dispatch({ kind: "confirm-quit", discard: false });
       }
       return;
     }
 
-    if (kb.matches(data, "tui.select.cancel")) {
+    if (matchesKey(data, Key.escape)) {
       this.dispatch({ kind: "pop-view" });
       return;
     }
@@ -118,9 +117,8 @@ export class ConfigTuiComponent implements Component, Focusable {
   // ── Per-view input handlers ─────────────────────────────────────────────────
 
   private handleTopLevelInput(data: string): void {
-    const kb = getKeybindings();
     // 1 → Personas (or "Add a persona-model assignment" on empty state)
-    if (matchesKey(data, "1") || kb.matches(data, "tui.select.confirm")) {
+    if (matchesKey(data, "1") || matchesKey(data, Key.enter)) {
       if (this.state.isEmpty) {
         // Open editor with a persona prompt — for slice 4b we jump straight to
         // the "default" persona. 4c can add a chooser screen.
@@ -136,18 +134,17 @@ export class ConfigTuiComponent implements Component, Focusable {
     data: string,
     view: Extract<View, { kind: "personas-list" }>,
   ): void {
-    const kb = getKeybindings();
-    if (kb.matches(data, "tui.select.up") || matchesKey(data, "k")) {
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
       this.dispatch({ kind: "cursor-move", delta: -1 });
       return;
     }
-    if (kb.matches(data, "tui.select.down") || matchesKey(data, "j")) {
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
       const max = Math.max(0, listResolvedPersonas(this.state).length - 1);
       const current = view.cursor;
       if (current < max) this.dispatch({ kind: "cursor-move", delta: 1 });
       return;
     }
-    if (kb.matches(data, "tui.select.confirm")) {
+    if (matchesKey(data, Key.enter)) {
       const personas = listResolvedPersonas(this.state);
       const target = personas[view.cursor];
       if (target) {
@@ -178,12 +175,11 @@ export class ConfigTuiComponent implements Component, Focusable {
     data: string,
     view: Extract<View, { kind: "persona-editor" }>,
   ): void {
-    const kb = getKeybindings();
     if (view.step === "pick-provider") {
       // For slice 4b: a single-keystroke advance using the first authenticated provider.
       // The picker UI is rendered (screens.ts) but we don't yet have a list-cursor for
       // it — 4c will introduce one. For now, enter picks the first row.
-      if (kb.matches(data, "tui.select.confirm")) {
+      if (matchesKey(data, Key.enter)) {
         const provider = this.uniqueProviders()[0];
         if (provider) this.dispatch({ kind: "set-persona-provider", provider });
       }
@@ -194,7 +190,7 @@ export class ConfigTuiComponent implements Component, Focusable {
     }
 
     if (view.step === "pick-model") {
-      if (kb.matches(data, "tui.select.confirm")) {
+      if (matchesKey(data, Key.enter)) {
         const models = this.state.availableModels.filter((m) => m.provider === view.provider);
         const first = models[0];
         if (first) this.dispatch({ kind: "set-persona-model", model: first.id });
@@ -207,7 +203,7 @@ export class ConfigTuiComponent implements Component, Focusable {
         this.commitAndPersist("global");
         return;
       }
-      if (matchesKey(data, "p") || kb.matches(data, "tui.select.confirm")) {
+      if (matchesKey(data, "p") || matchesKey(data, Key.enter)) {
         this.commitAndPersist("project");
         return;
       }

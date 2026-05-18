@@ -213,6 +213,84 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
   });
 });
 
+describe("ConfigTuiComponent — arrow keys + requestRender", () => {
+  it("↓ (\\x1b[B) on personas-list moves cursor down and calls requestRender", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    let renderCalls = 0;
+    const comp = createConfigTuiComponent({
+      global: {
+        "persona-models": {
+          architect: { provider: "anthropic", model: "claude-opus-4-5" },
+          engineer: { provider: "anthropic", model: "claude-opus-4-5" },
+          scribe: { provider: "anthropic", model: "claude-opus-4-5" },
+        },
+      },
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "engineer", "scribe"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+      requestRender: () => renderCalls++,
+    });
+    comp.handleInput("1"); // top-menu → personas-list
+    const renderCountBefore = renderCalls;
+    comp.handleInput("\x1b[B"); // ↓ raw escape sequence
+    expect(renderCalls).toBeGreaterThan(renderCountBefore);
+    // cursor moved
+    const out = comp.render(WIDTH).join("\n");
+    expect(out.split("\n").filter((l) => l.includes("▸"))[0]).toContain("engineer");
+  });
+
+  it("↑ (\\x1b[A) on personas-list moves cursor up", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: {
+        "persona-models": {
+          architect: { provider: "anthropic", model: "claude-opus-4-5" },
+          engineer: { provider: "anthropic", model: "claude-opus-4-5" },
+        },
+      },
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1");
+    comp.handleInput("\x1b[B"); // down
+    comp.handleInput("\x1b[A"); // up
+    const out = comp.render(WIDTH).join("\n");
+    expect(out.split("\n").filter((l) => l.includes("▸"))[0]).toContain("architect");
+  });
+
+  it("implements Focusable interface", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: [],
+      pipelineCatalogue: ["default"],
+      availableModels: [],
+      authenticatedProviders: [],
+      onExit,
+      onSaved,
+      onError,
+    });
+    expect(comp.focused).toBe(false);
+    comp.focused = true;
+    expect(comp.focused).toBe(true);
+  });
+});
+
 describe("ConfigTuiComponent — esc navigation", () => {
   it("esc from personas-list returns to top-menu", () => {
     const { onExit, onSaved, onError } = makeHarness();
