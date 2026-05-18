@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-18
+
+### Added
+- **Per-persona model routing** — Forge now routes each pipeline phase
+  (plan, review-plan, implement, review-code, validate, approve, writeback,
+  commit) to a specific AI model via persona-model assignments resolved
+  through a four-level cascade: per-step override → per-persona override →
+  tier baseline → pi current. The cascade is invisible to the user;
+  plain-English labels ("Heavy tier (global)", "Step override") replace
+  internal L1/L2/L3/L4 jargon everywhere it appears.
+- **Tiered-baseline config TUI** — `/forge:config` (and `forge config`)
+  now opens a three-knob landing screen: pick **Heavy** (architect,
+  supervisor), **Standard** (engineer, bug-fixer, qa-engineer,
+  product-manager), or **Light** (collator, librarian, orchestrator) —
+  one model per tier and all nine personas are configured in under 30
+  seconds. Tier selections commit immediately (no separate save step).
+  Scope toggles between project and global per tier-pick.
+- **`forge config show --resolved`** — prints a phase-by-phase table
+  showing which model runs each step, which persona handles it, and where
+  the assignment comes from (tier baseline, persona override, step
+  override, or pi-current fallback).
+- **`forge config dispatch [--pipeline=<name>] [--json]`** — per-phase
+  dispatch trace without making an LLM call. Shows the resolved model
+  and source for every phase of the chosen pipeline.
+- **`forge config show --strict-models`** — validates that every
+  resolved model exists in the authenticated provider catalog. Exits
+  non-zero if any persona or step resolves to an unavailable model.
+- **Advanced menu** — per-persona and per-step overrides are reachable
+  from a dedicated "Advanced" screen, clearly separated from the
+  primary tier knobs. Explanation banners explain that most users
+  don't need these.
+- **Observability** — each phase now logs `requested_model` and
+  `model_observed` so users can verify that the intended model ran.
+
+### Changed
+- **Bug-fix pipeline uses same persona routing** — `runBugPipeline`
+  now dispatches via `resolveModelForPhase` for every phase, consistent
+  with the task pipeline.
+- **Config TUI theming + width safety** — all screens use the pi TUI
+  theme (accent, muted, warning, border, etc.) and truncate to
+  terminal width via `safeLines`. Adaptive-width confirm-quit dialog.
+- **Config TUI `top-menu` removed** — replaced entirely by the tier-menu
+  landing screen. The `isEmpty` state snapshot is now a selector
+  (`isConfigEmpty`) derived from the buffer.
+
+### Fixed
+- **Forge-project detection** — `forge config` detects a Forge project
+  by the presence of `.forge/config.json` (not `.pi/`).
+- **Dirty tracking + confirm-quit** — save clears dirty; quit while
+  dirty opens a themed modal instead of exiting immediately.
+- **Scroll for long pickers** — provider and model pickers window
+  around the cursor when lists exceed the viewport.
+
 ## [0.8.4] — 2026-05-18
 
 ### Changed
