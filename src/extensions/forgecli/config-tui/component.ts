@@ -10,10 +10,32 @@
 // Rendering is intentionally render-to-string: the test surface (screens tests)
 // matches what the user sees character-for-character, modulo styling.
 
+import * as fs from "node:fs";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import type { Component, Focusable } from "@earendil-works/pi-tui";
 import { writeRoutingConfig } from "../config-writer.js";
 import type { ConfigLayer } from "../config-writer.js";
+
+function debugLog(line: string): void {
+  if (process.env.FORGE_DEBUG_INPUT !== "1") return;
+  try {
+    const ts = new Date().toISOString();
+    const path = process.env.FORGE_DEBUG_INPUT_LOG ?? "/tmp/forge-input-router.log";
+    fs.appendFileSync(path, `${ts} [config-tui] ${line}\n`);
+  } catch {
+    /* swallow */
+  }
+}
+
+function hexEscape(s: string): string {
+  return [...s]
+    .map((c) => {
+      const cp = c.codePointAt(0)!;
+      if (cp >= 0x20 && cp <= 0x7e) return c;
+      return `\\x${cp.toString(16).padStart(2, "0")}`;
+    })
+    .join("");
+}
 import {
   getActiveView,
   initialState,
@@ -60,7 +82,11 @@ export class ConfigTuiComponent implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (this.state.shouldExit) return;
+    debugLog(`handleInput IN data="${hexEscape(data)}" focused=${this.focused} view=${getActiveView(this.state).kind}`);
+    if (this.state.shouldExit) {
+      debugLog(`handleInput RETURN (shouldExit)`);
+      return;
+    }
 
     const view = getActiveView(this.state);
 
