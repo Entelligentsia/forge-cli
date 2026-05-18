@@ -79,6 +79,95 @@ export function getPhaseOverride(
   ];
 }
 
+// ── Phase table selector ────────────────────────────────────────────────────
+
+import { PHASE_PERSONA_TABLE, TIER_LABELS } from "../tier-meta.js";
+import { resolveModelForPhase, type ResolveSource } from "../../model-resolver.js";
+
+/** A row in the phase table (Screen 3 — "Show what runs at each step"). */
+export interface PhaseTableRow {
+  /** Phase role (e.g. "plan", "review-plan"). */
+  role: string;
+  /** Persona name (e.g. "engineer"). */
+  persona: string;
+  /** Persona emoji (e.g. "🌱"). */
+  personaEmoji: string;
+  /** Persona tier ("heavy" | "standard" | "light"). */
+  tier: Tier;
+  /** Resolved model string ("provider:model") or "(inherit pi current)". */
+  resolved: string;
+  /** Raw model resolver source ("L1", "L2", "L4-inline", etc.). */
+  rawSource: ResolveSource;
+  /** Human-readable source label (e.g. "Standard tier (global)"). */
+  sourceLabel: string;
+}
+
+/** Map a model-resolver source + persona tier + resolved-layer to a
+ *  human-readable source label per the plan's cascade vocabulary.
+ *
+ *  | Internal | Plain English |
+ *  |-----------|---------------|
+ *  | L4-inline / L4-name | "Step override" |
+ *  | L3 | "Per-persona override (pipeline)" |
+ *  | L2 | "{Tier} tier (project)" |
+ *  | L1 | "{Tier} tier (global)" |
+ *  | default | "Default fallback" |
+ *  | inherit | "Falls back to pi current" |
+ */
+export function sourceToLabel(
+  rawSource: ResolveSource,
+  tier: Tier | undefined,
+  isProject: boolean,
+): string {
+  switch (rawSource) {
+    case "L4-inline":
+    case "L4-name":
+      return "Step override";
+    case "L3":
+      return "Per-persona override";
+    case "L2":
+      if (tier) return `${TIER_LABELS[tier]} tier (project)`;
+      return "Per-persona (project)";
+    case "L1":
+      if (tier) return `${TIER_LABELS[tier]} tier (global)`;
+      return "Per-persona (global)";
+    case "default":
+      return "Default fallback";
+    case "inherit":
+      return "Falls back to pi current";
+  }
+}
+
+/** Build the phase table for Screen 3.
+ *  Joins PHASE_PERSONA_TABLE with model resolution results. */
+export function getPhaseTable(state: ConfigTuiState): PhaseTableRow[] {
+  const pipelineNames = state.pipelineCatalogue ?? ["default"];
+  const pipeline = pipelineNames[0] ?? "default";
+
+  return PHASE_PERSONA_TABLE.map((phase) => {
+    const result = resolveModelForPhase(pipeline, phase.role, phase.personaNoun, {
+      ...state.buffer.global,
+      ...state.buffer.project,
+      _global: state.buffer.global,
+      _project: state.buffer.project,
+    });
+    const resolved = result.model
+      ? `${result.model.provider}:${result.model.model}`
+      : "(inherit pi current)";
+    const meta = PERSONA_META[phase.personaNoun];
+    const isProject = result.source === "L2" || result.source === "L4-inline" || result.source === "L4-name" || result.source === "L3";
+    return {
+      role: phase.role,
+      persona: phase.personaNoun,
+      personaEmoji: meta?.emoji ?? "",
+      tier: phase.tier,
+      resolved,
+      rawSource: result.source,
+      sourceLabel: sourceToLabel(result.source, phase.tier, isProject),
+    };
+  });
+}
+
 // ── Tier selectors ───────────────────────────────────────────────────────────
 
 /** Determine the effective model for an entire tier.
@@ -120,6 +209,83 @@ export function getTierAssignment(
 /** Return all three tier assignments as an array (stable order: heavy, standard, light). */
 export function getAllTierAssignments(state: ConfigTuiState): Array<{ tier: Tier; assignment: TierAssignment }> {
   return TIERS.map((tier) => ({ tier, assignment: getTierAssignment(state, tier) }));
+}
+
+/** Scope-aware tier assignment: returns what's set at the given scope layer.
+ *  When scope is "global", shows global-layer assignments only.
+ *  When scope is "project", shows the resolved (merged) view since project
+ *  layer is where overrides live on top of global.
+ *  If a tier has no assignment at the active scope layer but has one at
+ *  the other layer, shows { status: "set-in-other-layer" } with the details. */
+export type ScopedTierAssignment =
+  | { status: "set"; provider: string; model: string; layer: ConfigLayer }
+  | { status: "set-in-other-layer"; provider: string; model: string; otherLayer: ConfigLayer }
+  | { status: "mixed" }
+  | { status: "unset" };
+
+export function getScopedTierAssignment(
+  state: ConfigTuiState,
+  tier: Tier,
+  scope: ConfigLayer,
+): ScopedTierAssignment {
+  const personas = TIER_PERSONAS[tier];
+  const targetBuffer = state.buffer[scope];
+  const otherBuffer = state.buffer[scope === "global" ? "project" : "global"];
+  const targetPersonaModels = targetBuffer["persona-models"] ?? {};
+  const otherPersonaModels = otherBuffer["persona-models"] ?? {};
+
+  // Check if all personas in this tier have assignments in the target layer
+  const targetEntries = personas.map((p) => targetPersonaModels[p]);
+  const targetPresent = targetEntries.filter((e) => e !== undefined);
+
+  if (targetPresent.length === personas.length) {
+    // All tier personas have assignments in target layer
+    const allSame = targetEntries.every(
+      (e) => e !== undefined && e.provider === targetEntries[0]!.provider && e.model === targetEntries[0]!.model,
+    );
+    if (allSame) {
+      return {
+        status: "set",
+        provider: targetEntries[0]!.provider,
+        model: targetEntries[0]!.model,
+        layer: scope,
+      };
+    }
+    return { status: "mixed" };
+  }
+
+  if (targetPresent.length === 0) {
+    // No assignments in target layer
+    // Check if any are set in the other layer
+    const otherEntries = personas.map((p) => otherPersonaModels[p]);
+    const otherPresent = otherEntries.filter((e) => e !== undefined);
+    if (otherPresent.length > 0) {
+      // Some are set in the other layer — show that
+      const allSameOther = otherPresent.every(
+        (e) => e.provider === otherPresent[0]!.provider && e.model === otherPresent[0]!.model,
+      );
+      if (allSameOther) {
+        return {
+          status: "set-in-other-layer",
+          provider: otherPresent[0]!.provider,
+          model: otherPresent[0]!.model,
+          otherLayer: scope === "global" ? "project" : "global",
+        };
+      }
+      return { status: "mixed" };
+    }
+    return { status: "unset" };
+  }
+
+  // Partial assignments in target layer
+  return { status: "mixed" };
+}
+
+export function getAllScopedTierAssignments(
+  state: ConfigTuiState,
+  scope: ConfigLayer,
+): Array<{ tier: Tier; assignment: ScopedTierAssignment }> {
+  return TIERS.map((tier) => ({ tier, assignment: getScopedTierAssignment(state, tier, scope) }));
 }
 
 /** Which tier does a persona belong to? Returns undefined for unknown names. */

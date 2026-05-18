@@ -277,10 +277,11 @@ describe("reducer — exhaustiveness", () => {
 });
 
 describe("View kinds", () => {
-  it("View is a discriminated union covering all screens in scope for Phase A", () => {
+  it("View is a discriminated union covering all screens in scope for Phase A+D", () => {
     const views: View[] = [
       { kind: "tier-menu", cursor: 0 },
       { kind: "tier-picker", tier: "heavy", step: "pick-provider", provider: undefined, cursor: 0 },
+      { kind: "advanced-menu", cursor: 0 },
       { kind: "top-menu", cursor: 0 },
       { kind: "empty-state", cursor: 0 },
       { kind: "no-project", cursor: 0 },
@@ -294,7 +295,7 @@ describe("View kinds", () => {
         cursor: 0,
       },
     ];
-    expect(views.length).toBe(7);
+    expect(views.length).toBe(8);
   });
 });
 

@@ -67,6 +67,12 @@ export function dirtyMarker(theme: Theme): string {
   return theme.fg("warning", "* unsaved");
 }
 
+/** Tier badge — displays Heavy / Standard / Light in accent color. */
+export function tierBadge(tier: "heavy" | "standard" | "light", theme: Theme): string {
+  const labels: Record<string, string> = { heavy: "Heavy", standard: "Standard", light: "Light" };
+  return theme.fg("accent", labels[tier] ?? tier);
+}
+
 // ── Padding (ANSI-aware) ────────────────────────────────────────────────────
 
 /**

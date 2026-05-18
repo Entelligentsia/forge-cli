@@ -87,6 +87,29 @@ export function formatOverride(override: string | { provider: string; model: str
   return `{${override.provider}:${override.model}}`;
 }
 
+/** Render the four-rule cascade footer in plain English.
+ *  This is the "How models get picked" section from Screen 3. */
+export function cascadeFooter(width: number, theme: Theme): string[] {
+  const m = (text: string) => theme.fg("muted", text);
+  const a = (text: string) => theme.fg("accent", text);
+  return [
+    "",
+    a("How models get picked"),
+    theme.fg("border", "─".repeat(Math.max(1, width))),
+    m("Each step's persona looks for an override at four levels (most specific wins):"),
+    m(" 1. A model set just for this step             ") + a("(Step override)"),
+    m(" 2. A model set just for this persona          ") + a("(Per-persona override)"),
+    m(" 3. The tier baseline you set above            ") + a("(Heavy / Standard / Light)"),
+    m(" 4. Whatever model pi is currently running on  ") + m("(falls back automatically)"),
+  ];
+}
+
+/** Render a tier badge like "Heavy", "Standard", "Light" in themed color. */
+export function tierBadge(tier: "heavy" | "standard" | "light", theme: Theme): string {
+  const labels: Record<string, string> = { heavy: "Heavy", standard: "Standard", light: "Light" };
+  return theme.fg("accent", labels[tier] ?? tier);
+}
+
 /** Width-safe final guard: truncate every line to the given terminal width. */
 export function safeLines(lines: string[], width: number): string[] {
   return truncateLines(lines, width);

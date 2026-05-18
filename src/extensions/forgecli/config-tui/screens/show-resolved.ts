@@ -1,16 +1,19 @@
-// Show-resolved screen — read-only resolved routing table (per pipeline, per phase).
-// Phase 3: full theming, width safety.
+// Show-resolved screen — "Show what runs at each step" (Screen 3).
+// Phase C: rewritten to the phase-table format with emoji + persona names +
+// plain-English tier-source labels + cascade footer.
+// No more L1/L2 badges, no more "cascade" jargon.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
-import { getActiveView } from "../state/selectors.js";
-import { CANONICAL_PHASES } from "../state/constants.js";
+import { getActiveView, getPhaseTable, type PhaseTableRow } from "../state/selectors.js";
+import { PHASE_PERSONA_TABLE } from "../tier-meta.js";
 import { resolveModelForPhase } from "../../model-resolver.js";
-import { rule, windowList, safeLines } from "./shared.js";
-import { padRight, accentBold, muted, cursor, authBadge } from "../theme.js";
+import { rule, windowList, safeLines, cascadeFooter } from "./shared.js";
+import { padRight, accentBold, muted, cursor } from "../theme.js";
 
+// Keep computeResolvedRows for backward compat (barrel re-export).
 export interface ResolvedRow {
   index: number;
   role: string;
@@ -21,8 +24,8 @@ export interface ResolvedRow {
 }
 
 /**
- * Pure compute helper: walk every pipeline × phase, resolve via
- * resolveModelForPhase, and return rows for rendering or JSON export.
+ * Legacy compute helper — kept for backward compatibility in barrel re-export.
+ * Prefer getPhaseTable() for new code.
  */
 export function computeResolvedRows(
   state: ConfigTuiState,
@@ -32,7 +35,7 @@ export function computeResolvedRows(
     : ["default"];
   return pipelineNames.map((pipeline) => ({
     pipeline,
-    rows: CANONICAL_PHASES.map((phase, i) => {
+    rows: PHASE_PERSONA_TABLE.map((phase, i) => {
       const result = resolveModelForPhase(pipeline, phase.role, phase.personaNoun, {
         ...state.buffer.global,
         ...state.buffer.project,
@@ -59,65 +62,89 @@ export function computeResolvedRows(
   }));
 }
 
+/**
+ * Build a single table row with ANSI-safe column truncation.
+ * Each column value is padded or truncated to its allocated visible width.
+ * Truncated values have their trailing ANSI resets stripped (truncateToWidth
+ * appends \\x1b[0m to close styles; since we control the content, this is
+ * safe to strip).
+ */
+function buildRow(
+  parts: Array<{ text: string; width: number }>,
+): string {
+  return parts.map(({ text, width }) => {
+    const vis = visibleWidth(text);
+    if (vis > width) {
+      // Truncate and strip trailing ANSI reset that truncateToWidth adds
+      const raw = truncateToWidth(text, width, "");
+      return raw.replace(/\x1b\[0m$/, "");
+    }
+    // Pad with spaces to hit the target visible width
+    return text + " ".repeat(width - vis);
+  }).join(" ");
+}
+
 export class ShowResolvedScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
     const view = getActiveView(state);
     if (view.kind !== "show-resolved") {
-      return ["(renderShowResolved called with wrong active view)"];
+      return ["(show-resolved called with wrong active view)"];
     }
     const lines: string[] = [];
-    lines.push(accentBold("forge config › resolved", theme));
+
+    // ── Column sizing ──────────────────────────────────────────────────
+    // Reserve enough room for source labels. Longest: "Falls back to pi current" = 24.
+    const minSource = 24;
+    const leading = 4; // "  {cursor} "
+    const gap = 3; // 3 single-space gaps between 4 columns
+    // stepCol: longest step is "review-plan"/"review-code" = 11 vis
+    // Use 11 so model gets more room, and step names fit exactly.
+    const stepCol = 11;
+    // personaCol: emoji(2 vis) + space + name; names up to ~12 chars
+    // padOrTruncate handles overflow gracefully.
+    const personaCol = 14;
+    // modelCol: flexible; long models get truncated with visible ellipsis
+    const modelCol = Math.max(16, width - leading - gap - stepCol - personaCol - minSource);
+
+    // ── Title ───────────────────────────────────────────────────────────
+    lines.push(accentBold("forge config › current setup", theme));
     lines.push(rule(width, theme));
 
-    // Layer files: presence at L1/L2 paths.
-    lines.push(muted("  Layer files:", theme));
-    const globalExists =
-      state.buffer.global["persona-models"] && Object.keys(state.buffer.global["persona-models"]).length > 0;
-    const projectExists =
-      state.buffer.project["persona-models"] && Object.keys(state.buffer.project["persona-models"]).length > 0;
-    lines.push(`    L1  ~/.pi/agent/forge-cli/config.json                  ${globalExists ? "exists" : "absent"}`);
-    lines.push(`    L2  ${state.cwd}/.pi/forge-cli/config.json    ${projectExists ? "exists" : "absent"}`);
-    lines.push("");
+    // ── Column headers ─────────────────────────────────────────────────
+    lines.push(
+      `  ${muted(padRight("Step", stepCol), theme)} ${muted(padRight("Persona", personaCol), theme)} ${muted(padRight("Model", modelCol), theme)} ${muted("Source", theme)}`,
+    );
 
-    if (state.pipelineCatalogue === null) {
-      lines.push(muted("  No pipeline catalogue (forge-cli outside a Forge project).", theme));
-      lines.push(muted("  Default pipeline shown below (canonical 8-phase chain).", theme));
-      lines.push("");
-    }
+    // ── Phase rows ─────────────────────────────────────────────────────
+    const rows = getPhaseTable(state);
+    const win = windowList(rows, view.cursor, 10);
 
-    const allRows = computeResolvedRows(state);
-    const totalRows = allRows.reduce((acc, p) => acc + p.rows.length, 0);
-    const flat: Array<{ pipeline: string; row: ResolvedRow }> = [];
-    for (const p of allRows) for (const r of p.rows) flat.push({ pipeline: p.pipeline, row: r });
-
-    const win = windowList(flat, view.cursor, 12);
     if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} row(s) above`, theme));
 
-    let currentPipeline = "";
     for (let i = 0; i < win.visible.length; i++) {
-      const item = win.visible[i];
+      const row = win.visible[i];
       const absoluteIdx = win.start + i;
       const cur = cursor(absoluteIdx === view.cursor, theme);
-      if (item.pipeline !== currentPipeline) {
-        currentPipeline = item.pipeline;
-        const totalPipelinePhases = allRows.find((p) => p.pipeline === item.pipeline)?.rows.length ?? 0;
-        lines.push("");
-        lines.push(`  Pipeline: ${accentBold(item.pipeline, theme)}  (${totalPipelinePhases} phases)`);
-        lines.push(`    ${muted("#", theme)}  ${muted(padRight("ROLE", 13), theme)} ${muted(padRight("PERSONA", 13), theme)} ${muted(padRight("RESOLVED", 31), theme)} ${muted(padRight("SOURCE", 10), theme)} ${muted("AVAIL", theme)}`);
-      }
-      const r = item.row;
-      const idxStr = String(r.index).padStart(2, " ");
-      const roleStr = padRight(r.role, 13);
-      const personaStr = padRight(r.persona, 13);
-      const resolvedStr = padRight(r.resolved, 31);
-      const sourceStr = padRight(r.source, 10);
-      const avail = r.available ? authBadge(true, theme) : theme.fg("error", "✗");
-      lines.push(`  ${cur} ${idxStr}  ${roleStr} ${personaStr} ${resolvedStr} ${sourceStr} ${avail}`);
+
+      const rowStr = buildRow([
+        { text: row.role, width: stepCol },
+        { text: `${row.personaEmoji} ${row.persona}`, width: personaCol },
+        { text: row.resolved, width: modelCol },
+        // Source column is the last column — no fixed width needed
+      ]);
+
+      lines.push(`  ${cur} ${rowStr} ${row.sourceLabel}`);
     }
 
     if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} row(s) below`, theme));
+
+    // ── Cascade footer ─────────────────────────────────────────────────
+    lines.push(...cascadeFooter(width, theme));
+
+    // ── Navigation ─────────────────────────────────────────────────────
     lines.push("");
-    lines.push(muted(`  ↑/↓ scroll   esc back   q quit   (total rows: ${totalRows})`, theme));
+    lines.push(muted(`  ↑/↓ scroll   esc back   q quit`, theme));
+
     return safeLines(lines, width);
   }
 
