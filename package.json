@@ -1,6 +1,6 @@
 {
   "name": "@entelligentsia/forgecli",
-  "version": "0.8.4",
+  "version": "0.9.0",
   "description": "Forge SDLC ported onto @earendil-works/pi-coding-agent — production launcher with three bin aliases (forge/forgecli/4ge). Bundles a curated fork of pi-coding-agent vendored under earendil-works names.",
   "license": "MIT",
   "author": "Entelligentsia",
@@ -70,10 +70,11 @@
     "js-yaml"
   ],
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "file:./vendor-pi/earendil-works-pi-coding-agent-0.75.1-forge.4.tgz",
     "@earendil-works/pi-agent-core": "file:./vendor-pi/earendil-works-pi-agent-core-0.75.1.tgz",
     "@earendil-works/pi-ai": "file:./vendor-pi/earendil-works-pi-ai-0.75.1.tgz",
+    "@earendil-works/pi-coding-agent": "0.75.1-forge.4",
     "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.75.1.tgz",
+    "ajv": "^8.20.0",
     "js-yaml": "^4.1.0",
     "typebox": "^1.1.24"
   },
@@ -89,5 +90,12 @@
   },
   "engines": {
     "node": ">=20.6.0"
-  }
+  },
+  "bundleDependencies": [
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-agent-core",
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-tui",
+    "js-yaml"
+  ]
 }

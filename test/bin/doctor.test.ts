@@ -114,4 +114,32 @@ describe("runDoctorProbe — empty agent dir", () => {
 		expect(report.forgePlugin).toBe("0.0.0-test");
 		expect(report.pi).toBe("0.0.0-test");
 	});
+
+	// Plan 16 Slice 5 — byProvider enrichment
+	it("models.byProvider is present and is an object", async () => {
+		const report = await runDoctorProbe(VERSIONS);
+		expect(report.models).toHaveProperty("byProvider");
+		expect(typeof report.models.byProvider).toBe("object");
+	});
+
+	it("models.byProvider is empty when no auth configured", async () => {
+		const report = await runDoctorProbe(VERSIONS);
+		expect(Object.keys(report.models.byProvider)).toHaveLength(0);
+	});
+
+	it("models.byProvider keys are sorted, each value is a sorted string[]", async () => {
+		const report = await runDoctorProbe(VERSIONS);
+		const keys = Object.keys(report.models.byProvider);
+		expect(keys).toEqual([...keys].sort());
+		for (const ids of Object.values(report.models.byProvider)) {
+			expect(Array.isArray(ids)).toBe(true);
+			expect(ids).toEqual([...ids].sort());
+		}
+	});
+
+	it("JSON output includes models.byProvider field", async () => {
+		const report = await runDoctorProbe(VERSIONS);
+		const json = JSON.parse(JSON.stringify(report)) as typeof report;
+		expect(json.models.byProvider).toBeDefined();
+	});
 });

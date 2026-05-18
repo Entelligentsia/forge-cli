@@ -16,13 +16,18 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { checkMaterialization } from "./plan.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
+import { loadLayeredConfig } from "./config-layer.js";
+import { resolveModelForPhase } from "./model-resolver.js";
+import { validateModelConfig } from "./model-validator.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { attachViewportObserver } from "./viewport-events.js";
@@ -32,6 +37,33 @@ import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";
 
 export function isNonInteractive(): boolean {
 	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
+}
+
+// ── Model-routing preflight helpers (Plan 16 Slice 3) ────────────────────────
+
+function readPersonaDir(dir: string): string[] {
+	try {
+		return fs.readdirSync(dir)
+			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
+			.map((f) => f.replace(/\.md$/, ""));
+	} catch {
+		return [];
+	}
+}
+
+function readPipelineNames(forgeCfgPath: string): string[] | null {
+	try {
+		const raw = fs.readFileSync(forgeCfgPath, "utf-8");
+		const cfg = JSON.parse(raw) as unknown;
+		if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
+			const pipelines = (cfg as { pipelines?: unknown }).pipelines;
+			if (pipelines && typeof pipelines === "object") return Object.keys(pipelines);
+			return [];
+		}
+		return null;
+	} catch {
+		return null;
+	}
 }
 
 // ── Phase descriptor table ─────────────────────────────────────────────────
@@ -486,6 +518,50 @@ export { extractTurnPreview } from "./viewport-renderer.js";
 export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<RunTaskPipelineResult> {
 	const { taskId, cwd, ctx, forgeRoot, storeCli, preflightGate, registry, resumeFromState, onPhaseEvent } = opts;
 
+	// Load per-phase model routing config once at task entry (Plan 16 Slice 2).
+	// Empty / absent config produces inherit for every phase — no behaviour change.
+	const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+
+	// Pre-flight model config validation (Plan 16 Slice 3).
+	// Warns on unknown persona names / unavailable models; errors on unresolvable
+	// overrides / unknown pipelines. With FORGE_STRICT_MODELS=1, warnings → errors.
+	{
+		const personasDir = path.resolve(
+			path.dirname(fileURLToPath(import.meta.url)),
+			"..", "..", "forge-payload", ".base-pack", "personas",
+		);
+		const personaCatalogue = readPersonaDir(personasDir);
+
+		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
+		const pipelineCatalogue = readPipelineNames(forgeCfgPath);
+
+		const modelRegistry = ModelRegistry.create(AuthStorage.create());
+		const availableModels = modelRegistry.getAvailable?.() ?? [];
+		const strict = process.env.FORGE_STRICT_MODELS === "1";
+
+		const { errors, warnings } = validateModelConfig(
+			personaCatalogue,
+			pipelineCatalogue,
+			modelRoutingConfig,
+			availableModels.map((m) => ({ provider: m.provider, id: m.id })),
+			strict,
+		);
+		for (const w of warnings) {
+			ctx.ui.notify(`⚠ forge:run-task — model routing: ${w.message}`, "warning");
+		}
+		if (errors.length > 0) {
+			for (const e of errors) {
+				ctx.ui.notify(`× forge:run-task — model routing: ${e.message}`, "error");
+			}
+			return {
+				status: "failed",
+				lastPhaseIndex: 0,
+				iterationCounts: {},
+				lastError: `model config validation failed: ${errors.map((e) => e.code).join(", ")}`,
+			};
+		}
+	}
+
 	// Determine starting phase from resumeFromState (if provided) or phase 0.
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
 	let iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
@@ -635,6 +711,17 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// NEVER sendKickoff here — that would reproduce issue #30 (same-context inline = no fork).
 		const taskBody = composeTaskBody(subWorkflowMd, taskId);
 
+		// Resolve per-phase model from layered config (Plan 16 Slice 2).
+		// Pipeline name "default" matches the Forge plugin's shipped pipeline.
+		// When config is absent or cascade bottoms out, resolves to inherit
+		// (model: undefined) — setModel is skipped and pi's current model is used.
+		const modelResolution = resolveModelForPhase(
+			"default",
+			phase.role,
+			phase.personaNoun,
+			modelRoutingConfig,
+		);
+
 		const phaseStart = Date.now();
 
 		// Stabilization debug log — every subagent event appended as JSONL.
@@ -657,7 +744,34 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			}
 		};
 		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
+		writeDebug({
+			kind: "requested_model",
+			requested: modelResolution.model ?? null,
+			source: modelResolution.source,
+			persona: phase.personaNoun,
+		});
 		registry.startPhase(taskId, phase.role, currentPhaseIndex);
+
+		// Capture the first stream-observed model on turn_end (IL10 visibility).
+		// If pi auto-substitutes or setModel silently no-ops, this line will diverge
+		// from requested_model — exactly the diagnostic signal we want.
+		let modelObservedLogged = false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const wrappedOnEvent = (event: any) => {
+			if (
+				!modelObservedLogged &&
+				event?.type === "turn_end" &&
+				typeof event?.message?.model === "string"
+			) {
+				modelObservedLogged = true;
+				writeDebug({
+					kind: "model_observed",
+					provider: event.message.provider ?? null,
+					model: event.message.model,
+				});
+			}
+			observer.onEvent(event);
+		};
 
 		const refreshStatus = () => {
 			if (process.env.FORGE_VERBOSE !== "1") return;
@@ -690,7 +804,8 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				exportTag: `${taskId}__${phase.role}`,
 				cacheSessionId,
 				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
-				onEvent: observer.onEvent,
+				onEvent: wrappedOnEvent,
+				requestedModel: modelResolution.model,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };

@@ -42,6 +42,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+import { getInputRouter } from "./input-router.js";
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
 import { fmtTokenFooter } from "./viewport-renderer.js";
 import { paintFooterLine, paintTailLine } from "./viewport-theme.js";
@@ -565,45 +566,50 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			registry.on("change", () => ensureSpinnerTimer());
 			ensureSpinnerTimer();
 
-			ctx.ui.onTerminalInput((data) => {
-				if (!stripRef) return undefined;
+			// Plan 16 Slice 4c: register via forge-input-router so that overlays
+			// (e.g. /forge:config) suppress the ↓ activator while mounted.
+			getInputRouter().register(
+				(data) => {
+					if (!stripRef) return undefined;
 
-				if (!stripRef.getStripActive()) {
-					if (!isDownArrow(data)) return undefined;
-					const editorText = ctx.ui.getEditorText();
-					if (editorText.includes("\n")) return undefined; // multi-line nav
-					if (!stripRef.hasSession()) return undefined; // strip hidden anyway
-					stripRef.setStripActive(true);
-					// Park cursor on the currently-running subagent — that's
-					// the chip the user almost always wants to see. Falls back
-					// to orchestrator (index 0) when no phase is live.
-					stripRef.parkCursorOnCurrentPhase();
-					return { consume: true };
-				}
+					if (!stripRef.getStripActive()) {
+						if (!isDownArrow(data)) return undefined;
+						const editorText = ctx.ui.getEditorText();
+						if (editorText.includes("\n")) return undefined; // multi-line nav
+						if (!stripRef.hasSession()) return undefined; // strip hidden anyway
+						stripRef.setStripActive(true);
+						// Park cursor on the currently-running subagent — that's
+						// the chip the user almost always wants to see. Falls back
+						// to orchestrator (index 0) when no phase is live.
+						stripRef.parkCursorOnCurrentPhase();
+						return { consume: true };
+					}
 
-				if (isLeftArrow(data)) {
-					stripRef.moveCursor(-1);
-					return { consume: true };
-				}
-				if (isRightArrow(data)) {
-					stripRef.moveCursor(1);
-					return { consume: true };
-				}
-				if (isUpArrow(data)) {
-					stripRef.setStripActive(false);
-					return { consume: true };
-				}
-				if (isEnter(data)) {
-					commitFocus(ctx);
-					return { consume: true };
-				}
-				if (isEsc(data)) {
-					stripRef.setStripActive(false);
-					setFocusToMain(ctx);
-					return { consume: true };
-				}
-				return undefined;
-			});
+					if (isLeftArrow(data)) {
+						stripRef.moveCursor(-1);
+						return { consume: true };
+					}
+					if (isRightArrow(data)) {
+						stripRef.moveCursor(1);
+						return { consume: true };
+					}
+					if (isUpArrow(data)) {
+						stripRef.setStripActive(false);
+						return { consume: true };
+					}
+					if (isEnter(data)) {
+						commitFocus(ctx);
+						return { consume: true };
+					}
+					if (isEsc(data)) {
+						stripRef.setStripActive(false);
+						setFocusToMain(ctx);
+						return { consume: true };
+					}
+					return undefined;
+				},
+				{ name: "thread-switcher-strip", skipWhenOverlayActive: true },
+			);
 		} catch (err: unknown) {
 			const e = err as { message?: string };
 			ctx.ui.notify(`forge:threads failed to mount: ${e.message ?? "unknown"}`, "error");

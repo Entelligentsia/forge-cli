@@ -115,13 +115,9 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 	});
 
 	// ── /forge:config ─────────────────────────────────────────────────────────
-	pi.registerCommand("forge:config", {
-		description: "Inspect or change Forge project configuration",
-		async handler(args, ctx) {
-			if (!forgeRoot) return outsideProjectNoOp("config", ctx);
-			await delegateMarkdownCommand(pi, forgeRoot, "config", args, ctx);
-		},
-	});
+	// Real handler registered via registerConfigCommand(pi) in index.ts
+	// (Plan 16 Slice 4a). The slot stays in EXPLICITLY_REGISTERED_NAMES so the
+	// auto-stub loop in registerAllForgeCommands does not re-register a stub.
 
 	// ── /forge:ask ────────────────────────────────────────────────────────────
 	// Tomoshibi entry point. The before_agent_start handler picks up the gate
