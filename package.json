@@ -74,6 +74,7 @@
     "@earendil-works/pi-ai": "file:./vendor-pi/earendil-works-pi-ai-0.75.1.tgz",
     "@earendil-works/pi-coding-agent": "0.75.1-forge.4",
     "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.75.1.tgz",
+    "ajv": "^8.20.0",
     "js-yaml": "^4.1.0",
     "typebox": "^1.1.24"
   },
@@ -84,8 +85,6 @@
     "@biomejs/biome": "^2.3.5",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.3.0",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
   },
