@@ -1,10 +1,13 @@
-// Pure screen renderers for the config TUI. Each function takes
-// state + width + theme and returns lines (string[]). No I/O, no terminal
-// escapes — theme-aware styling comes through the Theme parameter.
+// Screen renderers and routing — barrel re-export for backward compatibility.
 //
-// Plan 16 Slice 4b. Themed rendering added as part of modal UX styling.
+// Phase 1 originally had all render functions here. Phase 2 extracts each screen
+// into its own module under screens/*.ts, each implementing the Screen interface.
+// This file now re-exports the render functions for backward compatibility with
+// existing tests and consumers.
+//
+// The renderActive router is preserved here as well, delegating to the same
+// Screen instances that the orchestrator (component.ts) uses.
 
-import { resolveModelForPhase } from "../model-resolver.js";
 import type { ConfigTuiState, View } from "./state.js";
 import { CANONICAL_PHASES } from "./state/constants.js";
 import {
@@ -15,29 +18,62 @@ import {
   listResolvedPersonas,
   uniqueProviders,
 } from "./state/selectors.js";
+import { resolveModelForPhase } from "../model-resolver.js";
 import { rule, authBadgeFor, authStatusLine, resolvedSummary, windowList, formatOverride } from "./screens/shared.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { padRight, cursor, accentBold, dim, muted, warning } from "./theme.js";
 
-/**
- * Canonical phase list for the "default" pipeline as dispatched by
- * run-task.ts:87 (PHASES). Inlined here so the config-tui module doesn't
- * import the orchestrator (which would pull in pi-coding-agent runtime).
- * Stays in sync via the test fixture below.
- */
+import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
+import { TopMenuScreen } from "./screens/top-menu.js";
+import { PersonasListScreen } from "./screens/personas-list.js";
+import { PersonaPickerScreen } from "./screens/persona-picker.js";
+import { PersonaEditorScreen } from "./screens/persona-editor.js";
+import { ShowResolvedScreen, computeResolvedRows } from "./screens/show-resolved.js";
+import { OverridesListPipelinesScreen } from "./screens/overrides-list.js";
+import { OverridesListPhasesScreen } from "./screens/overrides-list-phases.js";
+import { OverrideEditorScreen } from "./screens/override-editor.js";
+import type { MenuItem } from "./screens/top-menu.js";
 
-// ── Screen 1 — Top menu ─────────────────────────────────────────────────────
+// ── Screen instances for renderActive ───────────────────────────────────────
 
-/**
- * Per-view menu definitions. Each item carries a label-builder that can read
- * state for counts (e.g. "5 defined"). The cursor lives in state.view and is
- * authoritative — screens.ts only renders ▸ at the cursor index.
- */
-export interface MenuItem {
-  label: (s: ConfigTuiState) => string;
-}
+const SCREEN_INSTANCES: Record<string, { render(state: ConfigTuiState, width: number, theme: Theme): string[] }> = {
+  "no-project": new TopMenuScreen(),
+  "empty-state": new TopMenuScreen(),
+  "top-menu": new TopMenuScreen(),
+  "personas-list": new PersonasListScreen(),
+  "persona-picker": new PersonaPickerScreen(),
+  "persona-editor": new PersonaEditorScreen(),
+  "show-resolved": new ShowResolvedScreen(),
+  "overrides-list-pipelines": new OverridesListPipelinesScreen(),
+  "overrides-list-phases": new OverridesListPhasesScreen(),
+  "override-editor": new OverrideEditorScreen(),
+};
+
+// ── Re-exports for backward compatibility ───────────────────────────────────
+
+export { TopMenuScreen } from "./screens/top-menu.js";
+export { PersonasListScreen } from "./screens/personas-list.js";
+export { PersonaPickerScreen } from "./screens/persona-picker.js";
+export { PersonaEditorScreen } from "./screens/persona-editor.js";
+export { ShowResolvedScreen, computeResolvedRows, type ResolvedRow } from "./screens/show-resolved.js";
+export { OverridesListPipelinesScreen } from "./screens/overrides-list.js";
+export { OverridesListPhasesScreen } from "./screens/overrides-list-phases.js";
+export { OverrideEditorScreen } from "./screens/override-editor.js";
+export { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
+export { type InputResult, type Screen } from "./screens/types.js";
+export { type MenuItem } from "./screens/top-menu.js";
+
+// ── Legacy render functions (backward-compatible wrappers) ────────────────────
+// These delegate to the new Screen instances so that tests that import
+// renderTopMenu, renderPersonasList, etc. still work.
 
 export function topMenuItems(state: ConfigTuiState): MenuItem[] {
+  // TopMenuScreen.topMenuItems is inside the module; re-implement the call path
+  // by using the screen instance's render, but we need the items list.
+  // Since topMenuItems is only used in render, and is now internal to TopMenuScreen,
+  // we expose a backward-compat wrapper by re-importing from the module.
+  // However, topMenuItems is a local function in top-menu.ts now, not exported.
+  // For backward compatibility we keep the logic here:
   if (state.isEmpty) {
     return [
       { label: () => `1. Add a persona-model assignment   (creates a config file)` },
@@ -80,631 +116,53 @@ export function noProjectMenuItems(state: ConfigTuiState): MenuItem[] {
 }
 
 export function renderTopMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  const cursor = view.kind === "top-menu" || view.kind === "empty-state" ? view.cursor : 0;
-  const lines: string[] = [];
-
-  // Header strip
-  lines.push("forge config");
-  lines.push(rule(width, theme));
-  lines.push(authStatusLine(state, theme));
-  lines.push(resolvedSummary(state, theme));
-  lines.push("");
-
-  if (view.kind === "empty-state" || state.isEmpty) {
-    // Empty state — both files absent
-    lines.push(`  No forge-cli config files found.`);
-    lines.push(`    Global:  ~/.pi/agent/forge-cli/config.json`);
-    lines.push(`    Project: ${state.cwd}/.pi/forge-cli/config.json`);
-    lines.push("");
-    lines.push(`  Every Forge persona will run on pi's currently-running model.`);
-    lines.push(`  To customise:`);
-    lines.push("");
-  }
-
-  const items = topMenuItems(state);
-  items.forEach((it, i) => {
-    const mark = i === cursor ? "▸" : " ";
-    lines.push(`  ${mark} ${it.label(state)}`);
-  });
-  lines.push(`    q. Quit`);
-
-  lines.push("");
-  lines.push(`  ↑/↓ select   enter open   1-5 shortcuts   q quit   ? help`);
-  if (state.dirty) lines.push(`  * unsaved`);
-  return lines;
+  return SCREEN_INSTANCES["top-menu"].render(state, width, theme);
 }
-
-// ── Screen 7 (variant) — Empty state — handled inline by renderTopMenu ───────
-// renderEmptyState is just renderTopMenu with isEmpty=true; kept as a named
-// export for callers that want to be explicit.
 
 export function renderEmptyState(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  // Force the "empty" branch even if buffer subsequently grew.
+  // Force the "empty" branch by using a copy with isEmpty=true
   const stateForRender: ConfigTuiState = { ...state, isEmpty: true };
-  return renderTopMenu(stateForRender, width, theme);
+  return SCREEN_INSTANCES["empty-state"].render(stateForRender, width, theme);
 }
-
-// ── Screen 8 — No project ───────────────────────────────────────────────────
 
 export function renderNoProject(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  const cursor = view.kind === "no-project" ? view.cursor : 0;
-  const lines: string[] = [];
-  lines.push("forge config");
-  lines.push(rule(width, theme));
-  lines.push(`  No project root found (no .forge/ at cwd).`);
-  lines.push("");
-  lines.push(`  Editing global config only:`);
-  lines.push(`    ~/.pi/agent/forge-cli/config.json`);
-  lines.push("");
-  const items = noProjectMenuItems(state);
-  items.forEach((it, i) => {
-    const mark = i === cursor ? "▸" : " ";
-    lines.push(`  ${mark} ${it.label(state)}`);
-  });
-  lines.push(`    q. Quit`);
-  lines.push("");
-  lines.push(`  ↑/↓ select   enter open   1-2 shortcuts   q quit`);
-  return lines;
+  return SCREEN_INSTANCES["no-project"].render(state, width, theme);
 }
-
-// ── Screen 2 — Personas list ────────────────────────────────────────────────
 
 export function renderPersonasList(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "personas-list") {
-    return ["(renderPersonasList called with wrong active view)"];
-  }
-  const personas = listResolvedPersonas(state);
-  const lines: string[] = [];
-  lines.push(`forge config › personas`);
-  lines.push(rule(width, theme));
-
-  if (personas.length === 0) {
-    lines.push(`  (no persona-model assignments)`);
-    lines.push(`  n new persona-model assignment   esc back`);
-    return lines;
-  }
-
-  const personaCol = Math.max(
-    7,
-    ...personas.map((p) => p.persona.length),
-  );
-  const modelCol = Math.max(
-    16,
-    ...personas.map((p) => `${p.provider}:${p.model}`.length),
-  );
-
-  lines.push(`  ${padRight("PERSONA", personaCol)}  ${padRight("PROVIDER:MODEL", modelCol)}  SOURCE  AVAIL`);
-  personas.forEach((p, i) => {
-    const cursor = i === view.cursor ? "▸" : " ";
-    const modelStr = `${p.provider}:${p.model}`;
-    const avail = state.availableModels.some(
-      (m) => m.provider === p.provider && m.id === p.model,
-    )
-      ? "✓"
-      : "✗";
-    const sourceCol = p.source.replace(/-(L1|L2)$/, " ($1)");
-    lines.push(
-      `  ${cursor} ${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${padRight(sourceCol, 8)} ${avail}`,
-    );
-  });
-
-  // Catalogue context
-  const assignedSet = new Set(personas.map((p) => p.persona));
-  const unassignedFromCatalogue = state.personaCatalogue.filter(
-    (p) => !assignedSet.has(p),
-  );
-  if (unassignedFromCatalogue.length > 0) {
-    lines.push("");
-    lines.push(`  Personas with no assignment (use 'default'):`);
-    lines.push(`    ${unassignedFromCatalogue.join(", ")}`);
-  }
-
-  const orphans = personas
-    .map((p) => p.persona)
-    .filter((p) => p !== "default" && !state.personaCatalogue.includes(p));
-  if (orphans.length > 0) {
-    lines.push("");
-    lines.push(`  ⚠ Not in Forge persona catalogue:`);
-    lines.push(`    ${orphans.join(", ")}`);
-  }
-
-  lines.push("");
-  lines.push(`  enter edit   n new   d delete (in current layer)   esc back`);
-  if (state.dirty) lines.push(`  * unsaved`);
-  return lines;
+  return SCREEN_INSTANCES["personas-list"].render(state, width, theme);
 }
-
-// ── Screen 2b — Persona picker (which persona to assign) ────────────────────
 
 export function renderPersonaPicker(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "persona-picker") {
-    return ["(renderPersonaPicker called with wrong active view)"];
-  }
-  const entries = listPersonaPickerEntries(state);
-  const lines: string[] = [];
-  lines.push(`forge config › personas › pick which`);
-  lines.push(rule(width, theme));
-  lines.push(`  Pick a persona to assign a model to:`);
-  lines.push("");
-
-  const nameCol = Math.max(9, ...entries.map((e) => e.persona.length));
-  const win = windowList(entries, view.cursor, 12);
-  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-  win.visible.forEach((entry, i) => {
-    const absoluteIdx = win.start + i;
-    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-    let status: string;
-    if (entry.assignment) {
-      const layer = entry.assignment.source.endsWith("L2") ? "L2" : "L1";
-      status = `currently: ${entry.assignment.provider}:${entry.assignment.model} (${layer})`;
-    } else if (entry.persona === "default") {
-      status = "fallback for every persona";
-    } else {
-      status = "currently: inherit";
-    }
-    const cat = entry.inCatalogue ? " " : "⚠";
-    lines.push(`  ${cursor} ${cat} ${padRight(entry.persona, nameCol)}  ${status}`);
-  });
-  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-  lines.push("");
-  lines.push(`  ↑/↓ select   enter open editor   esc back`);
-  return lines;
-}
-
-// ── Screen 3a — Persona editor — pick provider ──────────────────────────────
-
-function renderPersonaEditorHeader(persona: string, width: number, theme: Theme): string[] {
-  const out: string[] = [];
-  out.push(`forge config › personas › ${persona}`);
-  out.push(rule(width, theme));
-  return out;
+  return SCREEN_INSTANCES["persona-picker"].render(state, width, theme);
 }
 
 export function renderPersonaEditor(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "persona-editor") {
-    return ["(renderPersonaEditor called with wrong active view)"];
-  }
-  const lines = renderPersonaEditorHeader(view.persona, width, theme);
-  const inCatalogue = state.personaCatalogue.includes(view.persona) || view.persona === "default";
-
-  if (view.step === "pick-provider") {
-    lines.push(`  Step 1 of 3 — pick provider`);
-    if (!inCatalogue) {
-      lines.push(`  ⚠ '${view.persona}' is not in the Forge persona catalogue.`);
-    }
-    lines.push("");
-    lines.push(`  Provider                                                  AUTH`);
-    const providers = uniqueProviders(state);
-    const win = windowList(providers, view.cursor);
-    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-    win.visible.forEach((p, i) => {
-      const absoluteIdx = win.start + i;
-      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-      const auth = authBadgeFor(state, p, theme);
-      lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
-    });
-    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-    lines.push("");
-    lines.push(`  ↑/↓ select   enter advance   esc back`);
-  } else if (view.step === "pick-model") {
-    lines.push(`  Step 2 of 3 — pick model (provider: ${view.provider ?? "(unknown)"})`);
-    lines.push("");
-    const models = state.availableModels.filter((m) => m.provider === view.provider);
-    if (models.length === 0) {
-      lines.push(`  No models available for this provider.`);
-      lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
-    } else {
-      const win = windowList(models, view.cursor);
-      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-      win.visible.forEach((m, i) => {
-        const absoluteIdx = win.start + i;
-        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-        lines.push(`  ${cursor} ${m.id}`);
-      });
-      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-    }
-    lines.push("");
-    lines.push(`  ↑/↓ select   enter advance   esc back`);
-  } else {
-    lines.push(`  Step 3 of 3 — pick write target`);
-    lines.push("");
-    lines.push(`  ${view.persona} → ${view.provider}:${view.model}`);
-    lines.push("");
-    const targets = ["project", "global"] as const;
-    const targetLines = [
-      `Project   ${state.cwd}/.pi/forge-cli/config.json`,
-      `Global    ~/.pi/agent/forge-cli/config.json`,
-    ];
-    targets.forEach((_, i) => {
-      const cursor = i === view.cursor ? "▸" : " ";
-      lines.push(`  ${cursor} ${targetLines[i]}`);
-    });
-    lines.push("");
-    lines.push(`  ↑/↓ select   enter confirm and write   p/g shortcuts   esc cancel`);
-  }
-
-  if (state.dirty) lines.push(`  * unsaved`);
-  return lines;
-}
-
-// ── Screen 6 — Show resolved ────────────────────────────────────────────────
-
-export interface ResolvedRow {
-  index: number;
-  role: string;
-  persona: string;
-  resolved: string;
-  source: string;
-  available: boolean;
-}
-
-/**
- * Pure compute helper: walk every pipeline × phase, resolve via
- * resolveModelForPhase, and return rows for rendering or JSON export.
- */
-export function computeResolvedRows(
-  state: ConfigTuiState,
-): Array<{ pipeline: string; rows: ResolvedRow[] }> {
-  const pipelineNames: string[] = state.pipelineCatalogue
-    ? state.pipelineCatalogue
-    : ["default"];
-  return pipelineNames.map((pipeline) => ({
-    pipeline,
-    rows: CANONICAL_PHASES.map((phase, i) => {
-      const result = resolveModelForPhase(pipeline, phase.role, phase.personaNoun, {
-        ...state.buffer.global,
-        ...state.buffer.project,
-        _global: state.buffer.global,
-        _project: state.buffer.project,
-      });
-      const resolved = result.model
-        ? `${result.model.provider}:${result.model.model}`
-        : "(inherit pi current)";
-      const available = result.model
-        ? state.availableModels.some(
-            (m) => m.provider === result.model!.provider && m.id === result.model!.model,
-          )
-        : true;
-      return {
-        index: i,
-        role: phase.role,
-        persona: phase.personaNoun,
-        resolved,
-        source: result.source,
-        available,
-      };
-    }),
-  }));
+  return SCREEN_INSTANCES["persona-editor"].render(state, width, theme);
 }
 
 export function renderShowResolved(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "show-resolved") {
-    return ["(renderShowResolved called with wrong active view)"];
-  }
-  const lines: string[] = [];
-  lines.push(`forge config › resolved`);
-  lines.push(rule(width, theme));
-
-  // Layer files: presence at L1/L2 paths.
-  lines.push(`  Layer files:`);
-  const globalExists =
-    state.buffer.global["persona-models"] && Object.keys(state.buffer.global["persona-models"]).length > 0;
-  const projectExists =
-    state.buffer.project["persona-models"] && Object.keys(state.buffer.project["persona-models"]).length > 0;
-  lines.push(`    L1  ~/.pi/agent/forge-cli/config.json                  ${globalExists ? "exists" : "absent"}`);
-  lines.push(`    L2  ${state.cwd}/.pi/forge-cli/config.json    ${projectExists ? "exists" : "absent"}`);
-  lines.push("");
-
-  if (state.pipelineCatalogue === null) {
-    lines.push(`  No pipeline catalogue (forge-cli outside a Forge project).`);
-    lines.push(`  Default pipeline shown below (canonical 8-phase chain).`);
-    lines.push("");
-  }
-
-  const allRows = computeResolvedRows(state);
-  // Total flattened row count for cursor windowing.
-  const totalRows = allRows.reduce((acc, p) => acc + p.rows.length, 0);
-  const flat: Array<{ pipeline: string; row: ResolvedRow }> = [];
-  for (const p of allRows) for (const r of p.rows) flat.push({ pipeline: p.pipeline, row: r });
-
-  const win = windowList(flat, view.cursor, 12);
-  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} row(s) above`);
-
-  let currentPipeline = "";
-  for (let i = 0; i < win.visible.length; i++) {
-    const item = win.visible[i];
-    const absoluteIdx = win.start + i;
-    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-    if (item.pipeline !== currentPipeline) {
-      currentPipeline = item.pipeline;
-      const totalPipelinePhases = allRows.find((p) => p.pipeline === item.pipeline)?.rows.length ?? 0;
-      lines.push("");
-      lines.push(`  Pipeline: ${item.pipeline}  (${totalPipelinePhases} phases)`);
-      lines.push(`    #  ROLE          PERSONA       RESOLVED                        SOURCE     AVAIL`);
-    }
-    const r = item.row;
-    const idxStr = String(r.index).padStart(2, " ");
-    const roleStr = padRight(r.role, 13);
-    const personaStr = padRight(r.persona, 13);
-    const resolvedStr = padRight(r.resolved, 31);
-    const sourceStr = padRight(r.source, 10);
-    const avail = r.available ? "✓" : "✗";
-    lines.push(`  ${cursor} ${idxStr}  ${roleStr} ${personaStr} ${resolvedStr} ${sourceStr} ${avail}`);
-  }
-
-  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} row(s) below`);
-  lines.push("");
-  lines.push(`  ↑/↓ scroll   esc back   q quit   (total rows: ${totalRows})`);
-  return lines;
+  return SCREEN_INSTANCES["show-resolved"].render(state, width, theme);
 }
-
-// ── Screen 4 — Per-phase overrides (pipelines list) ─────────────────────────
 
 export function renderOverridesListPipelines(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "overrides-list-pipelines") {
-    return ["(renderOverridesListPipelines called with wrong active view)"];
-  }
-  const summaries = listPipelineOverrideSummaries(state);
-  const lines: string[] = [];
-  lines.push(`forge config › per-phase overrides`);
-  lines.push(rule(width, theme));
-
-  if (summaries.length === 0) {
-    lines.push(`  (no pipeline catalogue available)`);
-    lines.push(`  esc back`);
-    return lines;
-  }
-
-  lines.push(`  Pipelines:`);
-  const win = windowList(summaries, view.cursor);
-  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-  win.visible.forEach((s, i) => {
-    const absoluteIdx = win.start + i;
-    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-    const status = s.overrideCount === 0
-      ? "none"
-      : `${s.overrideCount} override${s.overrideCount === 1 ? "" : "s"}`;
-    lines.push(`  ${cursor} ${padRight(s.pipeline, 18)} ${status}`);
-  });
-  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-
-  lines.push("");
-  lines.push(`  enter inspect highlighted pipeline   esc back`);
-  if (state.dirty) lines.push(`  * unsaved`);
-  return lines;
+  return SCREEN_INSTANCES["overrides-list-pipelines"].render(state, width, theme);
 }
-
-// ── Screen 4 (variant) — Phases of one pipeline ─────────────────────────────
 
 export function renderOverridesListPhases(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "overrides-list-phases") {
-    return ["(renderOverridesListPhases called with wrong active view)"];
-  }
-  const lines: string[] = [];
-  lines.push(`forge config › per-phase overrides › ${view.pipeline}`);
-  lines.push(rule(width, theme));
-  lines.push(`  Pipeline phases (canonical order from orchestrator):`);
-  lines.push("");
-  lines.push(
-    `    #  ROLE          PERSONA       OVERRIDE                  RESOLVED                  SOURCE`,
-  );
-
-  const win = windowList([...CANONICAL_PHASES], view.cursor, 12);
-  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} row(s) above`);
-
-  win.visible.forEach((phase, i) => {
-    const absoluteIdx = win.start + i;
-    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-    const override = getPhaseOverride(state, view.pipeline, phase.role);
-    const overrideStr = padRight(formatOverride(override), 25);
-    const result = resolveModelForPhase(view.pipeline, phase.role, phase.personaNoun, {
-      ...state.buffer.global,
-      ...state.buffer.project,
-      _global: state.buffer.global,
-      _project: state.buffer.project,
-    });
-    const resolved = result.model
-      ? `${result.model.provider}:${result.model.model}`
-      : "(inherit pi current)";
-    const resolvedStr = padRight(resolved, 25);
-    const idxStr = String(absoluteIdx).padStart(2, " ");
-    const roleStr = padRight(phase.role, 13);
-    const personaStr = padRight(phase.personaNoun, 13);
-    lines.push(
-      `  ${cursor} ${idxStr}  ${roleStr} ${personaStr} ${overrideStr} ${resolvedStr} ${result.source}`,
-    );
-  });
-
-  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} row(s) below`);
-  lines.push("");
-  lines.push(
-    `  enter edit override   space clear (back to persona)   esc back`,
-  );
-  if (state.dirty) lines.push(`  * unsaved`);
-  return lines;
+  return SCREEN_INSTANCES["overrides-list-phases"].render(state, width, theme);
 }
-
-// ── Screen 5 — Per-phase override editor ────────────────────────────────────
 
 export function renderOverrideEditor(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const view = getActiveView(state);
-  if (view.kind !== "override-editor") {
-    return ["(renderOverrideEditor called with wrong active view)"];
-  }
-  const phase = CANONICAL_PHASES.find((p) => p.role === view.phaseRole);
-  const phaseLabel = phase
-    ? `${view.phaseRole} (${phase.personaNoun})`
-    : view.phaseRole;
-  const lines: string[] = [];
-  lines.push(`forge config › per-phase overrides › ${view.pipeline} › ${phaseLabel}`);
-  lines.push(rule(width, theme));
-
-  if (view.step === "pick-type") {
-    lines.push(`  Override type:`);
-    const options = [
-      "Use a persona-model by name (recommended)",
-      "Inline {provider, model} pair (one-off)",
-      "Clear override (fall through to persona)",
-    ];
-    options.forEach((opt, i) => {
-      const cursor = i === view.cursor ? "▸" : " ";
-      lines.push(`  ${cursor} ${i + 1}. ${opt}`);
-    });
-    lines.push("");
-    lines.push(`  ↑/↓ select   enter advance   1-3 shortcuts   esc back`);
-  } else if (view.step === "pick-name") {
-    lines.push(`  Pick persona-model to use for this phase:`);
-    const personas = listResolvedPersonas(state);
-    if (personas.length === 0) {
-      lines.push(`  (no persona-models defined — set some up via Personas first)`);
-      lines.push("");
-      lines.push(`  esc back`);
-      return lines;
-    }
-    const personaResolved = phase
-      ? resolveModelForPhase(view.pipeline, view.phaseRole, phase.personaNoun, {
-          ...state.buffer.global,
-          ...state.buffer.project,
-          _global: state.buffer.global,
-          _project: state.buffer.project,
-        })
-      : undefined;
-    const personaResolvedStr = personaResolved?.model
-      ? `${personaResolved.model.provider}:${personaResolved.model.model}`
-      : undefined;
-    const win = windowList(personas, view.cursor);
-    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-    win.visible.forEach((p, i) => {
-      const absoluteIdx = win.start + i;
-      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-      const modelStr = `${p.provider}:${p.model}`;
-      const avail = state.availableModels.some(
-        (m) => m.provider === p.provider && m.id === p.model,
-      )
-        ? "✓"
-        : "✗";
-      const isNoOp = personaResolvedStr === modelStr;
-      const noOpHint = isNoOp ? "  (same as persona default — no effect)" : "";
-      lines.push(
-        `  ${cursor} ${padRight(p.persona, 12)} ${padRight(modelStr, 36)} ${avail}${noOpHint}`,
-      );
-    });
-    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-    lines.push("");
-    lines.push(`  enter set as override   esc back`);
-  } else if (view.step === "pick-provider") {
-    lines.push(`  Inline override — Step 1 of 2 — pick provider`);
-    lines.push("");
-    const providers = uniqueProviders(state);
-    const win = windowList(providers, view.cursor);
-    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-    win.visible.forEach((p, i) => {
-      const absoluteIdx = win.start + i;
-      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-      const auth = authBadgeFor(state, p, theme);
-      lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
-    });
-    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-    lines.push("");
-    lines.push(`  ↑/↓ select   enter advance   esc back`);
-  } else if (view.step === "pick-model") {
-    lines.push(`  Inline override — Step 2 of 2 — pick model (provider: ${view.provider ?? "?"})`);
-    lines.push("");
-    const models = state.availableModels.filter((m) => m.provider === view.provider);
-    if (models.length === 0) {
-      lines.push(`  No models available for this provider.`);
-      lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
-    } else {
-      const win = windowList(models, view.cursor);
-      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
-      win.visible.forEach((m, i) => {
-        const absoluteIdx = win.start + i;
-        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-        lines.push(`  ${cursor} ${m.id}`);
-      });
-      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
-    }
-    lines.push("");
-    lines.push(`  ↑/↓ select   enter write override   esc back`);
-  }
-
-  if (state.dirty) lines.push(`  * unsaved`);
-  return lines;
-}
-
-// ── Overlay decorations (last-saved banner, confirm-quit modal) ─────────────
-
-function renderConfirmQuitOverlay(state: ConfigTuiState, _width: number, theme: Theme): string[] {
-  if (!state.confirmQuit) return [];
-  return [
-    "",
-    `  ┌─────────────────────────────────────────────────────────┐`,
-    `  │  Unsaved changes — discard and quit?                    │`,
-    `  │                                                         │`,
-    `  │  y / enter — discard and quit                           │`,
-    `  │  n / esc   — cancel (stay in TUI)                       │`,
-    `  └─────────────────────────────────────────────────────────┘`,
-  ];
-}
-
-function renderSaveBanner(state: ConfigTuiState, _width: number, theme: Theme): string[] {
-  if (!state.lastSaved) return [];
-  return [
-    "",
-    `  ✓ Saved → ${state.lastSaved.target}  (${state.lastSaved.layer})`,
-  ];
+  return SCREEN_INSTANCES["override-editor"].render(state, width, theme);
 }
 
 // ── Top-level router ─────────────────────────────────────────────────────────
 
 export function renderActive(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
-  let lines: string[];
-  switch (view.kind) {
-    case "no-project":
-      lines = renderNoProject(state, width, theme);
-      break;
-    case "empty-state":
-      lines = renderEmptyState(state, width, theme);
-      break;
-    case "top-menu":
-      lines = renderTopMenu(state, width, theme);
-      break;
-    case "personas-list":
-      lines = renderPersonasList(state, width, theme);
-      break;
-    case "persona-picker":
-      lines = renderPersonaPicker(state, width, theme);
-      break;
-    case "persona-editor":
-      lines = renderPersonaEditor(state, width, theme);
-      break;
-    case "show-resolved":
-      lines = renderShowResolved(state, width, theme);
-      break;
-    case "overrides-list-pipelines":
-      lines = renderOverridesListPipelines(state, width, theme);
-      break;
-    case "overrides-list-phases":
-      lines = renderOverridesListPhases(state, width, theme);
-      break;
-    case "override-editor":
-      lines = renderOverrideEditor(state, width, theme);
-      break;
-    default: {
-      const _exhaustive: never = view;
-      void _exhaustive;
-      return [];
-    }
-  }
+  const screen = SCREEN_INSTANCES[view.kind];
+  const lines = screen ? screen.render(state, width, theme) : [];
   // Decorations: save banner stacks at the bottom, confirm-quit modal on top.
-  return [...lines, ...renderSaveBanner(state, width, theme), ...renderConfirmQuitOverlay(state, width, theme)];
+  return [...lines, ...renderSaveBanner(state, width, theme), ...new ConfirmQuitScreen().render(state, width, theme)];
 }

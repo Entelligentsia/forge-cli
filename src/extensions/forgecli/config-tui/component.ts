@@ -1,25 +1,43 @@
 // Composite Component that drives the config TUI.
 //
-// Plan 16 Slice 4b. ctx.ui.custom() is the mount point; this module exports a
-// factory that returns the Component. The component composes:
-//   - state.ts reducer (single source of truth)
-//   - screens.ts pure renderers (string[] output)
-//   - a key-input dispatcher that maps keystrokes to actions
-//   - config-writer.ts for atomic persistence on commit-persona-edit
+// Phase 2: thin orchestrator that delegates render and handleInput to the
+// active Screen implementation. The Component & Focusable impl stays here;
+// per-view logic moved into screens/*.ts modules.
 //
-// The component renders a modal frame (border top/bottom + background fill)
-// around the screen content, giving the overlay visual weight and separation
-// from whatever terminal content lies beneath it.
+// The component composes:
+//   - state/ reducer (single source of truth)
+//   - screens/* renderers + input handlers (delegated via Screen interface)
+//   - config-writer.ts for atomic persistence on commit-persona-edit
 
 import * as fs from "node:fs";
 import { Key, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, Focusable } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { ConfigLayer } from "../config-writer.js";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { writeRoutingConfig } from "../config-writer.js";
-import type { ConfigLayer } from "../config-writer.js";
+import {
+  getActiveView,
+  initialState,
+  reducer,
+  type AvailableModel,
+  type ConfigTuiAction,
+  type ConfigTuiState,
+  type InitOptions,
+  type View,
+} from "./state.js";
+import { CANONICAL_PHASES } from "./state/constants.js";
 
-type MenuViewKind = "top-menu" | "empty-state" | "no-project";
+import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
+import { TopMenuScreen } from "./screens/top-menu.js";
+import { PersonasListScreen } from "./screens/personas-list.js";
+import { PersonaPickerScreen } from "./screens/persona-picker.js";
+import { PersonaEditorScreen } from "./screens/persona-editor.js";
+import { ShowResolvedScreen } from "./screens/show-resolved.js";
+import { OverridesListPipelinesScreen } from "./screens/overrides-list.js";
+import { OverridesListPhasesScreen } from "./screens/overrides-list-phases.js";
+import { OverrideEditorScreen } from "./screens/override-editor.js";
+import type { InputResult, Screen } from "./screens/types.js";
 
 function debugLog(line: string): void {
   if (process.env.FORGE_DEBUG_INPUT !== "1") return;
@@ -41,21 +59,41 @@ function hexEscape(s: string): string {
     })
     .join("");
 }
-import {
-  getActiveView,
-  initialState,
-  listPersonaPickerEntries,
-  listPipelineOverrideSummaries,
-  listResolvedPersonas,
-  reducer,
-  type AvailableModel,
-  type ConfigTuiAction,
-  type ConfigTuiState,
-  type InitOptions,
-  type View,
-} from "./state.js";
-import { CANONICAL_PHASES } from "./state/constants.js";
-import { renderActive } from "./screens.js";
+
+// ── Screen factory ──────────────────────────────────────────────────────────
+
+const SCREEN_INSTANCES: Record<string, Screen> = {
+  "confirm-quit": new ConfirmQuitScreen(),
+  "top-menu": new TopMenuScreen(),
+  "empty-state": new TopMenuScreen(),  // same screen handles both
+  "no-project": new TopMenuScreen(),    // same screen handles both
+  "personas-list": new PersonasListScreen(),
+  "persona-picker": new PersonaPickerScreen(),
+  "persona-editor": new PersonaEditorScreen(),
+  "show-resolved": new ShowResolvedScreen(),
+  "overrides-list-pipelines": new OverridesListPipelinesScreen(),
+  "overrides-list-phases": new OverridesListPhasesScreen(),
+  "override-editor": new OverrideEditorScreen(),
+};
+
+function createScreen(view: View): Screen {
+  return SCREEN_INSTANCES[view.kind] ?? SCREEN_INSTANCES["top-menu"];
+}
+
+// ── Hard Rule 4: Explicit layer-to-action mapping ──────────────────────────
+
+function persistLayerForAction(action: ConfigTuiAction): ConfigLayer | undefined {
+  switch (action.kind) {
+    case "commit-persona-edit":    return action.layer;
+    case "delete-persona-entry":  return action.layer;
+    case "commit-override-name":   return "project";  // L4 lives on project only
+    case "commit-override-inline": return "project";    // L4 lives on project only
+    case "clear-phase-override":   return "project";   // L4 lives on project only
+    default: return undefined;
+  }
+}
+
+// ── Component ───────────────────────────────────────────────────────────────
 
 export interface ConfigTuiComponentOptions extends InitOptions {
   /** Called by the component when the user has quit (with discard or via clean exit). */
@@ -92,13 +130,25 @@ export class ConfigTuiComponent implements Component, Focusable {
 
   render(width: number): string[] {
     const theme = this.opts.theme;
-    const contentLines = renderActive(this.state, width, theme);
+    const view = getActiveView(this.state);
+
+    // Delegate rendering to the active screen (or confirm-quit overlay).
+    let contentLines: string[];
+    if (this.state.confirmQuit) {
+      // show the underlying screen plus the confirm-quit overlay
+      const screen = createScreen(view);
+      const baseLines = screen.render(this.state, width, theme);
+      const quitLines = SCREEN_INSTANCES["confirm-quit"].render(this.state, width, theme);
+      contentLines = [...baseLines, ...renderSaveBanner(this.state, width, theme), ...quitLines];
+    } else {
+      const screen = createScreen(view);
+      contentLines = [
+        ...screen.render(this.state, width, theme),
+        ...renderSaveBanner(this.state, width, theme),
+      ];
+    }
 
     // ── Modal frame ────────────────────────────────────────────────────
-    // DynamicBorder top + background-fill on every content line + border bottom.
-    // This gives the overlay a visual "panel" that sits on top of the terminal
-    // rather than floating as raw text.
-
     const bgFn = (s: string) => theme.bg("selectedBg", s);
     const lines: string[] = [];
 
@@ -126,8 +176,6 @@ export class ConfigTuiComponent implements Component, Focusable {
       return;
     }
 
-    const view = getActiveView(this.state);
-
     // Universal: q always requests quit
     if (matchesKey(data, "q")) {
       this.dispatch({ kind: "request-quit" });
@@ -137,12 +185,10 @@ export class ConfigTuiComponent implements Component, Focusable {
 
     // confirmQuit modal hijacks subsequent input
     if (this.state.confirmQuit) {
-      if (matchesKey(data, "y") || matchesKey(data, Key.enter)) {
-        this.dispatch({ kind: "confirm-quit", discard: true });
-        this.maybeExit();
-      } else if (matchesKey(data, "n") || matchesKey(data, Key.escape)) {
-        this.dispatch({ kind: "confirm-quit", discard: false });
-      }
+      const result = SCREEN_INSTANCES["confirm-quit"].handleInput(data, this.state);
+      this.handleResult(result);
+      // After confirm-quit, check if we should exit
+      this.maybeExit();
       return;
     }
 
@@ -151,62 +197,50 @@ export class ConfigTuiComponent implements Component, Focusable {
       return;
     }
 
-    if (view.kind === "top-menu" || view.kind === "empty-state" || view.kind === "no-project") {
-      this.handleTopLevelInput(data);
-      return;
-    }
+    // Delegate to the active screen's handleInput
+    const view = getActiveView(this.state);
+    const screen = createScreen(view);
+    const result = screen.handleInput(data, this.state);
+    this.handleResult(result);
+  }
 
-    if (view.kind === "personas-list") {
-      this.handlePersonasListInput(data, view);
-      return;
-    }
+  // ── Result dispatcher ─────────────────────────────────────────────────────
 
-    if (view.kind === "persona-picker") {
-      this.handlePersonaPickerInput(data, view);
-      return;
-    }
-
-    if (view.kind === "persona-editor") {
-      this.handlePersonaEditorInput(data, view);
-      return;
-    }
-
-    if (view.kind === "show-resolved") {
-      this.handleShowResolvedInput(data, view);
-      return;
-    }
-
-    if (view.kind === "overrides-list-pipelines") {
-      this.handleOverridesListPipelinesInput(data, view);
-      return;
-    }
-
-    if (view.kind === "overrides-list-phases") {
-      this.handleOverridesListPhasesInput(data, view);
-      return;
-    }
-
-    if (view.kind === "override-editor") {
-      this.handleOverrideEditorInput(data, view);
-      return;
+  private handleResult(result: InputResult): void {
+    switch (result.kind) {
+      case "dispatch":
+        this.dispatch(result.action);
+        this.maybePersist(result.action);
+        break;
+      case "dispatch-seq":
+        for (const action of result.actions) {
+          this.dispatch(action);
+        }
+        // Persist the last action (the one that triggers the write)
+        if (result.actions.length > 0) {
+          this.maybePersist(result.actions[result.actions.length - 1]);
+        }
+        break;
+      case "pop":
+        this.dispatch({ kind: "pop-view" });
+        break;
+      case "quit":
+        this.dispatch({ kind: "request-quit" });
+        this.maybeExit();
+        break;
+      case "error":
+        this.opts.onError?.(result.message);
+        this.opts.requestRender?.();
+        break;
+      case "consumed":
+        this.opts.requestRender?.();
+        break;
+      case "no-op":
+        break;
     }
   }
 
-  private handleShowResolvedInput(
-    data: string,
-    _view: Extract<View, { kind: "show-resolved" }>,
-  ): void {
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-      this.dispatch({ kind: "cursor-move", delta: -1 });
-      return;
-    }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      this.dispatch({ kind: "cursor-move", delta: 1 });
-      return;
-    }
-  }
-
-  // ── Dispatcher helpers ──────────────────────────────────────────────────────
+  // ── Dispatcher helpers ────────────────────────────────────────────────────
 
   private dispatch(action: ConfigTuiAction): void {
     this.state = reducer(this.state, action);
@@ -214,458 +248,20 @@ export class ConfigTuiComponent implements Component, Focusable {
   }
 
   private maybeExit(): void {
-    if (this.state.shouldExit) this.opts.onExit(0);
-  }
-
-  // ── Per-view input handlers ─────────────────────────────────────────────────
-
-  private handleTopLevelInput(data: string): void {
-    const view = getActiveView(this.state);
-    const isMenu =
-      view.kind === "top-menu" || view.kind === "empty-state" || view.kind === "no-project";
-    const itemCount = isMenu ? this.topLevelItemCount() : 0;
-
-    // ↑/↓ on a menu moves the cursor between rows.
-    if (isMenu && (matchesKey(data, Key.up) || matchesKey(data, "k"))) {
-      this.dispatch({ kind: "cursor-move", delta: -1 });
-      return;
-    }
-    if (isMenu && (matchesKey(data, Key.down) || matchesKey(data, "j"))) {
-      const cursor = (view as { cursor: number }).cursor;
-      if (cursor < itemCount - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-      return;
-    }
-
-    // Enter fires the cursor row's action.
-    if (matchesKey(data, Key.enter) && isMenu) {
-      this.fireMenuItem(view.kind, (view as { cursor: number }).cursor);
-      return;
-    }
-
-    // Number shortcuts — independent of cursor.
-    if (matchesKey(data, "1")) {
-      this.fireMenuItem(view.kind as MenuViewKind, 0);
-      return;
-    }
-    if (matchesKey(data, "2")) {
-      this.fireMenuItem(view.kind as MenuViewKind, 1);
-      return;
-    }
-    if (matchesKey(data, "3")) {
-      this.fireMenuItem(view.kind as MenuViewKind, 2);
-      return;
-    }
-    // 'r' shortcut → show resolved (always works on top-level views).
-    if (matchesKey(data, "r")) {
-      this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-      return;
+    if (this.state.shouldExit) {
+      if (this.clearStatusTimer) clearTimeout(this.clearStatusTimer);  // Hard Rule 5
+      this.opts.onExit(0);
     }
   }
 
-  private topLevelItemCount(): number {
-    const view = getActiveView(this.state);
-    if (view.kind === "no-project") return 2;
-    if (view.kind === "empty-state" || this.state.isEmpty) return 2;
-    if (view.kind === "top-menu") {
-      // 1 Personas, 2 Overrides, 3 Show resolved, [4 Pipelines], 5 Plugin config
-      return this.state.pipelineCatalogue ? 5 : 4;
-    }
-    return 0;
-  }
-
-  /**
-   * Fire the action bound to a top-level menu row. Mirrors the visual
-   * numbering in screens.ts (1-indexed there, 0-indexed here).
-   */
-  private fireMenuItem(viewKind: MenuViewKind, index: number): void {
-    // isEmpty takes precedence — even in no-project mode, if there's nothing
-    // to list yet, row 0 is "add a persona-model" (jump straight to editor).
-    if (this.state.isEmpty) {
-      if (index === 0) {
-        this.dispatch({ kind: "push-view", view: { kind: "persona-picker", cursor: 0 } });
-      } else if (index === 1) {
-        this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-      }
-      return;
-    }
-    if (viewKind === "no-project") {
-      if (index === 0) {
-        this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-      } else if (index === 1) {
-        this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-      }
-      return;
-    }
-    if (viewKind === "empty-state") {
-      if (index === 0) {
-        this.dispatch({ kind: "push-view", view: { kind: "persona-picker", cursor: 0 } });
-      } else if (index === 1) {
-        this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-      }
-      return;
-    }
-    // top-menu (non-empty, has pipelines)
-    if (index === 0) {
-      this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-    } else if (index === 1) {
-      this.dispatch({
-        kind: "push-view",
-        view: { kind: "overrides-list-pipelines", cursor: 0 },
-      });
-    } else if (index === 2) {
-      this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-    } else if (index === 3 && this.state.pipelineCatalogue) {
-      // Pipelines (read-only catalogue display) — stub for now.
-      this.opts.onError?.("Pipeline catalogue browser lands in a follow-up slice.");
-    } else if ((index === 3 && !this.state.pipelineCatalogue) || index === 4) {
-      // Plugin config (read-only) — stub for now (plugin-config-reader exists,
-      // a screen for it lands in a follow-up).
-      this.opts.onError?.("Plugin config view lands in a follow-up slice.");
-    }
-  }
-
-  private handlePersonasListInput(
-    data: string,
-    view: Extract<View, { kind: "personas-list" }>,
-  ): void {
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-      this.dispatch({ kind: "cursor-move", delta: -1 });
-      return;
-    }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      const max = Math.max(0, listResolvedPersonas(this.state).length - 1);
-      const current = view.cursor;
-      if (current < max) this.dispatch({ kind: "cursor-move", delta: 1 });
-      return;
-    }
-    if (matchesKey(data, Key.enter)) {
-      const personas = listResolvedPersonas(this.state);
-      const target = personas[view.cursor];
-      if (target) {
-        this.dispatch({ kind: "begin-persona-edit", persona: target.persona });
-      }
-      return;
-    }
-    if (matchesKey(data, "n")) {
-      this.dispatch({ kind: "push-view", view: { kind: "persona-picker", cursor: 0 } });
-      return;
-    }
-    if (matchesKey(data, "d")) {
-      const personas = listResolvedPersonas(this.state);
-      const target = personas[view.cursor];
-      if (target) {
-        // Best-effort: delete from whichever layer claims the entry.
-        const layer: ConfigLayer = target.source.endsWith("L2") ? "project" : "global";
-        this.dispatch({ kind: "delete-persona-entry", layer, persona: target.persona });
-        // Persist immediately — d is a destructive action with one undo (n/edit).
-        this.persistLayer(layer);
-      }
-      return;
-    }
-  }
-
-  private handlePersonaPickerInput(
-    data: string,
-    view: Extract<View, { kind: "persona-picker" }>,
-  ): void {
-    const entries = listPersonaPickerEntries(this.state);
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-      this.dispatch({ kind: "cursor-move", delta: -1 });
-      return;
-    }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      if (view.cursor < entries.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-      return;
-    }
-    if (matchesKey(data, Key.enter)) {
-      const target = entries[view.cursor];
-      if (target) {
-        // Pop the picker and push the editor in one render cycle.
-        this.dispatch({ kind: "pop-view" });
-        this.dispatch({ kind: "begin-persona-edit", persona: target.persona });
-      }
-      return;
-    }
-  }
-
-  private handlePersonaEditorInput(
-    data: string,
-    view: Extract<View, { kind: "persona-editor" }>,
-  ): void {
-    if (view.step === "pick-provider") {
-      const providers = this.uniqueProviders();
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < providers.length - 1) {
-          this.dispatch({ kind: "cursor-move", delta: 1 });
-        }
-        return;
-      }
-      if (matchesKey(data, Key.enter)) {
-        const provider = providers[view.cursor];
-        if (provider) this.dispatch({ kind: "set-persona-provider", provider });
-        return;
-      }
-      // Quick single-letter shortcuts: a=anthropic, o=openai, g=google, l=ollama
-      const shortcut = this.providerShortcut(data);
-      if (shortcut) this.dispatch({ kind: "set-persona-provider", provider: shortcut });
-      return;
-    }
-
-    if (view.step === "pick-model") {
-      const models = this.state.availableModels.filter((m) => m.provider === view.provider);
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < models.length - 1) {
-          this.dispatch({ kind: "cursor-move", delta: 1 });
-        }
-        return;
-      }
-      if (matchesKey(data, Key.enter)) {
-        const target = models[view.cursor];
-        if (target) this.dispatch({ kind: "set-persona-model", model: target.id });
-      }
-      return;
-    }
-
-    if (view.step === "pick-layer") {
-      // Cursor 0 = project, 1 = global (matches render order in screens.ts).
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-        return;
-      }
-      if (matchesKey(data, "g")) {
-        this.commitAndPersist("global");
-        return;
-      }
-      if (matchesKey(data, "p")) {
-        this.commitAndPersist("project");
-        return;
-      }
-      if (matchesKey(data, Key.enter)) {
-        const layer: ConfigLayer = view.cursor === 0 ? "project" : "global";
-        this.commitAndPersist(layer);
-        return;
-      }
-    }
-  }
-
-  // ── Slice 4c — per-phase overrides handlers ─────────────────────────────────
-
-  private handleOverridesListPipelinesInput(
-    data: string,
-    view: Extract<View, { kind: "overrides-list-pipelines" }>,
-  ): void {
-    const summaries = listPipelineOverrideSummaries(this.state);
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-      this.dispatch({ kind: "cursor-move", delta: -1 });
-      return;
-    }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      if (view.cursor < summaries.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-      return;
-    }
-    if (matchesKey(data, Key.enter)) {
-      const target = summaries[view.cursor];
-      if (target) {
-        this.dispatch({
-          kind: "push-view",
-          view: { kind: "overrides-list-phases", pipeline: target.pipeline, cursor: 0 },
-        });
-      }
-    }
-  }
-
-  private handleOverridesListPhasesInput(
-    data: string,
-    view: Extract<View, { kind: "overrides-list-phases" }>,
-  ): void {
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-      this.dispatch({ kind: "cursor-move", delta: -1 });
-      return;
-    }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      if (view.cursor < CANONICAL_PHASES.length - 1) {
-        this.dispatch({ kind: "cursor-move", delta: 1 });
-      }
-      return;
-    }
-    if (matchesKey(data, Key.enter)) {
-      const phase = CANONICAL_PHASES[view.cursor];
-      if (phase) {
-        this.dispatch({
-          kind: "begin-override-edit",
-          pipeline: view.pipeline,
-          phaseRole: phase.role,
-        });
-      }
-      return;
-    }
-    // space → clear override on current row (then persist)
-    if (matchesKey(data, Key.space)) {
-      const phase = CANONICAL_PHASES[view.cursor];
-      if (phase) {
-        this.dispatch({
-          kind: "clear-phase-override",
-          pipeline: view.pipeline,
-          phaseRole: phase.role,
-        });
-        this.persistLayer("project");
-      }
-    }
-  }
-
-  private handleOverrideEditorInput(
-    data: string,
-    view: Extract<View, { kind: "override-editor" }>,
-  ): void {
-    if (view.step === "pick-type") {
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < 2) this.dispatch({ kind: "cursor-move", delta: 1 });
-        return;
-      }
-      const advance = (idx: number) => {
-        if (idx === 0) {
-          this.dispatch({ kind: "set-override-step", step: "pick-name" });
-        } else if (idx === 1) {
-          this.dispatch({ kind: "set-override-step", step: "pick-provider" });
-        } else {
-          this.dispatch({
-            kind: "clear-phase-override",
-            pipeline: view.pipeline,
-            phaseRole: view.phaseRole,
-          });
-          this.persistLayer("project");
-        }
-      };
-      if (matchesKey(data, Key.enter)) {
-        advance(view.cursor);
-        return;
-      }
-      if (matchesKey(data, "1")) return advance(0);
-      if (matchesKey(data, "2")) return advance(1);
-      if (matchesKey(data, "3")) return advance(2);
-      return;
-    }
-
-    if (view.step === "pick-name") {
-      const personas = listResolvedPersonas(this.state);
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < personas.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-        return;
-      }
-      if (matchesKey(data, Key.enter)) {
-        const target = personas[view.cursor];
-        if (target) {
-          this.dispatch({ kind: "commit-override-name", name: target.persona });
-          this.persistLayer("project");
-        }
-      }
-      return;
-    }
-
-    if (view.step === "pick-provider") {
-      const providers = this.uniqueProviders();
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < providers.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-        return;
-      }
-      if (matchesKey(data, Key.enter)) {
-        const provider = providers[view.cursor];
-        if (provider) this.dispatch({ kind: "set-override-provider", provider });
-      }
-      return;
-    }
-
-    if (view.step === "pick-model") {
-      const models = this.state.availableModels.filter((m) => m.provider === view.provider);
-      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
-        this.dispatch({ kind: "cursor-move", delta: -1 });
-        return;
-      }
-      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-        if (view.cursor < models.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
-        return;
-      }
-      if (matchesKey(data, Key.enter)) {
-        const target = models[view.cursor];
-        if (target && view.provider) {
-          this.dispatch({
-            kind: "commit-override-inline",
-            provider: view.provider,
-            model: target.id,
-          });
-          this.persistLayer("project");
-        }
-      }
-      return;
-    }
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  private uniqueProviders(): string[] {
-    const providers = new Set<string>();
-    for (const m of this.state.availableModels) providers.add(m.provider);
-    for (const p of this.state.authenticatedProviders) providers.add(p);
-    return [...providers].sort();
-  }
-
-  private providerShortcut(data: string): string | null {
-    const pairs: Array<[Parameters<typeof matchesKey>[1], string]> = [
-      ["a", "anthropic"],
-      ["o", "openai"],
-      ["g", "google"],
-      ["l", "ollama"],
-      ["r", "openrouter"],
-    ];
-    for (const [key, provider] of pairs) {
-      if (matchesKey(data, key) && this.uniqueProviders().includes(provider)) {
-        return provider;
-      }
-    }
-    return null;
-  }
-
-  private commitAndPersist(layer: ConfigLayer): void {
-    this.dispatch({ kind: "commit-persona-edit", layer });
-    this.persistLayer(layer);
-  }
-
-  private persistLayer(layer: ConfigLayer): void {
+  private maybePersist(action: ConfigTuiAction): void {
+    const layer = persistLayerForAction(action);
+    if (!layer) return;
     try {
       const buffer = layer === "global" ? this.state.buffer.global : this.state.buffer.project;
-      const target = writeRoutingConfig({
-        layer,
-        cwd: this.state.cwd,
-        buffer,
-      });
-      // Clear dirty flag + record last-saved path so the TUI can surface
-      // confirmation in-overlay (ctx.ui.notify gets clipped by the modal).
+      const target = writeRoutingConfig({ layer, cwd: this.state.cwd, buffer });
       this.dispatch({ kind: "mark-clean", lastSaved: { target, layer } });
-      this.scheduleClearStatus();
+      this.scheduleClearStatus();  // Hard Rule 5
       this.opts.onSaved?.(target);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
