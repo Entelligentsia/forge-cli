@@ -95,10 +95,171 @@ CHAIN    /forge:plan          plan
 ASK      /forge:health        KB freshness + store integrity
          /forge:status        Sprint + task status
          /forge:ask <q>       Ask the Tomoshibi concierge
-         /forge:config        Inspect or change project config
+         /forge:config        Set up AI models for your workflow
 ```
 
 → [Full reference](docs/cli-reference.md) · [Non-interactive mode](docs/non-interactive.md) · [Hook safety net](docs/hook-safety-net.md) · [Custom tools](docs/custom-tools.md) · [Publishing](docs/publishing.md)
+
+## Model setup
+
+Forge routes each step of your pipeline — plan, review, implement, validate, approve, writeback, commit — to a **specific AI model** via a persona. Out of the box, every step inherits whatever model pi is currently running. The `/forge:config` screen lets you assign models in about 30 seconds.
+
+### The three-knob setup
+
+Forge groups its nine personas into three workload tiers:
+
+| Tier | Personas | What this model does |
+|------|----------|---------------------|
+| **Heavy** | 🗻 architect · 🌿 supervisor | Review, sign-off, gates |
+| **Standard** | 🌱 engineer · 🐛 bug-fixer · 🍵 qa-engineer · 📋 product-manager | Planning, implementation, validation |
+| **Light** | 🍃 collator · 📚 librarian · 🌊 orchestrator | Writeback, indexing, task flow |
+
+Pick one model per tier and you're done — all nine personas are configured.
+
+### Step by step
+
+**1. Open the config screen**
+
+```
+/forge:config
+```
+
+You'll see three tier rows — Heavy, Standard, Light — each showing "not set":
+
+```
+forge config
+────────────────────────────────────────────────────────────
+Active right now
+────────────────
+Heavy        not set — falls back to pi current (ollama:qwen2.5:0.5b)
+Standard     not set — falls back to pi current (ollama:qwen2.5:0.5b)
+Light        not set — falls back to pi current (ollama:qwen2.5:0.5b)
+Scope        ▸ project ( ~/src/hello )    global
+
+Choose models for your AI workflow
+──────────────────────────────────
+▸ Heavy      (review, sign-off)             not set
+  Standard   (planning, implementation)     not set
+  Light      (writeback, indexing)          not set
+
+  Show what runs at each step
+  Advanced — per-persona / per-step overrides
+
+  enter pick model   tab toggle scope   q quit
+```
+
+**2. Pick a model for each tier**
+
+Press `enter` on Heavy (or press `1`), pick a provider, then a model:
+
+```
+forge config › Heavy › pick provider
+────────────────────────────────────
+This will run for: 🗻 architect, 🌿 supervisor
+
+▸ anthropic   ✓ authenticated   12 models
+  ollama      ✓ authenticated   24 models
+  openai      ✓ authenticated   18 models
+
+  ↑↓ select   enter advance   esc back
+```
+
+```
+forge config › Heavy › pick model    (provider: anthropic)
+──────────────────────────────────────────────────────────
+This will run for: 🗻 architect, 🌿 supervisor
+
+▸ claude-opus-4-5-20250514
+  claude-sonnet-4-20250514
+  claude-haiku-4-20250514
+
+  ↑↓ select   enter save   esc back
+```
+
+Pressing `enter` on a model commits it immediately — both personas in that tier are now configured. Repeat for Standard and Light.
+
+**3. Done**
+
+After all three tiers are set, the landing screen shows your assignments:
+
+```
+Active right now
+────────────────
+Heavy        anthropic:claude-opus-4-5-20250514         (project)
+Standard     anthropic:claude-sonnet-4-20250514           (project)
+Light        ollama:qwen2.5:0.5b                         (project)
+Scope        project    ▸ global
+
+Choose models for your AI workflow
+──────────────────────────────────
+▸ Heavy      (review, sign-off)             anthropic:claude-opus-4-5-20250514
+  Standard   (planning, implementation)     anthropic:claude-sonnet-4-20250514
+  Light      (writeback, indexing)          ollama:qwen2.5:0.5b
+
+  Show what runs at each step
+  Advanced — per-persona / per-step overrides
+```
+
+No separate save step — each tier pick writes through instantly.
+
+### Scope: project vs global
+
+Press `tab` to toggle scope before picking a tier:
+
+- **project** — writes to `.pi/forge-cli/config.json` in the current project. Different projects can use different models.
+- **global** — writes to `~/.pi/agent/forge-cli/config.json`. Applies to every project that doesn't have a project-level override.
+
+### Verify your setup
+
+Select **"Show what runs at each step"** (or press `s`) to see which model runs each pipeline step:
+
+```
+forge config › current setup
+────────────────────────────
+Step           Persona          Model                     Source
+─────          ─────────        ──────                    ──────
+plan           🌱 engineer       anthropic:claude-sonnet…   Standard tier (project)
+review-plan    🌿 supervisor     anthropic:claude-opus-…   Heavy tier (project)
+implement      🌱 engineer       anthropic:claude-sonnet…   Standard tier (project)
+review-code    🌿 supervisor     anthropic:claude-opus-…   Heavy tier (project)
+validate       🍵 qa-engineer    anthropic:claude-sonnet…   Standard tier (project)
+approve        🗻 architect      anthropic:claude-opus-…   Heavy tier (project)
+writeback      🍃 collator       ollama:qwen2.5:0.5b       Light tier (project)
+commit         🌱 engineer       anthropic:claude-sonnet…   Standard tier (project)
+
+How models get picked
+─────────────────────
+Each step's persona looks for an override at four levels (most specific wins):
+ 1. A model set just for this step             (Step override)
+ 2. A model set just for this persona          (Per-persona override)
+ 3. The tier baseline you set above            (Heavy / Standard / Light)
+ 4. Whatever model pi is currently running on  (falls back automatically)
+```
+
+### Advanced overrides
+
+Select **"Advanced"** (or press `a`) for fine-grained control:
+
+- **Override one persona's model** — change the model for a single persona without affecting the rest of its tier.
+- **Override one step's model** — change the model for a single pipeline step (e.g. always use a specific model for the commit step).
+- **Edit raw persona-models entries** — direct editor for the full persona list.
+
+Most users never need these — the three tier knobs cover the 80% path.
+
+### Non-interactive model setup
+
+Use the CLI directly (no TUI required):
+
+```sh
+# Print the resolved routing table
+forge config show --resolved
+
+# Per-phase dispatch trace (no LLM call)
+forge config dispatch
+
+# Validate all resolved models are authenticated
+forge config show --strict-models
+```
 
 ## Where to go next
 
@@ -110,6 +271,7 @@ ASK      /forge:health        KB freshness + store integrity
 
 | Up next                                            | Status              |
 |----------------------------------------------------|---------------------|
+| Per-persona model routing + tiered config TUI      | Shipped (0.9.0)     |
 | 4ge brand wordmark in CLI banner + 3 themes        | Shipped (0.7.7)     |
 | Slim README + docs/ split                          | Shipped (0.7.7)     |
 | Subagent audience relaxed to advisory              | Shipped (0.7.6)     |
@@ -147,6 +309,7 @@ MIT © Entelligentsia
   Shipped: 0.2.0 · 0.2.1 · 0.3.0 · 0.4.0 ·
   0.5.0 · 0.5.1 · 0.5.2 · 0.5.3 · 0.5.4 · 0.5.5 · 0.5.6 · 0.5.7 ·
   0.6.1 · 0.6.2 · 0.6.3 · 0.6.4 · 0.6.5 · 0.6.6 ·
-  0.7.0 · 0.7.1 · 0.7.2 · 0.7.3 · 0.7.4 · 0.7.5 · 0.7.6 · 0.7.7
+  0.7.0 · 0.7.1 · 0.7.2 · 0.7.3 · 0.7.4 · 0.7.5 · 0.7.6 · 0.7.7 ·
+  0.8.0 · 0.8.1 · 0.8.2 · 0.8.3 · 0.8.4 · 0.9.0
 -->
 
