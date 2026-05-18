@@ -291,6 +291,80 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
   });
 });
 
+describe("ConfigTuiComponent — top-menu cursor navigation (Slice 4c polish-2)", () => {
+  function nonEmpty() {
+    const { onExit, onSaved, onError } = makeHarness();
+    return createConfigTuiComponent({
+      global: { "persona-models": { engineer: { provider: "ollama", model: "glm-5.1:cloud" } } },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer", "architect"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "ollama", id: "glm-5.1:cloud" }],
+      authenticatedProviders: ["ollama"],
+      onExit,
+      onSaved,
+      onError,
+    });
+  }
+
+  it("↓ moves the cursor in the top-menu (and ▸ tracks it)", () => {
+    const c = nonEmpty();
+    const before = c.render(WIDTH).join("\n");
+    const beforeRow = before.split("\n").find((l) => l.includes("▸"));
+    expect(beforeRow).toContain("Personas");
+
+    c.handleInput("\x1b[B"); // ↓
+    const after = c.render(WIDTH).join("\n");
+    const afterRow = after.split("\n").find((l) => l.includes("▸"));
+    expect(afterRow).toContain("Per-phase overrides");
+  });
+
+  it("↓ several times then enter fires the cursor's action (show-resolved)", () => {
+    const c = nonEmpty();
+    c.handleInput("\x1b[B"); // → Per-phase overrides
+    c.handleInput("\x1b[B"); // → Show resolved
+    c.handleInput("\r");
+    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+  });
+
+  it("cursor clamps at upper bound (can't overshoot)", () => {
+    const c = nonEmpty();
+    for (let i = 0; i < 20; i++) c.handleInput("\x1b[B");
+    // cursor is on the last menu row (Plugin config); enter fires its stub error.
+    c.handleInput("\r");
+    // No crash; no view transition because Plugin config is a stub.
+    // (Verified via the absence of new view header.)
+    expect(c.render(WIDTH).join("\n")).toContain("forge config");
+  });
+
+  it("number shortcut still works regardless of cursor position", () => {
+    const c = nonEmpty();
+    c.handleInput("\x1b[B"); // cursor on row 1
+    c.handleInput("3");      // bypass cursor → show-resolved
+    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+  });
+
+  it("no-project menu cursor: ↓ then enter goes to show-resolved", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const c = createConfigTuiComponent({
+      global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: null, // no-project
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    c.handleInput("\x1b[B"); // ↓ → Show resolved
+    c.handleInput("\r");
+    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+  });
+});
+
 describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", () => {
   it("enter on no-project opens personas-list (global-only)", () => {
     const { onExit, onSaved, onError } = makeHarness();

@@ -90,8 +90,60 @@ function resolvedSummary(state: ConfigTuiState): string {
 
 // ── Screen 1 — Top menu ─────────────────────────────────────────────────────
 
+/**
+ * Per-view menu definitions. Each item carries a label-builder that can read
+ * state for counts (e.g. "5 defined"). The cursor lives in state.view and is
+ * authoritative — screens.ts only renders ▸ at the cursor index.
+ */
+export interface MenuItem {
+  label: (s: ConfigTuiState) => string;
+}
+
+export function topMenuItems(state: ConfigTuiState): MenuItem[] {
+  if (state.isEmpty) {
+    return [
+      { label: () => `1. Add a persona-model assignment   (creates a config file)` },
+      { label: () => `2. Show resolved (read-only view)` },
+    ];
+  }
+  const items: MenuItem[] = [
+    {
+      label: (s) => {
+        const personas = listResolvedPersonas(s);
+        const globalCount = Object.keys(s.buffer.global["persona-models"] ?? {}).length;
+        const projectCount = Object.keys(s.buffer.project["persona-models"] ?? {}).length;
+        return `1. Personas                              ${personas.length} defined  (${globalCount} global · ${projectCount} project)`;
+      },
+    },
+    {
+      label: (s) => {
+        const pipelineHas = Object.keys(s.buffer.project.pipelines ?? {}).length;
+        return `2. Per-phase overrides                          ${pipelineHas > 0 ? `${pipelineHas} pipeline${pipelineHas === 1 ? "" : "s"}` : "0 set"}`;
+      },
+    },
+    { label: () => `3. Show resolved (per pipeline, per phase)` },
+  ];
+  if (state.pipelineCatalogue) {
+    items.push({
+      label: (s) =>
+        `4. Pipelines                              ${(s.pipelineCatalogue ?? []).length} known  (read from .forge)`,
+    });
+  }
+  items.push({ label: () => `5. Forge plugin config (read-only)` });
+  return items;
+}
+
+export function noProjectMenuItems(state: ConfigTuiState): MenuItem[] {
+  const globalCount = Object.keys(state.buffer.global["persona-models"] ?? {}).length;
+  return [
+    { label: () => `1. Personas (global)                              ${globalCount} defined` },
+    { label: () => `2. Show resolved                                  N/A — no pipeline catalogue` },
+  ];
+}
+
 export function renderTopMenu(state: ConfigTuiState, width: number): string[] {
   const view = getActiveView(state);
+  const cursor = view.kind === "top-menu" || view.kind === "empty-state" ? view.cursor : 0;
   const lines: string[] = [];
 
   // Header strip
@@ -110,27 +162,17 @@ export function renderTopMenu(state: ConfigTuiState, width: number): string[] {
     lines.push(`  Every Forge persona will run on pi's currently-running model.`);
     lines.push(`  To customise:`);
     lines.push("");
-    lines.push(`  ▸ 1. Add a persona-model assignment   (creates a config file)`);
-    lines.push(`    2. Show resolved (read-only view)`);
-    lines.push(`    q. Quit`);
-  } else {
-    const personas = listResolvedPersonas(state);
-    const globalCount = Object.keys(state.buffer.global["persona-models"] ?? {}).length;
-    const projectCount = Object.keys(state.buffer.project["persona-models"] ?? {}).length;
-    const pipelineHas = Object.keys(state.buffer.project.pipelines ?? {}).length;
-
-    lines.push(`  ▸ 1. Personas                              ${personas.length} defined  (${globalCount} global · ${projectCount} project)`);
-    lines.push(`    2. Per-phase overrides                          ${pipelineHas > 0 ? `${pipelineHas} pipeline${pipelineHas === 1 ? "" : "s"}` : "0 set"}`);
-    lines.push(`    3. Show resolved (per pipeline, per phase)`);
-    if (state.pipelineCatalogue) {
-      lines.push(`    4. Pipelines                              ${state.pipelineCatalogue.length} known  (read from .forge)`);
-    }
-    lines.push(`    5. Forge plugin config (read-only)`);
-    lines.push(`    q. Quit`);
   }
 
+  const items = topMenuItems(state);
+  items.forEach((it, i) => {
+    const mark = i === cursor ? "▸" : " ";
+    lines.push(`  ${mark} ${it.label(state)}`);
+  });
+  lines.push(`    q. Quit`);
+
   lines.push("");
-  lines.push(`  ↑/↓ select   enter open   ? help`);
+  lines.push(`  ↑/↓ select   enter open   1-5 shortcuts   q quit   ? help`);
   if (state.dirty) lines.push(`  * unsaved`);
   return lines;
 }
@@ -148,6 +190,8 @@ export function renderEmptyState(state: ConfigTuiState, width: number): string[]
 // ── Screen 8 — No project ───────────────────────────────────────────────────
 
 export function renderNoProject(state: ConfigTuiState, width: number): string[] {
+  const view = getActiveView(state);
+  const cursor = view.kind === "no-project" ? view.cursor : 0;
   const lines: string[] = [];
   lines.push("forge config");
   lines.push(rule(width));
@@ -156,10 +200,14 @@ export function renderNoProject(state: ConfigTuiState, width: number): string[] 
   lines.push(`  Editing global config only:`);
   lines.push(`    ~/.pi/agent/forge-cli/config.json`);
   lines.push("");
-  const globalCount = Object.keys(state.buffer.global["persona-models"] ?? {}).length;
-  lines.push(`  ▸ 1. Personas (global)                              ${globalCount} defined`);
-  lines.push(`    2. Show resolved                                  N/A — no pipeline catalogue`);
+  const items = noProjectMenuItems(state);
+  items.forEach((it, i) => {
+    const mark = i === cursor ? "▸" : " ";
+    lines.push(`  ${mark} ${it.label(state)}`);
+  });
   lines.push(`    q. Quit`);
+  lines.push("");
+  lines.push(`  ↑/↓ select   enter open   1-2 shortcuts   q quit`);
   return lines;
 }
 

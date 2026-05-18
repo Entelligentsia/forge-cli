@@ -18,9 +18,9 @@ export type ConfigLayer = "global" | "project";
 // ── Views ────────────────────────────────────────────────────────────────────
 
 export type View =
-  | { kind: "top-menu" }
-  | { kind: "empty-state" }
-  | { kind: "no-project" }
+  | { kind: "top-menu"; cursor: number }
+  | { kind: "empty-state"; cursor: number }
+  | { kind: "no-project"; cursor: number }
   | { kind: "personas-list"; cursor: number }
   | {
       kind: "persona-editor";
@@ -103,7 +103,9 @@ export function initialState(opts: InitOptions): ConfigTuiState {
   const isEmpty = !opts.global && !opts.project;
 
   const firstView: View =
-    opts.pipelineCatalogue === null ? { kind: "no-project" } : { kind: "top-menu" };
+    opts.pipelineCatalogue === null
+      ? { kind: "no-project", cursor: 0 }
+      : { kind: "top-menu", cursor: 0 };
 
   return {
     buffer,
@@ -134,15 +136,16 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
 
     case "cursor-move": {
       const top = state.view[state.view.length - 1];
-      if (top.kind === "personas-list" || top.kind === "show-resolved") {
-        const newCursor = Math.max(0, top.cursor + action.delta);
-        const replaced: View = { ...top, cursor: newCursor };
-        return { ...state, view: [...state.view.slice(0, -1), replaced] };
-      }
-      if (top.kind === "persona-editor") {
-        // Cursor is per-step. We don't have list-length info here (lives in
-        // state.availableModels / state.authenticatedProviders), so clamp at 0
-        // and rely on the caller (component) to clamp at the upper bound.
+      // Every cursored view variant gets the same lower-bound clamp; the
+      // component clamps the upper bound based on per-view item counts.
+      if (
+        top.kind === "personas-list" ||
+        top.kind === "show-resolved" ||
+        top.kind === "persona-editor" ||
+        top.kind === "top-menu" ||
+        top.kind === "empty-state" ||
+        top.kind === "no-project"
+      ) {
         const newCursor = Math.max(0, top.cursor + action.delta);
         const replaced: View = { ...top, cursor: newCursor };
         return { ...state, view: [...state.view.slice(0, -1), replaced] };

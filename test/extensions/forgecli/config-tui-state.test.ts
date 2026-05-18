@@ -278,9 +278,9 @@ describe("reducer — exhaustiveness", () => {
 describe("View kinds", () => {
   it("View is a discriminated union covering all screens in scope for 4b", () => {
     const views: View[] = [
-      { kind: "top-menu" },
-      { kind: "empty-state" },
-      { kind: "no-project" },
+      { kind: "top-menu", cursor: 0 },
+      { kind: "empty-state", cursor: 0 },
+      { kind: "no-project", cursor: 0 },
       { kind: "personas-list", cursor: 0 },
       {
         kind: "persona-editor",
@@ -288,6 +288,7 @@ describe("View kinds", () => {
         step: "pick-provider",
         provider: undefined,
         model: undefined,
+        cursor: 0,
       },
     ];
     expect(views.length).toBe(5);

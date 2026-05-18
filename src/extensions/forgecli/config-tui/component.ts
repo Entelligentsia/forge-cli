@@ -16,6 +16,8 @@ import type { Component, Focusable } from "@earendil-works/pi-tui";
 import { writeRoutingConfig } from "../config-writer.js";
 import type { ConfigLayer } from "../config-writer.js";
 
+type MenuViewKind = "top-menu" | "empty-state" | "no-project";
+
 function debugLog(line: string): void {
   if (process.env.FORGE_DEBUG_INPUT !== "1") return;
   try {
@@ -162,26 +164,105 @@ export class ConfigTuiComponent implements Component, Focusable {
   // ── Per-view input handlers ─────────────────────────────────────────────────
 
   private handleTopLevelInput(data: string): void {
-    // 1 → Personas (or "Add a persona-model assignment" on empty state)
-    if (matchesKey(data, "1") || matchesKey(data, Key.enter)) {
-      if (this.state.isEmpty) {
-        // Open editor with a persona prompt — for slice 4b we jump straight to
-        // the "default" persona. 4c can add a chooser screen.
-        this.dispatch({ kind: "begin-persona-edit", persona: "default" });
-      } else {
-        this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-      }
+    const view = getActiveView(this.state);
+    const isMenu =
+      view.kind === "top-menu" || view.kind === "empty-state" || view.kind === "no-project";
+    const itemCount = isMenu ? this.topLevelItemCount() : 0;
+
+    // ↑/↓ on a menu moves the cursor between rows.
+    if (isMenu && (matchesKey(data, Key.up) || matchesKey(data, "k"))) {
+      this.dispatch({ kind: "cursor-move", delta: -1 });
       return;
     }
-    // 3 → Show resolved (works inside or outside a Forge project).
+    if (isMenu && (matchesKey(data, Key.down) || matchesKey(data, "j"))) {
+      const cursor = (view as { cursor: number }).cursor;
+      if (cursor < itemCount - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+      return;
+    }
+
+    // Enter fires the cursor row's action.
+    if (matchesKey(data, Key.enter) && isMenu) {
+      this.fireMenuItem(view.kind, (view as { cursor: number }).cursor);
+      return;
+    }
+
+    // Number shortcuts — independent of cursor.
+    if (matchesKey(data, "1")) {
+      this.fireMenuItem(view.kind as MenuViewKind, 0);
+      return;
+    }
+    if (matchesKey(data, "2")) {
+      this.fireMenuItem(view.kind as MenuViewKind, 1);
+      return;
+    }
     if (matchesKey(data, "3")) {
-      this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+      this.fireMenuItem(view.kind as MenuViewKind, 2);
       return;
     }
-    // 'r' from anywhere on top-level → show resolved (keyboard shortcut).
+    // 'r' shortcut → show resolved (always works on top-level views).
     if (matchesKey(data, "r")) {
       this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
       return;
+    }
+  }
+
+  private topLevelItemCount(): number {
+    const view = getActiveView(this.state);
+    if (view.kind === "no-project") return 2;
+    if (view.kind === "empty-state" || this.state.isEmpty) return 2;
+    if (view.kind === "top-menu") {
+      // 1 Personas, 2 Overrides, 3 Show resolved, [4 Pipelines], 5 Plugin config
+      return this.state.pipelineCatalogue ? 5 : 4;
+    }
+    return 0;
+  }
+
+  /**
+   * Fire the action bound to a top-level menu row. Mirrors the visual
+   * numbering in screens.ts (1-indexed there, 0-indexed here).
+   */
+  private fireMenuItem(viewKind: MenuViewKind, index: number): void {
+    // isEmpty takes precedence — even in no-project mode, if there's nothing
+    // to list yet, row 0 is "add a persona-model" (jump straight to editor).
+    if (this.state.isEmpty) {
+      if (index === 0) {
+        this.dispatch({ kind: "begin-persona-edit", persona: "default" });
+      } else if (index === 1) {
+        this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+      }
+      return;
+    }
+    if (viewKind === "no-project") {
+      if (index === 0) {
+        this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
+      } else if (index === 1) {
+        this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+      }
+      return;
+    }
+    if (viewKind === "empty-state") {
+      if (index === 0) {
+        this.dispatch({ kind: "begin-persona-edit", persona: "default" });
+      } else if (index === 1) {
+        this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+      }
+      return;
+    }
+    // top-menu (non-empty, has pipelines)
+    if (index === 0) {
+      this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
+    } else if (index === 1) {
+      // Per-phase overrides — Slice 4c task #17/18 (stub for now).
+      this.opts.onError?.("Per-phase overrides editor lands in a follow-up slice.");
+    } else if (index === 2) {
+      this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+    } else if (index === 3 && this.state.pipelineCatalogue) {
+      // Pipelines (read-only catalogue display) — stub for now.
+      this.opts.onError?.("Pipeline catalogue browser lands in a follow-up slice.");
+    } else if ((index === 3 && !this.state.pipelineCatalogue) || index === 4) {
+      // Plugin config (read-only) — stub for now (plugin-config-reader exists,
+      // a screen for it lands in a follow-up).
+      this.opts.onError?.("Plugin config view lands in a follow-up slice.");
     }
   }
 
