@@ -50,6 +50,7 @@ import { registerCommit } from "./commit.js";
 import { registerValidate } from "./validate.js";
 import { registerCollate } from "./collate.js";
 import { registerConfigCommand } from "./config-command.js";
+import { getInputRouter } from "./input-router.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
@@ -177,6 +178,14 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// ── Session start — banners + collision detection ─────────────────────────
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return; // headless mode — no banners
+
+		// Plan 16 Slice 4c: single pi listener for forge-cli; dispatch through
+		// the overlay-aware router. Per-feature listeners register via
+		// getInputRouter().register(...) instead of ctx.ui.onTerminalInput
+		// directly, so overlays (e.g. /forge:config) can suppress arrow
+		// activators while mounted.
+		const router = getInputRouter();
+		ctx.ui.onTerminalInput((data) => router.dispatch(data));
 
 		// Apply forge-dark as default. The theme is in ~/.pi/agent/themes/ so
 		// loadThemeJson finds it by name. Only apply if user hasn't saved a

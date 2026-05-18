@@ -10,6 +10,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createConfigTuiComponent } from "./config-tui/component.js";
 import { runConfigTui } from "./config-tui/handler.js";
 import type { InitOptions } from "./config-tui/state.js";
+import { getInputRouter } from "./input-router.js";
 
 export interface RegisterConfigCommandOptions {
   /** When null, /forge:config is registered but only the routing-config bits
@@ -26,19 +27,28 @@ export function registerConfigCommand(pi: ExtensionAPI, _opts: RegisterConfigCom
       const argv = args.trim().length === 0 ? [] : args.trim().split(/\s+/);
 
       const mountConfigTui = async (init: InitOptions): Promise<number> => {
-        const exitCode = await ctx.ui.custom<number>((tui, _theme, _kb, done) => {
-          // Component drives done() on q or successful confirm-quit.
-          // Pi TUI key rule 3: call tui.requestRender() after state changes.
-          const component = createConfigTuiComponent({
-            ...init,
-            onExit: (code) => done(code),
-            onSaved: (target) => ctx.ui.notify(`forge config: saved → ${target}`, "info"),
-            onError: (msg) => ctx.ui.notify(`forge config: ${msg}`, "error"),
-            requestRender: () => tui.requestRender(),
-          });
-          return component;
-        }, { overlay: true });
-        return exitCode;
+        // Mark overlay active so forge-input-router suppresses arrow-activator
+        // listeners (thread-switcher's ↓, whats-new's ↓) while the TUI owns
+        // input focus.
+        const router = getInputRouter();
+        router.pushOverlay();
+        try {
+          const exitCode = await ctx.ui.custom<number>((tui, _theme, _kb, done) => {
+            // Component drives done() on q or successful confirm-quit.
+            // Pi TUI key rule 3: call tui.requestRender() after state changes.
+            const component = createConfigTuiComponent({
+              ...init,
+              onExit: (code) => done(code),
+              onSaved: (target) => ctx.ui.notify(`forge config: saved → ${target}`, "info"),
+              onError: (msg) => ctx.ui.notify(`forge config: ${msg}`, "error"),
+              requestRender: () => tui.requestRender(),
+            });
+            return component;
+          }, { overlay: true });
+          return exitCode;
+        } finally {
+          router.popOverlay();
+        }
       };
 
       const exitCode = await runConfigTui(argv, process.cwd(), {
