@@ -15,6 +15,7 @@ import { isParseError, parseForgeArgv } from "./argv.js";
 import { runDoctor } from "./doctor.js";
 import { applyForgeOwnedEnvDefaults } from "./env-defaults.js";
 import { runUpdate } from "./update-cli.js";
+import { runConfig } from "./config.js";
 
 // ---------------------------------------------------------------------------
 // Version information (resolved at startup from package.json files)
@@ -77,6 +78,7 @@ Forge-owned options:
   --help, -h               Print this help message
   --no-update-check        Skip forge update check (sets FORGE_NO_UPDATE_CHECK=1)
   --non-interactive        Bypass all Y/N gates with defaults, e.g. for CI (sets FORGE_NON_INTERACTIVE=1)
+  --strict-models          Treat unavailable/unknown model config entries as errors (sets FORGE_STRICT_MODELS=1)
   --registry <path>        Override model registry path (sets FORGE_MODEL_REGISTRY=path)
 
 Pi options (forwarded verbatim):
@@ -100,6 +102,7 @@ Unknown flags are rejected — forge performs strict argv ownership.
 Subcommands:
   doctor [--json]          Preflight check — pi auth, model availability, settings
   update [--check] [--yes] [--version <spec>]  Guided upgrade (npm i -g)
+  config show [--resolved] [--json]  Model routing config inspector
 
 Slash commands (inside a Forge project):
   /forge:init              Bootstrap a new Forge SDLC project
@@ -145,6 +148,11 @@ if (parsed.forgeAction === "doctor") {
 if (parsed.forgeAction === "update") {
 	const pkg = readForgeCliPkg();
 	const exitCode = await runUpdate(parsed.subcommandArgs ?? [], { forgeCli: pkg.version ?? "unknown" });
+	process.exit(exitCode);
+}
+
+if (parsed.forgeAction === "config") {
+	const exitCode = await runConfig(parsed.subcommandArgs ?? []);
 	process.exit(exitCode);
 }
 

@@ -20,8 +20,8 @@
 //   --model, --tools, --append-system-prompt, --no-tools, --thinking,
 //   --no-thinking, and bare non-flag arguments.
 
-/** Parsed result when `--version`, `--help`, `doctor`, `update`, or a fast-path subcommand is requested. */
-export type ForgeAction = "version" | "help" | "doctor" | "update" | "subcommand" | null;
+/** Parsed result when `--version`, `--help`, `doctor`, `update`, `config`, or a fast-path subcommand is requested. */
+export type ForgeAction = "version" | "help" | "doctor" | "update" | "config" | "subcommand" | null;
 
 /**
  * Whitelist of bare subcommands that bypass pi and exec a bundled cjs tool
@@ -121,6 +121,12 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 			continue;
 		}
 
+		if (token === "--strict-models") {
+			env.FORGE_STRICT_MODELS = "1";
+			i++;
+			continue;
+		}
+
 		if (token === "--registry") {
 			if (i + 1 >= argv.length) {
 				return { error: "forge: --registry requires a path argument. Run `forge --help` for usage." };
@@ -167,6 +173,19 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 		if (token === "update" && piArgv.length === 0) {
 			return {
 				forgeAction: "update",
+				piArgv: [],
+				env,
+				subcommandArgs: argv.slice(i + 1),
+			};
+		}
+
+		// ── `forge config` — routing config subcommand (Plan 16) ────────────
+		// Intercepts `config show [--resolved] [--json]`. Bare `config` with no
+		// args is also handled (prints usage). Anything else falls through to pi.
+		// Only matches the first bare token, no flags collected yet.
+		if (token === "config" && piArgv.length === 0) {
+			return {
+				forgeAction: "config",
 				piArgv: [],
 				env,
 				subcommandArgs: argv.slice(i + 1),

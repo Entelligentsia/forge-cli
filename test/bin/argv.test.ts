@@ -272,4 +272,69 @@ describe("parseForgeArgv", () => {
 		expect(result.forgeAction).toBeNull();
 		expect(result.piArgv).toEqual(["--cwd", "/tmp", "doctor"]);
 	});
+
+	// Plan 16 — --strict-models flag
+	it("--strict-models → env.FORGE_STRICT_MODELS = '1', forgeAction null", () => {
+		const result = parseForgeArgv(["--strict-models"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.env.FORGE_STRICT_MODELS).toBe("1");
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual([]);
+	});
+
+	it("--strict-models combined with pi flags forwards pi args", () => {
+		const result = parseForgeArgv(["--strict-models", "--cwd", "/tmp"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.env.FORGE_STRICT_MODELS).toBe("1");
+		expect(result.piArgv).toEqual(["--cwd", "/tmp"]);
+	});
+
+	it("--strict-models is not rejected as unknown flag", () => {
+		const result = parseForgeArgv(["--strict-models"]);
+		expect(isParseError(result)).toBe(false);
+	});
+
+	// Plan 16 — forge config subcommand
+	it("'forge config show' → forgeAction = config, subcommandArgs = ['show']", () => {
+		const result = parseForgeArgv(["config", "show"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("config");
+		expect(result.piArgv).toEqual([]);
+		expect(result.subcommandArgs).toEqual(["show"]);
+	});
+
+	it("'forge config show --resolved' → forgeAction = config, subcommandArgs = ['show', '--resolved']", () => {
+		const result = parseForgeArgv(["config", "show", "--resolved"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("config");
+		expect(result.subcommandArgs).toEqual(["show", "--resolved"]);
+	});
+
+	it("'forge config show --json' → forgeAction = config, subcommandArgs = ['show', '--json']", () => {
+		const result = parseForgeArgv(["config", "show", "--json"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("config");
+		expect(result.subcommandArgs).toEqual(["show", "--json"]);
+	});
+
+	it("pi flag before config → config treated as pi arg, not forge-owned", () => {
+		const result = parseForgeArgv(["--cwd", "/tmp", "config", "show"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual(["--cwd", "/tmp", "config", "show"]);
+	});
+
+	it("bare 'forge config' (no subcommand) → forgeAction = config, empty subcommandArgs", () => {
+		const result = parseForgeArgv(["config"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("config");
+		expect(result.subcommandArgs).toEqual([]);
+	});
 });

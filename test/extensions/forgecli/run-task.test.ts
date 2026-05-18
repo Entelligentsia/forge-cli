@@ -52,7 +52,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 		createAgentSession: vi.fn(async () => ({ session: mockSession })),
 		DefaultResourceLoader: MockDefaultResourceLoader,
 		AuthStorage: { create: vi.fn(() => ({})) },
-		ModelRegistry: { create: vi.fn(() => ({})) },
+		ModelRegistry: { create: vi.fn(() => ({ getAvailable: vi.fn(() => []) })) },
 		SessionManager: { inMemory: vi.fn(() => ({})) },
 		parseFrontmatter: vi.fn((raw: string) => ({ frontmatter: {}, body: raw })),
 		getAgentDir: vi.fn(() => "/fake/agent-dir"),

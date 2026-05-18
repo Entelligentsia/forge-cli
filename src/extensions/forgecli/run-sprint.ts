@@ -24,7 +24,9 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
@@ -35,6 +37,7 @@ import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { lookupPersonaModel } from "./model-resolver.js";
+import { validateModelConfig } from "./model-validator.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
@@ -61,6 +64,33 @@ import {
 	type RunTaskState,
 	type RunTaskPipelineResult,
 } from "./run-task.js";
+
+// ── Model-routing preflight helpers (Plan 16 Slice 3) ────────────────────────
+
+function readPersonaDirSprint(dir: string): string[] {
+	try {
+		return fs.readdirSync(dir)
+			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
+			.map((f) => f.replace(/\.md$/, ""));
+	} catch {
+		return [];
+	}
+}
+
+function readPipelineNamesSprint(forgeCfgPath: string): string[] | null {
+	try {
+		const raw = fs.readFileSync(forgeCfgPath, "utf-8");
+		const cfg = JSON.parse(raw) as unknown;
+		if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
+			const pipelines = (cfg as { pipelines?: unknown }).pipelines;
+			if (pipelines && typeof pipelines === "object") return Object.keys(pipelines);
+			return [];
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
 
 // ── Sprint-level state persistence ────────────────────────────────────────
 
@@ -438,6 +468,39 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 						ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
 						return;
 					}
+				}
+			}
+
+			// ── Model routing pre-flight (Plan 16 Slice 3) ──────────────────────
+			// Validate routing config once at sprint start (before any LLM calls).
+			{
+				const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+				const personasDir = path.resolve(
+					path.dirname(fileURLToPath(import.meta.url)),
+					"..", "..", "forge-payload", ".base-pack", "personas",
+				);
+				const personaCatalogue = readPersonaDirSprint(personasDir);
+				const forgeCfgPath = path.join(cwd, ".forge", "config.json");
+				const pipelineCatalogue = readPipelineNamesSprint(forgeCfgPath);
+				const modelRegistry = ModelRegistry.create(AuthStorage.create());
+				const availableModels = modelRegistry.getAvailable?.() ?? [];
+				const strict = process.env.FORGE_STRICT_MODELS === "1";
+				const { errors, warnings } = validateModelConfig(
+					personaCatalogue,
+					pipelineCatalogue,
+					modelRoutingConfig,
+					availableModels.map((m) => ({ provider: m.provider, id: m.id })),
+					strict,
+				);
+				for (const w of warnings) {
+					ctx.ui.notify(`⚠ forge:run-sprint — model routing: ${w.message}`, "warning");
+				}
+				if (errors.length > 0) {
+					for (const e of errors) {
+						ctx.ui.notify(`× forge:run-sprint — model routing: ${e.message}`, "error");
+					}
+					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+					return;
 				}
 			}
 
