@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-18
+
+### Added
+- **`forge update` CLI subcommand** — guided upgrade (`npm i -g`) at the bin
+  layer alongside the existing `/forge:update` slash command. Supports
+  `--check` (exit 2 if upgrade available), `--yes` (skip confirm),
+  `--version <spec>` (pin to a specific release).
+- **Forge-owned update banner** — `update-check.ts` now advertises
+  `forge update` as the primary upgrade path in addition to the raw
+  `npm i -g` form, so the suggested command is always reachable.
+
+### Changed
+- **Pi update banners suppressed** — `PI_SKIP_VERSION_CHECK=1` and
+  `PI_SKIP_PACKAGE_UPDATE_CHECK=1` are set unconditionally at bin startup.
+  Pi's "Run pi update" advice is unreachable for forge users (bundled-dep
+  bins are not linked at the OS level). Forge owns the only update surface.
+- **Vendored pi bumped to 0.75.1-forge.1** — adds `PI_SKIP_PACKAGE_UPDATE_CHECK`
+  env-var gate to `checkForPackageUpdates`. Other three pi packages remain
+  at plain `0.75.1`.
+
 ## [0.7.11] — 2026-05-18
 
 ### Changed

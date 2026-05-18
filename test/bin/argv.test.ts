@@ -206,6 +206,40 @@ describe("parseForgeArgv", () => {
 		expect(result.subcommandArgs).toEqual(["store"]);
 	});
 
+	// forge update subcommand (Plan 15)
+	it("'forge update' → forgeAction = update, no piArgv", () => {
+		const result = parseForgeArgv(["update"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("update");
+		expect(result.piArgv).toEqual([]);
+		expect(result.subcommandArgs).toEqual([]);
+	});
+
+	it("'forge update --check' → forgeAction = update, --check in subcommandArgs", () => {
+		const result = parseForgeArgv(["update", "--check"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("update");
+		expect(result.subcommandArgs).toEqual(["--check"]);
+	});
+
+	it("'forge update --yes --version 0.9.0' → subcommandArgs forwarded", () => {
+		const result = parseForgeArgv(["update", "--yes", "--version", "0.9.0"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("update");
+		expect(result.subcommandArgs).toEqual(["--yes", "--version", "0.9.0"]);
+	});
+
+	it("pi flag before update → update treated as pi arg, not forge-owned", () => {
+		const result = parseForgeArgv(["--cwd", "/tmp", "update"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual(["--cwd", "/tmp", "update"]);
+	});
+
 	it("pi flags before fast-path subcommand → bare token treated as pi arg, not fast-path", () => {
 		const result = parseForgeArgv(["--cwd", "/tmp", "store", "list"]);
 		expect(isParseError(result)).toBe(false);

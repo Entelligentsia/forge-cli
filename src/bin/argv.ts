@@ -20,8 +20,8 @@
 //   --model, --tools, --append-system-prompt, --no-tools, --thinking,
 //   --no-thinking, and bare non-flag arguments.
 
-/** Parsed result when `--version`, `--help`, `doctor`, or a fast-path subcommand is requested. */
-export type ForgeAction = "version" | "help" | "doctor" | "subcommand" | null;
+/** Parsed result when `--version`, `--help`, `doctor`, `update`, or a fast-path subcommand is requested. */
+export type ForgeAction = "version" | "help" | "doctor" | "update" | "subcommand" | null;
 
 /**
  * Whitelist of bare subcommands that bypass pi and exec a bundled cjs tool
@@ -156,6 +156,17 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 		if (token === "doctor" && piArgv.length === 0) {
 			return {
 				forgeAction: "doctor",
+				piArgv: [],
+				env,
+				subcommandArgs: argv.slice(i + 1),
+			};
+		}
+
+		// ── `forge update` — guided upgrade subcommand ──────────────────────
+		// Only matches the first bare token, no flags collected yet.
+		if (token === "update" && piArgv.length === 0) {
+			return {
+				forgeAction: "update",
 				piArgv: [],
 				env,
 				subcommandArgs: argv.slice(i + 1),

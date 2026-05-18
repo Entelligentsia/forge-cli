@@ -13,6 +13,7 @@ import { main } from "@earendil-works/pi-coding-agent";
 import forgecli from "../extensions/forgecli/index.js";
 import { isParseError, parseForgeArgv } from "./argv.js";
 import { runDoctor } from "./doctor.js";
+import { runUpdate } from "./update-cli.js";
 
 // ---------------------------------------------------------------------------
 // Version information (resolved at startup from package.json files)
@@ -97,6 +98,7 @@ Unknown flags are rejected — forge performs strict argv ownership.
 
 Subcommands:
   doctor [--json]          Preflight check — pi auth, model availability, settings
+  update [--check] [--yes] [--version <spec>]  Guided upgrade (npm i -g)
 
 Slash commands (inside a Forge project):
   /forge:init              Bootstrap a new Forge SDLC project
@@ -139,8 +141,20 @@ if (parsed.forgeAction === "doctor") {
 	process.exit(exitCode);
 }
 
+if (parsed.forgeAction === "update") {
+	const pkg = readForgeCliPkg();
+	const exitCode = await runUpdate(parsed.subcommandArgs ?? [], { forgeCli: pkg.version ?? "unknown" });
+	process.exit(exitCode);
+}
+
 // Apply forge env overrides
 Object.assign(process.env, parsed.env);
+
+// Forge owns the update banner. Pi's bins aren't linked when forgecli is
+// installed globally, so "Run pi update" advice is broken at the OS level.
+// Suppress both pi update banners unconditionally.
+process.env.PI_SKIP_VERSION_CHECK = "1";
+process.env.PI_SKIP_PACKAGE_UPDATE_CHECK = "1";
 
 // Default prompt-cache retention to "long" for all Forge sessions.
 //

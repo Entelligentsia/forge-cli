@@ -142,7 +142,7 @@ function composeBanner(
 	const lines: string[] = [];
 	if (npm) {
 		lines.push(
-			`forge-cli: update available — ${npm.current} → ${npm.latest} (npm i -g @entelligentsia/forgecli@${npm.latest})`,
+			`forge-cli: update available — ${npm.current} → ${npm.latest} (run \`forge update\` or \`npm i -g @entelligentsia/forgecli@${npm.latest}\`)`,
 		);
 	}
 	if (forge) {
