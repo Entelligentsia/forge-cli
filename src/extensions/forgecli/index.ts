@@ -49,6 +49,7 @@ import { registerApprove } from "./approve.js";
 import { registerCommit } from "./commit.js";
 import { registerValidate } from "./validate.js";
 import { registerCollate } from "./collate.js";
+import { registerConfigCommand } from "./config-command.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
@@ -424,6 +425,14 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 
 	// ── /forge:read native handler ───────────────────────────────────────────
 	registerReadCommand(pi, forgeRoot);
+
+	// ── /forge:config native handler (Plan 16 Slice 4a) ──────────────────────
+	// Replaces the LLM-backed delegateMarkdownCommand stub that previously
+	// lived in forge-commands.ts. Registered BEFORE registerForgeCommands so
+	// the real handler wins. The stub block in forge-commands.ts has been
+	// removed; forge:config stays in EXPLICITLY_REGISTERED_NAMES so the
+	// auto-stub loop never registers a fallback.
+	registerConfigCommand(pi, { forgeRoot });
 
 	// ── /forge:* command set (FORGE-S16-T04) ─────────────────────────────────
 	// Registered unconditionally so /forge:ask works outside a Forge project.

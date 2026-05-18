@@ -69,20 +69,26 @@ afterEach(() => {
 });
 
 describe("registerForgeCommands", () => {
-	it("registers four /forge:* commands and the before_agent_start handler", () => {
+	it("registers three /forge:* commands and the before_agent_start handler", () => {
+		// Plan 16 Slice 4a: /forge:config is now registered by registerConfigCommand
+		// in index.ts, not here. The slot stays in EXPLICITLY_REGISTERED_NAMES so
+		// the auto-stub loop does not re-register a fallback.
 		const pi = makePi();
 		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
 
-		expect(pi.registerCommand).toHaveBeenCalledTimes(4);
+		expect(pi.registerCommand).toHaveBeenCalledTimes(3);
 		const names = Array.from(pi.commands.keys()).sort();
-		expect(names).toEqual(["forge:ask", "forge:config", "forge:health", "forge:status"]);
+		expect(names).toEqual(["forge:ask", "forge:health", "forge:status"]);
 		expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function));
 		expect(pi.beforeAgentStart).not.toBeNull();
 	});
 });
 
 describe("outside-project no-op (Q14)", () => {
-	const cases = ["health", "config", "status"] as const;
+	// Plan 16 Slice 4a: config dropped from this set — its outside-project
+	// behavior is now owned by registerConfigCommand (Slice 4b/4c). Health and
+	// status still no-op when forgeRoot is null.
+	const cases = ["health", "status"] as const;
 	for (const cmd of cases) {
 		it(`/forge:${cmd} emits warning notify and skips delegation when forgeRoot is null`, async () => {
 			const pi = makePi();
