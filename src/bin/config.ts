@@ -5,6 +5,8 @@
 //   forge config show --resolved       Same, with per-entry cascade source annotation
 //   forge config show --json           Machine-readable JSON output
 //   forge config show --resolved --json Both
+//   forge config dispatch              Per-phase dispatch trace (no LLM call)
+//   forge config dispatch --json       Machine-readable JSON output
 //
 // This command reads from:
 //   ~/.pi/agent/forge-cli/config.json        (L1 global)
@@ -19,7 +21,9 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { loadLayeredConfig } from "../extensions/forgecli/config-layer.js";
-import { lookupPersonaModel } from "../extensions/forgecli/model-resolver.js";
+import { lookupPersonaModel, resolveModelForPhase } from "../extensions/forgecli/model-resolver.js";
+import { PHASES } from "../extensions/forgecli/run-task.js";
+import { BUG_PHASES } from "../extensions/forgecli/fix-bug.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,9 +31,11 @@ const __dirname = path.dirname(__filename);
 // ── Arg parser ───────────────────────────────────────────────────────────────
 
 export interface ConfigArgs {
-  subcommand: "show" | "usage";
+  subcommand: "show" | "dispatch" | "usage";
   resolved: boolean;
   json: boolean;
+  /** dispatch-only: pipeline name override (defaults to "default" for task, "fix-bug" for bug). */
+  pipeline?: string;
 }
 
 export interface ConfigArgsError {
@@ -45,19 +51,29 @@ export function parseConfigArgs(args: string[]): ParseConfigResult {
 
   const [sub, ...rest] = args;
 
-  if (sub !== "show") {
-    return { error: `forge config: unknown subcommand "${sub}". Try: forge config show [--resolved] [--json]` };
+  if (sub === "show") {
+    let resolved = false;
+    let json = false;
+    for (const flag of rest) {
+      if (flag === "--resolved") { resolved = true; continue; }
+      if (flag === "--json") { json = true; continue; }
+      return { error: `forge config show: unknown flag "${flag}"` };
+    }
+    return { subcommand: "show", resolved, json };
   }
 
-  let resolved = false;
-  let json = false;
-  for (const flag of rest) {
-    if (flag === "--resolved") { resolved = true; continue; }
-    if (flag === "--json") { json = true; continue; }
-    return { error: `forge config show: unknown flag "${flag}"` };
+  if (sub === "dispatch") {
+    let json = false;
+    let pipeline: string | undefined;
+    for (const flag of rest) {
+      if (flag === "--json") { json = true; continue; }
+      if (flag.startsWith("--pipeline=")) { pipeline = flag.slice("--pipeline=".length); continue; }
+      return { error: `forge config dispatch: unknown flag "${flag}"` };
+    }
+    return { subcommand: "dispatch", resolved: false, json, pipeline };
   }
 
-  return { subcommand: "show", resolved, json };
+  return { error: `forge config: unknown subcommand "${sub}". Try: forge config show [--resolved] [--json] | dispatch [--pipeline=<name>] [--json]` };
 }
 
 // ── Persona catalogue ────────────────────────────────────────────────────────
@@ -259,6 +275,131 @@ export async function runConfigShow(
       }
     }
     write("");
+  }
+
+  return 0;
+}
+
+// ── dispatch — per-phase trace, no LLM call ─────────────────────────────────
+
+export interface DispatchPhaseRow {
+  pipeline: "default" | "fix-bug";
+  phaseRole: string;
+  persona: string;
+  requested: { provider: string; model: string } | null;
+  source: string;
+  /** True if pi.modelRegistry.find(provider, model) returns a Model — i.e. setModel
+   *  will actually take effect at dispatch time. False = will silently fall through
+   *  to pi's current model.
+   */
+  registered: boolean | null;
+  /** When registered === true, the exact id the registry returned. May differ from
+   *  `requested.model` if pi aliases (e.g. "claude-haiku-4-5" → "claude-haiku-4-5-20251001").
+   */
+  registryId: string | null;
+}
+
+export interface DispatchOutput {
+  cwd: string;
+  taskPipeline: string;
+  taskPhases: DispatchPhaseRow[];
+  bugPhases: DispatchPhaseRow[];
+}
+
+/**
+ * Walk run-task's PHASES and fix-bug's BUG_PHASES; for each, compute the requested
+ * model via the same resolveModelForPhase the orchestrator uses, and verify that
+ * pi's ModelRegistry can resolve the requested id. Prints a table or JSON.
+ *
+ * No LLM call. No pi session. Pure inspection.
+ */
+export function runConfigDispatch(
+  args: ConfigArgs,
+  cwd: string,
+  write: (line: string) => void,
+): number {
+  const taskPipeline = args.pipeline ?? "default";
+  const bugPipeline = "fix-bug";
+
+  const { merged } = loadLayeredConfig(cwd);
+  const registry = ModelRegistry.create(AuthStorage.create());
+
+  const traceOne = (
+    pipelineName: "default" | "fix-bug",
+    phaseRole: string,
+    personaNoun: string,
+  ): DispatchPhaseRow => {
+    const res = resolveModelForPhase(pipelineName, phaseRole, personaNoun, merged);
+    if (!res.model) {
+      return {
+        pipeline: pipelineName,
+        phaseRole,
+        persona: personaNoun,
+        requested: null,
+        source: res.source,
+        registered: null,
+        registryId: null,
+      };
+    }
+    const found = registry.find?.(res.model.provider, res.model.model);
+    return {
+      pipeline: pipelineName,
+      phaseRole,
+      persona: personaNoun,
+      requested: { provider: res.model.provider, model: res.model.model },
+      source: res.source,
+      registered: !!found,
+      registryId: found?.id ?? null,
+    };
+  };
+
+  const taskPhases: DispatchPhaseRow[] = PHASES.map((p) =>
+    traceOne(taskPipeline as "default" | "fix-bug", p.role, p.personaNoun),
+  );
+  const bugPhases: DispatchPhaseRow[] = BUG_PHASES.map((p) =>
+    traceOne(bugPipeline, p.role, p.personaNoun),
+  );
+
+  if (args.json) {
+    const out: DispatchOutput = { cwd, taskPipeline, taskPhases, bugPhases };
+    write(JSON.stringify(out, null, 2));
+    return 0;
+  }
+
+  // Human-readable table.
+  const fmt = (row: DispatchPhaseRow): string => {
+    const req = row.requested
+      ? `${row.requested.provider}:${row.requested.model}`
+      : "(inherit pi current)";
+    let find: string;
+    if (row.registered === null) {
+      find = "(skipped — setModel not called)";
+    } else if (row.registered) {
+      find = `✓ ${row.registryId}`;
+    } else {
+      find = `✗ MISS — setModel will silently inherit pi current`;
+    }
+    return `${row.phaseRole.padEnd(13)} ${row.persona.padEnd(16)} ${req.padEnd(36)} ${find}`;
+  };
+
+  write(`forge config dispatch — cwd=${cwd}`);
+  write("");
+  write(`── run-task PHASES (pipeline: ${taskPipeline}) ─────────────────────────────`);
+  write("phase         persona          requested                            registry.find");
+  write("─────         ───────          ─────────                            ─────────────");
+  for (const row of taskPhases) write(fmt(row));
+  write("");
+  write(`── fix-bug BUG_PHASES (pipeline: ${bugPipeline}) ───────────────────────────`);
+  write("phase         persona          requested                            registry.find");
+  write("─────         ───────          ─────────                            ─────────────");
+  for (const row of bugPhases) write(fmt(row));
+  write("");
+  write("source map (raw resolver):");
+  for (const row of taskPhases) {
+    write(`  task[${row.phaseRole.padEnd(13)}] ${row.source}`);
+  }
+  for (const row of bugPhases) {
+    write(`  bug [${row.phaseRole.padEnd(13)}] ${row.source}`);
   }
 
   return 0;

@@ -12,13 +12,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseConfigArgs, runConfigShow } from "../../../bin/config.js";
+import { parseConfigArgs, runConfigDispatch, runConfigShow } from "../../../bin/config.js";
 import { loadLayeredConfig } from "../config-layer.js";
 import type { AvailableModel, InitOptions } from "./state.js";
 
 export type ConfigTuiRoute =
   | { kind: "tier-menu" }
   | { kind: "show"; resolved: boolean; json: boolean }
+  | { kind: "dispatch"; pipeline: string | undefined; json: boolean }
   | { kind: "edit-persona"; persona: string }
   | { kind: "edit-override"; pipeline: string; phaseRole: string };
 
@@ -46,6 +47,17 @@ export function parseConfigTuiArgs(args: string[]): ParseConfigTuiResult {
     return { kind: "show", resolved, json };
   }
 
+  if (head === "dispatch") {
+    let json = false;
+    let pipeline: string | undefined;
+    for (const flag of rest) {
+      if (flag === "--json") { json = true; continue; }
+      if (flag.startsWith("--pipeline=")) { pipeline = flag.slice("--pipeline=".length); continue; }
+      return { error: `forge config dispatch: unknown flag "${flag}"` };
+    }
+    return { kind: "dispatch", pipeline, json };
+  }
+
   if (head === "edit") {
     const [target, ...editRest] = rest;
     if (target === "persona") {
@@ -70,7 +82,7 @@ export function parseConfigTuiArgs(args: string[]): ParseConfigTuiResult {
 
   return {
     error:
-      `forge config: unknown subcommand "${head}". Try: forge config [show [--resolved] [--json] | edit persona <name> | edit override <pipeline> <phaseRole>]`,
+      `forge config: unknown subcommand "${head}". Try: forge config [show [--resolved] [--json] | dispatch [--pipeline=<name>] [--json] | edit persona <name> | edit override <pipeline> <phaseRole>]`,
   };
 }
 
@@ -93,6 +105,8 @@ const USAGE_LINES = [
   "Usage:",
   "  forge config                              Open interactive config TUI",
   "  forge config show [--resolved] [--json]   Print routing config",
+  "  forge config dispatch [--pipeline=<name>] [--json]",
+  "                                            Per-phase dispatch trace (no LLM call)",
   "  forge config edit persona <name>          Edit a persona-model assignment",
   "  forge config edit override <pipeline> <phaseRole>",
   "                                            Edit a per-phase model override",
@@ -217,6 +231,22 @@ export async function runConfigTui(
       return 0;
     }
     return runConfigShow(showParsed, cwd, (line) => cb.write(`${line}\n`));
+  }
+
+  if (parsed.kind === "dispatch") {
+    const dispatchArgs: string[] = ["dispatch"];
+    if (parsed.json) dispatchArgs.push("--json");
+    if (parsed.pipeline) dispatchArgs.push(`--pipeline=${parsed.pipeline}`);
+    const dispatchParsed = parseConfigArgs(dispatchArgs);
+    if ("error" in dispatchParsed) {
+      writeErr(`${dispatchParsed.error}\n`);
+      return 1;
+    }
+    if (dispatchParsed.subcommand !== "dispatch") {
+      writeErr(`forge config dispatch: internal arg-parsing error\n`);
+      return 1;
+    }
+    return runConfigDispatch(dispatchParsed, cwd, (line) => cb.write(`${line}\n`));
   }
 
   // Interactive routes (top-menu, edit-persona). edit-override stays a stub
