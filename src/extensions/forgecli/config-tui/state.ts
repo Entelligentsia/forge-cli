@@ -33,6 +33,12 @@ export {
   getAllTierAssignments,
   getTierForPersona,
   getPersonasInTier,
+  getPhaseTable,
+  sourceToLabel,
+  type PhaseTableRow,
+  type ScopedTierAssignment,
+  getScopedTierAssignment,
+  getAllScopedTierAssignments,
 } from "./state/selectors.js";
 export {
   writePersonaEntry,

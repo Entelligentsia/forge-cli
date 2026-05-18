@@ -17,8 +17,11 @@ export class OverridesListPipelinesScreen implements Screen {
     }
     const summaries = listPipelineOverrideSummaries(state);
     const lines: string[] = [];
-    lines.push(accentBold("forge config › per-phase overrides", theme));
+    lines.push(accentBold("forge config › per-step overrides", theme));
     lines.push(rule(width, theme));
+    lines.push(muted("  Step overrides change the model for one specific step", theme));
+    lines.push(muted("  of one pipeline. Most users don't need this.", theme));
+    lines.push("");
 
     if (summaries.length === 0) {
       lines.push(muted("  (no pipeline catalogue available)", theme));

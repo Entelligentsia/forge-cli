@@ -11,6 +11,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import { TierMenuScreen } from "./screens/tier-menu.js";
 import { TierPickerScreen } from "./screens/tier-picker.js";
+import { AdvancedMenuScreen } from "./screens/advanced-menu.js";
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
 import { TopMenuScreen } from "./screens/top-menu.js";
 import { PersonasListScreen } from "./screens/personas-list.js";
@@ -27,6 +28,7 @@ import type { MenuItem } from "./screens/top-menu.js";
 const SCREEN_INSTANCES: Record<string, { render(state: ConfigTuiState, width: number, theme: Theme): string[] }> = {
   "tier-menu": new TierMenuScreen(),
   "tier-picker": new TierPickerScreen(),
+  "advanced-menu": new AdvancedMenuScreen(),
   "no-project": new TopMenuScreen(),
   "empty-state": new TopMenuScreen(),
   "top-menu": new TopMenuScreen(),
@@ -43,6 +45,7 @@ const SCREEN_INSTANCES: Record<string, { render(state: ConfigTuiState, width: nu
 
 export { TierMenuScreen } from "./screens/tier-menu.js";
 export { TierPickerScreen } from "./screens/tier-picker.js";
+export { AdvancedMenuScreen } from "./screens/advanced-menu.js";
 export { TopMenuScreen } from "./screens/top-menu.js";
 export { PersonasListScreen } from "./screens/personas-list.js";
 export { PersonaPickerScreen } from "./screens/persona-picker.js";
@@ -59,6 +62,10 @@ export { type MenuItem } from "./screens/top-menu.js";
 
 export function renderTierMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
   return SCREEN_INSTANCES["tier-menu"].render(state, width, theme);
+}
+
+export function renderAdvancedMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
+  return SCREEN_INSTANCES["advanced-menu"].render(state, width, theme);
 }
 
 export function renderTopMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {

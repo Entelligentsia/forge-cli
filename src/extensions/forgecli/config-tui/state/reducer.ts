@@ -22,6 +22,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
       if (
         top.kind === "tier-menu" ||
         top.kind === "tier-picker" ||
+        top.kind === "advanced-menu" ||
         top.kind === "personas-list" ||
         top.kind === "persona-picker" ||
         top.kind === "show-resolved" ||

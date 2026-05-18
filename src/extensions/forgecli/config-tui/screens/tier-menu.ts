@@ -8,7 +8,7 @@ import type { ConfigLayer } from "../../config-writer.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
-import { getActiveView, getTierAssignment, getAllTierAssignments } from "../state/selectors.js";
+import { getActiveView, getAllScopedTierAssignments, type ScopedTierAssignment } from "../state/selectors.js";
 import { TIERS, TIER_LABELS, TIER_SUB_LABELS, tierPersonaLine } from "../tier-meta.js";
 import type { Tier } from "../tier-meta.js";
 import { rule, safeLines } from "./shared.js";
@@ -32,13 +32,17 @@ export class TierMenuScreen implements Screen {
 
     // ── "Active right now" summary ─────────────────────────────────────
     lines.push(muted("Active right now", theme));
-    const assignments = getAllTierAssignments(state);
-    for (const { tier, assignment } of assignments) {
+    const scopedAssignments = getAllScopedTierAssignments(state, state.scope);
+    for (const { tier, assignment } of scopedAssignments) {
       const label = padRight(TIER_LABELS[tier], 10);
       if (assignment.status === "set") {
         const modelStr = `${assignment.provider}:${assignment.model}`;
         const layerLabel = `(${assignment.layer})`;
         lines.push(`  ${label} ${modelStr}    ${muted(layerLabel, theme)}`);
+      } else if (assignment.status === "set-in-other-layer") {
+        const otherLabel = assignment.otherLayer === "global" ? "global" : "project";
+        const modelStr = `${assignment.provider}:${assignment.model}`;
+        lines.push(`  ${label} ${muted(modelStr + " (" + otherLabel + ")", theme)}`);
       } else if (assignment.status === "mixed") {
         lines.push(`  ${label} ${warning("mixed — personas differ", theme)}`);
       } else {
@@ -63,13 +67,15 @@ export class TierMenuScreen implements Screen {
       const cur = cursor(i === cursorIdx, theme);
       const label = padRight(TIER_LABELS[tier], 10);
       const subLabel = muted(`(${TIER_SUB_LABELS[tier]})`, theme);
-      const assignment = assignments.find((a) => a.tier === tier)!.assignment;
+      const tierScoped = scopedAssignments.find((a) => a.tier === tier)!.assignment;
       const valueStr =
-        assignment.status === "set"
-          ? `${assignment.provider}:${assignment.model}`
-          : assignment.status === "mixed"
-            ? warning("mixed", theme)
-            : muted("not set", theme);
+        tierScoped.status === "set"
+          ? `${tierScoped.provider}:${tierScoped.model}`
+          : tierScoped.status === "set-in-other-layer"
+            ? muted(`(${tierScoped.otherLayer})`, theme)
+            : tierScoped.status === "mixed"
+              ? warning("mixed", theme)
+              : muted("not set", theme);
       lines.push(`  ${cur} ${label} ${subLabel}  ${valueStr}`);
     }
 
@@ -128,8 +134,8 @@ export class TierMenuScreen implements Screen {
         return { kind: "dispatch", action: { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } } };
       }
       if (view.cursor === 4) {
-        // "Advanced" → top-menu as fallback (Phase D adds dedicated advanced-menu)
-        return { kind: "dispatch", action: { kind: "push-view", view: { kind: "top-menu", cursor: 0 } } };
+        // "Advanced" → advanced-menu (Phase D)
+        return { kind: "dispatch", action: { kind: "push-view", view: { kind: "advanced-menu", cursor: 0 } } };
       }
     }
 
@@ -138,7 +144,7 @@ export class TierMenuScreen implements Screen {
     if (matchesKey(data, "2")) return { kind: "dispatch", action: { kind: "select-tier", tier: "standard" } };
     if (matchesKey(data, "3")) return { kind: "dispatch", action: { kind: "select-tier", tier: "light" } };
     if (matchesKey(data, "s")) return { kind: "dispatch", action: { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } } };
-    if (matchesKey(data, "a")) return { kind: "dispatch", action: { kind: "push-view", view: { kind: "top-menu", cursor: 0 } } };
+    if (matchesKey(data, "a")) return { kind: "dispatch", action: { kind: "push-view", view: { kind: "advanced-menu", cursor: 0 } } };
 
     return { kind: "no-op" };
   }

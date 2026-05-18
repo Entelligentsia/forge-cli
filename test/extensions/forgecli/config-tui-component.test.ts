@@ -121,8 +121,8 @@ describe("ConfigTuiComponent — tier-menu landing (Phase A)", () => {
   });
 });
 
-describe("ConfigTuiComponent — navigate to personas list (via advanced/top-menu)", () => {
-  it("'a' from tier-menu opens top-menu (which has personas-list)", () => {
+describe("ConfigTuiComponent — navigate to personas list (via advanced/advanced-menu)", () => {
+  it("'a' from tier-menu opens advanced-menu (which has personas-list)", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -137,13 +137,13 @@ describe("ConfigTuiComponent — navigate to personas list (via advanced/top-men
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    expect(comp.render(WIDTH).join("\n")).toContain("Personas");
-    comp.handleInput("1"); // top-menu → personas-list
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    expect(comp.render(WIDTH).join("\n")).toContain("advanced");
+    comp.handleInput("1"); // advanced-menu → personas-list
+    expect(comp.render(WIDTH).join("\n")).toContain("per-persona overrides");
   });
 
-  it("from top-menu, personas-list picker → editor flow works", () => {
+  it("from advanced-menu, personas-list picker → editor flow works", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -158,10 +158,12 @@ describe("ConfigTuiComponent — navigate to personas list (via advanced/top-men
       onSaved,
       onError,
     });
-    // tier-menu → top-menu → empty-state: "1" opens persona-picker
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // top-menu empty-state → persona-picker
-    comp.handleInput("\r"); // confirm 'default' → persona-editor
+    // tier-menu → advanced-menu → "1" opens personas-list
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("1"); // advanced-menu → personas-list
+    // personas-list is empty → 'n' opens persona-picker
+    comp.handleInput("n");
+    comp.handleInput("\r"); // confirm 'engineer' → persona-editor
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("Step 1 of 3");
   });
@@ -276,10 +278,10 @@ describe("ConfigTuiComponent — full edit flow with persistence (top-menu path)
       onError,
     });
 
-    // Navigate: tier-menu → "a" → top-menu(= empty-state) → "1" → persona-picker
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // top-menu empty-state → persona-picker
-    comp.handleInput("\r"); // picker: confirm 'default' → editor
+    // Navigate: tier-menu → "a" → advanced-menu → "1" → persona-picker
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker
+    comp.handleInput("\r"); // picker: confirm first entry → editor 'default' → editor
     // Pick anthropic via shortcut
     comp.handleInput("a");
     expect(comp.render(WIDTH).join("\n")).toContain("Step 2 of 3");
@@ -315,8 +317,8 @@ describe("ConfigTuiComponent — full edit flow with persistence (top-menu path)
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // → persona-picker
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\r"); // picker: confirm 'default' → editor
     comp.handleInput("l"); // ollama shortcut
     comp.handleInput("\r"); // pick first model
@@ -352,8 +354,8 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
       onError,
       requestRender: () => renderCalls++,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // top-menu → personas-list
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("1"); // advanced-menu → personas-list
     const renderCountBefore = renderCalls;
     comp.handleInput("\x1b[B"); // ↓ raw escape sequence
     expect(renderCalls).toBeGreaterThan(renderCountBefore);
@@ -382,8 +384,8 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // → personas-list
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("1"); // advanced-menu → personas-list
     comp.handleInput("\x1b[B"); // down
     comp.handleInput("\x1b[A"); // up
     const out = comp.render(WIDTH).join("\n");
@@ -444,7 +446,7 @@ describe("ConfigTuiComponent — tier-menu cursor navigation (Phase A)", () => {
   it("'s' shortcut opens show-resolved", () => {
     const c = nonEmpty();
     c.handleInput("s");
-    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+    expect(c.render(WIDTH).join("\n")).toContain("forge config › current setup");
   });
 
   it("navigate to 'show-resolved' via cursor and enter", () => {
@@ -453,7 +455,7 @@ describe("ConfigTuiComponent — tier-menu cursor navigation (Phase A)", () => {
     c.handleInput("\x1b[B"); // ↓ Light
     c.handleInput("\x1b[B"); // ↓ Show what runs at each step
     c.handleInput("\r");     // enter
-    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+    expect(c.render(WIDTH).join("\n")).toContain("forge config › current setup");
   });
 
   it("cursor clamps at upper bound (can't overshoot)", () => {
@@ -515,7 +517,7 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
     });
     expect(comp.render(WIDTH).join("\n")).toContain("No project root found");
     comp.handleInput("\r");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
   });
 
   it("'1' on no-project also opens personas-list", () => {
@@ -534,7 +536,7 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
       onError,
     });
     comp.handleInput("1");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
   });
 
   it("empty no-project: enter opens persona-picker, second enter lands editor on 'default'", () => {
@@ -560,7 +562,7 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
 });
 
 describe("ConfigTuiComponent — esc navigation", () => {
-  it("esc from personas-list returns to top-menu", () => {
+  it("esc from personas-list returns to advanced-menu", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -575,15 +577,15 @@ describe("ConfigTuiComponent — esc navigation", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // → personas-list
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
-    comp.handleInput("\x1b"); // ESC → back to top-menu
-    expect(comp.render(WIDTH).join("\n")).not.toContain("forge config › personas");
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("1"); // advanced-menu → personas-list
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
+    comp.handleInput("\x1b"); // ESC → back to advanced-menu
+    expect(comp.render(WIDTH).join("\n")).not.toContain("forge config › per-persona overrides");
     expect(comp.render(WIDTH).join("\n")).toContain("forge config");
   });
 
-  it("esc from top-menu returns to tier-menu", () => {
+  it("esc from advanced-menu returns to tier-menu", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -598,8 +600,8 @@ describe("ConfigTuiComponent — esc navigation", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    expect(comp.render(WIDTH).join("\n")).toContain("Personas");
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    expect(comp.render(WIDTH).join("\n")).toContain("advanced");
     comp.handleInput("\x1b"); // ESC → back to tier-menu
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("Choose models for your AI workflow");
@@ -630,11 +632,11 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
     });
   }
 
-  // Navigate to persona-editor via top-menu
-  function goToEditor(comp: ReturnType<typeof createConfigTuiComponent>) {
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // top-menu empty-state → persona-picker
-    comp.handleInput("\r"); // confirm 'default' → editor pick-provider
+  // Navigate to persona-editor via advanced-menu → persona-picker
+  function goToEditor(comp: ReturnType<typeof createConfigTuiComConent>) {
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker
+    comp.handleInput("\r"); // confirm first entry → persona-editor (pick-provider step)
   }
 
   it("↓ moves the cursor in the provider picker", () => {
@@ -739,8 +741,8 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // picker
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\r"); // picker: confirm 'default'
     comp.handleInput("a");
     comp.handleInput("\r");
@@ -769,11 +771,11 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onError,
     });
     comp.handleInput("a");
-    comp.handleInput("1");
-    comp.handleInput("\r"); // picker: confirm 'default'
-    comp.handleInput("a");
-    comp.handleInput("\r");
-    comp.handleInput("p");
+    comp.handleInput("3"); // advanced-menu → persona-picker
+    comp.handleInput("\r"); // picker: confirm first entry
+    comp.handleInput("a"); // anthropic shortcut in persona-editor
+    comp.handleInput("\r"); // pick first model
+    comp.handleInput("p"); // project layer
     expect(h.saved.length).toBe(1);
 
     comp.handleInput("q");
@@ -800,7 +802,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
   });
 });
 
-describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", () => {
+describe("ConfigTuiComponent — per-step overrides (Slice 4c Screens 4+5)", () => {
   function makeNonEmpty(extra: Record<string, unknown> = {}) {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
@@ -830,15 +832,15 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
 
   // Navigate: tier-menu → "a" → top-menu → "2" → overrides-list-pipelines
   function goToOverrides(comp: ReturnType<typeof createConfigTuiComponent>) {
-    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("a"); // tier-menu → advanced-menu
     comp.handleInput("2"); // top-menu → overrides-list-pipelines
   }
 
-  it("menu item 2 opens overrides-list-pipelines (via top-menu)", () => {
+  it("menu item 2 opens overrides-list-pipelines (via advanced-menu)", () => {
     const { comp } = makeNonEmpty();
     goToOverrides(comp);
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("per-phase overrides");
+    expect(out).toContain("per-step overrides");
     expect(out).toContain("default");
     expect(out).toContain("hotfix");
   });
@@ -848,7 +850,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
     goToOverrides(comp);
     comp.handleInput("\r");
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("per-phase overrides › default");
+    expect(out).toContain("per-step overrides › default");
     expect(out).toContain("plan");
     expect(out).toContain("commit");
   });
@@ -880,7 +882,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
       onSaved: harness.onSaved,
       onError: harness.onError,
     });
-    goToOverrides(comp); // tier-menu → top-menu → overrides-list
+    goToOverrides(comp); // tier-menu → advanced-menu → overrides-list
     comp.handleInput("\r"); // pick default
     comp.handleInput("\x1b[B"); // down to phase 1
     comp.handleInput("\r"); // open editor
@@ -1007,8 +1009,8 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // → personas-list
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("n"); // → persona-picker
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("pick which");
@@ -1033,8 +1035,8 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // empty-state → picker (entries: default, architect, engineer)
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker (entries: default, architect, engineer)
     comp.handleInput("\x1b[B"); // ↓ → architect
     comp.handleInput("\r");
     const out = comp.render(WIDTH).join("\n");
@@ -1057,8 +1059,8 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
-    comp.handleInput("1"); // → picker
+    comp.handleInput("a"); // tier-menu → advanced-menu
+    comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\x1b[B"); // ↓ → architect
     comp.handleInput("\x1b[B"); // ↓ → engineer
     comp.handleInput("\r"); // confirm engineer
@@ -1090,12 +1092,12 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("a"); // tier-menu → advanced-menu
     comp.handleInput("1"); // personas-list
     comp.handleInput("n"); // picker
     expect(comp.render(WIDTH).join("\n")).toContain("pick which");
     comp.handleInput("\x1b"); // esc
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
     expect(comp.render(WIDTH).join("\n")).not.toContain("pick which");
   });
 });

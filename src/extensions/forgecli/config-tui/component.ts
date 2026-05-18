@@ -28,6 +28,7 @@ import {
 } from "./state.js";
 import { CANONICAL_PHASES } from "./state/constants.js";
 
+import { AdvancedMenuScreen } from "./screens/advanced-menu.js";
 import { TierMenuScreen } from "./screens/tier-menu.js";
 import { TierPickerScreen } from "./screens/tier-picker.js";
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
@@ -68,6 +69,7 @@ const SCREEN_INSTANCES: Record<string, Screen> = {
   "confirm-quit": new ConfirmQuitScreen(),
   "tier-menu": new TierMenuScreen(),
   "tier-picker": new TierPickerScreen(),
+  "advanced-menu": new AdvancedMenuScreen(),
   "top-menu": new TopMenuScreen(),
   "empty-state": new TopMenuScreen(),  // same screen handles both
   "no-project": new TopMenuScreen(),    // same screen handles both

@@ -9,6 +9,7 @@ import { InputResult, Screen } from "./types.js";
 import { getActiveView, listResolvedPersonas } from "../state/selectors.js";
 import { rule, authBadgeFor, safeLines } from "./shared.js";
 import { padRight, cursor, accentBold, muted, warning, dirtyMarker } from "../theme.js";
+import { PERSONA_META } from "../tier-meta.js";
 
 export class PersonasListScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -18,8 +19,11 @@ export class PersonasListScreen implements Screen {
     }
     const personas = listResolvedPersonas(state);
     const lines: string[] = [];
-    lines.push(accentBold("forge config › personas", theme));
+    lines.push(accentBold("forge config › per-persona overrides", theme));
     lines.push(rule(width, theme));
+    lines.push(muted("  Change which model runs for a specific persona.", theme));
+    lines.push(muted("  Step overrides change the model for one specific step", theme));
+    lines.push(muted("  of one pipeline. Most users don't need this.", theme));
 
     if (personas.length === 0) {
       lines.push(muted("  (no persona-model assignments)", theme));
@@ -39,6 +43,8 @@ export class PersonasListScreen implements Screen {
     lines.push(`  ${muted(padRight("PERSONA", personaCol), theme)}  ${muted(padRight("PROVIDER:MODEL", modelCol), theme)}  ${muted("SOURCE", theme)}  ${muted("AVAIL", theme)}`);
     personas.forEach((p, i) => {
       const cur = cursor(i === view.cursor, theme);
+      const meta = PERSONA_META[p.persona];
+      const emoji = meta ? `${meta.emoji} ` : "";
       const modelStr = `${p.provider}:${p.model}`;
       const avail = state.availableModels.some(
         (m) => m.provider === p.provider && m.id === p.model,
@@ -47,7 +53,7 @@ export class PersonasListScreen implements Screen {
         : theme.fg("error", "✗");
       const sourceCol = p.source.replace(/-(L1|L2)$/, " ($1)");
       lines.push(
-        `  ${cur} ${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${padRight(sourceCol, 8)} ${avail}`,
+        `  ${cur} ${emoji}${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${padRight(sourceCol, 8)} ${avail}`,
       );
     });
 

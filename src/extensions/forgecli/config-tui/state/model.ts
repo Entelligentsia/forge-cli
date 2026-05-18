@@ -20,6 +20,8 @@ export type View =
   // ── Tiered-baseline views (Phase A+) ──────────────────────────────────────
   | { kind: "tier-menu"; cursor: number }
   | { kind: "tier-picker"; tier: Tier; step: "pick-provider" | "pick-model"; provider: string | undefined; cursor: number }
+  // ── Advanced menu (Phase D) ───────────────────────────────────────────
+  | { kind: "advanced-menu"; cursor: number }
   // ── Legacy / advanced views ───────────────────────────────────────────────
   | { kind: "top-menu"; cursor: number }
   | { kind: "empty-state"; cursor: number }

@@ -18,7 +18,7 @@ export class OverridesListPhasesScreen implements Screen {
       return ["(renderOverridesListPhases called with wrong active view)"];
     }
     const lines: string[] = [];
-    lines.push(accentBold(`forge config › per-phase overrides › ${view.pipeline}`, theme));
+    lines.push(accentBold(`forge config › per-step overrides › ${view.pipeline}`, theme));
     lines.push(rule(width, theme));
     lines.push(muted("  Pipeline phases (canonical order from orchestrator):", theme));
     lines.push("");
