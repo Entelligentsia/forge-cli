@@ -9,6 +9,15 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createConfigTuiComponent } from "../../../src/extensions/forgecli/config-tui/component.js";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+
+// Mock theme for tests — strips all styling so assertions match plain text.
+const mockTheme: Theme = {
+  fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+  dim: (text: string) => text,
+} as unknown as Theme;
 
 const WIDTH = 80;
 
@@ -53,6 +62,7 @@ describe("ConfigTuiComponent — top-menu", () => {
   it("renders empty-state when no configs exist", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -71,6 +81,7 @@ describe("ConfigTuiComponent — top-menu", () => {
   it("renders no-project when pipelineCatalogue is null", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -89,6 +100,7 @@ describe("ConfigTuiComponent — top-menu", () => {
   it("q on a clean state exits with code 0", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -109,6 +121,7 @@ describe("ConfigTuiComponent — navigate to personas list", () => {
   it("from non-empty top-menu, '1' or enter opens personas-list", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
       cwd,
@@ -126,9 +139,10 @@ describe("ConfigTuiComponent — navigate to personas list", () => {
     expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
   });
 
-  it("from empty-state, '1' or enter jumps straight to persona-editor for 'default'", () => {
+  it("from empty-state, '1' opens persona-picker; enter on 'default' lands in persona-editor", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -141,6 +155,8 @@ describe("ConfigTuiComponent — navigate to personas list", () => {
       onError,
     });
     comp.handleInput("1");
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas › pick which");
+    comp.handleInput("\r"); // confirm 'default' (cursor 0)
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("forge config › personas › default");
     expect(out).toContain("Step 1 of 3");
@@ -151,6 +167,7 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
   it("pick provider → model → project layer → writes file + onSaved fires", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -166,8 +183,9 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
       onError,
     });
 
-    // From empty-state, "1" enters persona-editor for "default"
+    // From empty-state, "1" opens picker; enter confirms "default"
     comp.handleInput("1");
+    comp.handleInput("\r");
     // Pick anthropic via shortcut
     comp.handleInput("a");
     expect(comp.render(WIDTH).join("\n")).toContain("Step 2 of 3");
@@ -191,6 +209,7 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
   it("commit to global layer writes ~/.pi/agent/forge-cli/config.json", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -203,6 +222,7 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
       onError,
     });
     comp.handleInput("1");
+    comp.handleInput("\r"); // picker: confirm 'default'
     comp.handleInput("l"); // ollama shortcut
     comp.handleInput("\r"); // pick first model
     comp.handleInput("g"); // global layer
@@ -218,6 +238,7 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
     const { onExit, onSaved, onError } = makeHarness();
     let renderCalls = 0;
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: {
         "persona-models": {
           architect: { provider: "anthropic", model: "claude-opus-4-5" },
@@ -248,6 +269,7 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
   it("↑ (\\x1b[A) on personas-list moves cursor up", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: {
         "persona-models": {
           architect: { provider: "anthropic", model: "claude-opus-4-5" },
@@ -274,6 +296,7 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
   it("implements Focusable interface", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -295,6 +318,7 @@ describe("ConfigTuiComponent — top-menu cursor navigation (Slice 4c polish-2)"
   function nonEmpty() {
     const { onExit, onSaved, onError } = makeHarness();
     return createConfigTuiComponent({
+      theme: mockTheme,
       global: { "persona-models": { engineer: { provider: "ollama", model: "glm-5.1:cloud" } } },
       project: null,
       cwd,
@@ -348,6 +372,7 @@ describe("ConfigTuiComponent — top-menu cursor navigation (Slice 4c polish-2)"
   it("no-project menu cursor: ↓ then enter goes to show-resolved", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const c = createConfigTuiComponent({
+      theme: mockTheme,
       global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
       cwd,
@@ -369,6 +394,7 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
   it("enter on no-project opens personas-list (global-only)", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: { "persona-models": { architect: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
       cwd,
@@ -388,6 +414,7 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
   it("'1' on no-project also opens personas-list", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: { "persona-models": { architect: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
       cwd,
@@ -403,9 +430,10 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
     expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
   });
 
-  it("empty no-project: enter still jumps to persona-editor for 'default'", () => {
+  it("empty no-project: enter opens persona-picker, second enter lands editor on 'default'", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -418,6 +446,8 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
       onError,
     });
     comp.handleInput("\r");
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas › pick which");
+    comp.handleInput("\r");
     expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas › default");
   });
 });
@@ -426,6 +456,7 @@ describe("ConfigTuiComponent — esc navigation", () => {
   it("esc from personas-list returns to top-menu", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
       cwd,
@@ -449,6 +480,7 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
   function picker() {
     const { onExit, onSaved, onError } = makeHarness();
     return createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -470,7 +502,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("↓ moves the cursor in the provider picker", () => {
     const c = picker();
-    c.handleInput("1");  // empty-state → editor for "default" persona, pick-provider step
+    c.handleInput("1");  // empty-state → persona-picker
+    c.handleInput("\r"); // confirm 'default' → editor pick-provider
     const before = c.render(WIDTH).join("\n");
     c.handleInput("\x1b[B"); // ↓
     const after = c.render(WIDTH).join("\n");
@@ -484,7 +517,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("enter on provider picker picks the cursor row (not [0])", () => {
     const c = picker();
-    c.handleInput("1");      // → persona-editor pick-provider
+    c.handleInput("1");      // → persona-picker
+    c.handleInput("\r");     // confirm 'default' → editor pick-provider
     c.handleInput("\x1b[B"); // ↓ to second provider
     c.handleInput("\x1b[B"); // ↓ to third provider
     c.handleInput("\r");     // enter
@@ -496,7 +530,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("↓ moves the cursor in the model picker", () => {
     const c = picker();
-    c.handleInput("1");      // pick-provider
+    c.handleInput("1");      // → persona-picker
+    c.handleInput("\r");     // confirm 'default'
     c.handleInput("\r");     // enter — picks first provider (anthropic, cursor=0)
     const before = c.render(WIDTH).join("\n");
     c.handleInput("\x1b[B"); // ↓ in model list
@@ -509,7 +544,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("enter on model picker uses cursor selection", () => {
     const c = picker();
-    c.handleInput("1");      // pick-provider
+    c.handleInput("1");      // → persona-picker
+    c.handleInput("\r");     // confirm 'default'
     c.handleInput("\r");     // anthropic
     c.handleInput("\x1b[B"); // ↓ → sonnet
     c.handleInput("\x1b[B"); // ↓ → haiku
@@ -524,6 +560,7 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
     const c = picker();
     // overwrite handlers with new harness
     const c2 = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -535,7 +572,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
       onSaved: (t: string) => h.saved.push(t),
       onError: (m: string) => h.errors.push(m),
     });
-    c2.handleInput("1");      // pick-provider, cursor=0 (anthropic)
+    c2.handleInput("1");      // → persona-picker
+    c2.handleInput("\r");     // confirm 'default' → editor pick-provider (cursor=0, anthropic)
     c2.handleInput("\r");     // pick anthropic
     c2.handleInput("\r");     // pick claude-opus-4-5
     c2.handleInput("\x1b[B"); // ↓ in layer picker (project → global)
@@ -550,6 +588,7 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
   it("cursor stays clamped at upper bound (can't overshoot)", () => {
     const c = picker();
     c.handleInput("1");
+    c.handleInput("\r"); // confirm 'default' → editor pick-provider
     // 3 providers — try to move ↓ 10 times
     for (let i = 0; i < 10; i++) c.handleInput("\x1b[B");
     c.handleInput("\r"); // enter — should pick the last provider (openai)
@@ -562,6 +601,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
   it("commit clears dirty flag and records lastSaved", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -574,6 +614,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onError,
     });
     comp.handleInput("1");
+    comp.handleInput("\r"); // picker: confirm 'default'
     comp.handleInput("a");
     comp.handleInput("\r");
     comp.handleInput("p"); // commit to project layer
@@ -589,6 +630,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
   it("q after a successful commit exits cleanly (dirty was cleared)", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -601,6 +643,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onError,
     });
     comp.handleInput("1");
+    comp.handleInput("\r"); // picker: confirm 'default'
     comp.handleInput("a");
     comp.handleInput("\r");
     comp.handleInput("p");
@@ -618,6 +661,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
     // guard via the reducer directly — see config-tui-state.test.ts for the
     // reducer-level "request-quit noop when confirmQuit" test.
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: null,
       cwd,
@@ -639,6 +683,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
   function makeNonEmpty(extra: Parameters<typeof createConfigTuiComponent>[0] extends infer T ? Partial<T> : never) {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: {
         "persona-models": {
           scribe: { provider: "anthropic", model: "claude-haiku-4-5" },
@@ -690,9 +735,10 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
     expect(out).toContain("Override type:");
   });
 
-  it("inline override flow writes phases[i]['model-override'] and persists", () => {
+  it("inline override flow writes phases[role]['model-override'] and persists", () => {
     const harness = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       // Start non-empty so the top-menu (not empty-state) is the initial view.
       global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
@@ -723,7 +769,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
 
     const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
     const written = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
-    expect(written.pipelines.default.phases[1]["model-override"]).toEqual({
+    expect(written.pipelines.default.phases["review-plan"]["model-override"]).toEqual({
       provider: "ollama",
       model: "glm-5.1:cloud",
     });
@@ -732,6 +778,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
   it("by-name override writes a string override", () => {
     const harness = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: {
         "persona-models": {
           scribe: { provider: "anthropic", model: "claude-haiku-4-5" },
@@ -757,17 +804,18 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
 
     const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
     const written = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
-    expect(written.pipelines.default.phases[0]["model-override"]).toBe("scribe");
+    expect(written.pipelines.default.phases.plan["model-override"]).toBe("scribe");
   });
 
   it("clear from editor (option 3) deletes override and persists; clean buffer drops file", () => {
     const harness = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: {
         pipelines: {
           default: {
-            phases: [{ "model-override": "scribe" }],
+            phases: { plan: { "model-override": "scribe" } },
           },
         },
       },
@@ -794,11 +842,12 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
   it("space on phase row clears its override", () => {
     const harness = makeHarness();
     const comp = createConfigTuiComponent({
+      theme: mockTheme,
       global: null,
       project: {
         pipelines: {
           default: {
-            phases: [{}, { "model-override": "scribe" }],
+            phases: { "review-plan": { "model-override": "scribe" } },
           },
         },
       },
@@ -818,5 +867,110 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
 
     const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
     expect(fs.existsSync(projectPath)).toBe(false);
+  });
+});
+
+describe("ConfigTuiComponent — persona picker", () => {
+  it("'n' on personas-list opens the picker (not direct to default editor)", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: { "persona-models": { default: { provider: "anthropic", model: "claude-opus-4-5" } } },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer", "architect", "supervisor"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1"); // → personas-list
+    comp.handleInput("n"); // → persona-picker
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("forge config › personas › pick which");
+    expect(out).toContain("default");
+    expect(out).toContain("architect");
+    expect(out).toContain("engineer");
+    expect(out).toContain("supervisor");
+  });
+
+  it("picker → arrow down → enter advances editor with the chosen persona", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1"); // empty-state → picker (entries: default, architect, engineer)
+    comp.handleInput("\x1b[B"); // ↓ → architect
+    comp.handleInput("\r");
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("forge config › personas › architect");
+    expect(out).toContain("Step 1 of 3");
+  });
+
+  it("end-to-end: pick non-default persona and save writes correct key", () => {
+    const { h, onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: null,
+      project: null,
+      cwd,
+      personaCatalogue: ["architect", "engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1"); // → picker
+    comp.handleInput("\x1b[B"); // ↓ → architect
+    comp.handleInput("\x1b[B"); // ↓ → engineer
+    comp.handleInput("\r"); // confirm engineer
+    comp.handleInput("a"); // anthropic
+    comp.handleInput("\r"); // first model
+    comp.handleInput("p"); // project layer
+    expect(h.saved.length).toBe(1);
+    const written = JSON.parse(fs.readFileSync(h.saved[0], "utf-8"));
+    expect(written["persona-models"]).toHaveProperty("engineer");
+    expect(written["persona-models"].engineer).toEqual({
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+    });
+    expect(written["persona-models"]).not.toHaveProperty("default");
+  });
+
+  it("esc from picker pops back to the originating view", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: { "persona-models": { default: { provider: "anthropic", model: "claude-opus-4-5" } } },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("1"); // personas-list
+    comp.handleInput("n"); // picker
+    expect(comp.render(WIDTH).join("\n")).toContain("pick which");
+    comp.handleInput("\x1b"); // esc
+    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
+    expect(comp.render(WIDTH).join("\n")).not.toContain("pick which");
   });
 });

@@ -103,13 +103,10 @@ describe("writeRoutingConfig — project layer", () => {
       },
       pipelines: {
         default: {
-          phases: [
-            { role: "implement", "model-override": "scribe" },
-            {
-              role: "commit",
-              "model-override": { provider: "anthropic", model: "claude-haiku-4-5" },
-            },
-          ],
+          phases: {
+            implement: { "model-override": "scribe" },
+            commit: { "model-override": { provider: "anthropic", model: "claude-haiku-4-5" } },
+          },
         },
       },
     };
@@ -211,7 +208,7 @@ describe("writeRoutingConfig — round-trip with loader", () => {
         engineer: { provider: "ollama", model: "glm-5.1:cloud" },
       },
       pipelines: {
-        default: { phases: [{ role: "commit", "model-override": "scribe" }] },
+        default: { phases: { commit: { "model-override": "scribe" } } },
       },
     };
     writeRoutingConfig({ layer: "project", cwd: projectCwd, buffer });

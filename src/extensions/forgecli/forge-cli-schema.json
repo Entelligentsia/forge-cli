@@ -31,12 +31,12 @@
         "properties": {
           "persona-models": { "$ref": "#/definitions/personaModelsMap" },
           "phases": {
-            "type": "array",
-            "items": {
+            "type": "object",
+            "description": "Per-phase overrides keyed by role (e.g. 'implement', 'commit'). Roles must match the plugin's pipeline definition.",
+            "additionalProperties": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "role": { "type": "string", "description": "Must match a phase role in the plugin's pipeline definition." },
                 "model-override": {
                   "description": "L4 — atomic per-phase override. Either a persona-models key by name (string) or an inline {provider, model}.",
                   "oneOf": [

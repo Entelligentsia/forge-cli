@@ -71,12 +71,10 @@ function fullMerged(): MergedConfig {
         "persona-models": {
           supervisor: { provider: "anthropic", model: "claude-opus-4-5" },
         },
-        phases: [
-          { role: "plan" },
-          { role: "implement", "model-override": "scribe" },
-          { role: "commit", "model-override": { provider: "anthropic", model: "claude-haiku-4-5" } },
-          { role: "review-plan" },
-        ],
+        phases: {
+          implement: { "model-override": "scribe" },
+          commit: { "model-override": { provider: "anthropic", model: "claude-haiku-4-5" } },
+        },
       },
     },
   };
@@ -86,7 +84,7 @@ describe("resolveModelForPhase", () => {
   // 1. L4-inline hit
   it("returns L4-inline when phase has inline {provider,model} override", () => {
     const cfg = fullMerged();
-    const result = resolveModelForPhase("default", 2, "scribe", cfg);
+    const result = resolveModelForPhase("default", "commit", "scribe", cfg);
     expect(result.source).toBe("L4-inline");
     expect(result.model).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
   });
@@ -94,7 +92,7 @@ describe("resolveModelForPhase", () => {
   // 2. L4-name hit
   it("returns L4-name when phase override is a resolvable persona-model name", () => {
     const cfg = fullMerged();
-    const result = resolveModelForPhase("default", 1, "engineer", cfg);
+    const result = resolveModelForPhase("default", "implement", "engineer", cfg);
     expect(result.source).toBe("L4-name");
     // 'scribe' resolves via persona-models merged map → google:gemini-2.5-flash
     expect(result.model).toEqual({ provider: "google", model: "gemini-2.5-flash" });
@@ -114,13 +112,13 @@ describe("resolveModelForPhase", () => {
       },
       pipelines: {
         default: {
-          phases: [
-            { role: "plan", "model-override": "nonexistent-persona" },
-          ],
+          phases: {
+            plan: { "model-override": "nonexistent-persona" },
+          },
         },
       },
     };
-    const result = resolveModelForPhase("default", 0, "engineer", cfg);
+    const result = resolveModelForPhase("default", "plan", "engineer", cfg);
     // Falls through: engineer in project layer → L2
     expect(result.source).toBe("L2");
     expect(result.model).toEqual({ provider: "openai", model: "gpt-4o" });
@@ -130,7 +128,7 @@ describe("resolveModelForPhase", () => {
   it("returns L3 when pipeline-level persona-models entry matches", () => {
     const cfg = fullMerged();
     // supervisor is only in L3 (pipeline persona-models)
-    const result = resolveModelForPhase("default", 3, "supervisor", cfg);
+    const result = resolveModelForPhase("default", "review-plan", "supervisor", cfg);
     expect(result.source).toBe("L3");
     expect(result.model).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
   });
@@ -140,7 +138,7 @@ describe("resolveModelForPhase", () => {
     const cfg = fullMerged();
     // engineer has L3 absent but L2 present (project override)
     // Phase 0 (plan) has no model-override
-    const result = resolveModelForPhase("default", 0, "engineer", cfg);
+    const result = resolveModelForPhase("default", "plan", "engineer", cfg);
     expect(result.source).toBe("L2");
     expect(result.model).toEqual({ provider: "openai", model: "gpt-4o" });
   });
@@ -159,11 +157,11 @@ describe("resolveModelForPhase", () => {
       },
       pipelines: {
         default: {
-          phases: [{ role: "approve" }],
+          phases: {},
         },
       },
     };
-    const result = resolveModelForPhase("default", 0, "architect", cfg);
+    const result = resolveModelForPhase("default", "approve", "architect", cfg);
     expect(result.source).toBe("L1");
     expect(result.model).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
   });
@@ -180,9 +178,9 @@ describe("resolveModelForPhase", () => {
       "persona-models": {
         default: { provider: "anthropic", model: "claude-sonnet-4-6" },
       },
-      pipelines: { default: { phases: [{ role: "plan" }] } },
+      pipelines: { default: { phases: {} } },
     };
-    const result = resolveModelForPhase("default", 0, "product-manager", cfg);
+    const result = resolveModelForPhase("default", "plan", "product-manager", cfg);
     expect(result.source).toBe("default");
     expect(result.model).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
   });
@@ -193,9 +191,9 @@ describe("resolveModelForPhase", () => {
       _global: null,
       _project: null,
       "persona-models": {},
-      pipelines: { default: { phases: [{ role: "plan" }] } },
+      pipelines: { default: { phases: {} } },
     };
-    const result = resolveModelForPhase("default", 0, "engineer", cfg);
+    const result = resolveModelForPhase("default", "plan", "engineer", cfg);
     expect(result.source).toBe("inherit");
     expect(result.model).toBeUndefined();
   });
@@ -203,8 +201,8 @@ describe("resolveModelForPhase", () => {
   // 9. Project overrides global per-persona without affecting others
   it("project override of engineer does not affect architect from global", () => {
     const cfg = fullMerged();
-    const engineerResult = resolveModelForPhase("default", 0, "engineer", cfg);
-    const architectResult = resolveModelForPhase("default", 0, "architect", cfg);
+    const engineerResult = resolveModelForPhase("default", "plan", "engineer", cfg);
+    const architectResult = resolveModelForPhase("default", "plan", "architect", cfg);
     // engineer: project (openai:gpt-4o) wins
     expect(engineerResult.source).toBe("L2");
     expect(engineerResult.model?.provider).toBe("openai");
@@ -229,9 +227,9 @@ describe("resolveModelForPhase", () => {
       "persona-models": {
         default: { provider: "openai", model: "gpt-4o-mini" },
       },
-      pipelines: { default: { phases: [{ role: "plan" }] } },
+      pipelines: { default: { phases: {} } },
     };
-    const result = resolveModelForPhase("default", 0, "product-manager", cfg);
+    const result = resolveModelForPhase("default", "plan", "product-manager", cfg);
     expect(result.source).toBe("default");
     expect(result.model).toEqual({ provider: "openai", model: "gpt-4o-mini" });
   });
@@ -244,16 +242,16 @@ describe("resolveModelForPhase", () => {
       "persona-models": {},
     };
     for (const persona of ["engineer", "architect", "supervisor", "scribe"]) {
-      const result = resolveModelForPhase("default", 0, persona, cfg);
+      const result = resolveModelForPhase("default", "plan", persona, cfg);
       expect(result.source).toBe("inherit");
       expect(result.model).toBeUndefined();
     }
   });
 
-  // 12. No phase at phaseIndex → inherit (graceful)
-  it("returns inherit gracefully when phaseIndex is out of range", () => {
+  // 12. No phase entry for role → falls through (graceful)
+  it("returns inherit gracefully when phase role has no override entry", () => {
     const cfg = fullMerged();
-    const result = resolveModelForPhase("default", 99, "engineer", cfg);
+    const result = resolveModelForPhase("default", "unknown-role", "engineer", cfg);
     // No L4; falls through to L2 (engineer is in project persona-models)
     expect(result.source).toBe("L2");
     expect(result.model).toEqual({ provider: "openai", model: "gpt-4o" });
@@ -262,7 +260,7 @@ describe("resolveModelForPhase", () => {
   // 13. Unknown pipeline falls through to persona-models
   it("unknown pipeline name falls through to persona-models cascade", () => {
     const cfg = fullMerged();
-    const result = resolveModelForPhase("nonexistent-pipeline", 0, "scribe", cfg);
+    const result = resolveModelForPhase("nonexistent-pipeline", "plan", "scribe", cfg);
     // No L3 for this pipeline; scribe in global → L1
     expect(result.source).toBe("L1");
     expect(result.model).toEqual({ provider: "google", model: "gemini-2.5-flash" });

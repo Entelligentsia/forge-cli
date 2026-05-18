@@ -96,7 +96,7 @@ describe("loadLayeredConfig", () => {
       },
       pipelines: {
         default: {
-          phases: [{ role: "plan" }],
+          phases: { plan: {} },
         },
       },
     });
@@ -152,7 +152,7 @@ describe("loadLayeredConfig", () => {
       pipelines: {
         default: {
           "persona-models": { supervisor: { provider: "openai", model: "gpt-4o" } },
-          phases: [{ role: "plan" }, { role: "implement" }],
+          phases: { plan: {}, implement: {} },
         },
       },
     });

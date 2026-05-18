@@ -71,17 +71,17 @@ describe("parseConfigTuiArgs", () => {
     }
   });
 
-  it("edit override <pipeline> <phaseIndex> → edit-override route", () => {
-    const r = parseConfigTuiArgs(["edit", "override", "default", "2"]) as ConfigTuiRoute;
+  it("edit override <pipeline> <phaseRole> → edit-override route", () => {
+    const r = parseConfigTuiArgs(["edit", "override", "default", "implement"]) as ConfigTuiRoute;
     expect(r.kind).toBe("edit-override");
     if (r.kind === "edit-override") {
       expect(r.pipeline).toBe("default");
-      expect(r.phaseIndex).toBe(2);
+      expect(r.phaseRole).toBe("implement");
     }
   });
 
-  it("edit override with non-numeric phaseIndex → error", () => {
-    const r = parseConfigTuiArgs(["edit", "override", "default", "x"]);
+  it("edit override with missing phaseRole → error", () => {
+    const r = parseConfigTuiArgs(["edit", "override", "default"]);
     expect("error" in r).toBe(true);
   });
 

@@ -717,7 +717,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// (model: undefined) — setModel is skipped and pi's current model is used.
 		const modelResolution = resolveModelForPhase(
 			"default",
-			currentPhaseIndex,
+			phase.role,
 			phase.personaNoun,
 			modelRoutingConfig,
 		);

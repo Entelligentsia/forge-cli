@@ -1,17 +1,23 @@
 // Pure screen renderers for the config TUI. Each function takes
-// state + width and returns lines (string[]). No I/O, no terminal escapes,
-// no theme-aware styling — those wrap the output at the Component layer.
+// state + width + theme and returns lines (string[]). No I/O, no terminal
+// escapes — theme-aware styling comes through the Theme parameter.
 //
-// Plan 16 Slice 4b.
+// Plan 16 Slice 4b. Themed rendering added as part of modal UX styling.
 
 import { resolveModelForPhase } from "../model-resolver.js";
-import type { AvailableModel, ConfigTuiState, View } from "./state.js";
+import type { ConfigTuiState, View } from "./state.js";
+import { CANONICAL_PHASES } from "./state/constants.js";
 import {
   getActiveView,
   getPhaseOverride,
+  listPersonaPickerEntries,
   listPipelineOverrideSummaries,
   listResolvedPersonas,
-} from "./state.js";
+  uniqueProviders,
+} from "./state/selectors.js";
+import { rule, authBadgeFor, authStatusLine, resolvedSummary, windowList, formatOverride } from "./screens/shared.js";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { padRight, cursor, accentBold, dim, muted, warning } from "./theme.js";
 
 /**
  * Canonical phase list for the "default" pipeline as dispatched by
@@ -19,79 +25,6 @@ import {
  * import the orchestrator (which would pull in pi-coding-agent runtime).
  * Stays in sync via the test fixture below.
  */
-export const CANONICAL_PHASES: ReadonlyArray<{ role: string; personaNoun: string }> = [
-  { role: "plan", personaNoun: "engineer" },
-  { role: "review-plan", personaNoun: "supervisor" },
-  { role: "implement", personaNoun: "engineer" },
-  { role: "review-code", personaNoun: "supervisor" },
-  { role: "validate", personaNoun: "qa-engineer" },
-  { role: "approve", personaNoun: "architect" },
-  { role: "writeback", personaNoun: "collator" },
-  { role: "commit", personaNoun: "engineer" },
-];
-
-const RULE = "─";
-
-function rule(width: number): string {
-  return RULE.repeat(Math.max(0, width));
-}
-
-/**
- * Compute a windowed slice of `items` around `cursor` so that long lists fit
- * inside `maxRows`. Returns the visible items, their absolute start index,
- * and a `tail` count for the scroll-indicator. Default window: 10 rows.
- */
-function windowList<T>(
-  items: T[],
-  cursor: number,
-  maxRows = 10,
-): { visible: T[]; start: number; aboveCount: number; belowCount: number } {
-  if (items.length <= maxRows) {
-    return { visible: items, start: 0, aboveCount: 0, belowCount: 0 };
-  }
-  // Keep cursor in the middle when possible.
-  const half = Math.floor(maxRows / 2);
-  let start = Math.max(0, cursor - half);
-  if (start + maxRows > items.length) start = items.length - maxRows;
-  return {
-    visible: items.slice(start, start + maxRows),
-    start,
-    aboveCount: start,
-    belowCount: items.length - start - maxRows,
-  };
-}
-
-function padRight(text: string, width: number): string {
-  if (text.length >= width) return text;
-  return text + " ".repeat(width - text.length);
-}
-
-function authBadgeFor(state: ConfigTuiState, provider: string): string {
-  return state.authenticatedProviders.includes(provider) ? "✓" : "✗";
-}
-
-function authStatusLine(state: ConfigTuiState): string {
-  // Stable ordering: alphabetical by provider name.
-  const providers = [...new Set([
-    ...state.authenticatedProviders,
-    ...state.availableModels.map((m) => m.provider),
-  ])].sort();
-  if (providers.length === 0) return "  Auth status   (no providers detected)";
-  const cells = providers.map((p) => `${p} ${authBadgeFor(state, p)}`);
-  return `  Auth status   ${cells.join("   ")}`;
-}
-
-function resolvedSummary(state: ConfigTuiState): string {
-  const personas = listResolvedPersonas(state);
-  if (personas.length === 0) {
-    return `  Resolved      all personas inherit pi current model`;
-  }
-  const routable = personas.filter((p) =>
-    state.availableModels.some((m) => m.provider === p.provider && m.id === p.model),
-  ).length;
-  const total = personas.length;
-  return `  Resolved      ${total} persona-model assignment${total === 1 ? "" : "s"} · ${routable} routable`;
-}
 
 // ── Screen 1 — Top menu ─────────────────────────────────────────────────────
 
@@ -146,16 +79,16 @@ export function noProjectMenuItems(state: ConfigTuiState): MenuItem[] {
   ];
 }
 
-export function renderTopMenu(state: ConfigTuiState, width: number): string[] {
+export function renderTopMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   const cursor = view.kind === "top-menu" || view.kind === "empty-state" ? view.cursor : 0;
   const lines: string[] = [];
 
   // Header strip
   lines.push("forge config");
-  lines.push(rule(width));
-  lines.push(authStatusLine(state));
-  lines.push(resolvedSummary(state));
+  lines.push(rule(width, theme));
+  lines.push(authStatusLine(state, theme));
+  lines.push(resolvedSummary(state, theme));
   lines.push("");
 
   if (view.kind === "empty-state" || state.isEmpty) {
@@ -186,20 +119,20 @@ export function renderTopMenu(state: ConfigTuiState, width: number): string[] {
 // renderEmptyState is just renderTopMenu with isEmpty=true; kept as a named
 // export for callers that want to be explicit.
 
-export function renderEmptyState(state: ConfigTuiState, width: number): string[] {
+export function renderEmptyState(state: ConfigTuiState, width: number, theme: Theme): string[] {
   // Force the "empty" branch even if buffer subsequently grew.
   const stateForRender: ConfigTuiState = { ...state, isEmpty: true };
-  return renderTopMenu(stateForRender, width);
+  return renderTopMenu(stateForRender, width, theme);
 }
 
 // ── Screen 8 — No project ───────────────────────────────────────────────────
 
-export function renderNoProject(state: ConfigTuiState, width: number): string[] {
+export function renderNoProject(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   const cursor = view.kind === "no-project" ? view.cursor : 0;
   const lines: string[] = [];
   lines.push("forge config");
-  lines.push(rule(width));
+  lines.push(rule(width, theme));
   lines.push(`  No project root found (no .forge/ at cwd).`);
   lines.push("");
   lines.push(`  Editing global config only:`);
@@ -218,7 +151,7 @@ export function renderNoProject(state: ConfigTuiState, width: number): string[] 
 
 // ── Screen 2 — Personas list ────────────────────────────────────────────────
 
-export function renderPersonasList(state: ConfigTuiState, width: number): string[] {
+export function renderPersonasList(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   if (view.kind !== "personas-list") {
     return ["(renderPersonasList called with wrong active view)"];
@@ -226,7 +159,7 @@ export function renderPersonasList(state: ConfigTuiState, width: number): string
   const personas = listResolvedPersonas(state);
   const lines: string[] = [];
   lines.push(`forge config › personas`);
-  lines.push(rule(width));
+  lines.push(rule(width, theme));
 
   if (personas.length === 0) {
     lines.push(`  (no persona-model assignments)`);
@@ -284,28 +217,59 @@ export function renderPersonasList(state: ConfigTuiState, width: number): string
   return lines;
 }
 
+// ── Screen 2b — Persona picker (which persona to assign) ────────────────────
+
+export function renderPersonaPicker(state: ConfigTuiState, width: number, theme: Theme): string[] {
+  const view = getActiveView(state);
+  if (view.kind !== "persona-picker") {
+    return ["(renderPersonaPicker called with wrong active view)"];
+  }
+  const entries = listPersonaPickerEntries(state);
+  const lines: string[] = [];
+  lines.push(`forge config › personas › pick which`);
+  lines.push(rule(width, theme));
+  lines.push(`  Pick a persona to assign a model to:`);
+  lines.push("");
+
+  const nameCol = Math.max(9, ...entries.map((e) => e.persona.length));
+  const win = windowList(entries, view.cursor, 12);
+  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+  win.visible.forEach((entry, i) => {
+    const absoluteIdx = win.start + i;
+    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+    let status: string;
+    if (entry.assignment) {
+      const layer = entry.assignment.source.endsWith("L2") ? "L2" : "L1";
+      status = `currently: ${entry.assignment.provider}:${entry.assignment.model} (${layer})`;
+    } else if (entry.persona === "default") {
+      status = "fallback for every persona";
+    } else {
+      status = "currently: inherit";
+    }
+    const cat = entry.inCatalogue ? " " : "⚠";
+    lines.push(`  ${cursor} ${cat} ${padRight(entry.persona, nameCol)}  ${status}`);
+  });
+  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+  lines.push("");
+  lines.push(`  ↑/↓ select   enter open editor   esc back`);
+  return lines;
+}
+
 // ── Screen 3a — Persona editor — pick provider ──────────────────────────────
 
-function renderPersonaEditorHeader(persona: string, width: number): string[] {
+function renderPersonaEditorHeader(persona: string, width: number, theme: Theme): string[] {
   const out: string[] = [];
   out.push(`forge config › personas › ${persona}`);
-  out.push(rule(width));
+  out.push(rule(width, theme));
   return out;
 }
 
-function uniqueProviders(state: ConfigTuiState): string[] {
-  const providers = new Set<string>();
-  for (const m of state.availableModels) providers.add(m.provider);
-  for (const p of state.authenticatedProviders) providers.add(p);
-  return [...providers].sort();
-}
-
-export function renderPersonaEditor(state: ConfigTuiState, width: number): string[] {
+export function renderPersonaEditor(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   if (view.kind !== "persona-editor") {
     return ["(renderPersonaEditor called with wrong active view)"];
   }
-  const lines = renderPersonaEditorHeader(view.persona, width);
+  const lines = renderPersonaEditorHeader(view.persona, width, theme);
   const inCatalogue = state.personaCatalogue.includes(view.persona) || view.persona === "default";
 
   if (view.step === "pick-provider") {
@@ -321,7 +285,7 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
     win.visible.forEach((p, i) => {
       const absoluteIdx = win.start + i;
       const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-      const auth = authBadgeFor(state, p);
+      const auth = authBadgeFor(state, p, theme);
       lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
     });
     if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
@@ -392,7 +356,7 @@ export function computeResolvedRows(
   return pipelineNames.map((pipeline) => ({
     pipeline,
     rows: CANONICAL_PHASES.map((phase, i) => {
-      const result = resolveModelForPhase(pipeline, i, phase.personaNoun, {
+      const result = resolveModelForPhase(pipeline, phase.role, phase.personaNoun, {
         ...state.buffer.global,
         ...state.buffer.project,
         _global: state.buffer.global,
@@ -418,14 +382,14 @@ export function computeResolvedRows(
   }));
 }
 
-export function renderShowResolved(state: ConfigTuiState, width: number): string[] {
+export function renderShowResolved(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   if (view.kind !== "show-resolved") {
     return ["(renderShowResolved called with wrong active view)"];
   }
   const lines: string[] = [];
   lines.push(`forge config › resolved`);
-  lines.push(rule(width));
+  lines.push(rule(width, theme));
 
   // Layer files: presence at L1/L2 paths.
   lines.push(`  Layer files:`);
@@ -482,7 +446,7 @@ export function renderShowResolved(state: ConfigTuiState, width: number): string
 
 // ── Screen 4 — Per-phase overrides (pipelines list) ─────────────────────────
 
-export function renderOverridesListPipelines(state: ConfigTuiState, width: number): string[] {
+export function renderOverridesListPipelines(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   if (view.kind !== "overrides-list-pipelines") {
     return ["(renderOverridesListPipelines called with wrong active view)"];
@@ -490,7 +454,7 @@ export function renderOverridesListPipelines(state: ConfigTuiState, width: numbe
   const summaries = listPipelineOverrideSummaries(state);
   const lines: string[] = [];
   lines.push(`forge config › per-phase overrides`);
-  lines.push(rule(width));
+  lines.push(rule(width, theme));
 
   if (summaries.length === 0) {
     lines.push(`  (no pipeline catalogue available)`);
@@ -519,20 +483,14 @@ export function renderOverridesListPipelines(state: ConfigTuiState, width: numbe
 
 // ── Screen 4 (variant) — Phases of one pipeline ─────────────────────────────
 
-function formatOverride(override: string | { provider: string; model: string } | undefined): string {
-  if (override === undefined) return "(none)";
-  if (typeof override === "string") return `"${override}"`;
-  return `{${override.provider}:${override.model}}`;
-}
-
-export function renderOverridesListPhases(state: ConfigTuiState, width: number): string[] {
+export function renderOverridesListPhases(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   if (view.kind !== "overrides-list-phases") {
     return ["(renderOverridesListPhases called with wrong active view)"];
   }
   const lines: string[] = [];
   lines.push(`forge config › per-phase overrides › ${view.pipeline}`);
-  lines.push(rule(width));
+  lines.push(rule(width, theme));
   lines.push(`  Pipeline phases (canonical order from orchestrator):`);
   lines.push("");
   lines.push(
@@ -545,9 +503,9 @@ export function renderOverridesListPhases(state: ConfigTuiState, width: number):
   win.visible.forEach((phase, i) => {
     const absoluteIdx = win.start + i;
     const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-    const override = getPhaseOverride(state, view.pipeline, absoluteIdx);
+    const override = getPhaseOverride(state, view.pipeline, phase.role);
     const overrideStr = padRight(formatOverride(override), 25);
-    const result = resolveModelForPhase(view.pipeline, absoluteIdx, phase.personaNoun, {
+    const result = resolveModelForPhase(view.pipeline, phase.role, phase.personaNoun, {
       ...state.buffer.global,
       ...state.buffer.project,
       _global: state.buffer.global,
@@ -576,18 +534,18 @@ export function renderOverridesListPhases(state: ConfigTuiState, width: number):
 
 // ── Screen 5 — Per-phase override editor ────────────────────────────────────
 
-export function renderOverrideEditor(state: ConfigTuiState, width: number): string[] {
+export function renderOverrideEditor(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   if (view.kind !== "override-editor") {
     return ["(renderOverrideEditor called with wrong active view)"];
   }
-  const phase = CANONICAL_PHASES[view.phaseIndex];
+  const phase = CANONICAL_PHASES.find((p) => p.role === view.phaseRole);
   const phaseLabel = phase
-    ? `phase ${view.phaseIndex} (${phase.role} / ${phase.personaNoun})`
-    : `phase ${view.phaseIndex}`;
+    ? `${view.phaseRole} (${phase.personaNoun})`
+    : view.phaseRole;
   const lines: string[] = [];
   lines.push(`forge config › per-phase overrides › ${view.pipeline} › ${phaseLabel}`);
-  lines.push(rule(width));
+  lines.push(rule(width, theme));
 
   if (view.step === "pick-type") {
     lines.push(`  Override type:`);
@@ -612,7 +570,7 @@ export function renderOverrideEditor(state: ConfigTuiState, width: number): stri
       return lines;
     }
     const personaResolved = phase
-      ? resolveModelForPhase(view.pipeline, view.phaseIndex, phase.personaNoun, {
+      ? resolveModelForPhase(view.pipeline, view.phaseRole, phase.personaNoun, {
           ...state.buffer.global,
           ...state.buffer.project,
           _global: state.buffer.global,
@@ -651,7 +609,7 @@ export function renderOverrideEditor(state: ConfigTuiState, width: number): stri
     win.visible.forEach((p, i) => {
       const absoluteIdx = win.start + i;
       const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-      const auth = authBadgeFor(state, p);
+      const auth = authBadgeFor(state, p, theme);
       lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
     });
     if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
@@ -684,7 +642,7 @@ export function renderOverrideEditor(state: ConfigTuiState, width: number): stri
 
 // ── Overlay decorations (last-saved banner, confirm-quit modal) ─────────────
 
-function renderConfirmQuitOverlay(state: ConfigTuiState, _width: number): string[] {
+function renderConfirmQuitOverlay(state: ConfigTuiState, _width: number, theme: Theme): string[] {
   if (!state.confirmQuit) return [];
   return [
     "",
@@ -697,7 +655,7 @@ function renderConfirmQuitOverlay(state: ConfigTuiState, _width: number): string
   ];
 }
 
-function renderSaveBanner(state: ConfigTuiState, _width: number): string[] {
+function renderSaveBanner(state: ConfigTuiState, _width: number, theme: Theme): string[] {
   if (!state.lastSaved) return [];
   return [
     "",
@@ -707,36 +665,39 @@ function renderSaveBanner(state: ConfigTuiState, _width: number): string[] {
 
 // ── Top-level router ─────────────────────────────────────────────────────────
 
-export function renderActive(state: ConfigTuiState, width: number): string[] {
+export function renderActive(state: ConfigTuiState, width: number, theme: Theme): string[] {
   const view = getActiveView(state);
   let lines: string[];
   switch (view.kind) {
     case "no-project":
-      lines = renderNoProject(state, width);
+      lines = renderNoProject(state, width, theme);
       break;
     case "empty-state":
-      lines = renderEmptyState(state, width);
+      lines = renderEmptyState(state, width, theme);
       break;
     case "top-menu":
-      lines = renderTopMenu(state, width);
+      lines = renderTopMenu(state, width, theme);
       break;
     case "personas-list":
-      lines = renderPersonasList(state, width);
+      lines = renderPersonasList(state, width, theme);
+      break;
+    case "persona-picker":
+      lines = renderPersonaPicker(state, width, theme);
       break;
     case "persona-editor":
-      lines = renderPersonaEditor(state, width);
+      lines = renderPersonaEditor(state, width, theme);
       break;
     case "show-resolved":
-      lines = renderShowResolved(state, width);
+      lines = renderShowResolved(state, width, theme);
       break;
     case "overrides-list-pipelines":
-      lines = renderOverridesListPipelines(state, width);
+      lines = renderOverridesListPipelines(state, width, theme);
       break;
     case "overrides-list-phases":
-      lines = renderOverridesListPhases(state, width);
+      lines = renderOverridesListPhases(state, width, theme);
       break;
     case "override-editor":
-      lines = renderOverrideEditor(state, width);
+      lines = renderOverrideEditor(state, width, theme);
       break;
     default: {
       const _exhaustive: never = view;
@@ -745,5 +706,5 @@ export function renderActive(state: ConfigTuiState, width: number): string[] {
     }
   }
   // Decorations: save banner stacks at the bottom, confirm-quit modal on top.
-  return [...lines, ...renderSaveBanner(state, width), ...renderConfirmQuitOverlay(state, width)];
+  return [...lines, ...renderSaveBanner(state, width, theme), ...renderConfirmQuitOverlay(state, width, theme)];
 }

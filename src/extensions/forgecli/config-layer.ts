@@ -12,12 +12,14 @@ export interface PersonaModel {
 
 export type PersonaModelsMap = Record<string, PersonaModel>;
 
+export interface PhaseConfig {
+  "model-override"?: string | PersonaModel;
+}
+
 export interface PipelineConfig {
   "persona-models"?: PersonaModelsMap;
-  phases?: Array<{
-    role?: string;
-    "model-override"?: string | PersonaModel;
-  }>;
+  /** Phase overrides keyed by role string. */
+  phases?: Record<string, PhaseConfig>;
 }
 
 export interface GlobalConfig {

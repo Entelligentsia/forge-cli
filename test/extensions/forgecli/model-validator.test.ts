@@ -178,13 +178,13 @@ describe("validateModelConfig", () => {
       _project: {
         pipelines: {
           sprint: {
-            phases: [{ role: "plan", "model-override": "nonexistent-key" }],
+            phases: { plan: { "model-override": "nonexistent-key" } },
           },
         },
       },
       pipelines: {
         sprint: {
-          phases: [{ role: "plan", "model-override": "nonexistent-key" }],
+          phases: { plan: { "model-override": "nonexistent-key" } },
         },
       },
     };
@@ -206,23 +206,17 @@ describe("validateModelConfig", () => {
       _project: {
         pipelines: {
           sprint: {
-            phases: [
-              {
-                role: "plan",
-                "model-override": { provider: "ollama", model: "missing-model" },
-              },
-            ],
+            phases: {
+              plan: { "model-override": { provider: "ollama", model: "missing-model" } },
+            },
           },
         },
       },
       pipelines: {
         sprint: {
-          phases: [
-            {
-              role: "plan",
-              "model-override": { provider: "ollama", model: "missing-model" },
-            },
-          ],
+          phases: {
+            plan: { "model-override": { provider: "ollama", model: "missing-model" } },
+          },
         },
       },
     };
@@ -247,7 +241,7 @@ describe("validateModelConfig", () => {
         pipelines: {
           sprint: {
             "persona-models": { scribe: { provider: "ollama", model: "glm-5.1:cloud" } },
-            phases: [{ role: "plan", "model-override": { provider: "anthropic", model: "claude-opus-4-5" } }],
+            phases: { plan: { "model-override": { provider: "anthropic", model: "claude-opus-4-5" } } },
           },
         },
       },
@@ -258,7 +252,7 @@ describe("validateModelConfig", () => {
       pipelines: {
         sprint: {
           "persona-models": { scribe: { provider: "ollama", model: "glm-5.1:cloud" } },
-          phases: [{ role: "plan", "model-override": { provider: "anthropic", model: "claude-opus-4-5" } }],
+          phases: { plan: { "model-override": { provider: "anthropic", model: "claude-opus-4-5" } } },
         },
       },
     };

@@ -107,13 +107,12 @@ export function validateModelConfig(
     }
 
     // Per-phase model-override validation
-    const phases = pipelineConfig.phases ?? [];
-    for (let i = 0; i < phases.length; i++) {
-      const phase = phases[i];
+    const phases = pipelineConfig.phases ?? {};
+    for (const [role, phase] of Object.entries(phases)) {
       const override = phase["model-override"];
       if (override === undefined) continue;
 
-      const phasePath = `${pipelinePath}.phases[${i}].model-override`;
+      const phasePath = `${pipelinePath}.phases.${role}.model-override`;
 
       if (typeof override === "string") {
         // Named persona-model key — must resolve via the cascade
@@ -122,14 +121,14 @@ export function validateModelConfig(
           issue(
             true,
             "UNRESOLVABLE_OVERRIDE",
-            `phases[${i}].model-override "${override}" in pipeline "${pipelineName}" does not resolve to any persona-model`,
+            `phases.${role}.model-override "${override}" in pipeline "${pipelineName}" does not resolve to any persona-model`,
             phasePath,
           );
         } else if (resolved.model && !isAvailable(resolved.model as PersonaModel, availableModels)) {
           issue(
             strict,
             "MODEL_UNAVAILABLE",
-            `${modelKey(resolved.model as PersonaModel)} (override "${override}" in pipeline "${pipelineName}", phase ${i}) is not available`,
+            `${modelKey(resolved.model as PersonaModel)} (override "${override}" in pipeline "${pipelineName}", phase "${role}") is not available`,
             phasePath,
           );
         }
@@ -139,7 +138,7 @@ export function validateModelConfig(
           issue(
             strict,
             "MODEL_UNAVAILABLE",
-            `${modelKey(override)} (inline override in pipeline "${pipelineName}", phase ${i}) is not available`,
+            `${modelKey(override)} (inline override in pipeline "${pipelineName}", phase "${role}") is not available`,
             phasePath,
           );
         }

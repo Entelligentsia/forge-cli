@@ -110,7 +110,7 @@ export interface ConfigShowOutput {
 
 export interface PipelineShowOutput {
   personaModels: Record<string, PersonaModelEntry>;
-  phases: Array<{ index: number; override: string | null; available: boolean; source: string }>;
+  phases: Array<{ role: string; override: string | null; available: boolean; source: string }>;
 }
 
 // ── Main show implementation ─────────────────────────────────────────────────
@@ -191,17 +191,17 @@ export async function runConfigShow(
       };
     }
 
-    const phasesOutput = (pipelineCfg.phases ?? []).map((phase, i) => {
+    const phasesOutput = Object.entries(pipelineCfg.phases ?? {}).map(([role, phase]) => {
       const override = phase["model-override"];
-      if (!override) return { index: i, override: null, available: true, source: "inherit" };
+      if (!override) return { role, override: null, available: true, source: "inherit" };
       if (typeof override === "string") {
-        return { index: i, override, available: true, source: "L4-name" };
+        return { role, override, available: true, source: "L4-name" };
       }
       const isAvail = available.some(
         (m) => m.provider === override.provider && m.id === override.model,
       );
       return {
-        index: i,
+        role,
         override: `${override.provider}:${override.model}`,
         available: isAvail,
         source: "L4-inline",
@@ -254,7 +254,7 @@ export async function runConfigShow(
       for (const phase of pOut.phases) {
         if (phase.override) {
           const badge = phase.available ? "✓" : "✗ unavailable";
-          write(`    phase[${phase.index}]  →  ${phase.override}  ${badge}  ${phase.source}`);
+          write(`    phase[${phase.role}]  →  ${phase.override}  ${badge}  ${phase.source}`);
         }
       }
     }

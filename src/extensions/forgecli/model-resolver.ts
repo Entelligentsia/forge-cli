@@ -73,11 +73,11 @@ export function lookupPersonaModel(
  */
 export function resolveModelForPhase(
   pipelineName: string,
-  phaseIndex: number,
+  phaseRole: string,
   personaNoun: string,
   merged: MergedConfig,
 ): ResolveResult {
-  const phase = merged.pipelines?.[pipelineName]?.phases?.[phaseIndex];
+  const phase = merged.pipelines?.[pipelineName]?.phases?.[phaseRole];
   const override = phase?.["model-override"];
 
   if (override !== undefined) {

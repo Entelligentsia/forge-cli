@@ -20,7 +20,7 @@ export type ConfigTuiRoute =
   | { kind: "top-menu" }
   | { kind: "show"; resolved: boolean; json: boolean }
   | { kind: "edit-persona"; persona: string }
-  | { kind: "edit-override"; pipeline: string; phaseIndex: number };
+  | { kind: "edit-override"; pipeline: string; phaseRole: string };
 
 export interface ConfigTuiArgsError {
   error: string;
@@ -57,24 +57,20 @@ export function parseConfigTuiArgs(args: string[]): ParseConfigTuiResult {
     }
     if (target === "override") {
       const pipeline = editRest[0];
-      const phaseStr = editRest[1];
-      if (!pipeline || !phaseStr) {
+      const phaseRole = editRest[1];
+      if (!pipeline || !phaseRole) {
         return {
-          error: `forge config edit override: usage "edit override <pipeline> <phaseIndex>"`,
+          error: `forge config edit override: usage "edit override <pipeline> <phaseRole>"`,
         };
       }
-      const phaseIndex = Number.parseInt(phaseStr, 10);
-      if (!Number.isInteger(phaseIndex) || phaseIndex < 0) {
-        return { error: `forge config edit override: phaseIndex must be a non-negative integer` };
-      }
-      return { kind: "edit-override", pipeline, phaseIndex };
+      return { kind: "edit-override", pipeline, phaseRole };
     }
     return { error: `forge config edit: unknown target "${target ?? ""}" (try "persona" or "override")` };
   }
 
   return {
     error:
-      `forge config: unknown subcommand "${head}". Try: forge config [show [--resolved] [--json] | edit persona <name> | edit override <pipeline> <phaseIndex>]`,
+      `forge config: unknown subcommand "${head}". Try: forge config [show [--resolved] [--json] | edit persona <name> | edit override <pipeline> <phaseRole>]`,
   };
 }
 
@@ -98,7 +94,7 @@ const USAGE_LINES = [
   "  forge config                              Open interactive config TUI",
   "  forge config show [--resolved] [--json]   Print routing config",
   "  forge config edit persona <name>          Edit a persona-model assignment",
-  "  forge config edit override <pipeline> <phaseIndex>",
+  "  forge config edit override <pipeline> <phaseRole>",
   "                                            Edit a per-phase model override",
 ];
 

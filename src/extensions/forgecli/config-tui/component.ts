@@ -7,12 +7,15 @@
 //   - a key-input dispatcher that maps keystrokes to actions
 //   - config-writer.ts for atomic persistence on commit-persona-edit
 //
-// Rendering is intentionally render-to-string: the test surface (screens tests)
-// matches what the user sees character-for-character, modulo styling.
+// The component renders a modal frame (border top/bottom + background fill)
+// around the screen content, giving the overlay visual weight and separation
+// from whatever terminal content lies beneath it.
 
 import * as fs from "node:fs";
-import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { Key, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, Focusable } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { writeRoutingConfig } from "../config-writer.js";
 import type { ConfigLayer } from "../config-writer.js";
 
@@ -41,6 +44,7 @@ function hexEscape(s: string): string {
 import {
   getActiveView,
   initialState,
+  listPersonaPickerEntries,
   listPipelineOverrideSummaries,
   listResolvedPersonas,
   reducer,
@@ -50,7 +54,8 @@ import {
   type InitOptions,
   type View,
 } from "./state.js";
-import { CANONICAL_PHASES, renderActive } from "./screens.js";
+import { CANONICAL_PHASES } from "./state/constants.js";
+import { renderActive } from "./screens.js";
 
 export interface ConfigTuiComponentOptions extends InitOptions {
   /** Called by the component when the user has quit (with discard or via clean exit). */
@@ -61,6 +66,8 @@ export interface ConfigTuiComponentOptions extends InitOptions {
   onError?: (message: string) => void;
   /** Optional invalidate hook supplied by the TUI driver (forces re-render). */
   requestRender?: () => void;
+  /** pi TUI theme — drives all colour choices inside the overlay. */
+  theme: Theme;
 }
 
 export class ConfigTuiComponent implements Component, Focusable {
@@ -68,8 +75,11 @@ export class ConfigTuiComponent implements Component, Focusable {
   private readonly opts: ConfigTuiComponentOptions;
 
   /** Focusable — pi sets this to true when the overlay has keyboard focus.
-   *  Without this, arrow keys don't route to handleInput. */
+   *  Without this, arrow keys don't route to handleInput (see commit 07e886f). */
   focused: boolean = false;
+
+  /** Timer handle for the auto-clearing save banner (guards against unmount). */
+  private clearStatusTimer?: ReturnType<typeof setTimeout>;
 
   constructor(opts: ConfigTuiComponentOptions) {
     this.opts = opts;
@@ -77,11 +87,36 @@ export class ConfigTuiComponent implements Component, Focusable {
   }
 
   invalidate(): void {
-    // Stateless renderer; no cache to drop.
+    // Stateless renderer; no cache to drop. (Hard Rule 3: no render caching.)
   }
 
   render(width: number): string[] {
-    return renderActive(this.state, width);
+    const theme = this.opts.theme;
+    const contentLines = renderActive(this.state, width, theme);
+
+    // ── Modal frame ────────────────────────────────────────────────────
+    // DynamicBorder top + background-fill on every content line + border bottom.
+    // This gives the overlay a visual "panel" that sits on top of the terminal
+    // rather than floating as raw text.
+
+    const bgFn = (s: string) => theme.bg("selectedBg", s);
+    const lines: string[] = [];
+
+    // Top border
+    lines.push(...new DynamicBorder((s) => theme.fg("borderAccent", s)).render(width));
+
+    // Content: each line padded to full width so the background colour fills
+    // the entire row.  visibleWidth correctly ignores ANSI codes added by theme.
+    for (const line of contentLines) {
+      const vis = visibleWidth(line);
+      const padded = vis < width ? line + " ".repeat(width - vis) : line;
+      lines.push(bgFn(padded));
+    }
+
+    // Bottom border
+    lines.push(...new DynamicBorder((s) => theme.fg("borderAccent", s)).render(width));
+
+    return lines;
   }
 
   handleInput(data: string): void {
@@ -123,6 +158,11 @@ export class ConfigTuiComponent implements Component, Focusable {
 
     if (view.kind === "personas-list") {
       this.handlePersonasListInput(data, view);
+      return;
+    }
+
+    if (view.kind === "persona-picker") {
+      this.handlePersonaPickerInput(data, view);
       return;
     }
 
@@ -242,7 +282,7 @@ export class ConfigTuiComponent implements Component, Focusable {
     // to list yet, row 0 is "add a persona-model" (jump straight to editor).
     if (this.state.isEmpty) {
       if (index === 0) {
-        this.dispatch({ kind: "begin-persona-edit", persona: "default" });
+        this.dispatch({ kind: "push-view", view: { kind: "persona-picker", cursor: 0 } });
       } else if (index === 1) {
         this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
       }
@@ -258,7 +298,7 @@ export class ConfigTuiComponent implements Component, Focusable {
     }
     if (viewKind === "empty-state") {
       if (index === 0) {
-        this.dispatch({ kind: "begin-persona-edit", persona: "default" });
+        this.dispatch({ kind: "push-view", view: { kind: "persona-picker", cursor: 0 } });
       } else if (index === 1) {
         this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
       }
@@ -307,8 +347,7 @@ export class ConfigTuiComponent implements Component, Focusable {
       return;
     }
     if (matchesKey(data, "n")) {
-      // For slice 4b: jump to a fresh editor for "default" (4c adds a name picker).
-      this.dispatch({ kind: "begin-persona-edit", persona: "default" });
+      this.dispatch({ kind: "push-view", view: { kind: "persona-picker", cursor: 0 } });
       return;
     }
     if (matchesKey(data, "d")) {
@@ -320,6 +359,30 @@ export class ConfigTuiComponent implements Component, Focusable {
         this.dispatch({ kind: "delete-persona-entry", layer, persona: target.persona });
         // Persist immediately — d is a destructive action with one undo (n/edit).
         this.persistLayer(layer);
+      }
+      return;
+    }
+  }
+
+  private handlePersonaPickerInput(
+    data: string,
+    view: Extract<View, { kind: "persona-picker" }>,
+  ): void {
+    const entries = listPersonaPickerEntries(this.state);
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+      this.dispatch({ kind: "cursor-move", delta: -1 });
+      return;
+    }
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+      if (view.cursor < entries.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+      return;
+    }
+    if (matchesKey(data, Key.enter)) {
+      const target = entries[view.cursor];
+      if (target) {
+        // Pop the picker and push the editor in one render cycle.
+        this.dispatch({ kind: "pop-view" });
+        this.dispatch({ kind: "begin-persona-edit", persona: target.persona });
       }
       return;
     }
@@ -438,21 +501,27 @@ export class ConfigTuiComponent implements Component, Focusable {
       return;
     }
     if (matchesKey(data, Key.enter)) {
-      this.dispatch({
-        kind: "begin-override-edit",
-        pipeline: view.pipeline,
-        phaseIndex: view.cursor,
-      });
+      const phase = CANONICAL_PHASES[view.cursor];
+      if (phase) {
+        this.dispatch({
+          kind: "begin-override-edit",
+          pipeline: view.pipeline,
+          phaseRole: phase.role,
+        });
+      }
       return;
     }
     // space → clear override on current row (then persist)
     if (matchesKey(data, Key.space)) {
-      this.dispatch({
-        kind: "clear-phase-override",
-        pipeline: view.pipeline,
-        phaseIndex: view.cursor,
-      });
-      this.persistLayer("project");
+      const phase = CANONICAL_PHASES[view.cursor];
+      if (phase) {
+        this.dispatch({
+          kind: "clear-phase-override",
+          pipeline: view.pipeline,
+          phaseRole: phase.role,
+        });
+        this.persistLayer("project");
+      }
     }
   }
 
@@ -478,7 +547,7 @@ export class ConfigTuiComponent implements Component, Focusable {
           this.dispatch({
             kind: "clear-phase-override",
             pipeline: view.pipeline,
-            phaseIndex: view.phaseIndex,
+            phaseRole: view.phaseRole,
           });
           this.persistLayer("project");
         }
@@ -596,11 +665,22 @@ export class ConfigTuiComponent implements Component, Focusable {
       // Clear dirty flag + record last-saved path so the TUI can surface
       // confirmation in-overlay (ctx.ui.notify gets clipped by the modal).
       this.dispatch({ kind: "mark-clean", lastSaved: { target, layer } });
+      this.scheduleClearStatus();
       this.opts.onSaved?.(target);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.opts.onError?.(msg);
     }
+  }
+
+  /** Schedule save-banner auto-clear.  Guards against unmount (Hard Rule 5). */
+  private scheduleClearStatus(): void {
+    if (this.clearStatusTimer) clearTimeout(this.clearStatusTimer);
+    this.clearStatusTimer = setTimeout(() => {
+      if (!this.state.shouldExit) {
+        this.dispatch({ kind: "clear-status" });
+      }
+    }, 3000);
   }
 }
 

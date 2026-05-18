@@ -9,7 +9,6 @@ import {
   type ConfigTuiState,
 } from "../../../src/extensions/forgecli/config-tui/state.js";
 import {
-  CANONICAL_PHASES,
   computeResolvedRows,
   renderTopMenu,
   renderEmptyState,
@@ -22,6 +21,16 @@ import {
   renderOverrideEditor,
   renderActive,
 } from "../../../src/extensions/forgecli/config-tui/screens.js";
+import { CANONICAL_PHASES } from "../../../src/extensions/forgecli/config-tui/state/constants.js";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+
+// Mock theme for tests — strips all styling so assertions match plain text.
+const mockTheme: Theme = {
+  fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+  dim: (text: string) => text,
+} as unknown as Theme;
 
 const WIDTH = 80;
 
@@ -51,7 +60,7 @@ function makeState(overrides: Partial<Parameters<typeof initialState>[0]> = {}):
 describe("renderTopMenu — empty state", () => {
   it("shows 'no config files found' messaging", () => {
     const s = makeState();
-    const lines = renderTopMenu(s, WIDTH).join("\n");
+    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
     expect(lines).toContain("No forge-cli config files found");
     expect(lines).toContain("currently-running model");
     expect(lines).toContain("Add a persona-model assignment");
@@ -64,7 +73,7 @@ describe("renderTopMenu — with assignments", () => {
       global: { "persona-models": { architect: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: { "persona-models": { engineer: { provider: "ollama", model: "glm-5.1:cloud" } } },
     });
-    const lines = renderTopMenu(s, WIDTH).join("\n");
+    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
     expect(lines).toContain("2 defined");
     expect(lines).toContain("(1 global · 1 project)");
     expect(lines).toContain("Forge plugin config (read-only)");
@@ -76,7 +85,7 @@ describe("renderTopMenu — with assignments", () => {
     s = reducer(s, { kind: "set-persona-provider", provider: "ollama" });
     s = reducer(s, { kind: "set-persona-model", model: "glm-5.1:cloud" });
     s = reducer(s, { kind: "commit-persona-edit", layer: "project" });
-    const lines = renderTopMenu(s, WIDTH).join("\n");
+    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
     expect(lines).toContain("* unsaved");
   });
 });
@@ -84,7 +93,7 @@ describe("renderTopMenu — with assignments", () => {
 describe("renderNoProject", () => {
   it("renders the no-project screen with global-only messaging", () => {
     const s = makeState({ pipelineCatalogue: null });
-    const lines = renderNoProject(s, WIDTH).join("\n");
+    const lines = renderNoProject(s, WIDTH, mockTheme).join("\n");
     expect(lines).toContain("No project root found");
     expect(lines).toContain("~/.pi/agent/forge-cli/config.json");
     expect(lines).toContain("N/A — no pipeline catalogue");
@@ -94,7 +103,7 @@ describe("renderNoProject", () => {
 describe("renderEmptyState", () => {
   it("delegates through renderTopMenu but forces the empty branch", () => {
     const s = makeState();
-    const lines = renderEmptyState(s, WIDTH).join("\n");
+    const lines = renderEmptyState(s, WIDTH, mockTheme).join("\n");
     expect(lines).toContain("No forge-cli config files found");
   });
 });
@@ -114,7 +123,7 @@ describe("renderPersonasList", () => {
       },
     });
     s = reducer(s, { kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-    const out = renderPersonasList(s, WIDTH).join("\n");
+    const out = renderPersonasList(s, WIDTH, mockTheme).join("\n");
     expect(out).toMatch(/PERSONA/);
     expect(out).toMatch(/PROVIDER:MODEL/);
     expect(out).toMatch(/architect/);
@@ -132,7 +141,7 @@ describe("renderPersonasList", () => {
       },
     });
     s = reducer(s, { kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-    const out = renderPersonasList(s, WIDTH).join("\n");
+    const out = renderPersonasList(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Not in Forge persona catalogue");
     expect(out).toContain("weirdo");
   });
@@ -144,7 +153,7 @@ describe("renderPersonasList", () => {
       },
     });
     s = reducer(s, { kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-    const out = renderPersonasList(s, WIDTH).join("\n");
+    const out = renderPersonasList(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Personas with no assignment");
     expect(out).toContain("architect");
     expect(out).toContain("supervisor");
@@ -158,7 +167,7 @@ describe("renderPersonasList", () => {
       },
     });
     s = reducer(s, { kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-    const out = renderPersonasList(s, WIDTH).join("\n");
+    const out = renderPersonasList(s, WIDTH, mockTheme).join("\n");
     // The avail badge column will contain a ✗
     expect(out).toContain("✗");
   });
@@ -168,7 +177,7 @@ describe("renderPersonaEditor — pick-provider", () => {
   it("lists every provider with an auth badge", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
-    const out = renderPersonaEditor(s, WIDTH).join("\n");
+    const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Step 1 of 3 — pick provider");
     expect(out).toContain("anthropic");
     expect(out).toContain("openai");
@@ -179,14 +188,14 @@ describe("renderPersonaEditor — pick-provider", () => {
   it("warns when persona is not in the Forge catalogue", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-persona-edit", persona: "weirdo" });
-    const out = renderPersonaEditor(s, WIDTH).join("\n");
+    const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("not in the Forge persona catalogue");
   });
 
   it("does NOT warn for the reserved 'default' key", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-persona-edit", persona: "default" });
-    const out = renderPersonaEditor(s, WIDTH).join("\n");
+    const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).not.toContain("not in the Forge persona catalogue");
   });
 });
@@ -196,7 +205,7 @@ describe("renderPersonaEditor — pick-model", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
     s = reducer(s, { kind: "set-persona-provider", provider: "anthropic" });
-    const out = renderPersonaEditor(s, WIDTH).join("\n");
+    const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Step 2 of 3");
     expect(out).toContain("claude-opus-4-5");
     expect(out).toContain("claude-sonnet-4-6");
@@ -208,7 +217,7 @@ describe("renderPersonaEditor — pick-model", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
     s = reducer(s, { kind: "set-persona-provider", provider: "openrouter" });
-    const out = renderPersonaEditor(s, WIDTH).join("\n");
+    const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("No models available");
     expect(out).toContain("pi /login openrouter");
   });
@@ -220,7 +229,7 @@ describe("renderPersonaEditor — pick-layer", () => {
     s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
     s = reducer(s, { kind: "set-persona-provider", provider: "ollama" });
     s = reducer(s, { kind: "set-persona-model", model: "glm-5.1:cloud" });
-    const out = renderPersonaEditor(s, WIDTH).join("\n");
+    const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Step 3 of 3");
     expect(out).toContain("engineer → ollama:glm-5.1:cloud");
     expect(out).toContain("Project");
@@ -237,7 +246,7 @@ describe("renderShowResolved (Slice 4c task #19)", () => {
       project: { "persona-models": { architect: { provider: "anthropic", model: "claude-opus-4-5" } } },
     });
     s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-    const lines = renderShowResolved(s, WIDTH);
+    const lines = renderShowResolved(s, WIDTH, mockTheme);
     const out = lines.join("\n");
     expect(out).toContain("forge config › resolved");
     expect(out).toContain("L1");
@@ -256,7 +265,7 @@ describe("renderShowResolved (Slice 4c task #19)", () => {
   it("falls back to inherit when nothing resolves", () => {
     let s = makeState();
     s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-    const out = renderShowResolved(s, WIDTH).join("\n");
+    const out = renderShowResolved(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("inherit pi current");
   });
 
@@ -265,11 +274,11 @@ describe("renderShowResolved (Slice 4c task #19)", () => {
       pipelineCatalogue: ["default", "hotfix", "bug-fix"],
     });
     s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
-    const beforeOut = renderShowResolved(s, WIDTH).join("\n");
+    const beforeOut = renderShowResolved(s, WIDTH, mockTheme).join("\n");
     for (let i = 0; i < 20; i++) {
       s = reducer(s, { kind: "cursor-move", delta: 1 });
     }
-    const afterOut = renderShowResolved(s, WIDTH).join("\n");
+    const afterOut = renderShowResolved(s, WIDTH, mockTheme).join("\n");
     // Both outputs render — cursor moved, scroll indicator appears
     expect(beforeOut).toContain("Pipeline: default");
     expect(afterOut.includes("row(s) above") || afterOut.includes("row(s) below")).toBe(true);
@@ -304,7 +313,7 @@ describe("renderOverridesListPipelines (Slice 4c — Screen 4)", () => {
   it("shows every catalogue pipeline with an override count", () => {
     let s = makeState();
     s = reducer(s, { kind: "push-view", view: { kind: "overrides-list-pipelines", cursor: 0 } });
-    const out = renderOverridesListPipelines(s, WIDTH).join("\n");
+    const out = renderOverridesListPipelines(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("forge config › per-phase overrides");
     expect(out).toContain("default");
     expect(out).toContain("hotfix");
@@ -315,12 +324,12 @@ describe("renderOverridesListPipelines (Slice 4c — Screen 4)", () => {
 
   it("shows override counts after writes", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "commit-override-name", name: "scribe" });
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 5 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "approve" });
     s = reducer(s, { kind: "commit-override-name", name: "engineer" });
     s = reducer(s, { kind: "push-view", view: { kind: "overrides-list-pipelines", cursor: 0 } });
-    const out = renderOverridesListPipelines(s, WIDTH).join("\n");
+    const out = renderOverridesListPipelines(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("2 overrides");
   });
 });
@@ -332,7 +341,7 @@ describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => 
       kind: "push-view",
       view: { kind: "overrides-list-phases", pipeline: "default", cursor: 2 },
     });
-    const out = renderOverridesListPhases(s, WIDTH).join("\n");
+    const out = renderOverridesListPhases(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("forge config › per-phase overrides › default");
     expect(out).toContain("plan");
     expect(out).toContain("implement");
@@ -347,9 +356,9 @@ describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => 
 
   it("renders L4-name and L4-inline override shapes distinctly", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "commit-override-name", name: "scribe" });
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 1 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "review-plan" });
     s = reducer(s, {
       kind: "commit-override-inline",
       provider: "anthropic",
@@ -359,7 +368,7 @@ describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => 
       kind: "push-view",
       view: { kind: "overrides-list-phases", pipeline: "default", cursor: 0 },
     });
-    const out = renderOverridesListPhases(s, WIDTH).join("\n");
+    const out = renderOverridesListPhases(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain(`"scribe"`);
     expect(out).toContain(`{anthropic:claude-opus-4-5}`);
   });
@@ -368,13 +377,12 @@ describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => 
 describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
   it("pick-type shows three numbered options", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 2 });
-    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "implement" });
+    const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Override type:");
     expect(out).toContain("persona-model by name");
     expect(out).toContain("Inline {provider, model}");
     expect(out).toContain("Clear override");
-    expect(out).toContain("phase 2");
     expect(out).toContain("implement");
   });
 
@@ -387,9 +395,9 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
         },
       },
     });
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 2 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "implement" });
     s = reducer(s, { kind: "set-override-step", step: "pick-name" });
-    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Pick persona-model");
     expect(out).toContain("scribe");
     expect(out).toContain("architect");
@@ -400,17 +408,17 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
 
   it("pick-name falls back to a helpful empty hint", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "set-override-step", step: "pick-name" });
-    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("no persona-models defined");
   });
 
   it("pick-provider lists providers with auth badges", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
-    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Inline override — Step 1 of 2");
     expect(out).toContain("anthropic");
     expect(out).toContain("ollama");
@@ -419,10 +427,10 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
 
   it("pick-model filters to chosen provider", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
     s = reducer(s, { kind: "set-override-provider", provider: "anthropic" });
-    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("Step 2 of 2");
     expect(out).toContain("claude-opus-4-5");
     expect(out).toContain("claude-sonnet-4-6");
@@ -431,10 +439,10 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
 
   it("pick-model shows 'No models available' when provider has none", () => {
     let s = makeState();
-    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
     s = reducer(s, { kind: "set-override-provider", provider: "openrouter" });
-    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
     expect(out).toContain("No models available");
     expect(out).toContain("pi /login openrouter");
   });
@@ -443,13 +451,13 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
 describe("renderActive — top-level dispatcher", () => {
   it("dispatches based on the active view kind", () => {
     let s = makeState({ pipelineCatalogue: null });
-    expect(renderActive(s, WIDTH).join("\n")).toContain("No project root found");
+    expect(renderActive(s, WIDTH, mockTheme).join("\n")).toContain("No project root found");
 
     s = reducer(s, { kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
-    expect(renderActive(s, WIDTH).join("\n")).toContain("forge config › personas");
+    expect(renderActive(s, WIDTH, mockTheme).join("\n")).toContain("forge config › personas");
 
     s = reducer(s, { kind: "pop-view" });
     s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
-    expect(renderActive(s, WIDTH).join("\n")).toContain("Step 1 of 3");
+    expect(renderActive(s, WIDTH, mockTheme).join("\n")).toContain("Step 1 of 3");
   });
 });

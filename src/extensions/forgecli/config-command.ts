@@ -33,7 +33,7 @@ export function registerConfigCommand(pi: ExtensionAPI, _opts: RegisterConfigCom
         const router = getInputRouter();
         router.pushOverlay();
         try {
-          const exitCode = await ctx.ui.custom<number>((tui, _theme, _kb, done) => {
+          const exitCode = await ctx.ui.custom<number>((tui, theme, _kb, done) => {
             // Component drives done() on q or successful confirm-quit.
             // Pi TUI key rule 3: call tui.requestRender() after state changes.
             const component = createConfigTuiComponent({
@@ -42,9 +42,17 @@ export function registerConfigCommand(pi: ExtensionAPI, _opts: RegisterConfigCom
               onSaved: (target) => ctx.ui.notify(`forge config: saved → ${target}`, "info"),
               onError: (msg) => ctx.ui.notify(`forge config: ${msg}`, "error"),
               requestRender: () => tui.requestRender(),
+              theme,
             });
             return component;
-          }, { overlay: true });
+          }, {
+            overlay: true,
+            overlayOptions: {
+              width: "100%",
+              anchor: "center",
+              margin: 0,
+            },
+          });
           return exitCode;
         } finally {
           router.popOverlay();
