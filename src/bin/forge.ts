@@ -13,6 +13,7 @@ import { main } from "@earendil-works/pi-coding-agent";
 import forgecli from "../extensions/forgecli/index.js";
 import { isParseError, parseForgeArgv } from "./argv.js";
 import { runDoctor } from "./doctor.js";
+import { applyForgeOwnedEnvDefaults } from "./env-defaults.js";
 import { runUpdate } from "./update-cli.js";
 
 // ---------------------------------------------------------------------------
@@ -150,11 +151,7 @@ if (parsed.forgeAction === "update") {
 // Apply forge env overrides
 Object.assign(process.env, parsed.env);
 
-// Forge owns the update banner. Pi's bins aren't linked when forgecli is
-// installed globally, so "Run pi update" advice is broken at the OS level.
-// Suppress both pi update banners unconditionally.
-process.env.PI_SKIP_VERSION_CHECK = "1";
-process.env.PI_SKIP_PACKAGE_UPDATE_CHECK = "1";
+applyForgeOwnedEnvDefaults();
 
 // Default prompt-cache retention to "long" for all Forge sessions.
 //
