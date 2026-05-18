@@ -219,7 +219,7 @@ describe("computeSummaries", () => {
 		expect(summaries.map((s) => s.component)).toEqual(["pi", "forge-plugin", "forge-cli"]);
 	});
 
-	it("skips components that haven't advanced", () => {
+	it("always includes all three tabs; non-advanced components show current-version entry with fromVersion=null", () => {
 		const root = fixtureRoot("skip");
 		const sources = resolveChangelogPaths(root);
 		const seen: SeenState = {
@@ -233,7 +233,18 @@ describe("computeSummaries", () => {
 			current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" },
 			seen,
 		});
-		expect(summaries.map((s) => s.component)).toEqual(["forge-cli"]);
+		// All three tabs always appear.
+		expect(summaries.map((s) => s.component)).toEqual(["pi", "forge-plugin", "forge-cli"]);
+		// Non-advanced components fall back to null from → only current-version entry shown.
+		const piSummary = summaries.find((s) => s.component === "pi")!;
+		expect(piSummary.fromVersion).toBeNull();
+		expect(piSummary.entries).toHaveLength(1);
+		const forgePluginSummary = summaries.find((s) => s.component === "forge-plugin")!;
+		expect(forgePluginSummary.fromVersion).toBeNull();
+		expect(forgePluginSummary.entries).toHaveLength(1);
+		// Advanced component retains its real from-version.
+		const cliSummary = summaries.find((s) => s.component === "forge-cli")!;
+		expect(cliSummary.fromVersion).toBe("0.7.6");
 	});
 
 	it("handles first-install: from=null returns only `to`", () => {
@@ -282,13 +293,14 @@ describe("computeAndPersistStartupPanel + dismissWhatsNew + computeWhatsNewView"
 		expect(seenAfter1.pi).toBe("0.74.1");
 		expect(seenAfter1.prevPi).toBeNull();
 
-		// Second run — no new versions. Should return null and not touch state.
+		// Second run — no new versions. Still returns summaries (current-version
+		// entries for all three tabs) rather than null.
 		const r2 = await computeAndPersistStartupPanel({
 			pkgRoot,
 			current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" },
 			cacheDir,
 		});
-		expect(r2).toBeNull();
+		expect(r2).not.toBeNull();
 
 		// /whats-new still replays via prev baseline (was null → returns `to`).
 		const summary = await computeWhatsNewView({ pkgRoot, current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" }, cacheDir }, null);
@@ -328,15 +340,16 @@ describe("computeAndPersistStartupPanel + dismissWhatsNew + computeWhatsNewView"
 			{ pkgRoot, current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" }, cacheDir },
 			null,
 		);
-		// Falls back to lastShown baseline → renders the same set as the
-		// original mount, not the empty no-updates message.
+		// prev=current after dismiss → effectiveFrom=null → shows current-version
+		// notes for all three tabs (not the historical 0.74.0→0.74.1 range).
 		expect(view).toMatch(/What's New since last login/);
-		expect(view).toMatch(/0\.74\.0 → 0\.74\.1/);
+		expect(view).toMatch(/0\.74\.1/);
 	});
 
-	it("computeWhatsNewView returns no-updates when prev=current AND no lastShown frozen baseline exists", async () => {
-		// Simulate a cache that has caught up (prev=current) without any
-		// prior shown set — e.g. fresh-install dismissed before opening.
+	it("computeWhatsNewView with prev=current always shows current-version notes for all three tabs", async () => {
+		// Simulate a cache that has caught up (prev=current). With the "always
+		// show all three tabs" behavior, effectiveFrom=null so each component
+		// still returns its current-version changelog entry.
 		await writeSeenState(cacheDir, {
 			pi: "0.74.1",
 			forgePlugin: "0.7.8",
@@ -353,7 +366,8 @@ describe("computeAndPersistStartupPanel + dismissWhatsNew + computeWhatsNewView"
 			{ pkgRoot, current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" }, cacheDir },
 			null,
 		);
-		expect(view).toMatch(/no recent updates/);
+		expect(view).toMatch(/What's New since last login/);
+		expect(view).toMatch(/0\.74\.1/);
 	});
 
 	it("drill-down by component id returns full detail view", async () => {

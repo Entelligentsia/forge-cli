@@ -360,15 +360,17 @@ export function computeSummaries(opts: ComputeOptions): ChangeSummary[] {
 		// null = first install; lastShown null with lastShownAt>0 = the most
 		// recent panel was a first-install panel.)
 		if (useFrom === null && baseline === "prev") continue;
-		const hasAdvanced = !useFrom || semverGt(p.current, useFrom);
-		if (!hasAdvanced) continue;
+		// When the component has not advanced (useFrom === current), fall back to
+		// null so entriesBetween returns the exact current-version entry. This
+		// ensures all three component tabs always appear in the strip.
+		const effectiveFrom = useFrom !== null && !semverGt(p.current, useFrom) ? null : useFrom;
 		const markdown = readChangelogSafe(p.src);
 		if (!markdown) {
 			debug("no changelog source for", p.id);
 			continue;
 		}
 		const parsed = parseChangelog(markdown);
-		const slice = entriesBetween(parsed, useFrom, p.current);
+		const slice = entriesBetween(parsed, effectiveFrom, p.current);
 		if (slice.length === 0) {
 			debug("no matching entries for", p.id, "between", useFrom, "and", p.current);
 			continue;
@@ -377,7 +379,7 @@ export function computeSummaries(opts: ComputeOptions): ChangeSummary[] {
 		out.push({
 			component: p.id,
 			label: COMPONENT_LABELS[p.id],
-			fromVersion: useFrom,
+			fromVersion: effectiveFrom,
 			toVersion: p.current,
 			totalChanges: sum.total,
 			byCategory: sum.byCategory,
