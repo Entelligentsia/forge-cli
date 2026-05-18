@@ -294,3 +294,140 @@ describe("View kinds", () => {
     expect(views.length).toBe(5);
   });
 });
+
+describe("reducer — per-phase overrides (Slice 4c)", () => {
+  it("begin-override-edit pushes the editor at step pick-type", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 2 });
+    const top = s.view[s.view.length - 1];
+    expect(top.kind).toBe("override-editor");
+    if (top.kind === "override-editor") {
+      expect(top.pipeline).toBe("default");
+      expect(top.phaseIndex).toBe(2);
+      expect(top.step).toBe("pick-type");
+      expect(top.cursor).toBe(0);
+    }
+  });
+
+  it("set-override-step transitions and resets cursor", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "cursor-move", delta: 2 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-name" });
+    const top = s.view[s.view.length - 1];
+    expect(top.kind).toBe("override-editor");
+    if (top.kind === "override-editor") {
+      expect(top.step).toBe("pick-name");
+      expect(top.cursor).toBe(0);
+    }
+  });
+
+  it("set-override-provider advances to pick-model", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
+    s = reducer(s, { kind: "set-override-provider", provider: "ollama" });
+    const top = s.view[s.view.length - 1];
+    expect(top.kind).toBe("override-editor");
+    if (top.kind === "override-editor") {
+      expect(top.step).toBe("pick-model");
+      expect(top.provider).toBe("ollama");
+    }
+  });
+
+  it("commit-override-name writes a string override, pops editor, marks dirty", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 2 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    expect(s.dirty).toBe(true);
+    expect(s.view[s.view.length - 1].kind).not.toBe("override-editor");
+    const phases = s.buffer.project.pipelines?.default?.phases ?? [];
+    // pad slots up to phaseIndex with {}
+    expect(phases.length).toBe(3);
+    expect(phases[2]["model-override"]).toBe("scribe");
+    expect(phases[0]).toEqual({});
+    expect(phases[1]).toEqual({});
+  });
+
+  it("commit-override-inline writes a {provider, model} pair", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "hotfix", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-inline", provider: "anthropic", model: "claude-haiku-4-5" });
+    expect(s.dirty).toBe(true);
+    const phases = s.buffer.project.pipelines?.hotfix?.phases ?? [];
+    expect(phases[0]["model-override"]).toEqual({
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    });
+  });
+
+  it("clear-phase-override removes the override and cleans up empty structures", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    expect(s.buffer.project.pipelines?.default?.phases?.[0]?.["model-override"]).toBe("scribe");
+
+    s = reducer(s, { kind: "clear-phase-override", pipeline: "default", phaseIndex: 0 });
+    // Single override removed → pipeline is now empty → pipelines key dropped
+    expect(s.buffer.project.pipelines).toBeUndefined();
+    expect(s.dirty).toBe(true);
+  });
+
+  it("clear-phase-override preserves the pipeline if other overrides remain", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 3 });
+    s = reducer(s, { kind: "commit-override-name", name: "engineer" });
+
+    s = reducer(s, { kind: "clear-phase-override", pipeline: "default", phaseIndex: 0 });
+    const phases = s.buffer.project.pipelines?.default?.phases ?? [];
+    expect(phases.length).toBe(4);
+    expect(phases[3]["model-override"]).toBe("engineer");
+    expect(phases[0]).toEqual({});
+  });
+
+  it("clear-phase-override is a no-op when nothing was set", () => {
+    let s = emptyState();
+    const before = s;
+    s = reducer(s, { kind: "clear-phase-override", pipeline: "default", phaseIndex: 0 });
+    expect(s).toBe(before);
+  });
+
+  it("clear-phase-override pops the editor when invoked from inside it", () => {
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    // Re-enter the editor (to simulate user choosing "Clear override" inside the type picker)
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    expect(s.view[s.view.length - 1].kind).toBe("override-editor");
+    s = reducer(s, { kind: "clear-phase-override", pipeline: "default", phaseIndex: 0 });
+    expect(s.view[s.view.length - 1].kind).not.toBe("override-editor");
+  });
+});
+
+describe("selectors — per-phase override summaries", () => {
+  it("listPipelineOverrideSummaries returns one row per catalogue pipeline", async () => {
+    const { listPipelineOverrideSummaries } = await import(
+      "../../../src/extensions/forgecli/config-tui/state.js"
+    );
+    let s = emptyState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    const rows = listPipelineOverrideSummaries(s);
+    expect(rows.length).toBe(2); // default + hotfix from emptyState catalogue
+    expect(rows.find((r) => r.pipeline === "default")?.overrideCount).toBe(1);
+    expect(rows.find((r) => r.pipeline === "hotfix")?.overrideCount).toBe(0);
+  });
+
+  it("getPhaseOverride returns the stored override or undefined", async () => {
+    const { getPhaseOverride } = await import(
+      "../../../src/extensions/forgecli/config-tui/state.js"
+    );
+    let s = emptyState();
+    expect(getPhaseOverride(s, "default", 0)).toBeUndefined();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 1 });
+    s = reducer(s, { kind: "commit-override-inline", provider: "ollama", model: "glm-4.6" });
+    expect(getPhaseOverride(s, "default", 1)).toEqual({ provider: "ollama", model: "glm-4.6" });
+  });
+});

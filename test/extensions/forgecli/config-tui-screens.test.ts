@@ -17,6 +17,9 @@ import {
   renderPersonasList,
   renderPersonaEditor,
   renderShowResolved,
+  renderOverridesListPipelines,
+  renderOverridesListPhases,
+  renderOverrideEditor,
   renderActive,
 } from "../../../src/extensions/forgecli/config-tui/screens.js";
 
@@ -294,6 +297,146 @@ describe("computeResolvedRows (pure exporter)", () => {
       expect(row.source).toBe("inherit");
       expect(row.resolved).toBe("(inherit pi current)");
     }
+  });
+});
+
+describe("renderOverridesListPipelines (Slice 4c — Screen 4)", () => {
+  it("shows every catalogue pipeline with an override count", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "push-view", view: { kind: "overrides-list-pipelines", cursor: 0 } });
+    const out = renderOverridesListPipelines(s, WIDTH).join("\n");
+    expect(out).toContain("forge config › per-phase overrides");
+    expect(out).toContain("default");
+    expect(out).toContain("hotfix");
+    expect(out).toContain("none");
+    // Cursor on row 0
+    expect(out.split("\n").filter((l) => l.startsWith("  ▸ ")).length).toBeGreaterThan(0);
+  });
+
+  it("shows override counts after writes", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 5 });
+    s = reducer(s, { kind: "commit-override-name", name: "engineer" });
+    s = reducer(s, { kind: "push-view", view: { kind: "overrides-list-pipelines", cursor: 0 } });
+    const out = renderOverridesListPipelines(s, WIDTH).join("\n");
+    expect(out).toContain("2 overrides");
+  });
+});
+
+describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => {
+  it("renders one row per canonical phase with override + resolved + source columns", () => {
+    let s = makeState();
+    s = reducer(s, {
+      kind: "push-view",
+      view: { kind: "overrides-list-phases", pipeline: "default", cursor: 2 },
+    });
+    const out = renderOverridesListPhases(s, WIDTH).join("\n");
+    expect(out).toContain("forge config › per-phase overrides › default");
+    expect(out).toContain("plan");
+    expect(out).toContain("implement");
+    expect(out).toContain("commit");
+    expect(out).toContain("(inherit pi current)");
+    expect(out).toContain("inherit");
+    // Cursor lands on row 2 (implement)
+    const rowLines = out.split("\n").filter((l) => l.startsWith("  ▸ "));
+    expect(rowLines.length).toBe(1);
+    expect(rowLines[0]).toMatch(/implement/);
+  });
+
+  it("renders L4-name and L4-inline override shapes distinctly", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "commit-override-name", name: "scribe" });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 1 });
+    s = reducer(s, {
+      kind: "commit-override-inline",
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+    });
+    s = reducer(s, {
+      kind: "push-view",
+      view: { kind: "overrides-list-phases", pipeline: "default", cursor: 0 },
+    });
+    const out = renderOverridesListPhases(s, WIDTH).join("\n");
+    expect(out).toContain(`"scribe"`);
+    expect(out).toContain(`{anthropic:claude-opus-4-5}`);
+  });
+});
+
+describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
+  it("pick-type shows three numbered options", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 2 });
+    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    expect(out).toContain("Override type:");
+    expect(out).toContain("persona-model by name");
+    expect(out).toContain("Inline {provider, model}");
+    expect(out).toContain("Clear override");
+    expect(out).toContain("phase 2");
+    expect(out).toContain("implement");
+  });
+
+  it("pick-name lists defined persona-models with an availability badge", () => {
+    let s = makeState({
+      global: { "persona-models": { scribe: { provider: "ollama", model: "glm-5.1:cloud" } } },
+      project: {
+        "persona-models": {
+          architect: { provider: "anthropic", model: "claude-opus-4-5" },
+        },
+      },
+    });
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 2 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-name" });
+    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    expect(out).toContain("Pick persona-model");
+    expect(out).toContain("scribe");
+    expect(out).toContain("architect");
+    expect(out).toContain("ollama:glm-5.1:cloud");
+    expect(out).toContain("anthropic:claude-opus-4-5");
+    expect(out).toContain("✓");
+  });
+
+  it("pick-name falls back to a helpful empty hint", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-name" });
+    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    expect(out).toContain("no persona-models defined");
+  });
+
+  it("pick-provider lists providers with auth badges", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
+    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    expect(out).toContain("Inline override — Step 1 of 2");
+    expect(out).toContain("anthropic");
+    expect(out).toContain("ollama");
+    expect(out).toContain("openai");
+  });
+
+  it("pick-model filters to chosen provider", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
+    s = reducer(s, { kind: "set-override-provider", provider: "anthropic" });
+    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    expect(out).toContain("Step 2 of 2");
+    expect(out).toContain("claude-opus-4-5");
+    expect(out).toContain("claude-sonnet-4-6");
+    expect(out).not.toContain("gpt-4o");
+  });
+
+  it("pick-model shows 'No models available' when provider has none", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseIndex: 0 });
+    s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
+    s = reducer(s, { kind: "set-override-provider", provider: "openrouter" });
+    const out = renderOverrideEditor(s, WIDTH).join("\n");
+    expect(out).toContain("No models available");
+    expect(out).toContain("pi /login openrouter");
   });
 });
 

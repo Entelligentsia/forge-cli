@@ -634,3 +634,189 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
     expect(h.exits).toEqual([0]);
   });
 });
+
+describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", () => {
+  function makeNonEmpty(extra: Parameters<typeof createConfigTuiComponent>[0] extends infer T ? Partial<T> : never) {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: {
+        "persona-models": {
+          scribe: { provider: "anthropic", model: "claude-haiku-4-5" },
+        },
+      },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer", "scribe"],
+      pipelineCatalogue: ["default", "hotfix"],
+      availableModels: [
+        { provider: "anthropic", id: "claude-opus-4-5" },
+        { provider: "anthropic", id: "claude-haiku-4-5" },
+        { provider: "ollama", id: "glm-5.1:cloud" },
+      ],
+      authenticatedProviders: ["anthropic", "ollama"],
+      onExit,
+      onSaved,
+      onError,
+      ...extra,
+    });
+    return { comp };
+  }
+
+  it("menu item 2 opens overrides-list-pipelines", () => {
+    const { comp } = makeNonEmpty({});
+    comp.handleInput("2");
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("per-phase overrides");
+    expect(out).toContain("default");
+    expect(out).toContain("hotfix");
+  });
+
+  it("enter on a pipeline drills into the phase table", () => {
+    const { comp } = makeNonEmpty({});
+    comp.handleInput("2");
+    comp.handleInput("\r");
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("per-phase overrides › default");
+    expect(out).toContain("plan");
+    expect(out).toContain("commit");
+  });
+
+  it("enter on a phase opens the override editor at pick-type", () => {
+    const { comp } = makeNonEmpty({});
+    comp.handleInput("2");
+    comp.handleInput("\r");
+    comp.handleInput("\r");
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("Override type:");
+  });
+
+  it("inline override flow writes phases[i]['model-override'] and persists", () => {
+    const harness = makeHarness();
+    const comp = createConfigTuiComponent({
+      // Start non-empty so the top-menu (not empty-state) is the initial view.
+      global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer", "scribe"],
+      pipelineCatalogue: ["default", "hotfix"],
+      availableModels: [
+        { provider: "anthropic", id: "claude-opus-4-5" },
+        { provider: "ollama", id: "glm-5.1:cloud" },
+      ],
+      authenticatedProviders: ["anthropic", "ollama"],
+      onExit: harness.onExit,
+      onSaved: harness.onSaved,
+      onError: harness.onError,
+    });
+    comp.handleInput("2"); // overrides-list-pipelines (top-menu item 2)
+    comp.handleInput("\r"); // pick default
+    // Move cursor to phase 1 (review-plan)
+    comp.handleInput("\x1b[B"); // down
+    comp.handleInput("\r"); // open editor
+    // Pick "Inline" option
+    comp.handleInput("2");
+    // Pick ollama provider (cursor 1 after one ↓)
+    comp.handleInput("\x1b[B");
+    comp.handleInput("\r");
+    // Pick first ollama model
+    comp.handleInput("\r");
+
+    const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
+    const written = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(written.pipelines.default.phases[1]["model-override"]).toEqual({
+      provider: "ollama",
+      model: "glm-5.1:cloud",
+    });
+  });
+
+  it("by-name override writes a string override", () => {
+    const harness = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: {
+        "persona-models": {
+          scribe: { provider: "anthropic", model: "claude-haiku-4-5" },
+        },
+      },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer", "scribe"],
+      pipelineCatalogue: ["default"],
+      availableModels: [
+        { provider: "anthropic", id: "claude-haiku-4-5" },
+      ],
+      authenticatedProviders: ["anthropic"],
+      onExit: harness.onExit,
+      onSaved: harness.onSaved,
+      onError: harness.onError,
+    });
+    comp.handleInput("2"); // overrides-list-pipelines
+    comp.handleInput("\r"); // pick default
+    comp.handleInput("\r"); // editor for phase 0
+    comp.handleInput("1"); // by-name
+    comp.handleInput("\r"); // pick first persona (scribe)
+
+    const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
+    const written = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(written.pipelines.default.phases[0]["model-override"]).toBe("scribe");
+  });
+
+  it("clear from editor (option 3) deletes override and persists; clean buffer drops file", () => {
+    const harness = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: null,
+      project: {
+        pipelines: {
+          default: {
+            phases: [{ "model-override": "scribe" }],
+          },
+        },
+      },
+      cwd,
+      personaCatalogue: ["engineer", "scribe"],
+      pipelineCatalogue: ["default"],
+      availableModels: [],
+      authenticatedProviders: [],
+      onExit: harness.onExit,
+      onSaved: harness.onSaved,
+      onError: harness.onError,
+    });
+    comp.handleInput("2"); // overrides list
+    comp.handleInput("\r"); // pick default
+    comp.handleInput("\r"); // open editor for phase 0
+    comp.handleInput("3"); // clear
+
+    // Buffer is now empty → file should be deleted
+    const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
+    expect(fs.existsSync(projectPath)).toBe(false);
+    expect(harness.h.errors).toEqual([]);
+  });
+
+  it("space on phase row clears its override", () => {
+    const harness = makeHarness();
+    const comp = createConfigTuiComponent({
+      global: null,
+      project: {
+        pipelines: {
+          default: {
+            phases: [{}, { "model-override": "scribe" }],
+          },
+        },
+      },
+      cwd,
+      personaCatalogue: ["engineer", "scribe"],
+      pipelineCatalogue: ["default"],
+      availableModels: [],
+      authenticatedProviders: [],
+      onExit: harness.onExit,
+      onSaved: harness.onSaved,
+      onError: harness.onError,
+    });
+    comp.handleInput("2");
+    comp.handleInput("\r");
+    comp.handleInput("\x1b[B"); // move to phase 1
+    comp.handleInput(" "); // space → clear
+
+    const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
+    expect(fs.existsSync(projectPath)).toBe(false);
+  });
+});

@@ -6,7 +6,12 @@
 
 import { resolveModelForPhase } from "../model-resolver.js";
 import type { AvailableModel, ConfigTuiState, View } from "./state.js";
-import { getActiveView, listResolvedPersonas } from "./state.js";
+import {
+  getActiveView,
+  getPhaseOverride,
+  listPipelineOverrideSummaries,
+  listResolvedPersonas,
+} from "./state.js";
 
 /**
  * Canonical phase list for the "default" pipeline as dispatched by
@@ -475,6 +480,208 @@ export function renderShowResolved(state: ConfigTuiState, width: number): string
   return lines;
 }
 
+// ── Screen 4 — Per-phase overrides (pipelines list) ─────────────────────────
+
+export function renderOverridesListPipelines(state: ConfigTuiState, width: number): string[] {
+  const view = getActiveView(state);
+  if (view.kind !== "overrides-list-pipelines") {
+    return ["(renderOverridesListPipelines called with wrong active view)"];
+  }
+  const summaries = listPipelineOverrideSummaries(state);
+  const lines: string[] = [];
+  lines.push(`forge config › per-phase overrides`);
+  lines.push(rule(width));
+
+  if (summaries.length === 0) {
+    lines.push(`  (no pipeline catalogue available)`);
+    lines.push(`  esc back`);
+    return lines;
+  }
+
+  lines.push(`  Pipelines:`);
+  const win = windowList(summaries, view.cursor);
+  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+  win.visible.forEach((s, i) => {
+    const absoluteIdx = win.start + i;
+    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+    const status = s.overrideCount === 0
+      ? "none"
+      : `${s.overrideCount} override${s.overrideCount === 1 ? "" : "s"}`;
+    lines.push(`  ${cursor} ${padRight(s.pipeline, 18)} ${status}`);
+  });
+  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+
+  lines.push("");
+  lines.push(`  enter inspect highlighted pipeline   esc back`);
+  if (state.dirty) lines.push(`  * unsaved`);
+  return lines;
+}
+
+// ── Screen 4 (variant) — Phases of one pipeline ─────────────────────────────
+
+function formatOverride(override: string | { provider: string; model: string } | undefined): string {
+  if (override === undefined) return "(none)";
+  if (typeof override === "string") return `"${override}"`;
+  return `{${override.provider}:${override.model}}`;
+}
+
+export function renderOverridesListPhases(state: ConfigTuiState, width: number): string[] {
+  const view = getActiveView(state);
+  if (view.kind !== "overrides-list-phases") {
+    return ["(renderOverridesListPhases called with wrong active view)"];
+  }
+  const lines: string[] = [];
+  lines.push(`forge config › per-phase overrides › ${view.pipeline}`);
+  lines.push(rule(width));
+  lines.push(`  Pipeline phases (canonical order from orchestrator):`);
+  lines.push("");
+  lines.push(
+    `    #  ROLE          PERSONA       OVERRIDE                  RESOLVED                  SOURCE`,
+  );
+
+  const win = windowList([...CANONICAL_PHASES], view.cursor, 12);
+  if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} row(s) above`);
+
+  win.visible.forEach((phase, i) => {
+    const absoluteIdx = win.start + i;
+    const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+    const override = getPhaseOverride(state, view.pipeline, absoluteIdx);
+    const overrideStr = padRight(formatOverride(override), 25);
+    const result = resolveModelForPhase(view.pipeline, absoluteIdx, phase.personaNoun, {
+      ...state.buffer.global,
+      ...state.buffer.project,
+      _global: state.buffer.global,
+      _project: state.buffer.project,
+    });
+    const resolved = result.model
+      ? `${result.model.provider}:${result.model.model}`
+      : "(inherit pi current)";
+    const resolvedStr = padRight(resolved, 25);
+    const idxStr = String(absoluteIdx).padStart(2, " ");
+    const roleStr = padRight(phase.role, 13);
+    const personaStr = padRight(phase.personaNoun, 13);
+    lines.push(
+      `  ${cursor} ${idxStr}  ${roleStr} ${personaStr} ${overrideStr} ${resolvedStr} ${result.source}`,
+    );
+  });
+
+  if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} row(s) below`);
+  lines.push("");
+  lines.push(
+    `  enter edit override   space clear (back to persona)   esc back`,
+  );
+  if (state.dirty) lines.push(`  * unsaved`);
+  return lines;
+}
+
+// ── Screen 5 — Per-phase override editor ────────────────────────────────────
+
+export function renderOverrideEditor(state: ConfigTuiState, width: number): string[] {
+  const view = getActiveView(state);
+  if (view.kind !== "override-editor") {
+    return ["(renderOverrideEditor called with wrong active view)"];
+  }
+  const phase = CANONICAL_PHASES[view.phaseIndex];
+  const phaseLabel = phase
+    ? `phase ${view.phaseIndex} (${phase.role} / ${phase.personaNoun})`
+    : `phase ${view.phaseIndex}`;
+  const lines: string[] = [];
+  lines.push(`forge config › per-phase overrides › ${view.pipeline} › ${phaseLabel}`);
+  lines.push(rule(width));
+
+  if (view.step === "pick-type") {
+    lines.push(`  Override type:`);
+    const options = [
+      "Use a persona-model by name (recommended)",
+      "Inline {provider, model} pair (one-off)",
+      "Clear override (fall through to persona)",
+    ];
+    options.forEach((opt, i) => {
+      const cursor = i === view.cursor ? "▸" : " ";
+      lines.push(`  ${cursor} ${i + 1}. ${opt}`);
+    });
+    lines.push("");
+    lines.push(`  ↑/↓ select   enter advance   1-3 shortcuts   esc back`);
+  } else if (view.step === "pick-name") {
+    lines.push(`  Pick persona-model to use for this phase:`);
+    const personas = listResolvedPersonas(state);
+    if (personas.length === 0) {
+      lines.push(`  (no persona-models defined — set some up via Personas first)`);
+      lines.push("");
+      lines.push(`  esc back`);
+      return lines;
+    }
+    const personaResolved = phase
+      ? resolveModelForPhase(view.pipeline, view.phaseIndex, phase.personaNoun, {
+          ...state.buffer.global,
+          ...state.buffer.project,
+          _global: state.buffer.global,
+          _project: state.buffer.project,
+        })
+      : undefined;
+    const personaResolvedStr = personaResolved?.model
+      ? `${personaResolved.model.provider}:${personaResolved.model.model}`
+      : undefined;
+    const win = windowList(personas, view.cursor);
+    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+    win.visible.forEach((p, i) => {
+      const absoluteIdx = win.start + i;
+      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+      const modelStr = `${p.provider}:${p.model}`;
+      const avail = state.availableModels.some(
+        (m) => m.provider === p.provider && m.id === p.model,
+      )
+        ? "✓"
+        : "✗";
+      const isNoOp = personaResolvedStr === modelStr;
+      const noOpHint = isNoOp ? "  (same as persona default — no effect)" : "";
+      lines.push(
+        `  ${cursor} ${padRight(p.persona, 12)} ${padRight(modelStr, 36)} ${avail}${noOpHint}`,
+      );
+    });
+    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+    lines.push("");
+    lines.push(`  enter set as override   esc back`);
+  } else if (view.step === "pick-provider") {
+    lines.push(`  Inline override — Step 1 of 2 — pick provider`);
+    lines.push("");
+    const providers = uniqueProviders(state);
+    const win = windowList(providers, view.cursor);
+    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+    win.visible.forEach((p, i) => {
+      const absoluteIdx = win.start + i;
+      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+      const auth = authBadgeFor(state, p);
+      lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
+    });
+    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+    lines.push("");
+    lines.push(`  ↑/↓ select   enter advance   esc back`);
+  } else if (view.step === "pick-model") {
+    lines.push(`  Inline override — Step 2 of 2 — pick model (provider: ${view.provider ?? "?"})`);
+    lines.push("");
+    const models = state.availableModels.filter((m) => m.provider === view.provider);
+    if (models.length === 0) {
+      lines.push(`  No models available for this provider.`);
+      lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
+    } else {
+      const win = windowList(models, view.cursor);
+      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+      win.visible.forEach((m, i) => {
+        const absoluteIdx = win.start + i;
+        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+        lines.push(`  ${cursor} ${m.id}`);
+      });
+      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+    }
+    lines.push("");
+    lines.push(`  ↑/↓ select   enter write override   esc back`);
+  }
+
+  if (state.dirty) lines.push(`  * unsaved`);
+  return lines;
+}
+
 // ── Overlay decorations (last-saved banner, confirm-quit modal) ─────────────
 
 function renderConfirmQuitOverlay(state: ConfigTuiState, _width: number): string[] {
@@ -521,6 +728,15 @@ export function renderActive(state: ConfigTuiState, width: number): string[] {
       break;
     case "show-resolved":
       lines = renderShowResolved(state, width);
+      break;
+    case "overrides-list-pipelines":
+      lines = renderOverridesListPipelines(state, width);
+      break;
+    case "overrides-list-phases":
+      lines = renderOverridesListPhases(state, width);
+      break;
+    case "override-editor":
+      lines = renderOverrideEditor(state, width);
       break;
     default: {
       const _exhaustive: never = view;

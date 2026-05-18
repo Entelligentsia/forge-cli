@@ -13,6 +13,9 @@ import type {
   ProjectConfig,
 } from "../config-layer.js";
 
+// L4 phase override is either a persona-models key (string) or an inline {provider, model}.
+export type PhaseOverride = string | PersonaModel;
+
 export type ConfigLayer = "global" | "project";
 
 // ── Views ────────────────────────────────────────────────────────────────────
@@ -31,7 +34,19 @@ export type View =
       /** Cursor index inside the active step's list (provider/model/layer). */
       cursor: number;
     }
-  | { kind: "show-resolved"; cursor: number };
+  | { kind: "show-resolved"; cursor: number }
+  // Slice 4c — per-phase overrides (Screens 4 + 5).
+  | { kind: "overrides-list-pipelines"; cursor: number }
+  | { kind: "overrides-list-phases"; pipeline: string; cursor: number }
+  | {
+      kind: "override-editor";
+      pipeline: string;
+      phaseIndex: number;
+      step: "pick-type" | "pick-name" | "pick-provider" | "pick-model";
+      /** For the inline path: chosen provider before the model picker. */
+      provider: string | undefined;
+      cursor: number;
+    };
 
 // ── Buffer + state ───────────────────────────────────────────────────────────
 
@@ -87,6 +102,14 @@ export type ConfigTuiAction =
   | { kind: "set-persona-model"; model: string }
   | { kind: "commit-persona-edit"; layer: ConfigLayer }
   | { kind: "delete-persona-entry"; layer: ConfigLayer; persona: string }
+  // Slice 4c — per-phase override actions. Project-only (L4 lives on
+  // project.pipelines[name].phases[i]["model-override"]).
+  | { kind: "begin-override-edit"; pipeline: string; phaseIndex: number }
+  | { kind: "set-override-step"; step: "pick-type" | "pick-name" | "pick-provider" | "pick-model" }
+  | { kind: "set-override-provider"; provider: string }
+  | { kind: "commit-override-name"; name: string }
+  | { kind: "commit-override-inline"; provider: string; model: string }
+  | { kind: "clear-phase-override"; pipeline: string; phaseIndex: number }
   | { kind: "mark-clean"; lastSaved?: { target: string; layer: ConfigLayer } }
   | { kind: "clear-status" }
   | { kind: "request-quit" }
@@ -144,7 +167,10 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         top.kind === "persona-editor" ||
         top.kind === "top-menu" ||
         top.kind === "empty-state" ||
-        top.kind === "no-project"
+        top.kind === "no-project" ||
+        top.kind === "overrides-list-pipelines" ||
+        top.kind === "overrides-list-phases" ||
+        top.kind === "override-editor"
       ) {
         const newCursor = Math.max(0, top.cursor + action.delta);
         const replaced: View = { ...top, cursor: newCursor };
@@ -210,6 +236,79 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
       return changed ? { ...state, buffer, dirty: true } : state;
     }
 
+    case "begin-override-edit": {
+      const editor: View = {
+        kind: "override-editor",
+        pipeline: action.pipeline,
+        phaseIndex: action.phaseIndex,
+        step: "pick-type",
+        provider: undefined,
+        cursor: 0,
+      };
+      return { ...state, view: [...state.view, editor] };
+    }
+
+    case "set-override-step": {
+      const top = state.view[state.view.length - 1];
+      if (top.kind !== "override-editor") return state;
+      const updated: View = { ...top, step: action.step, cursor: 0 };
+      return { ...state, view: [...state.view.slice(0, -1), updated] };
+    }
+
+    case "set-override-provider": {
+      const top = state.view[state.view.length - 1];
+      if (top.kind !== "override-editor") return state;
+      const updated: View = {
+        ...top,
+        provider: action.provider,
+        step: "pick-model",
+        cursor: 0,
+      };
+      return { ...state, view: [...state.view.slice(0, -1), updated] };
+    }
+
+    case "commit-override-name": {
+      const top = state.view[state.view.length - 1];
+      if (top.kind !== "override-editor") return state;
+      const buffer = writePhaseOverride(
+        state.buffer,
+        top.pipeline,
+        top.phaseIndex,
+        action.name,
+      );
+      return {
+        ...state,
+        buffer,
+        view: state.view.slice(0, -1),
+        dirty: true,
+      };
+    }
+
+    case "commit-override-inline": {
+      const top = state.view[state.view.length - 1];
+      if (top.kind !== "override-editor") return state;
+      const buffer = writePhaseOverride(state.buffer, top.pipeline, top.phaseIndex, {
+        provider: action.provider,
+        model: action.model,
+      });
+      return {
+        ...state,
+        buffer,
+        view: state.view.slice(0, -1),
+        dirty: true,
+      };
+    }
+
+    case "clear-phase-override": {
+      const buffer = clearPhaseOverride(state.buffer, action.pipeline, action.phaseIndex);
+      const changed = buffer !== state.buffer;
+      // If invoked from inside the override-editor, also pop back to the phases list.
+      const top = state.view[state.view.length - 1];
+      const view =
+        changed && top.kind === "override-editor" ? state.view.slice(0, -1) : state.view;
+      return changed ? { ...state, buffer, dirty: true, view } : state;
+    }
+
     case "mark-clean":
       return { ...state, dirty: false, lastSaved: action.lastSaved ?? state.lastSaved };
 
@@ -265,6 +364,77 @@ function deletePersonaEntry(
   return { ...buffer, [layer]: updatedLayer };
 }
 
+function writePhaseOverride(
+  buffer: ConfigBuffer,
+  pipelineName: string,
+  phaseIndex: number,
+  override: PhaseOverride,
+): ConfigBuffer {
+  const project = { ...buffer.project };
+  const pipelines = { ...(project.pipelines ?? {}) };
+  const pipeline: PipelineConfig = { ...(pipelines[pipelineName] ?? {}) };
+  const phases = [...(pipeline.phases ?? [])];
+  // Pad with empty slots so phaseIndex is addressable.
+  while (phases.length <= phaseIndex) phases.push({});
+  phases[phaseIndex] = { ...phases[phaseIndex], "model-override": override };
+  pipeline.phases = phases;
+  pipelines[pipelineName] = pipeline;
+  project.pipelines = pipelines;
+  return { ...buffer, project };
+}
+
+function clearPhaseOverride(
+  buffer: ConfigBuffer,
+  pipelineName: string,
+  phaseIndex: number,
+): ConfigBuffer {
+  const existingPipeline = buffer.project.pipelines?.[pipelineName];
+  const existingPhases = existingPipeline?.phases;
+  if (!existingPhases) return buffer;
+  const existingPhase = existingPhases[phaseIndex];
+  if (!existingPhase || existingPhase["model-override"] === undefined) return buffer;
+
+  const project = { ...buffer.project };
+  const pipelines = { ...(project.pipelines ?? {}) };
+  const pipeline: PipelineConfig = { ...pipelines[pipelineName] };
+  const phases = [...existingPhases];
+  const nextPhase = { ...phases[phaseIndex] };
+  delete nextPhase["model-override"];
+  phases[phaseIndex] = nextPhase;
+
+  // Trim trailing fully-empty slots so a one-time override doesn't leave a
+  // long array of {} behind.
+  while (phases.length > 0 && Object.keys(phases[phases.length - 1]).length === 0) {
+    phases.pop();
+  }
+  if (phases.length === 0) {
+    delete pipeline.phases;
+  } else {
+    pipeline.phases = phases;
+  }
+
+  // If the pipeline has no persona-models and no remaining phase overrides, drop it.
+  const hasPipelinePersonaModels =
+    pipeline["persona-models"] !== undefined &&
+    Object.keys(pipeline["persona-models"]).length > 0;
+  const hasNonEmptyPhases = (pipeline.phases ?? []).some(
+    (p) => Object.keys(p).length > 0,
+  );
+  if (!hasPipelinePersonaModels && !hasNonEmptyPhases) {
+    delete pipelines[pipelineName];
+  } else {
+    pipelines[pipelineName] = pipeline;
+  }
+
+  if (Object.keys(pipelines).length === 0) {
+    delete project.pipelines;
+  } else {
+    project.pipelines = pipelines;
+  }
+
+  return { ...buffer, project };
+}
+
 function cloneJSON<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -305,4 +475,44 @@ export function listResolvedPersonas(
 
 export function getActiveView(state: ConfigTuiState): View {
   return state.view[state.view.length - 1];
+}
+
+// ── Slice 4c selectors — per-phase overrides ─────────────────────────────────
+
+/**
+ * One row per pipeline currently known to the TUI. A pipeline is "known" when
+ * it appears in the project pipeline catalogue (from .forge/config.json). If
+ * the catalogue is null we fall back to ["default"] so the editor still works
+ * outside a Forge project (rare; the override editor is only reachable from
+ * the top-menu which itself requires a project).
+ */
+export interface PipelineOverrideSummary {
+  pipeline: string;
+  overrideCount: number;
+}
+
+export function listPipelineOverrideSummaries(
+  state: ConfigTuiState,
+): PipelineOverrideSummary[] {
+  const names = state.pipelineCatalogue ?? ["default"];
+  return names.map((pipeline) => {
+    const phases = state.buffer.project.pipelines?.[pipeline]?.phases ?? [];
+    const overrideCount = phases.filter(
+      (p) => p["model-override"] !== undefined,
+    ).length;
+    return { pipeline, overrideCount };
+  });
+}
+
+/**
+ * Resolve the override (if any) on a given pipeline + phase index.
+ */
+export function getPhaseOverride(
+  state: ConfigTuiState,
+  pipeline: string,
+  phaseIndex: number,
+): PhaseOverride | undefined {
+  return state.buffer.project.pipelines?.[pipeline]?.phases?.[phaseIndex]?.[
+    "model-override"
+  ];
 }

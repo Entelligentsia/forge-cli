@@ -41,6 +41,7 @@ function hexEscape(s: string): string {
 import {
   getActiveView,
   initialState,
+  listPipelineOverrideSummaries,
   listResolvedPersonas,
   reducer,
   type AvailableModel,
@@ -49,7 +50,7 @@ import {
   type InitOptions,
   type View,
 } from "./state.js";
-import { renderActive } from "./screens.js";
+import { CANONICAL_PHASES, renderActive } from "./screens.js";
 
 export interface ConfigTuiComponentOptions extends InitOptions {
   /** Called by the component when the user has quit (with discard or via clean exit). */
@@ -132,6 +133,21 @@ export class ConfigTuiComponent implements Component, Focusable {
 
     if (view.kind === "show-resolved") {
       this.handleShowResolvedInput(data, view);
+      return;
+    }
+
+    if (view.kind === "overrides-list-pipelines") {
+      this.handleOverridesListPipelinesInput(data, view);
+      return;
+    }
+
+    if (view.kind === "overrides-list-phases") {
+      this.handleOverridesListPhasesInput(data, view);
+      return;
+    }
+
+    if (view.kind === "override-editor") {
+      this.handleOverrideEditorInput(data, view);
       return;
     }
   }
@@ -252,8 +268,10 @@ export class ConfigTuiComponent implements Component, Focusable {
     if (index === 0) {
       this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
     } else if (index === 1) {
-      // Per-phase overrides — Slice 4c task #17/18 (stub for now).
-      this.opts.onError?.("Per-phase overrides editor lands in a follow-up slice.");
+      this.dispatch({
+        kind: "push-view",
+        view: { kind: "overrides-list-pipelines", cursor: 0 },
+      });
     } else if (index === 2) {
       this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
     } else if (index === 3 && this.state.pipelineCatalogue) {
@@ -376,6 +394,164 @@ export class ConfigTuiComponent implements Component, Focusable {
         this.commitAndPersist(layer);
         return;
       }
+    }
+  }
+
+  // ── Slice 4c — per-phase overrides handlers ─────────────────────────────────
+
+  private handleOverridesListPipelinesInput(
+    data: string,
+    view: Extract<View, { kind: "overrides-list-pipelines" }>,
+  ): void {
+    const summaries = listPipelineOverrideSummaries(this.state);
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+      this.dispatch({ kind: "cursor-move", delta: -1 });
+      return;
+    }
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+      if (view.cursor < summaries.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+      return;
+    }
+    if (matchesKey(data, Key.enter)) {
+      const target = summaries[view.cursor];
+      if (target) {
+        this.dispatch({
+          kind: "push-view",
+          view: { kind: "overrides-list-phases", pipeline: target.pipeline, cursor: 0 },
+        });
+      }
+    }
+  }
+
+  private handleOverridesListPhasesInput(
+    data: string,
+    view: Extract<View, { kind: "overrides-list-phases" }>,
+  ): void {
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+      this.dispatch({ kind: "cursor-move", delta: -1 });
+      return;
+    }
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+      if (view.cursor < CANONICAL_PHASES.length - 1) {
+        this.dispatch({ kind: "cursor-move", delta: 1 });
+      }
+      return;
+    }
+    if (matchesKey(data, Key.enter)) {
+      this.dispatch({
+        kind: "begin-override-edit",
+        pipeline: view.pipeline,
+        phaseIndex: view.cursor,
+      });
+      return;
+    }
+    // space → clear override on current row (then persist)
+    if (matchesKey(data, Key.space)) {
+      this.dispatch({
+        kind: "clear-phase-override",
+        pipeline: view.pipeline,
+        phaseIndex: view.cursor,
+      });
+      this.persistLayer("project");
+    }
+  }
+
+  private handleOverrideEditorInput(
+    data: string,
+    view: Extract<View, { kind: "override-editor" }>,
+  ): void {
+    if (view.step === "pick-type") {
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < 2) this.dispatch({ kind: "cursor-move", delta: 1 });
+        return;
+      }
+      const advance = (idx: number) => {
+        if (idx === 0) {
+          this.dispatch({ kind: "set-override-step", step: "pick-name" });
+        } else if (idx === 1) {
+          this.dispatch({ kind: "set-override-step", step: "pick-provider" });
+        } else {
+          this.dispatch({
+            kind: "clear-phase-override",
+            pipeline: view.pipeline,
+            phaseIndex: view.phaseIndex,
+          });
+          this.persistLayer("project");
+        }
+      };
+      if (matchesKey(data, Key.enter)) {
+        advance(view.cursor);
+        return;
+      }
+      if (matchesKey(data, "1")) return advance(0);
+      if (matchesKey(data, "2")) return advance(1);
+      if (matchesKey(data, "3")) return advance(2);
+      return;
+    }
+
+    if (view.step === "pick-name") {
+      const personas = listResolvedPersonas(this.state);
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < personas.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+        return;
+      }
+      if (matchesKey(data, Key.enter)) {
+        const target = personas[view.cursor];
+        if (target) {
+          this.dispatch({ kind: "commit-override-name", name: target.persona });
+          this.persistLayer("project");
+        }
+      }
+      return;
+    }
+
+    if (view.step === "pick-provider") {
+      const providers = this.uniqueProviders();
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < providers.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+        return;
+      }
+      if (matchesKey(data, Key.enter)) {
+        const provider = providers[view.cursor];
+        if (provider) this.dispatch({ kind: "set-override-provider", provider });
+      }
+      return;
+    }
+
+    if (view.step === "pick-model") {
+      const models = this.state.availableModels.filter((m) => m.provider === view.provider);
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < models.length - 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+        return;
+      }
+      if (matchesKey(data, Key.enter)) {
+        const target = models[view.cursor];
+        if (target && view.provider) {
+          this.dispatch({
+            kind: "commit-override-inline",
+            provider: view.provider,
+            model: target.id,
+          });
+          this.persistLayer("project");
+        }
+      }
+      return;
     }
   }
 
