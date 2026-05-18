@@ -202,12 +202,21 @@ export class ConfigTuiComponent implements Component, Focusable {
     view: Extract<View, { kind: "persona-editor" }>,
   ): void {
     if (view.step === "pick-provider") {
-      // For slice 4b: a single-keystroke advance using the first authenticated provider.
-      // The picker UI is rendered (screens.ts) but we don't yet have a list-cursor for
-      // it — 4c will introduce one. For now, enter picks the first row.
+      const providers = this.uniqueProviders();
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < providers.length - 1) {
+          this.dispatch({ kind: "cursor-move", delta: 1 });
+        }
+        return;
+      }
       if (matchesKey(data, Key.enter)) {
-        const provider = this.uniqueProviders()[0];
+        const provider = providers[view.cursor];
         if (provider) this.dispatch({ kind: "set-persona-provider", provider });
+        return;
       }
       // Quick single-letter shortcuts: a=anthropic, o=openai, g=google, l=ollama
       const shortcut = this.providerShortcut(data);
@@ -216,21 +225,45 @@ export class ConfigTuiComponent implements Component, Focusable {
     }
 
     if (view.step === "pick-model") {
+      const models = this.state.availableModels.filter((m) => m.provider === view.provider);
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < models.length - 1) {
+          this.dispatch({ kind: "cursor-move", delta: 1 });
+        }
+        return;
+      }
       if (matchesKey(data, Key.enter)) {
-        const models = this.state.availableModels.filter((m) => m.provider === view.provider);
-        const first = models[0];
-        if (first) this.dispatch({ kind: "set-persona-model", model: first.id });
+        const target = models[view.cursor];
+        if (target) this.dispatch({ kind: "set-persona-model", model: target.id });
       }
       return;
     }
 
     if (view.step === "pick-layer") {
+      // Cursor 0 = project, 1 = global (matches render order in screens.ts).
+      if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+        this.dispatch({ kind: "cursor-move", delta: -1 });
+        return;
+      }
+      if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+        if (view.cursor < 1) this.dispatch({ kind: "cursor-move", delta: 1 });
+        return;
+      }
       if (matchesKey(data, "g")) {
         this.commitAndPersist("global");
         return;
       }
-      if (matchesKey(data, "p") || matchesKey(data, Key.enter)) {
+      if (matchesKey(data, "p")) {
         this.commitAndPersist("project");
+        return;
+      }
+      if (matchesKey(data, Key.enter)) {
+        const layer: ConfigLayer = view.cursor === 0 ? "project" : "global";
+        this.commitAndPersist(layer);
         return;
       }
     }

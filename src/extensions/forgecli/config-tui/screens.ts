@@ -219,10 +219,12 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
     }
     lines.push("");
     lines.push(`  Provider                                                  AUTH`);
-    for (const p of uniqueProviders(state)) {
+    const providers = uniqueProviders(state);
+    providers.forEach((p, i) => {
+      const cursor = i === view.cursor ? "▸" : " ";
       const auth = authBadgeFor(state, p);
-      lines.push(`    ${padRight(p, 56)}${auth}`);
-    }
+      lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
+    });
     lines.push("");
     lines.push(`  ↑/↓ select   enter advance   esc back`);
   } else if (view.step === "pick-model") {
@@ -233,9 +235,10 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
       lines.push(`  No models available for this provider.`);
       lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
     } else {
-      for (const m of models) {
-        lines.push(`    ${m.id}`);
-      }
+      models.forEach((m, i) => {
+        const cursor = i === view.cursor ? "▸" : " ";
+        lines.push(`  ${cursor} ${m.id}`);
+      });
     }
     lines.push("");
     lines.push(`  ↑/↓ select   enter advance   esc back`);
@@ -244,10 +247,17 @@ export function renderPersonaEditor(state: ConfigTuiState, width: number): strin
     lines.push("");
     lines.push(`  ${view.persona} → ${view.provider}:${view.model}`);
     lines.push("");
-    lines.push(`  ▸ Project   ${state.cwd}/.pi/forge-cli/config.json`);
-    lines.push(`    Global    ~/.pi/agent/forge-cli/config.json`);
+    const targets = ["project", "global"] as const;
+    const targetLines = [
+      `Project   ${state.cwd}/.pi/forge-cli/config.json`,
+      `Global    ~/.pi/agent/forge-cli/config.json`,
+    ];
+    targets.forEach((_, i) => {
+      const cursor = i === view.cursor ? "▸" : " ";
+      lines.push(`  ${cursor} ${targetLines[i]}`);
+    });
     lines.push("");
-    lines.push(`  enter confirm and write   esc cancel`);
+    lines.push(`  ↑/↓ select   enter confirm and write   p/g shortcuts   esc cancel`);
   }
 
   if (state.dirty) lines.push(`  * unsaved`);

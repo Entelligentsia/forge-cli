@@ -28,6 +28,8 @@ export type View =
       step: "pick-provider" | "pick-model" | "pick-layer";
       provider: string | undefined;
       model: string | undefined;
+      /** Cursor index inside the active step's list (provider/model/layer). */
+      cursor: number;
     };
 
 // ── Buffer + state ───────────────────────────────────────────────────────────
@@ -126,10 +128,20 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
 
     case "cursor-move": {
       const top = state.view[state.view.length - 1];
-      if (top.kind !== "personas-list") return state;
-      const newCursor = Math.max(0, top.cursor + action.delta);
-      const replaced: View = { ...top, cursor: newCursor };
-      return { ...state, view: [...state.view.slice(0, -1), replaced] };
+      if (top.kind === "personas-list") {
+        const newCursor = Math.max(0, top.cursor + action.delta);
+        const replaced: View = { ...top, cursor: newCursor };
+        return { ...state, view: [...state.view.slice(0, -1), replaced] };
+      }
+      if (top.kind === "persona-editor") {
+        // Cursor is per-step. We don't have list-length info here (lives in
+        // state.availableModels / state.authenticatedProviders), so clamp at 0
+        // and rely on the caller (component) to clamp at the upper bound.
+        const newCursor = Math.max(0, top.cursor + action.delta);
+        const replaced: View = { ...top, cursor: newCursor };
+        return { ...state, view: [...state.view.slice(0, -1), replaced] };
+      }
+      return state;
     }
 
     case "begin-persona-edit": {
@@ -139,6 +151,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         step: "pick-provider",
         provider: undefined,
         model: undefined,
+        cursor: 0,
       };
       return { ...state, view: [...state.view, editor] };
     }
@@ -151,6 +164,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         provider: action.provider,
         model: undefined,
         step: "pick-model",
+        cursor: 0,
       };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
@@ -158,7 +172,12 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
     case "set-persona-model": {
       const top = state.view[state.view.length - 1];
       if (top.kind !== "persona-editor") return state;
-      const updated: View = { ...top, model: action.model, step: "pick-layer" };
+      const updated: View = {
+        ...top,
+        model: action.model,
+        step: "pick-layer",
+        cursor: 0,
+      };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
 
