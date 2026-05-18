@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "forge-cli config",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "personaModel": {
+      "type": "object",
+      "required": ["provider", "model"],
+      "additionalProperties": false,
+      "properties": {
+        "provider":    { "type": "string", "description": "pi provider id (anthropic, openai, google, ollama, openrouter, …)" },
+        "model":       { "type": "string", "description": "exact pi model id within that provider" },
+        "description": { "type": "string" }
+      }
+    },
+    "personaModelsMap": {
+      "type": "object",
+      "description": "persona name → {provider, model}. Names must match the Forge persona catalogue read from forge-cli's bundled vendored plugin (forge-cli/forge/personas/*.md). A reserved 'default' key applies to any persona without an entry.",
+      "additionalProperties": { "$ref": "#/definitions/personaModel" }
+    }
+  },
+  "properties": {
+    "persona-models": { "$ref": "#/definitions/personaModelsMap" },
+    "pipelines": {
+      "type": "object",
+      "description": "Per-pipeline overrides. Pipeline names match the Forge plugin's pipeline catalogue.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "persona-models": { "$ref": "#/definitions/personaModelsMap" },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "role": { "type": "string", "description": "Must match a phase role in the plugin's pipeline definition." },
+                "model-override": {
+                  "description": "L4 — atomic per-phase override. Either a persona-models key by name (string) or an inline {provider, model}.",
+                  "oneOf": [
+                    { "type": "string" },
+                    { "$ref": "#/definitions/personaModel" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
