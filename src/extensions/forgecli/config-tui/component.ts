@@ -127,6 +127,25 @@ export class ConfigTuiComponent implements Component, Focusable {
       this.handlePersonaEditorInput(data, view);
       return;
     }
+
+    if (view.kind === "show-resolved") {
+      this.handleShowResolvedInput(data, view);
+      return;
+    }
+  }
+
+  private handleShowResolvedInput(
+    data: string,
+    _view: Extract<View, { kind: "show-resolved" }>,
+  ): void {
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+      this.dispatch({ kind: "cursor-move", delta: -1 });
+      return;
+    }
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+      this.dispatch({ kind: "cursor-move", delta: 1 });
+      return;
+    }
   }
 
   // ── Dispatcher helpers ──────────────────────────────────────────────────────
@@ -152,6 +171,16 @@ export class ConfigTuiComponent implements Component, Focusable {
       } else {
         this.dispatch({ kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
       }
+      return;
+    }
+    // 3 → Show resolved (works inside or outside a Forge project).
+    if (matchesKey(data, "3")) {
+      this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+      return;
+    }
+    // 'r' from anywhere on top-level → show resolved (keyboard shortcut).
+    if (matchesKey(data, "r")) {
+      this.dispatch({ kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
       return;
     }
   }

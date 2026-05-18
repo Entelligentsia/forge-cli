@@ -30,7 +30,8 @@ export type View =
       model: string | undefined;
       /** Cursor index inside the active step's list (provider/model/layer). */
       cursor: number;
-    };
+    }
+  | { kind: "show-resolved"; cursor: number };
 
 // ── Buffer + state ───────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
 
     case "cursor-move": {
       const top = state.view[state.view.length - 1];
-      if (top.kind === "personas-list") {
+      if (top.kind === "personas-list" || top.kind === "show-resolved") {
         const newCursor = Math.max(0, top.cursor + action.delta);
         const replaced: View = { ...top, cursor: newCursor };
         return { ...state, view: [...state.view.slice(0, -1), replaced] };

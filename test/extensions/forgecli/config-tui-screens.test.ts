@@ -9,11 +9,14 @@ import {
   type ConfigTuiState,
 } from "../../../src/extensions/forgecli/config-tui/state.js";
 import {
+  CANONICAL_PHASES,
+  computeResolvedRows,
   renderTopMenu,
   renderEmptyState,
   renderNoProject,
   renderPersonasList,
   renderPersonaEditor,
+  renderShowResolved,
   renderActive,
 } from "../../../src/extensions/forgecli/config-tui/screens.js";
 
@@ -221,6 +224,76 @@ describe("renderPersonaEditor — pick-layer", () => {
     expect(out).toContain("Global");
     expect(out).toContain("/home/x/proj/.pi/forge-cli/config.json");
     expect(out).toContain("~/.pi/agent/forge-cli/config.json");
+  });
+});
+
+describe("renderShowResolved (Slice 4c task #19)", () => {
+  it("shows the L1/L2 file presence + a row per phase per pipeline", () => {
+    let s = makeState({
+      global: { "persona-models": { engineer: { provider: "ollama", model: "glm-5.1:cloud" } } },
+      project: { "persona-models": { architect: { provider: "anthropic", model: "claude-opus-4-5" } } },
+    });
+    s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+    const lines = renderShowResolved(s, WIDTH);
+    const out = lines.join("\n");
+    expect(out).toContain("forge config › resolved");
+    expect(out).toContain("L1");
+    expect(out).toContain("exists");
+    expect(out).toContain("L2");
+    expect(out).toContain("Pipeline: default");
+    expect(out).toContain("plan");
+    expect(out).toContain("implement");
+    expect(out).toContain("commit");
+    // Engineer phases (plan, implement, commit) resolve to L1 ollama
+    expect(out).toContain("ollama:glm-5.1:cloud");
+    // Architect phase (approve) resolves to L2 anthropic
+    expect(out).toContain("anthropic:claude-opus-4-5");
+  });
+
+  it("falls back to inherit when nothing resolves", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+    const out = renderShowResolved(s, WIDTH).join("\n");
+    expect(out).toContain("inherit pi current");
+  });
+
+  it("scrolls when cursor walks past the window", () => {
+    let s = makeState({
+      pipelineCatalogue: ["default", "hotfix", "bug-fix"],
+    });
+    s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+    const beforeOut = renderShowResolved(s, WIDTH).join("\n");
+    for (let i = 0; i < 20; i++) {
+      s = reducer(s, { kind: "cursor-move", delta: 1 });
+    }
+    const afterOut = renderShowResolved(s, WIDTH).join("\n");
+    // Both outputs render — cursor moved, scroll indicator appears
+    expect(beforeOut).toContain("Pipeline: default");
+    expect(afterOut.includes("row(s) above") || afterOut.includes("row(s) below")).toBe(true);
+  });
+});
+
+describe("computeResolvedRows (pure exporter)", () => {
+  it("emits one row per canonical phase per known pipeline name", () => {
+    let s = makeState({
+      pipelineCatalogue: ["default", "hotfix"],
+    });
+    s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+    const groups = computeResolvedRows(s);
+    expect(groups.length).toBe(2);
+    expect(groups[0].pipeline).toBe("default");
+    expect(groups[1].pipeline).toBe("hotfix");
+    expect(groups[0].rows.length).toBe(CANONICAL_PHASES.length);
+  });
+
+  it("source = inherit for empty config, with model undefined", () => {
+    let s = makeState();
+    s = reducer(s, { kind: "push-view", view: { kind: "show-resolved", cursor: 0 } });
+    const [pipeline] = computeResolvedRows(s);
+    for (const row of pipeline.rows) {
+      expect(row.source).toBe("inherit");
+      expect(row.resolved).toBe("(inherit pi current)");
+    }
   });
 });
 
