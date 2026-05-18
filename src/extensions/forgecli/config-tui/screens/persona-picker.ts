@@ -30,7 +30,7 @@ export class PersonaPickerScreen implements Screen {
       const cur = cursor(absoluteIdx === view.cursor, theme);
       let status: string;
       if (entry.assignment) {
-        const layer = entry.assignment.source.endsWith("L2") ? "L2" : "L1";
+        const layer = entry.assignment.source.endsWith("L2") ? "project" : "global";
         status = muted(`currently: ${entry.assignment.provider}:${entry.assignment.model} (${layer})`, theme);
       } else if (entry.persona === "default") {
         status = muted("fallback for every persona", theme);

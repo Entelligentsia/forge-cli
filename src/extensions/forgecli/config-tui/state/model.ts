@@ -22,10 +22,7 @@ export type View =
   | { kind: "tier-picker"; tier: Tier; step: "pick-provider" | "pick-model"; provider: string | undefined; cursor: number }
   // ── Advanced menu (Phase D) ───────────────────────────────────────────
   | { kind: "advanced-menu"; cursor: number }
-  // ── Legacy / advanced views ───────────────────────────────────────────────
-  | { kind: "top-menu"; cursor: number }
-  | { kind: "empty-state"; cursor: number }
-  | { kind: "no-project"; cursor: number }
+  // ── Advanced views ───────────────────────────────────────────────────────
   | { kind: "personas-list"; cursor: number }
   | { kind: "persona-picker"; cursor: number }
   | {
@@ -62,7 +59,7 @@ export interface ResolvedPersonaEntry {
   persona: string;
   provider: string;
   model: string;
-  source: "L1" | "L2" | "default-L1" | "default-L2";
+  source: "L1" | "L2";
 }
 
 export interface PersonaPickerEntry {
@@ -113,8 +110,6 @@ export interface ConfigTuiState {
   dirty: boolean;
   /** Active write scope for tier-level commits (toggled by `tab` on tier-menu). */
   scope: ConfigLayer;
-  /** True iff both global and project were absent at init. */
-  isEmpty: boolean;
   /** If model/auth discovery failed at init, a diagnostic string. */
   authError: string | null;
   /** Pending quit confirmation modal. */

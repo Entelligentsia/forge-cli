@@ -32,7 +32,6 @@ import { AdvancedMenuScreen } from "./screens/advanced-menu.js";
 import { TierMenuScreen } from "./screens/tier-menu.js";
 import { TierPickerScreen } from "./screens/tier-picker.js";
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
-import { TopMenuScreen } from "./screens/top-menu.js";
 import { PersonasListScreen } from "./screens/personas-list.js";
 import { PersonaPickerScreen } from "./screens/persona-picker.js";
 import { PersonaEditorScreen } from "./screens/persona-editor.js";
@@ -70,9 +69,6 @@ const SCREEN_INSTANCES: Record<string, Screen> = {
   "tier-menu": new TierMenuScreen(),
   "tier-picker": new TierPickerScreen(),
   "advanced-menu": new AdvancedMenuScreen(),
-  "top-menu": new TopMenuScreen(),
-  "empty-state": new TopMenuScreen(),  // same screen handles both
-  "no-project": new TopMenuScreen(),    // same screen handles both
   "personas-list": new PersonasListScreen(),
   "persona-picker": new PersonaPickerScreen(),
   "persona-editor": new PersonaEditorScreen(),

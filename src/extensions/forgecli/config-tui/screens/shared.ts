@@ -71,12 +71,10 @@ function listResolvedPersonasInner(state: ConfigTuiState) {
   const projectMap = state.buffer.project["persona-models"] ?? {};
   const globalMap = state.buffer.global["persona-models"] ?? {};
   for (const [persona, entry] of Object.entries(globalMap)) {
-    const source = persona === "default" ? "default-L1" : "L1";
-    out.set(persona, { persona, provider: entry.provider, model: entry.model, source });
+    out.set(persona, { persona, provider: entry.provider, model: entry.model, source: "L1" });
   }
   for (const [persona, entry] of Object.entries(projectMap)) {
-    const source = persona === "default" ? "default-L2" : "L2";
-    out.set(persona, { persona, provider: entry.provider, model: entry.model, source });
+    out.set(persona, { persona, provider: entry.provider, model: entry.model, source: "L2" });
   }
   return [...out.values()].sort((a, b) => a.persona.localeCompare(b.persona));
 }

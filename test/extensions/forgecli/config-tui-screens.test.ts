@@ -10,9 +10,6 @@ import {
 } from "../../../src/extensions/forgecli/config-tui/state.js";
 import {
   computeResolvedRows,
-  renderTopMenu,
-  renderEmptyState,
-  renderNoProject,
   renderPersonasList,
   renderPersonaEditor,
   renderShowResolved,
@@ -56,57 +53,6 @@ function makeState(overrides: Partial<Parameters<typeof initialState>[0]> = {}):
     ...overrides,
   });
 }
-
-describe("renderTopMenu — empty state", () => {
-  it("shows 'no config files found' messaging", () => {
-    const s = makeState();
-    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("No forge-cli config files found");
-    expect(lines).toContain("currently-running model");
-    expect(lines).toContain("Add a persona-model assignment");
-  });
-});
-
-describe("renderTopMenu — with assignments", () => {
-  it("shows persona counts split by layer", () => {
-    const s = makeState({
-      global: { "persona-models": { architect: { provider: "anthropic", model: "claude-opus-4-5" } } },
-      project: { "persona-models": { engineer: { provider: "ollama", model: "glm-5.1:cloud" } } },
-    });
-    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("2 defined");
-    expect(lines).toContain("(1 global · 1 project)");
-    expect(lines).toContain("Forge plugin config (read-only)");
-  });
-
-  it("includes 'unsaved' marker when state.dirty", () => {
-    let s = makeState();
-    s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
-    s = reducer(s, { kind: "set-persona-provider", provider: "ollama" });
-    s = reducer(s, { kind: "set-persona-model", model: "glm-5.1:cloud" });
-    s = reducer(s, { kind: "commit-persona-edit", layer: "project" });
-    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("* unsaved");
-  });
-});
-
-describe("renderNoProject", () => {
-  it("renders the no-project screen with global-only messaging", () => {
-    const s = makeState({ pipelineCatalogue: null });
-    const lines = renderNoProject(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("No project root found");
-    expect(lines).toContain("~/.pi/agent/forge-cli/config.json");
-    expect(lines).toContain("N/A — no pipeline catalogue");
-  });
-});
-
-describe("renderEmptyState", () => {
-  it("delegates through renderTopMenu but forces the empty branch", () => {
-    const s = makeState();
-    const lines = renderEmptyState(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("No forge-cli config files found");
-  });
-});
 
 describe("renderPersonasList", () => {
   it("renders a table of persona-model assignments with sources and avail", () => {
@@ -488,8 +434,8 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
 
 describe("renderActive — top-level dispatcher", () => {
   it("dispatches based on the active view kind", () => {
-    let s = makeState({ pipelineCatalogue: null });
-    expect(renderActive(s, WIDTH, mockTheme).join("\n")).toContain("No project root found");
+    let s = makeState();
+    expect(renderActive(s, WIDTH, mockTheme).join("\n")).toContain("forge config");
 
     s = reducer(s, { kind: "push-view", view: { kind: "personas-list", cursor: 0 } });
     expect(renderActive(s, WIDTH, mockTheme).join("\n")).toContain("forge config › per-persona overrides");

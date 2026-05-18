@@ -6,7 +6,7 @@ import type { ConfigLayer } from "../../config-writer.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
-import { getActiveView, listResolvedPersonas } from "../state/selectors.js";
+import { getActiveView, listResolvedPersonas, personaSourceLabel } from "../state/selectors.js";
 import { rule, authBadgeFor, safeLines } from "./shared.js";
 import { padRight, cursor, accentBold, muted, warning, dirtyMarker } from "../theme.js";
 import { PERSONA_META } from "../tier-meta.js";
@@ -51,9 +51,9 @@ export class PersonasListScreen implements Screen {
       )
         ? authBadgeFor(state, p.provider, theme)
         : theme.fg("error", "✗");
-      const sourceCol = p.source.replace(/-(L1|L2)$/, " ($1)");
+      const sourceCol = personaSourceLabel(p.persona, p.source);
       lines.push(
-        `  ${cur} ${emoji}${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${padRight(sourceCol, 8)} ${avail}`,
+        `  ${cur} ${emoji}${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${sourceCol} ${avail}`,
       );
     });
 

@@ -33,7 +33,7 @@ describe("initialState", () => {
     expect(s.view[0].kind).toBe("tier-menu");
   });
 
-  it("starts on no-project when pipelineCatalogue is null", () => {
+  it("always starts on tier-menu (even outside a Forge project)", () => {
     const s = initialState({
       global: null,
       project: null,
@@ -43,17 +43,15 @@ describe("initialState", () => {
       availableModels: [],
       authenticatedProviders: [],
     });
-    expect(s.view[0].kind).toBe("no-project");
+    expect(s.view[0].kind).toBe("tier-menu");
   });
 
-  it("starts on empty-state when both configs missing AND pipelineCatalogue exists", () => {
+  it("tier-menu is the default view; isEmpty is now a selector", () => {
     const s = emptyState();
     expect(s.dirty).toBe(false);
     expect(s.buffer.global).toEqual({});
     expect(s.buffer.project).toEqual({});
-    // Tier-menu replaces top-menu as the default view when a pipeline catalogue exists.
-    // isEmpty is still true (no config files), but the view is now tier-menu.
-    expect(s.isEmpty).toBe(true);
+    // Tier-menu is the default view. isEmpty is derived from buffer via isConfigEmpty selector.
     expect(s.view[0].kind).toBe("tier-menu");
   });
 
@@ -76,7 +74,6 @@ describe("initialState", () => {
     });
     expect(s.buffer.global).toEqual(global);
     expect(s.buffer.project).toEqual(project);
-    expect(s.isEmpty).toBe(false);
     expect(s.dirty).toBe(false);
   });
 });
@@ -282,9 +279,6 @@ describe("View kinds", () => {
       { kind: "tier-menu", cursor: 0 },
       { kind: "tier-picker", tier: "heavy", step: "pick-provider", provider: undefined, cursor: 0 },
       { kind: "advanced-menu", cursor: 0 },
-      { kind: "top-menu", cursor: 0 },
-      { kind: "empty-state", cursor: 0 },
-      { kind: "no-project", cursor: 0 },
       { kind: "personas-list", cursor: 0 },
       {
         kind: "persona-editor",
@@ -295,7 +289,7 @@ describe("View kinds", () => {
         cursor: 0,
       },
     ];
-    expect(views.length).toBe(8);
+    expect(views.length).toBe(5);
   });
 });
 

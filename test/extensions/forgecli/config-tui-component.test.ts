@@ -82,7 +82,7 @@ describe("ConfigTuiComponent — tier-menu landing (Phase A)", () => {
     expect(out).toContain("Light");
   });
 
-  it("renders no-project when pipelineCatalogue is null", () => {
+  it("renders tier-menu when pipelineCatalogue is null (no-project)", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -97,8 +97,10 @@ describe("ConfigTuiComponent — tier-menu landing (Phase A)", () => {
       onSaved,
       onError,
     });
+    // Phase E: no-project is gone; tier-menu handles all cases
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("No project root found");
+    expect(out).toContain("forge config");
+    expect(out).toContain("Heavy");
   });
 
   it("q on a clean state exits with code 0", () => {
@@ -258,7 +260,7 @@ describe("ConfigTuiComponent — tier-picker flow (Phase A)", () => {
   });
 });
 
-describe("ConfigTuiComponent — full edit flow with persistence (top-menu path)", () => {
+describe("ConfigTuiComponent — full edit flow with persistence (advanced-menu path)", () => {
   it("pick provider → model → project layer → writes file + onSaved fires", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
@@ -461,10 +463,10 @@ describe("ConfigTuiComponent — tier-menu cursor navigation (Phase A)", () => {
   it("cursor clamps at upper bound (can't overshoot)", () => {
     const c = nonEmpty();
     for (let i = 0; i < 20; i++) c.handleInput("\x1b[B");
-    // cursor is on the last item (Advanced); enter opens top-menu
+    // cursor is on the last item (Advanced); enter opens advanced-menu
     c.handleInput("\r");
     const out = c.render(WIDTH).join("\n");
-    expect(out).toContain("forge config");
+    expect(out).toContain("advanced");
   });
 
   it("tab toggles scope", () => {
@@ -477,7 +479,7 @@ describe("ConfigTuiComponent — tier-menu cursor navigation (Phase A)", () => {
     expect(after).toContain("global");
   });
 
-  it("no-project menu cursor: ↓ then enter goes to show-resolved", () => {
+  it("no-project mode: tier-menu still works, enter on tier rows opens picker", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const c = createConfigTuiComponent({
       theme: mockTheme,
@@ -492,15 +494,15 @@ describe("ConfigTuiComponent — tier-menu cursor navigation (Phase A)", () => {
       onSaved,
       onError,
     });
-    c.handleInput("\x1b[B"); // ↓ → next item
-    c.handleInput("\r");
-    // In no-project mode, TopMenuScreen handles enter → opens the second item
-    expect(c.render(WIDTH).join("\n")).toContain("forge config");
+    // Phase E: no-project view is gone; tier-menu handles all cases
+    const out = c.render(WIDTH).join("\n");
+    expect(out).toContain("forge config");
+    expect(out).toContain("Heavy");
   });
 });
 
-describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", () => {
-  it("enter on no-project opens personas-list (global-only)", () => {
+describe("ConfigTuiComponent — no-project entry wiring (Phase E: tier-menu handles all)", () => {
+  it("enter on tier-menu when no project opens tier-picker", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -508,19 +510,22 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
       project: null,
       cwd,
       personaCatalogue: ["architect"],
-      pipelineCatalogue: null, // no .forge → no-project view
+      pipelineCatalogue: null, // no .forge → still tier-menu
       availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
       authenticatedProviders: ["anthropic"],
       onExit,
       onSaved,
       onError,
     });
-    expect(comp.render(WIDTH).join("\n")).toContain("No project root found");
+    // Phase E: tier-menu handles no-project too
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("forge config");
+    // Enter on tier row opens tier-picker
     comp.handleInput("\r");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
+    expect(comp.render(WIDTH).join("\n")).toContain("pick provider");
   });
 
-  it("'1' on no-project also opens personas-list", () => {
+  it("'1' on no-project opens Heavy tier-picker", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -536,10 +541,11 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
       onError,
     });
     comp.handleInput("1");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
+    expect(comp.render(WIDTH).join("\n")).toContain("Heavy");
+    expect(comp.render(WIDTH).join("\n")).toContain("pick provider");
   });
 
-  it("empty no-project: enter opens persona-picker, second enter lands editor on 'default'", () => {
+  it("empty no-project: 'a' opens advanced-menu", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -554,10 +560,8 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
       onSaved,
       onError,
     });
-    comp.handleInput("\r");
-    expect(comp.render(WIDTH).join("\n")).toContain("pick which");
-    comp.handleInput("\r");
-    expect(comp.render(WIDTH).join("\n")).toContain("default");
+    comp.handleInput("a");
+    expect(comp.render(WIDTH).join("\n")).toContain("advanced");
   });
 });
 
@@ -830,10 +834,10 @@ describe("ConfigTuiComponent — per-step overrides (Slice 4c Screens 4+5)", () 
     return { comp };
   }
 
-  // Navigate: tier-menu → "a" → top-menu → "2" → overrides-list-pipelines
+  // Navigate: tier-menu → "a" → advanced-menu → "2" → overrides-list-pipelines
   function goToOverrides(comp: ReturnType<typeof createConfigTuiComponent>) {
     comp.handleInput("a"); // tier-menu → advanced-menu
-    comp.handleInput("2"); // top-menu → overrides-list-pipelines
+    comp.handleInput("2"); // advanced-menu → overrides-list-pipelines
   }
 
   it("menu item 2 opens overrides-list-pipelines (via advanced-menu)", () => {

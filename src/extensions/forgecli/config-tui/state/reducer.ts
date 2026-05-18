@@ -27,9 +27,6 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         top.kind === "persona-picker" ||
         top.kind === "show-resolved" ||
         top.kind === "persona-editor" ||
-        top.kind === "top-menu" ||
-        top.kind === "empty-state" ||
-        top.kind === "no-project" ||
         top.kind === "overrides-list-pipelines" ||
         top.kind === "overrides-list-phases" ||
         top.kind === "override-editor"

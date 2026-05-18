@@ -36,6 +36,8 @@ export {
   type ScopedTierAssignment,
   getScopedTierAssignment,
   getAllScopedTierAssignments,
+  isConfigEmpty,
+  personaSourceLabel,
 } from "./selectors.js";
 export {
   writePersonaEntry,

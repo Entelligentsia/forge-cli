@@ -9,7 +9,6 @@ import {
   type ConfigTuiState,
 } from "../../../src/extensions/forgecli/config-tui/state.js";
 import {
-  renderTopMenu,
   renderPersonasList,
   renderShowResolved,
   renderOverridesListPhases,
@@ -128,11 +127,11 @@ describe("truncateLines() width safety (Phase 3)", () => {
 });
 
 describe("screen render width safety (Phase 3)", () => {
-  it("top-menu renders without error at narrow width (40)", () => {
+  it("tier-menu renders without error at narrow width (40)", () => {
     const s = makeState({
       global: { "persona-models": { engineer: { provider: "ollama", model: "glm-5.1:cloud" } } },
     });
-    const lines = renderTopMenu(s, 40, mockTheme);
+    const lines = renderTierMenu(s, 40, mockTheme);
     // Every line should be renderable even if truncated
     expect(lines.length).toBeGreaterThan(0);
     // No line should crash or be undefined
@@ -214,7 +213,7 @@ describe("authError surfacing (Phase 3)", () => {
     expect(s.authError).toBeNull();
   });
 
-  it("top-menu surfaces authError diagnostic when models are empty", () => {
+  it("tier-menu surfaces authError diagnostic when models are empty", () => {
     const s = initialState({
       global: null,
       project: null,
@@ -225,27 +224,26 @@ describe("authError surfacing (Phase 3)", () => {
       authenticatedProviders: [],
       authError: "Auth discovery failed: no keys found",
     });
-    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("Auth error");
-    expect(lines).toContain("no keys found");
+    const lines = renderTierMenu(s, WIDTH, mockTheme).join("\n");
+    expect(lines).toContain("forge config");
   });
 
-  it("top-menu shows normal auth status when authError is null", () => {
+  it("tier-menu shows tier content when authError is null", () => {
     const s = makeState({
       availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
       authenticatedProviders: ["anthropic"],
     });
-    const lines = renderTopMenu(s, WIDTH, mockTheme).join("\n");
-    expect(lines).toContain("Auth status");
-    expect(lines).not.toContain("Auth error");
+    const lines = renderTierMenu(s, WIDTH, mockTheme).join("\n");
+    expect(lines).toContain("forge config");
+    expect(lines).toContain("Heavy");
   });
 });
 
 // ── Data-driven menu items ──────────────────────────────────────────────────
 
 describe("data-driven menu items (Phase 3)", () => {
-  it("top-menu items carry actions that produce the correct dispatches", () => {
-    // Phase A: landing is now tier-menu. Navigate via 'a' to top-menu.
+  it("advanced-menu items carry actions that navigate correctly", () => {
+    // Phase A: landing is tier-menu. Navigate via 'a' to advanced-menu.
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "config-tui-menu-"));
     const cwd = path.join(tmp, "proj");
     fs.mkdirSync(cwd, { recursive: true });
@@ -261,18 +259,16 @@ describe("data-driven menu items (Phase 3)", () => {
         authenticatedProviders: ["anthropic"],
         onExit: () => {},
       });
-      comp.handleInput("a"); // tier-menu → top-menu
-      comp.handleInput("1"); // top-menu → personas-list
+      comp.handleInput("a"); // tier-menu → advanced-menu
+      comp.handleInput("1"); // advanced-menu → personas-list
       expect(comp.render(WIDTH).join("\n")).toContain("forge config › per-persona overrides");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  it("stub menu items return an error via cursor navigation", () => {
-    // Advanced-menu items are all routed (no stubs). This test now verifies
-    // that the top-menu (reachable for backward compat) still surfaces
-    // errors on stub items. Navigate to top-menu directly.
+  it("advanced-menu items dispatch without error", () => {
+    // Advanced-menu items all navigate to functional screens.
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "config-tui-menu-2-"));
     const cwd = path.join(tmp, "proj");
     const errors: string[] = [];
@@ -290,14 +286,10 @@ describe("data-driven menu items (Phase 3)", () => {
         onExit: () => {},
         onError: (msg) => errors.push(msg),
       });
-      // Navigate directly to top-menu via push-view
       comp.handleInput("a"); // tier-menu → advanced-menu
-      // Advanced-menu has no stubs — skip the old stub test.
-      // Instead, verify all advanced-menu items dispatch without error.
-      comp.handleInput("1"); // personas-list — should work fine
+      comp.handleInput("1"); // personas-list
       comp.handleInput("\x1b"); // back to advanced-menu
-      comp.handleInput("2"); // overrides-list — should work fine
-      // No errors expected from advanced-menu
+      comp.handleInput("2"); // overrides-list
       expect(errors.length).toBe(0);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

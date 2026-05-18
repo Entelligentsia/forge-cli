@@ -9,12 +9,8 @@ export function initialState(opts: InitOptions): ConfigTuiState {
     project: opts.project ? cloneJSON(opts.project) : {},
   };
 
-  const isEmpty = !opts.global && !opts.project;
-
   const firstView: View =
-    opts.pipelineCatalogue === null
-      ? { kind: "no-project", cursor: 0 }
-      : { kind: "tier-menu", cursor: 0 };
+    { kind: "tier-menu", cursor: 0 };
 
   // Default scope: project when in a project, global otherwise.
   const scope: ConfigTuiState["scope"] = opts.pipelineCatalogue !== null ? "project" : "global";
@@ -28,7 +24,6 @@ export function initialState(opts: InitOptions): ConfigTuiState {
     availableModels: opts.availableModels,
     authenticatedProviders: opts.authenticatedProviders,
     dirty: false,
-    isEmpty,
     scope,
     authError: opts.authError ?? null,
     confirmQuit: false,

@@ -17,13 +17,11 @@ export function listResolvedPersonas(
   const globalMap = state.buffer.global["persona-models"] ?? {};
 
   for (const [persona, entry] of Object.entries(globalMap)) {
-    const source = persona === "default" ? "default-L1" : "L1";
-    out.set(persona, { persona, provider: entry.provider, model: entry.model, source });
+    out.set(persona, { persona, provider: entry.provider, model: entry.model, source: "L1" as const });
   }
   // Project layer wins per-key
   for (const [persona, entry] of Object.entries(projectMap)) {
-    const source = persona === "default" ? "default-L2" : "L2";
-    out.set(persona, { persona, provider: entry.provider, model: entry.model, source });
+    out.set(persona, { persona, provider: entry.provider, model: entry.model, source: "L2" as const });
   }
 
   return [...out.values()].sort((a, b) => a.persona.localeCompare(b.persona));
@@ -296,4 +294,35 @@ export function getTierForPersona(persona: string): Tier | undefined {
 /** Persona names in a tier. */
 export function getPersonasInTier(tier: Tier): readonly string[] {
   return TIER_PERSONAS[tier];
+}
+
+// ── isEmpty selector (Phase E — replaces state.isEmpty snapshot) ──────────
+
+/** True when neither global nor project config has any persona-model assignments.
+ *  Replaces the old `state.isEmpty` snapshot — this is derived from buffer,
+ *  so it stays correct after mutations. */
+export function isConfigEmpty(state: ConfigTuiState): boolean {
+  const g = state.buffer.global;
+  const p = state.buffer.project;
+  const gEmpty = !g || !g["persona-models"] || Object.keys(g["persona-models"]).length === 0;
+  const pEmpty = !p || !p["persona-models"] || Object.keys(p["persona-models"]).length === 0;
+  return gEmpty && pEmpty;
+}
+
+// ── Source label for persona list display ─────────────────────────────────
+
+/** Human-readable source label for a persona-model assignment.
+ *  Replaces the old raw L1/L2/default-L1/default-L2 display.
+ *  Uses tier labels when the persona has a known tier, otherwise falls back
+ *  to generic "global"/"project" labels. */
+export function personaSourceLabel(persona: string, source: "L1" | "L2"): string {
+  const tier = PERSONA_META[persona]?.tier;
+  const layer = source === "L1" ? "global" : "project";
+  if (persona === "default") {
+    return `Default fallback (${layer})`;
+  }
+  if (tier) {
+    return `${TIER_LABELS[tier]} tier (${layer})`;
+  }
+  return `Per-persona (${layer})`;
 }

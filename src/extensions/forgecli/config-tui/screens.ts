@@ -13,7 +13,6 @@ import { TierMenuScreen } from "./screens/tier-menu.js";
 import { TierPickerScreen } from "./screens/tier-picker.js";
 import { AdvancedMenuScreen } from "./screens/advanced-menu.js";
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
-import { TopMenuScreen } from "./screens/top-menu.js";
 import { PersonasListScreen } from "./screens/personas-list.js";
 import { PersonaPickerScreen } from "./screens/persona-picker.js";
 import { PersonaEditorScreen } from "./screens/persona-editor.js";
@@ -21,7 +20,6 @@ import { ShowResolvedScreen, computeResolvedRows } from "./screens/show-resolved
 import { OverridesListPipelinesScreen } from "./screens/overrides-list.js";
 import { OverridesListPhasesScreen } from "./screens/overrides-list-phases.js";
 import { OverrideEditorScreen } from "./screens/override-editor.js";
-import type { MenuItem } from "./screens/top-menu.js";
 
 // ── Screen instances for renderActive ───────────────────────────────────────
 
@@ -29,9 +27,6 @@ const SCREEN_INSTANCES: Record<string, { render(state: ConfigTuiState, width: nu
   "tier-menu": new TierMenuScreen(),
   "tier-picker": new TierPickerScreen(),
   "advanced-menu": new AdvancedMenuScreen(),
-  "no-project": new TopMenuScreen(),
-  "empty-state": new TopMenuScreen(),
-  "top-menu": new TopMenuScreen(),
   "personas-list": new PersonasListScreen(),
   "persona-picker": new PersonaPickerScreen(),
   "persona-editor": new PersonaEditorScreen(),
@@ -46,7 +41,6 @@ const SCREEN_INSTANCES: Record<string, { render(state: ConfigTuiState, width: nu
 export { TierMenuScreen } from "./screens/tier-menu.js";
 export { TierPickerScreen } from "./screens/tier-picker.js";
 export { AdvancedMenuScreen } from "./screens/advanced-menu.js";
-export { TopMenuScreen } from "./screens/top-menu.js";
 export { PersonasListScreen } from "./screens/personas-list.js";
 export { PersonaPickerScreen } from "./screens/persona-picker.js";
 export { PersonaEditorScreen } from "./screens/persona-editor.js";
@@ -56,9 +50,8 @@ export { OverridesListPhasesScreen } from "./screens/overrides-list-phases.js";
 export { OverrideEditorScreen } from "./screens/override-editor.js";
 export { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
 export { type InputResult, type Screen } from "./screens/types.js";
-export { type MenuItem } from "./screens/top-menu.js";
 
-// ── Legacy render functions (backward-compatible wrappers) ────────────────────
+// ── Render functions (backward-compatible wrappers) ──────────────────────
 
 export function renderTierMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
   return SCREEN_INSTANCES["tier-menu"].render(state, width, theme);
@@ -66,19 +59,6 @@ export function renderTierMenu(state: ConfigTuiState, width: number, theme: Them
 
 export function renderAdvancedMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
   return SCREEN_INSTANCES["advanced-menu"].render(state, width, theme);
-}
-
-export function renderTopMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  return SCREEN_INSTANCES["top-menu"].render(state, width, theme);
-}
-
-export function renderEmptyState(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  const stateForRender: ConfigTuiState = { ...state, isEmpty: true };
-  return SCREEN_INSTANCES["empty-state"].render(stateForRender, width, theme);
-}
-
-export function renderNoProject(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  return SCREEN_INSTANCES["no-project"].render(state, width, theme);
 }
 
 export function renderPersonasList(state: ConfigTuiState, width: number, theme: Theme): string[] {

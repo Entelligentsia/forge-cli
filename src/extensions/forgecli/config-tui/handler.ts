@@ -5,7 +5,7 @@
 //
 // Slice 4a wired: arg parsing, show-route delegation, stub responses for
 // interactive routes.
-// Slice 4b wires: top-menu and edit-persona routes mount the TUI via
+// Slice 4b wires: tier-menu and edit-persona routes mount the TUI via
 // cb.ctx.mountConfigTui (supplied by the pi-extension wrapper). The bin path
 // stays non-interactive (no ctx) and prints a friendly fallback.
 
@@ -249,7 +249,7 @@ export async function runConfigTui(
     return runConfigDispatch(dispatchParsed, cwd, (line) => cb.write(`${line}\n`));
   }
 
-  // Interactive routes (top-menu, edit-persona). edit-override stays a stub
+  // Interactive routes (tier-menu, edit-persona). edit-override stays a stub
   // until Slice 4c.
   if (parsed.kind === "edit-override") {
     if (cb.ctx) {
