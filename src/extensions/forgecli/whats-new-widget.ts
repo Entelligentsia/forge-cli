@@ -303,25 +303,25 @@ async function computeReplaySummaries(rt: WhatsNewRuntime): Promise<ChangeSummar
 }
 
 /**
- * Register the /whats-new slash command: re-mounts the interactive strip
- * widget (same UI as the startup auto-mount). `/whats-new dismiss` clears
- * the replay baseline. Headless / non-TTY callers fall through to a text
- * notify so the command is still usable.
+ * Register the /changelog slash command (overrides pi's built-in): re-mounts
+ * the interactive strip widget covering pi + forge-plugin + forge-cli changelogs.
+ * `/changelog dismiss` clears the replay baseline. Headless / non-TTY callers
+ * fall through to a text notify so the command is still usable.
  */
-export function registerWhatsNewWidgetCommand(pi: ExtensionAPI, rt: WhatsNewRuntime): void {
-	pi.registerCommand("whats-new", {
-		description: "Re-show the What's New strip (or /whats-new dismiss to clear)",
+export function registerChangelogCommand(pi: ExtensionAPI, rt: WhatsNewRuntime): void {
+	pi.registerCommand("changelog", {
+		description: "Show What's New across pi, forge-plugin, and forge-cli (or /changelog dismiss to clear)",
 		async handler(args, ctx) {
 			const arg = args.trim().toLowerCase();
 			try {
 				if (arg === "dismiss" || arg === "--dismiss") {
 					await dismissWhatsNew(rt);
-					ctx.ui.notify("whats-new: dismissed.", "info");
+					ctx.ui.notify("changelog: dismissed.", "info");
 					return;
 				}
 				const summaries = await computeReplaySummaries(rt);
 				if (summaries.length === 0) {
-					ctx.ui.notify("What's New: no recent updates.", "info");
+					ctx.ui.notify("changelog: no recent updates.", "info");
 					return;
 				}
 				if (!ctx.hasUI) {
@@ -340,9 +340,9 @@ export function registerWhatsNewWidgetCommand(pi: ExtensionAPI, rt: WhatsNewRunt
 				mountStripWithSummaries(pi, ctx, rt, summaries);
 			} catch (err) {
 				if (process.env.FORGE_DEBUG_WHATS_NEW === "1") {
-					console.error("[forge-cli whats-new] handler failed:", err);
+					console.error("[forge-cli changelog] handler failed:", err);
 				}
-				ctx.ui.notify("whats-new: failed to render — set FORGE_DEBUG_WHATS_NEW=1 for details.", "warning");
+				ctx.ui.notify("changelog: failed to render — set FORGE_DEBUG_WHATS_NEW=1 for details.", "warning");
 			}
 		},
 	});

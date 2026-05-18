@@ -37,7 +37,7 @@ import { registerRegenerate } from "./regenerate.js";
 import { registerSprintIntake } from "./sprint-intake.js";
 import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
-import { mountWhatsNewWidgetOnStartup, registerWhatsNewWidgetCommand } from "./whats-new-widget.js";
+import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./whats-new-widget.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
 import { registerRunTask } from "./run-task.js";
@@ -455,9 +455,9 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		});
 	}
 
-	// /whats-new — replay summary as text (widget itself auto-mounts on session_start).
+	// /changelog — forge-comprehensive override of pi's built-in (auto-mounts on session_start).
 	if (PKG_VERSIONS.cliVersion && PKG_VERSIONS.bundledForgeVersion && PI_VERSION) {
-		registerWhatsNewWidgetCommand(pi, {
+		registerChangelogCommand(pi, {
 			pkgRoot: PKG_ROOT,
 			current: {
 				pi: PI_VERSION,
