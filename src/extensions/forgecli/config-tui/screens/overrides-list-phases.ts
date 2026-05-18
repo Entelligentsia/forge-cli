@@ -1,5 +1,5 @@
 // Overrides-list-phases screen — phases of a single pipeline with overrides.
-// Phase 2: extracted from component.ts handleOverridesListPhasesInput + screens.ts renderOverridesListPhases.
+// Phase 3: full theming, width safety.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
@@ -8,8 +8,8 @@ import { InputResult, Screen } from "./types.js";
 import { getActiveView, getPhaseOverride } from "../state/selectors.js";
 import { CANONICAL_PHASES } from "../state/constants.js";
 import { resolveModelForPhase } from "../../model-resolver.js";
-import { rule, windowList, formatOverride } from "./shared.js";
-import { padRight } from "../theme.js";
+import { rule, windowList, formatOverride, safeLines } from "./shared.js";
+import { padRight, accentBold, muted, dirtyMarker } from "../theme.js";
 
 export class OverridesListPhasesScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -18,20 +18,20 @@ export class OverridesListPhasesScreen implements Screen {
       return ["(renderOverridesListPhases called with wrong active view)"];
     }
     const lines: string[] = [];
-    lines.push(`forge config › per-phase overrides › ${view.pipeline}`);
+    lines.push(accentBold(`forge config › per-phase overrides › ${view.pipeline}`, theme));
     lines.push(rule(width, theme));
-    lines.push(`  Pipeline phases (canonical order from orchestrator):`);
+    lines.push(muted("  Pipeline phases (canonical order from orchestrator):", theme));
     lines.push("");
     lines.push(
-      `    #  ROLE          PERSONA       OVERRIDE                  RESOLVED                  SOURCE`,
+      `    ${muted("#", theme)}  ${muted(padRight("ROLE", 13), theme)} ${muted(padRight("PERSONA", 13), theme)} ${muted(padRight("OVERRIDE", 25), theme)} ${muted(padRight("RESOLVED", 25), theme)} ${muted("SOURCE", theme)}`,
     );
 
     const win = windowList([...CANONICAL_PHASES], view.cursor, 12);
-    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} row(s) above`);
+    if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} row(s) above`, theme));
 
     win.visible.forEach((phase, i) => {
       const absoluteIdx = win.start + i;
-      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+      const cur = absoluteIdx === view.cursor ? theme.fg("accent", "▸") : " ";
       const override = getPhaseOverride(state, view.pipeline, phase.role);
       const overrideStr = padRight(formatOverride(override), 25);
       const result = resolveModelForPhase(view.pipeline, phase.role, phase.personaNoun, {
@@ -48,17 +48,17 @@ export class OverridesListPhasesScreen implements Screen {
       const roleStr = padRight(phase.role, 13);
       const personaStr = padRight(phase.personaNoun, 13);
       lines.push(
-        `  ${cursor} ${idxStr}  ${roleStr} ${personaStr} ${overrideStr} ${resolvedStr} ${result.source}`,
+        `  ${cur} ${idxStr}  ${roleStr} ${personaStr} ${overrideStr} ${resolvedStr} ${result.source}`,
       );
     });
 
-    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} row(s) below`);
+    if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} row(s) below`, theme));
     lines.push("");
     lines.push(
-      `  enter edit override   space clear (back to persona)   esc back`,
+      muted("  enter edit override   space clear (back to persona)   esc back", theme),
     );
-    if (state.dirty) lines.push(`  * unsaved`);
-    return lines;
+    if (state.dirty) lines.push(`  ${dirtyMarker(theme)}`);
+    return safeLines(lines, width);
   }
 
   handleInput(data: string, state: ConfigTuiState): InputResult {

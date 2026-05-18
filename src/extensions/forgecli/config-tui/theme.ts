@@ -62,12 +62,18 @@ export function success(text: string, theme: Theme): string {
 	return theme.fg("success", text);
 }
 
+/** Mark an unsaved-change indicator — themed as warning. */
+export function dirtyMarker(theme: Theme): string {
+  return theme.fg("warning", "* unsaved");
+}
+
 // ── Padding (ANSI-aware) ────────────────────────────────────────────────────
 
 /**
  * Right-pad a string that may contain ANSI escape codes to a given visible width.
- * Unlike the old padRight (which used .length and broke on styled text), this
- * uses visibleWidth so ANSI codes don't inflate the padding.
+ * Uses visibleWidth so ANSI codes don't inflate the padding.
+ * Does NOT truncate — allows over-wide columns. Width-safety truncation
+ * is applied at the line level by truncateLines() / safeLines().
  */
 export function padRight(text: string, width: number): string {
 	const vis = visibleWidth(text);
@@ -84,4 +90,14 @@ export function padOrTruncate(text: string, width: number): string {
 	const vis = visibleWidth(text);
 	if (vis >= width) return truncateToWidth(text, width, "");
 	return text + " ".repeat(width - vis);
+}
+
+// ── Width safety ─────────────────────────────────────────────────────────────
+
+/**
+ * Truncate every line to the given visible width. Applied as a final safety
+ * guard in every screen's render method so no line overflows the terminal.
+ */
+export function truncateLines(lines: string[], width: number): string[] {
+  return lines.map(line => truncateToWidth(line, width, ""));
 }

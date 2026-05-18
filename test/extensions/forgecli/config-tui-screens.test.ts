@@ -335,13 +335,17 @@ describe("renderOverridesListPipelines (Slice 4c — Screen 4)", () => {
 });
 
 describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => {
+  // Phase 3 width-safety: the phases table exceeds 80 chars, so use a wider
+  // viewport for this test so that column content is fully visible.
+  const WIDE = 140;
+
   it("renders one row per canonical phase with override + resolved + source columns", () => {
     let s = makeState();
     s = reducer(s, {
       kind: "push-view",
       view: { kind: "overrides-list-phases", pipeline: "default", cursor: 2 },
     });
-    const out = renderOverridesListPhases(s, WIDTH, mockTheme).join("\n");
+    const out = renderOverridesListPhases(s, WIDE, mockTheme).join("\n");
     expect(out).toContain("forge config › per-phase overrides › default");
     expect(out).toContain("plan");
     expect(out).toContain("implement");
@@ -368,7 +372,7 @@ describe("renderOverridesListPhases (Slice 4c — Screen 4 phase table)", () => 
       kind: "push-view",
       view: { kind: "overrides-list-phases", pipeline: "default", cursor: 0 },
     });
-    const out = renderOverridesListPhases(s, WIDTH, mockTheme).join("\n");
+    const out = renderOverridesListPhases(s, WIDE, mockTheme).join("\n");
     expect(out).toContain(`"scribe"`);
     expect(out).toContain(`{anthropic:claude-opus-4-5}`);
   });

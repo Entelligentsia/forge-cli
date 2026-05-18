@@ -1,5 +1,5 @@
 // Persona-editor screen — 3-step wizard (provider → model → layer).
-// Phase 2: extracted from component.ts handlePersonaEditorInput + screens.ts renderPersonaEditor.
+// Phase 3: full theming, width safety.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { ConfigLayer } from "../../config-writer.js";
@@ -7,8 +7,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
 import { getActiveView, listResolvedPersonas, uniqueProviders } from "../state/selectors.js";
-import { rule, authBadgeFor, windowList } from "./shared.js";
-import { padRight } from "../theme.js";
+import { rule, authBadgeFor, windowList, safeLines } from "./shared.js";
+import { padRight, cursor, accentBold, accent, muted, warning, dirtyMarker } from "../theme.js";
 
 export class PersonaEditorScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -19,68 +19,68 @@ export class PersonaEditorScreen implements Screen {
     const lines: string[] = [];
     const inCatalogue = state.personaCatalogue.includes(view.persona) || view.persona === "default";
 
-    lines.push(`forge config › personas › ${view.persona}`);
+    lines.push(accentBold(`forge config › personas › ${view.persona}`, theme));
     lines.push(rule(width, theme));
 
     if (view.step === "pick-provider") {
-      lines.push(`  Step 1 of 3 — pick provider`);
+      lines.push(accent("  Step 1 of 3 — pick provider", theme));
       if (!inCatalogue) {
-        lines.push(`  ⚠ '${view.persona}' is not in the Forge persona catalogue.`);
+        lines.push(warning(`  ⚠ '${view.persona}' is not in the Forge persona catalogue.`, theme));
       }
       lines.push("");
-      lines.push(`  Provider                                                  AUTH`);
+      lines.push(`  ${muted(padRight("Provider", 56), theme)}  ${muted("AUTH", theme)}`);
       const providers = uniqueProviders(state);
       const win = windowList(providers, view.cursor);
-      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+      if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
       win.visible.forEach((p, i) => {
         const absoluteIdx = win.start + i;
-        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+        const cur = cursor(absoluteIdx === view.cursor, theme);
         const auth = authBadgeFor(state, p, theme);
-        lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
+        lines.push(`  ${cur} ${padRight(p, 56)}${auth}`);
       });
-      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+      if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
       lines.push("");
-      lines.push(`  ↑/↓ select   enter advance   esc back`);
+      lines.push(muted("  ↑/↓ select   enter advance   esc back", theme));
     } else if (view.step === "pick-model") {
-      lines.push(`  Step 2 of 3 — pick model (provider: ${view.provider ?? "(unknown)"})`);
+      lines.push(accent(`  Step 2 of 3 — pick model (provider: ${view.provider ?? "(unknown)"})`, theme));
       lines.push("");
       const models = state.availableModels.filter((m) => m.provider === view.provider);
       if (models.length === 0) {
-        lines.push(`  No models available for this provider.`);
-        lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
+        lines.push(muted("  No models available for this provider.", theme));
+        lines.push(muted(`  (Run \`pi /login ${view.provider}\` then return.)`, theme));
       } else {
         const win = windowList(models, view.cursor);
-        if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+        if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
         win.visible.forEach((m, i) => {
           const absoluteIdx = win.start + i;
-          const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-          lines.push(`  ${cursor} ${m.id}`);
+          const cur = cursor(absoluteIdx === view.cursor, theme);
+          lines.push(`  ${cur} ${m.id}`);
         });
-        if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+        if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
       }
       lines.push("");
-      lines.push(`  ↑/↓ select   enter advance   esc back`);
+      lines.push(muted("  ↑/↓ select   enter advance   esc back", theme));
     } else {
       // pick-layer
-      lines.push(`  Step 3 of 3 — pick write target`);
+      lines.push(accent("  Step 3 of 3 — pick write target", theme));
       lines.push("");
       lines.push(`  ${view.persona} → ${view.provider}:${view.model}`);
       lines.push("");
       const targets = ["project", "global"] as const;
-      const targetLines = [
+      const targetLabels = [
         `Project   ${state.cwd}/.pi/forge-cli/config.json`,
         `Global    ~/.pi/agent/forge-cli/config.json`,
       ];
       targets.forEach((_, i) => {
-        const cursor = i === view.cursor ? "▸" : " ";
-        lines.push(`  ${cursor} ${targetLines[i]}`);
+        const cur = cursor(i === view.cursor, theme);
+        lines.push(`  ${cur} ${targetLabels[i]}`);
       });
       lines.push("");
-      lines.push(`  ↑/↓ select   enter confirm and write   p/g shortcuts   esc cancel`);
+      lines.push(muted("  ↑/↓ select   enter confirm and write   p/g shortcuts   esc cancel", theme));
     }
 
-    if (state.dirty) lines.push(`  * unsaved`);
-    return lines;
+    if (state.dirty) lines.push(`  ${dirtyMarker(theme)}`);
+    return safeLines(lines, width);
   }
 
   handleInput(data: string, state: ConfigTuiState): InputResult {

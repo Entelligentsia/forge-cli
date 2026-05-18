@@ -152,6 +152,7 @@ export function readPipelineCatalogue(cwd: string): string[] | null {
 async function readAvailableModels(): Promise<{
   available: AvailableModel[];
   authenticated: string[];
+  authError: string | null;
 }> {
   // Defer the heavy imports to call-time so vitest specs that never hit this
   // path don't pay the cost (or fail when auth.json is absent).
@@ -163,9 +164,10 @@ async function readAvailableModels(): Promise<{
       .getAvailable()
       .map((m) => ({ provider: m.provider, id: m.id }));
     const authenticated = Array.from(new Set(available.map((m) => m.provider)));
-    return { available, authenticated };
-  } catch {
-    return { available: [], authenticated: [] };
+    return { available, authenticated, authError: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { available: [], authenticated: [], authError: `Auth discovery failed: ${msg}` };
   }
 }
 
@@ -173,7 +175,7 @@ async function buildInitOptions(cwd: string): Promise<InitOptions> {
   const layered = loadLayeredConfig(cwd);
   const personaCatalogue = readPersonaCatalogue();
   const pipelineCatalogue = readPipelineCatalogue(cwd);
-  const { available, authenticated } = await readAvailableModels();
+  const { available, authenticated, authError } = await readAvailableModels();
   return {
     global: layered.global,
     project: layered.project,
@@ -182,6 +184,7 @@ async function buildInitOptions(cwd: string): Promise<InitOptions> {
     pipelineCatalogue,
     availableModels: available,
     authenticatedProviders: authenticated,
+    authError: authError ?? undefined,
   };
 }
 

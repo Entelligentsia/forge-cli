@@ -1,5 +1,5 @@
 // Personas-list screen — renders and handles input for the persona list view.
-// Phase 2: extracted from component.ts handlePersonasListInput + screens.ts renderPersonasList.
+// Phase 3: full theming, width safety, data-driven actions.
 
 import type { ConfigTuiState, View } from "../state/model.js";
 import type { ConfigLayer } from "../../config-writer.js";
@@ -7,8 +7,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
 import { getActiveView, listResolvedPersonas } from "../state/selectors.js";
-import { rule } from "./shared.js";
-import { padRight } from "../theme.js";
+import { rule, authBadgeFor, safeLines } from "./shared.js";
+import { padRight, cursor, accentBold, muted, warning, dirtyMarker } from "../theme.js";
 
 export class PersonasListScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -18,13 +18,13 @@ export class PersonasListScreen implements Screen {
     }
     const personas = listResolvedPersonas(state);
     const lines: string[] = [];
-    lines.push(`forge config › personas`);
+    lines.push(accentBold("forge config › personas", theme));
     lines.push(rule(width, theme));
 
     if (personas.length === 0) {
-      lines.push(`  (no persona-model assignments)`);
-      lines.push(`  n new persona-model assignment   esc back`);
-      return lines;
+      lines.push(muted("  (no persona-model assignments)", theme));
+      lines.push(muted("  n new persona-model assignment   esc back", theme));
+      return safeLines(lines, width);
     }
 
     const personaCol = Math.max(
@@ -36,18 +36,18 @@ export class PersonasListScreen implements Screen {
       ...personas.map((p) => `${p.provider}:${p.model}`.length),
     );
 
-    lines.push(`  ${padRight("PERSONA", personaCol)}  ${padRight("PROVIDER:MODEL", modelCol)}  SOURCE  AVAIL`);
+    lines.push(`  ${muted(padRight("PERSONA", personaCol), theme)}  ${muted(padRight("PROVIDER:MODEL", modelCol), theme)}  ${muted("SOURCE", theme)}  ${muted("AVAIL", theme)}`);
     personas.forEach((p, i) => {
-      const cursor = i === view.cursor ? "▸" : " ";
+      const cur = cursor(i === view.cursor, theme);
       const modelStr = `${p.provider}:${p.model}`;
       const avail = state.availableModels.some(
         (m) => m.provider === p.provider && m.id === p.model,
       )
-        ? "✓"
-        : "✗";
+        ? authBadgeFor(state, p.provider, theme)
+        : theme.fg("error", "✗");
       const sourceCol = p.source.replace(/-(L1|L2)$/, " ($1)");
       lines.push(
-        `  ${cursor} ${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${padRight(sourceCol, 8)} ${avail}`,
+        `  ${cur} ${padRight(p.persona, personaCol)}  ${padRight(modelStr, modelCol)}  ${padRight(sourceCol, 8)} ${avail}`,
       );
     });
 
@@ -58,8 +58,8 @@ export class PersonasListScreen implements Screen {
     );
     if (unassignedFromCatalogue.length > 0) {
       lines.push("");
-      lines.push(`  Personas with no assignment (use 'default'):`);
-      lines.push(`    ${unassignedFromCatalogue.join(", ")}`);
+      lines.push(muted("  Personas with no assignment (use 'default'):", theme));
+      lines.push(muted(`    ${unassignedFromCatalogue.join(", ")}`, theme));
     }
 
     const orphans = personas
@@ -67,14 +67,14 @@ export class PersonasListScreen implements Screen {
       .filter((p) => p !== "default" && !state.personaCatalogue.includes(p));
     if (orphans.length > 0) {
       lines.push("");
-      lines.push(`  ⚠ Not in Forge persona catalogue:`);
-      lines.push(`    ${orphans.join(", ")}`);
+      lines.push(warning(`  ⚠ Not in Forge persona catalogue:`, theme));
+      lines.push(warning(`    ${orphans.join(", ")}`, theme));
     }
 
     lines.push("");
-    lines.push(`  enter edit   n new   d delete (in current layer)   esc back`);
-    if (state.dirty) lines.push(`  * unsaved`);
-    return lines;
+    lines.push(muted("  enter edit   n new   d delete (in current layer)   esc back", theme));
+    if (state.dirty) lines.push(`  ${dirtyMarker(theme)}`);
+    return safeLines(lines, width);
   }
 
   handleInput(data: string, state: ConfigTuiState): InputResult {

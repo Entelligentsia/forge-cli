@@ -1,9 +1,9 @@
 // Shared screen rendering utilities — windowList, formatOverride, and themed helpers.
-// Split from screens.ts (Phase 1).
+// Split from screens.ts (Phase 1). Phase 3: theming applied to all visible strings.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { authBadge, muted, rule as themedRule } from "../theme.js";
+import { authBadge, muted, rule as themedRule, error as themedError, truncateLines } from "../theme.js";
 
 /** Themed horizontal rule spanning the full width. */
 export function rule(width: number, theme: Theme): string {
@@ -40,6 +40,10 @@ export function authBadgeFor(state: ConfigTuiState, provider: string, theme: The
 }
 
 export function authStatusLine(state: ConfigTuiState, theme: Theme): string {
+  // If auth discovery failed entirely, surface the error.
+  if (state.authError) {
+    return themedError(`  Auth error   ${state.authError}`, theme);
+  }
   // Stable ordering: alphabetical by provider name.
   const providers = [...new Set([
     ...state.authenticatedProviders,
@@ -81,4 +85,9 @@ export function formatOverride(override: string | { provider: string; model: str
   if (override === undefined) return "(none)";
   if (typeof override === "string") return `"${override}"`;
   return `{${override.provider}:${override.model}}`;
+}
+
+/** Width-safe final guard: truncate every line to the given terminal width. */
+export function safeLines(lines: string[], width: number): string[] {
+  return truncateLines(lines, width);
 }

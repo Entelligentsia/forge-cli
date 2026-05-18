@@ -85,6 +85,8 @@ export interface InitOptions {
   pipelineCatalogue: string[] | null;
   availableModels: AvailableModel[];
   authenticatedProviders: string[];
+  /** If model discovery failed, surfaces the diagnostic instead of a silent empty list. */
+  authError?: string;
 }
 
 export interface ConfigTuiState {
@@ -99,6 +101,8 @@ export interface ConfigTuiState {
   dirty: boolean;
   /** True iff both global and project were absent at init. */
   isEmpty: boolean;
+  /** If model/auth discovery failed at init, a diagnostic string. */
+  authError: string | null;
   /** Pending quit confirmation modal. */
   confirmQuit: boolean;
   /** True when the TUI should unmount. */

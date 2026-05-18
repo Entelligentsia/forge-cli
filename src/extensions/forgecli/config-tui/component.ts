@@ -10,7 +10,7 @@
 //   - config-writer.ts for atomic persistence on commit-persona-edit
 
 import * as fs from "node:fs";
-import { Key, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, Focusable } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { ConfigLayer } from "../config-writer.js";
@@ -157,9 +157,11 @@ export class ConfigTuiComponent implements Component, Focusable {
 
     // Content: each line padded to full width so the background colour fills
     // the entire row.  visibleWidth correctly ignores ANSI codes added by theme.
+    // truncateToWidth ensures no line exceeds the terminal width.
     for (const line of contentLines) {
-      const vis = visibleWidth(line);
-      const padded = vis < width ? line + " ".repeat(width - vis) : line;
+      const truncated = truncateToWidth(line, width, "");
+      const vis = visibleWidth(truncated);
+      const padded = vis < width ? truncated + " ".repeat(width - vis) : truncated;
       lines.push(bgFn(padded));
     }
 

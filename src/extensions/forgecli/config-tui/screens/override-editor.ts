@@ -1,5 +1,5 @@
 // Override-editor screen — pick type → name|provider → model.
-// Phase 2: extracted from component.ts handleOverrideEditorInput + screens.ts renderOverrideEditor.
+// Phase 3: full theming, width safety.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
@@ -7,9 +7,9 @@ import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
 import { getActiveView, listResolvedPersonas, uniqueProviders } from "../state/selectors.js";
 import { CANONICAL_PHASES } from "../state/constants.js";
-import { rule, authBadgeFor, windowList } from "./shared.js";
+import { rule, authBadgeFor, windowList, safeLines } from "./shared.js";
 import { resolveModelForPhase } from "../../model-resolver.js";
-import { padRight } from "../theme.js";
+import { padRight, accent, accentBold, muted, dirtyMarker } from "../theme.js";
 
 export class OverrideEditorScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -22,30 +22,30 @@ export class OverrideEditorScreen implements Screen {
       ? `${view.phaseRole} (${phase.personaNoun})`
       : view.phaseRole;
     const lines: string[] = [];
-    lines.push(`forge config › per-phase overrides › ${view.pipeline} › ${phaseLabel}`);
+    lines.push(accentBold(`forge config › per-phase overrides › ${view.pipeline} › ${phaseLabel}`, theme));
     lines.push(rule(width, theme));
 
     if (view.step === "pick-type") {
-      lines.push(`  Override type:`);
+      lines.push(accent("  Override type:", theme));
       const options = [
         "Use a persona-model by name (recommended)",
         "Inline {provider, model} pair (one-off)",
         "Clear override (fall through to persona)",
       ];
       options.forEach((opt, i) => {
-        const cursor = i === view.cursor ? "▸" : " ";
-        lines.push(`  ${cursor} ${i + 1}. ${opt}`);
+        const cur = i === view.cursor ? theme.fg("accent", "▸") : " ";
+        lines.push(`  ${cur} ${i + 1}. ${opt}`);
       });
       lines.push("");
-      lines.push(`  ↑/↓ select   enter advance   1-3 shortcuts   esc back`);
+      lines.push(muted("  ↑/↓ select   enter advance   1-3 shortcuts   esc back", theme));
     } else if (view.step === "pick-name") {
-      lines.push(`  Pick persona-model to use for this phase:`);
+      lines.push(accent("  Pick persona-model to use for this phase:", theme));
       const personas = listResolvedPersonas(state);
       if (personas.length === 0) {
-        lines.push(`  (no persona-models defined — set some up via Personas first)`);
+        lines.push(muted("  (no persona-models defined — set some up via Personas first)", theme));
         lines.push("");
-        lines.push(`  esc back`);
-        return lines;
+        lines.push(muted("  esc back", theme));
+        return safeLines(lines, width);
       }
       const personaResolved = phase
         ? resolveModelForPhase(view.pipeline, view.phaseRole, phase.personaNoun, {
@@ -59,63 +59,63 @@ export class OverrideEditorScreen implements Screen {
         ? `${personaResolved.model.provider}:${personaResolved.model.model}`
         : undefined;
       const win = windowList(personas, view.cursor);
-      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+      if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
       win.visible.forEach((p, i) => {
         const absoluteIdx = win.start + i;
-        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+        const cur = absoluteIdx === view.cursor ? theme.fg("accent", "▸") : " ";
         const modelStr = `${p.provider}:${p.model}`;
         const avail = state.availableModels.some(
           (m) => m.provider === p.provider && m.id === p.model,
         )
-          ? "✓"
-          : "✗";
+          ? theme.fg("success", "✓")
+          : theme.fg("error", "✗");
         const isNoOp = personaResolvedStr === modelStr;
-        const noOpHint = isNoOp ? "  (same as persona default — no effect)" : "";
+        const noOpHint = isNoOp ? muted("  (same as persona default — no effect)", theme) : "";
         lines.push(
-          `  ${cursor} ${padRight(p.persona, 12)} ${padRight(modelStr, 36)} ${avail}${noOpHint}`,
+          `  ${cur} ${padRight(p.persona, 12)} ${padRight(modelStr, 36)} ${avail}${noOpHint}`,
         );
       });
-      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+      if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
       lines.push("");
-      lines.push(`  enter set as override   esc back`);
+      lines.push(muted("  enter set as override   esc back", theme));
     } else if (view.step === "pick-provider") {
-      lines.push(`  Inline override — Step 1 of 2 — pick provider`);
+      lines.push(accent("  Inline override — Step 1 of 2 — pick provider", theme));
       lines.push("");
       const providers = uniqueProviders(state);
       const win = windowList(providers, view.cursor);
-      if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+      if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
       win.visible.forEach((p, i) => {
         const absoluteIdx = win.start + i;
-        const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+        const cur = absoluteIdx === view.cursor ? theme.fg("accent", "▸") : " ";
         const auth = authBadgeFor(state, p, theme);
-        lines.push(`  ${cursor} ${padRight(p, 56)}${auth}`);
+        lines.push(`  ${cur} ${padRight(p, 56)}${auth}`);
       });
-      if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+      if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
       lines.push("");
-      lines.push(`  ↑/↓ select   enter advance   esc back`);
+      lines.push(muted("  ↑/↓ select   enter advance   esc back", theme));
     } else if (view.step === "pick-model") {
-      lines.push(`  Inline override — Step 2 of 2 — pick model (provider: ${view.provider ?? "?"})`);
+      lines.push(accent(`  Inline override — Step 2 of 2 — pick model (provider: ${view.provider ?? "?"})`, theme));
       lines.push("");
       const models = state.availableModels.filter((m) => m.provider === view.provider);
       if (models.length === 0) {
-        lines.push(`  No models available for this provider.`);
-        lines.push(`  (Run \`pi /login ${view.provider}\` then return.)`);
+        lines.push(muted("  No models available for this provider.", theme));
+        lines.push(muted(`  (Run \`pi /login ${view.provider}\` then return.)`, theme));
       } else {
         const win = windowList(models, view.cursor);
-        if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+        if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
         win.visible.forEach((m, i) => {
           const absoluteIdx = win.start + i;
-          const cursor = absoluteIdx === view.cursor ? "▸" : " ";
-          lines.push(`  ${cursor} ${m.id}`);
+          const cur = absoluteIdx === view.cursor ? theme.fg("accent", "▸") : " ";
+          lines.push(`  ${cur} ${m.id}`);
         });
-        if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+        if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
       }
       lines.push("");
-      lines.push(`  ↑/↓ select   enter write override   esc back`);
+      lines.push(muted("  ↑/↓ select   enter write override   esc back", theme));
     }
 
-    if (state.dirty) lines.push(`  * unsaved`);
-    return lines;
+    if (state.dirty) lines.push(`  ${dirtyMarker(theme)}`);
+    return safeLines(lines, width);
   }
 
   handleInput(data: string, state: ConfigTuiState): InputResult {

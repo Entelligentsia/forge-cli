@@ -26,6 +26,7 @@ export function initialState(opts: InitOptions): ConfigTuiState {
     authenticatedProviders: opts.authenticatedProviders,
     dirty: false,
     isEmpty,
+    authError: opts.authError ?? null,
     confirmQuit: false,
     shouldExit: false,
     lastSaved: null,

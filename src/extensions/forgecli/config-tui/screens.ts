@@ -1,27 +1,13 @@
 // Screen renderers and routing — barrel re-export for backward compatibility.
 //
-// Phase 1 originally had all render functions here. Phase 2 extracts each screen
-// into its own module under screens/*.ts, each implementing the Screen interface.
-// This file now re-exports the render functions for backward compatibility with
-// existing tests and consumers.
-//
-// The renderActive router is preserved here as well, delegating to the same
-// Screen instances that the orchestrator (component.ts) uses.
+// Phase 3: theming + width safety. All screen classes now use theme helpers
+// for visible strings and truncate their output to terminal width.
 
 import type { ConfigTuiState, View } from "./state.js";
-import { CANONICAL_PHASES } from "./state/constants.js";
 import {
   getActiveView,
-  getPhaseOverride,
-  listPersonaPickerEntries,
-  listPipelineOverrideSummaries,
-  listResolvedPersonas,
-  uniqueProviders,
 } from "./state/selectors.js";
-import { resolveModelForPhase } from "../model-resolver.js";
-import { rule, authBadgeFor, authStatusLine, resolvedSummary, windowList, formatOverride } from "./screens/shared.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { padRight, cursor, accentBold, dim, muted, warning } from "./theme.js";
 
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
 import { TopMenuScreen } from "./screens/top-menu.js";
@@ -64,63 +50,12 @@ export { type InputResult, type Screen } from "./screens/types.js";
 export { type MenuItem } from "./screens/top-menu.js";
 
 // ── Legacy render functions (backward-compatible wrappers) ────────────────────
-// These delegate to the new Screen instances so that tests that import
-// renderTopMenu, renderPersonasList, etc. still work.
-
-export function topMenuItems(state: ConfigTuiState): MenuItem[] {
-  // TopMenuScreen.topMenuItems is inside the module; re-implement the call path
-  // by using the screen instance's render, but we need the items list.
-  // Since topMenuItems is only used in render, and is now internal to TopMenuScreen,
-  // we expose a backward-compat wrapper by re-importing from the module.
-  // However, topMenuItems is a local function in top-menu.ts now, not exported.
-  // For backward compatibility we keep the logic here:
-  if (state.isEmpty) {
-    return [
-      { label: () => `1. Add a persona-model assignment   (creates a config file)` },
-      { label: () => `2. Show resolved (read-only view)` },
-    ];
-  }
-  const items: MenuItem[] = [
-    {
-      label: (s) => {
-        const personas = listResolvedPersonas(s);
-        const globalCount = Object.keys(s.buffer.global["persona-models"] ?? {}).length;
-        const projectCount = Object.keys(s.buffer.project["persona-models"] ?? {}).length;
-        return `1. Personas                              ${personas.length} defined  (${globalCount} global · ${projectCount} project)`;
-      },
-    },
-    {
-      label: (s) => {
-        const pipelineHas = Object.keys(s.buffer.project.pipelines ?? {}).length;
-        return `2. Per-phase overrides                          ${pipelineHas > 0 ? `${pipelineHas} pipeline${pipelineHas === 1 ? "" : "s"}` : "0 set"}`;
-      },
-    },
-    { label: () => `3. Show resolved (per pipeline, per phase)` },
-  ];
-  if (state.pipelineCatalogue) {
-    items.push({
-      label: (s) =>
-        `4. Pipelines                              ${(s.pipelineCatalogue ?? []).length} known  (read from .forge)`,
-    });
-  }
-  items.push({ label: () => `5. Forge plugin config (read-only)` });
-  return items;
-}
-
-export function noProjectMenuItems(state: ConfigTuiState): MenuItem[] {
-  const globalCount = Object.keys(state.buffer.global["persona-models"] ?? {}).length;
-  return [
-    { label: () => `1. Personas (global)                              ${globalCount} defined` },
-    { label: () => `2. Show resolved                                  N/A — no pipeline catalogue` },
-  ];
-}
 
 export function renderTopMenu(state: ConfigTuiState, width: number, theme: Theme): string[] {
   return SCREEN_INSTANCES["top-menu"].render(state, width, theme);
 }
 
 export function renderEmptyState(state: ConfigTuiState, width: number, theme: Theme): string[] {
-  // Force the "empty" branch by using a copy with isEmpty=true
   const stateForRender: ConfigTuiState = { ...state, isEmpty: true };
   return SCREEN_INSTANCES["empty-state"].render(stateForRender, width, theme);
 }

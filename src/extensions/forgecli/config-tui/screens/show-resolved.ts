@@ -1,5 +1,5 @@
 // Show-resolved screen — read-only resolved routing table (per pipeline, per phase).
-// Phase 2: extracted from component.ts handleShowResolvedInput + screens.ts renderShowResolved.
+// Phase 3: full theming, width safety.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
@@ -8,8 +8,8 @@ import { InputResult, Screen } from "./types.js";
 import { getActiveView } from "../state/selectors.js";
 import { CANONICAL_PHASES } from "../state/constants.js";
 import { resolveModelForPhase } from "../../model-resolver.js";
-import { rule, windowList } from "./shared.js";
-import { padRight } from "../theme.js";
+import { rule, windowList, safeLines } from "./shared.js";
+import { padRight, accentBold, muted, cursor, authBadge } from "../theme.js";
 
 export interface ResolvedRow {
   index: number;
@@ -66,11 +66,11 @@ export class ShowResolvedScreen implements Screen {
       return ["(renderShowResolved called with wrong active view)"];
     }
     const lines: string[] = [];
-    lines.push(`forge config › resolved`);
+    lines.push(accentBold("forge config › resolved", theme));
     lines.push(rule(width, theme));
 
     // Layer files: presence at L1/L2 paths.
-    lines.push(`  Layer files:`);
+    lines.push(muted("  Layer files:", theme));
     const globalExists =
       state.buffer.global["persona-models"] && Object.keys(state.buffer.global["persona-models"]).length > 0;
     const projectExists =
@@ -80,8 +80,8 @@ export class ShowResolvedScreen implements Screen {
     lines.push("");
 
     if (state.pipelineCatalogue === null) {
-      lines.push(`  No pipeline catalogue (forge-cli outside a Forge project).`);
-      lines.push(`  Default pipeline shown below (canonical 8-phase chain).`);
+      lines.push(muted("  No pipeline catalogue (forge-cli outside a Forge project).", theme));
+      lines.push(muted("  Default pipeline shown below (canonical 8-phase chain).", theme));
       lines.push("");
     }
 
@@ -91,19 +91,19 @@ export class ShowResolvedScreen implements Screen {
     for (const p of allRows) for (const r of p.rows) flat.push({ pipeline: p.pipeline, row: r });
 
     const win = windowList(flat, view.cursor, 12);
-    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} row(s) above`);
+    if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} row(s) above`, theme));
 
     let currentPipeline = "";
     for (let i = 0; i < win.visible.length; i++) {
       const item = win.visible[i];
       const absoluteIdx = win.start + i;
-      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+      const cur = cursor(absoluteIdx === view.cursor, theme);
       if (item.pipeline !== currentPipeline) {
         currentPipeline = item.pipeline;
         const totalPipelinePhases = allRows.find((p) => p.pipeline === item.pipeline)?.rows.length ?? 0;
         lines.push("");
-        lines.push(`  Pipeline: ${item.pipeline}  (${totalPipelinePhases} phases)`);
-        lines.push(`    #  ROLE          PERSONA       RESOLVED                        SOURCE     AVAIL`);
+        lines.push(`  Pipeline: ${accentBold(item.pipeline, theme)}  (${totalPipelinePhases} phases)`);
+        lines.push(`    ${muted("#", theme)}  ${muted(padRight("ROLE", 13), theme)} ${muted(padRight("PERSONA", 13), theme)} ${muted(padRight("RESOLVED", 31), theme)} ${muted(padRight("SOURCE", 10), theme)} ${muted("AVAIL", theme)}`);
       }
       const r = item.row;
       const idxStr = String(r.index).padStart(2, " ");
@@ -111,14 +111,14 @@ export class ShowResolvedScreen implements Screen {
       const personaStr = padRight(r.persona, 13);
       const resolvedStr = padRight(r.resolved, 31);
       const sourceStr = padRight(r.source, 10);
-      const avail = r.available ? "✓" : "✗";
-      lines.push(`  ${cursor} ${idxStr}  ${roleStr} ${personaStr} ${resolvedStr} ${sourceStr} ${avail}`);
+      const avail = r.available ? authBadge(true, theme) : theme.fg("error", "✗");
+      lines.push(`  ${cur} ${idxStr}  ${roleStr} ${personaStr} ${resolvedStr} ${sourceStr} ${avail}`);
     }
 
-    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} row(s) below`);
+    if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} row(s) below`, theme));
     lines.push("");
-    lines.push(`  ↑/↓ scroll   esc back   q quit   (total rows: ${totalRows})`);
-    return lines;
+    lines.push(muted(`  ↑/↓ scroll   esc back   q quit   (total rows: ${totalRows})`, theme));
+    return safeLines(lines, width);
   }
 
   handleInput(data: string, state: ConfigTuiState): InputResult {

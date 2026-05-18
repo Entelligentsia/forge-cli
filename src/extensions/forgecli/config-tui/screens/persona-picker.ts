@@ -1,13 +1,13 @@
 // Persona-picker screen — renders and handles input for the "pick which persona" view.
-// Phase 2: extracted from component.ts handlePersonaPickerInput + screens.ts renderPersonaPicker.
+// Phase 3: full theming, width safety.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
 import { getActiveView, listPersonaPickerEntries } from "../state/selectors.js";
-import { rule, windowList } from "./shared.js";
-import { padRight } from "../theme.js";
+import { rule, windowList, safeLines } from "./shared.js";
+import { padRight, cursor, accentBold, muted } from "../theme.js";
 
 export class PersonaPickerScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -17,33 +17,33 @@ export class PersonaPickerScreen implements Screen {
     }
     const entries = listPersonaPickerEntries(state);
     const lines: string[] = [];
-    lines.push(`forge config › personas › pick which`);
+    lines.push(accentBold("forge config › personas › pick which", theme));
     lines.push(rule(width, theme));
-    lines.push(`  Pick a persona to assign a model to:`);
+    lines.push(muted("  Pick a persona to assign a model to:", theme));
     lines.push("");
 
     const nameCol = Math.max(9, ...entries.map((e) => e.persona.length));
     const win = windowList(entries, view.cursor, 12);
-    if (win.aboveCount > 0) lines.push(`    ↑ ${win.aboveCount} more above`);
+    if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
     win.visible.forEach((entry, i) => {
       const absoluteIdx = win.start + i;
-      const cursor = absoluteIdx === view.cursor ? "▸" : " ";
+      const cur = cursor(absoluteIdx === view.cursor, theme);
       let status: string;
       if (entry.assignment) {
         const layer = entry.assignment.source.endsWith("L2") ? "L2" : "L1";
-        status = `currently: ${entry.assignment.provider}:${entry.assignment.model} (${layer})`;
+        status = muted(`currently: ${entry.assignment.provider}:${entry.assignment.model} (${layer})`, theme);
       } else if (entry.persona === "default") {
-        status = "fallback for every persona";
+        status = muted("fallback for every persona", theme);
       } else {
-        status = "currently: inherit";
+        status = muted("currently: inherit", theme);
       }
-      const cat = entry.inCatalogue ? " " : "⚠";
-      lines.push(`  ${cursor} ${cat} ${padRight(entry.persona, nameCol)}  ${status}`);
+      const cat = entry.inCatalogue ? " " : theme.fg("warning", "⚠");
+      lines.push(`  ${cur} ${cat} ${padRight(entry.persona, nameCol)}  ${status}`);
     });
-    if (win.belowCount > 0) lines.push(`    ↓ ${win.belowCount} more below`);
+    if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
     lines.push("");
-    lines.push(`  ↑/↓ select   enter open editor   esc back`);
-    return lines;
+    lines.push(muted("  ↑/↓ select   enter open editor   esc back", theme));
+    return safeLines(lines, width);
   }
 
   handleInput(data: string, state: ConfigTuiState): InputResult {

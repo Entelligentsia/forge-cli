@@ -1,5 +1,5 @@
 // Config-TUI public re-exports.
-// Phase 2: barrel file for the config-tui extension module.
+// Phase 3: theming + width safety + data-driven menus + auth error surfacing.
 
 export { createConfigTuiComponent, type ConfigTuiComponentOptions } from "./component.js";
 export type { ConfigLayer } from "../config-writer.js";

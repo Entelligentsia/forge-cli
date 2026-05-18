@@ -1,7 +1,8 @@
 // Config TUI state model — re-exports from split modules.
 // Phase 1: This file is now a barrel that re-exports everything from state/.
 // The implementation lives in state/model.ts, state/init.ts, state/reducer.ts,
-// state/selectors.ts, state/buffer.ts, and state/constants.ts.
+// state/selectors.ts, state/buffer.ts, and state/constants.js.
+// Phase 3: authError added to InitOptions and ConfigTuiState.
 
 export type {
   View,
