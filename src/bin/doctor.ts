@@ -34,6 +34,7 @@ export interface DoctorReport {
 		total: number;
 		available: number;
 		samples: { provider: string; id: string }[];
+		byProvider: Record<string, string[]>;
 	};
 	settings: {
 		defaultProvider: string | undefined;
@@ -78,6 +79,18 @@ export async function runDoctorProbe(versions: DoctorVersions, cwd: string = pro
 	const status: DoctorReport["status"] =
 		available.length > 0 ? "ready" : stored.length > 0 ? "no-models" : "no-credentials";
 
+	// Build byProvider: group available model ids by provider, sorted for stable output.
+	const byProviderMap = new Map<string, string[]>();
+	for (const m of available) {
+		const ids = byProviderMap.get(m.provider) ?? [];
+		ids.push(m.id);
+		byProviderMap.set(m.provider, ids);
+	}
+	const byProvider: Record<string, string[]> = {};
+	for (const key of Array.from(byProviderMap.keys()).sort()) {
+		byProvider[key] = (byProviderMap.get(key) ?? []).sort();
+	}
+
 	const report: DoctorReport = {
 		forgeCli: versions.forgeCli,
 		forgePlugin: versions.forgePlugin,
@@ -92,6 +105,7 @@ export async function runDoctorProbe(versions: DoctorVersions, cwd: string = pro
 			total: all.length,
 			available: available.length,
 			samples: available.slice(0, 5).map((m) => ({ provider: m.provider, id: m.id })),
+			byProvider,
 		},
 		settings: {
 			defaultProvider: settingsManager.getDefaultProvider(),
