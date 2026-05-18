@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-05-18
+
+### Changed
+- **`/changelog` always shows all three tabs** — pi, forge-plugin, and forge-cli
+  chips now appear in the strip and detail view regardless of whether each
+  component has a new version since the last session. Components that haven't
+  advanced show their current-version release notes; components that have
+  advanced show the full `from → to` range.
+
+## [0.8.3] — 2026-05-18
+
+### Fixed
+- **`/changelog` autocomplete conflict resolved** — vendored pi bumped to
+  `0.75.1-forge.4`, which removes `changelog` from `BUILTIN_SLASH_COMMANDS`.
+  The forge `/changelog` extension command now registers cleanly without the
+  "conflicts with built-in interactive command. Skipping in autocomplete."
+  warning and appears in the autocomplete list.
+
+## [0.8.2] — 2026-05-18
+
+### Changed
+- **`/changelog` overrides pi's built-in** — pi `0.75.1-forge.3` allows
+  extension commands to shadow the built-in `/changelog` handler. The forge
+  three-component TUI strip (pi + forge-plugin + forge-cli with ←→ chip
+  navigation and Enter→detail view via `setOutputSource`) is now what runs
+  when users type `/changelog`.
+- **`/whats-new` retired** — `/changelog` is the single entry point for the
+  forge changelog widget.
+
+## [0.8.1] — 2026-05-18
+
+### Fixed
+- **Pi changelog banner loop fixed** — vendored pi bumped to `0.75.1-forge.2`.
+  `getNewEntries` now strips pre-release suffixes (e.g. `-forge.1`) before
+  numeric parsing. Without this, `"1-forge"` parsed as `NaN → 0`, recording
+  the last-seen version as `0.75.0` every session so the `0.75.1` entry
+  perpetually re-qualified as new.
+- **Pi changelog banner suppressed** — `PI_SKIP_CHANGELOG=1` set
+  unconditionally at bin startup. forge-cli ships the `/changelog` TUI widget
+  (`whats-new-widget.ts`) covering all three components; pi's single-component
+  banner is redundant.
+
 ## [0.8.0] — 2026-05-18
 
 ### Added
