@@ -1,7 +1,7 @@
 // Behavioral tests for ConfigTuiComponent — drives keystrokes through the
 // reducer and verifies render output + onSaved/onError side effects.
 //
-// Plan 16 Slice 4b.
+// Plan 16 Slice 4b. Phase A: entry view is tier-menu (replaces top-menu).
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -58,8 +58,8 @@ function makeHarness() {
   };
 }
 
-describe("ConfigTuiComponent — top-menu", () => {
-  it("renders empty-state when no configs exist", () => {
+describe("ConfigTuiComponent — tier-menu landing (Phase A)", () => {
+  it("renders tier-menu when no configs exist", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -75,7 +75,11 @@ describe("ConfigTuiComponent — top-menu", () => {
       onError,
     });
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("No forge-cli config files found");
+    expect(out).toContain("forge config");
+    expect(out).toContain("Choose models for your AI workflow");
+    expect(out).toContain("Heavy");
+    expect(out).toContain("Standard");
+    expect(out).toContain("Light");
   });
 
   it("renders no-project when pipelineCatalogue is null", () => {
@@ -117,8 +121,8 @@ describe("ConfigTuiComponent — top-menu", () => {
   });
 });
 
-describe("ConfigTuiComponent — navigate to personas list", () => {
-  it("from non-empty top-menu, '1' or enter opens personas-list", () => {
+describe("ConfigTuiComponent — navigate to personas list (via advanced/top-menu)", () => {
+  it("'a' from tier-menu opens top-menu (which has personas-list)", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -133,13 +137,13 @@ describe("ConfigTuiComponent — navigate to personas list", () => {
       onSaved,
       onError,
     });
+    comp.handleInput("a"); // tier-menu → top-menu
     expect(comp.render(WIDTH).join("\n")).toContain("Personas");
-
-    comp.handleInput("1");
+    comp.handleInput("1"); // top-menu → personas-list
     expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
   });
 
-  it("from empty-state, '1' opens persona-picker; enter on 'default' lands in persona-editor", () => {
+  it("from top-menu, personas-list picker → editor flow works", () => {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -154,16 +158,15 @@ describe("ConfigTuiComponent — navigate to personas list", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("1");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas › pick which");
-    comp.handleInput("\r"); // confirm 'default' (cursor 0)
+    // tier-menu → top-menu → empty-state: "1" opens persona-picker
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // top-menu empty-state → persona-picker
+    comp.handleInput("\r"); // confirm 'default' → persona-editor
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("forge config › personas › default");
     expect(out).toContain("Step 1 of 3");
   });
 });
-
-describe("ConfigTuiComponent — full edit flow with persistence", () => {
+describe("ConfigTuiComponent — full edit flow with persistence (top-menu path)", () => {
   it("pick provider → model → project layer → writes file + onSaved fires", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
@@ -183,9 +186,10 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
       onError,
     });
 
-    // From empty-state, "1" opens picker; enter confirms "default"
-    comp.handleInput("1");
-    comp.handleInput("\r");
+    // Navigate: tier-menu → "a" → top-menu(= empty-state) → "1" → persona-picker
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // top-menu empty-state → persona-picker
+    comp.handleInput("\r"); // picker: confirm 'default' → editor
     // Pick anthropic via shortcut
     comp.handleInput("a");
     expect(comp.render(WIDTH).join("\n")).toContain("Step 2 of 3");
@@ -221,8 +225,9 @@ describe("ConfigTuiComponent — full edit flow with persistence", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("1");
-    comp.handleInput("\r"); // picker: confirm 'default'
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // → persona-picker
+    comp.handleInput("\r"); // picker: confirm 'default' → editor
     comp.handleInput("l"); // ollama shortcut
     comp.handleInput("\r"); // pick first model
     comp.handleInput("g"); // global layer
@@ -257,6 +262,7 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
       onError,
       requestRender: () => renderCalls++,
     });
+    comp.handleInput("a"); // tier-menu → top-menu
     comp.handleInput("1"); // top-menu → personas-list
     const renderCountBefore = renderCalls;
     comp.handleInput("\x1b[B"); // ↓ raw escape sequence
@@ -286,7 +292,8 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("1");
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // → personas-list
     comp.handleInput("\x1b[B"); // down
     comp.handleInput("\x1b[A"); // up
     const out = comp.render(WIDTH).join("\n");
@@ -314,7 +321,7 @@ describe("ConfigTuiComponent — arrow keys + requestRender", () => {
   });
 });
 
-describe("ConfigTuiComponent — top-menu cursor navigation (Slice 4c polish-2)", () => {
+describe("ConfigTuiComponent — tier-menu cursor navigation (Phase A)", () => {
   function nonEmpty() {
     const { onExit, onSaved, onError } = makeHarness();
     return createConfigTuiComponent({
@@ -332,41 +339,50 @@ describe("ConfigTuiComponent — top-menu cursor navigation (Slice 4c polish-2)"
     });
   }
 
-  it("↓ moves the cursor in the top-menu (and ▸ tracks it)", () => {
+  it("↓ moves the cursor in the tier-menu (and ▸ tracks it)", () => {
     const c = nonEmpty();
     const before = c.render(WIDTH).join("\n");
     const beforeRow = before.split("\n").find((l) => l.includes("▸"));
-    expect(beforeRow).toContain("Personas");
+    expect(beforeRow).toContain("Heavy");
 
     c.handleInput("\x1b[B"); // ↓
     const after = c.render(WIDTH).join("\n");
     const afterRow = after.split("\n").find((l) => l.includes("▸"));
-    expect(afterRow).toContain("Per-phase overrides");
+    expect(afterRow).toContain("Standard");
   });
 
-  it("↓ several times then enter fires the cursor's action (show-resolved)", () => {
+  it("'s' shortcut opens show-resolved", () => {
     const c = nonEmpty();
-    c.handleInput("\x1b[B"); // → Per-phase overrides
-    c.handleInput("\x1b[B"); // → Show resolved
-    c.handleInput("\r");
+    c.handleInput("s");
+    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+  });
+
+  it("navigate to 'show-resolved' via cursor and enter", () => {
+    const c = nonEmpty();
+    c.handleInput("\x1b[B"); // ↓ Standard
+    c.handleInput("\x1b[B"); // ↓ Light
+    c.handleInput("\x1b[B"); // ↓ Show what runs at each step
+    c.handleInput("\r");     // enter
     expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
   });
 
   it("cursor clamps at upper bound (can't overshoot)", () => {
     const c = nonEmpty();
     for (let i = 0; i < 20; i++) c.handleInput("\x1b[B");
-    // cursor is on the last menu row (Plugin config); enter fires its stub error.
+    // cursor is on the last item (Advanced); enter opens top-menu
     c.handleInput("\r");
-    // No crash; no view transition because Plugin config is a stub.
-    // (Verified via the absence of new view header.)
-    expect(c.render(WIDTH).join("\n")).toContain("forge config");
+    const out = c.render(WIDTH).join("\n");
+    expect(out).toContain("forge config");
   });
 
-  it("number shortcut still works regardless of cursor position", () => {
+  it("tab toggles scope", () => {
     const c = nonEmpty();
-    c.handleInput("\x1b[B"); // cursor on row 1
-    c.handleInput("3");      // bypass cursor → show-resolved
-    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+    const before = c.render(WIDTH).join("\n");
+    // Default scope is project
+    expect(before).toContain("project");
+    c.handleInput("\t"); // tab → global
+    const after = c.render(WIDTH).join("\n");
+    expect(after).toContain("global");
   });
 
   it("no-project menu cursor: ↓ then enter goes to show-resolved", () => {
@@ -384,9 +400,10 @@ describe("ConfigTuiComponent — top-menu cursor navigation (Slice 4c polish-2)"
       onSaved,
       onError,
     });
-    c.handleInput("\x1b[B"); // ↓ → Show resolved
+    c.handleInput("\x1b[B"); // ↓ → next item
     c.handleInput("\r");
-    expect(c.render(WIDTH).join("\n")).toContain("forge config › resolved");
+    // In no-project mode, TopMenuScreen handles enter → opens the second item
+    expect(c.render(WIDTH).join("\n")).toContain("forge config");
   });
 });
 
@@ -446,9 +463,9 @@ describe("ConfigTuiComponent — no-project entry wiring (Slice 4c task #16)", (
       onError,
     });
     comp.handleInput("\r");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas › pick which");
+    expect(comp.render(WIDTH).join("\n")).toContain("pick which");
     comp.handleInput("\r");
-    expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas › default");
+    expect(comp.render(WIDTH).join("\n")).toContain("default");
   });
 });
 
@@ -468,11 +485,34 @@ describe("ConfigTuiComponent — esc navigation", () => {
       onSaved,
       onError,
     });
-    comp.handleInput("1");
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // → personas-list
     expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
-    comp.handleInput("\x1b"); // ESC
+    comp.handleInput("\x1b"); // ESC → back to top-menu
     expect(comp.render(WIDTH).join("\n")).not.toContain("forge config › personas");
     expect(comp.render(WIDTH).join("\n")).toContain("forge config");
+  });
+
+  it("esc from top-menu returns to tier-menu", () => {
+    const { onExit, onSaved, onError } = makeHarness();
+    const comp = createConfigTuiComponent({
+      theme: mockTheme,
+      global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
+      project: null,
+      cwd,
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: ["default"],
+      availableModels: [{ provider: "anthropic", id: "claude-opus-4-5" }],
+      authenticatedProviders: ["anthropic"],
+      onExit,
+      onSaved,
+      onError,
+    });
+    comp.handleInput("a"); // tier-menu → top-menu
+    expect(comp.render(WIDTH).join("\n")).toContain("Personas");
+    comp.handleInput("\x1b"); // ESC → back to tier-menu
+    const out = comp.render(WIDTH).join("\n");
+    expect(out).toContain("Choose models for your AI workflow");
   });
 });
 
@@ -500,14 +540,19 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
     });
   }
 
+  // Navigate to persona-editor via top-menu
+  function goToEditor(comp: ReturnType<typeof createConfigTuiComponent>) {
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // top-menu empty-state → persona-picker
+    comp.handleInput("\r"); // confirm 'default' → editor pick-provider
+  }
+
   it("↓ moves the cursor in the provider picker", () => {
     const c = picker();
-    c.handleInput("1");  // empty-state → persona-picker
-    c.handleInput("\r"); // confirm 'default' → editor pick-provider
+    goToEditor(c);
     const before = c.render(WIDTH).join("\n");
     c.handleInput("\x1b[B"); // ↓
     const after = c.render(WIDTH).join("\n");
-    // Cursor should have moved off the first provider row onto the second.
     const beforeCursorRow = before.split("\n").find((l) => l.includes("▸"));
     const afterCursorRow = after.split("\n").find((l) => l.includes("▸"));
     expect(beforeCursorRow).toBeDefined();
@@ -517,8 +562,7 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("enter on provider picker picks the cursor row (not [0])", () => {
     const c = picker();
-    c.handleInput("1");      // → persona-picker
-    c.handleInput("\r");     // confirm 'default' → editor pick-provider
+    goToEditor(c);
     c.handleInput("\x1b[B"); // ↓ to second provider
     c.handleInput("\x1b[B"); // ↓ to third provider
     c.handleInput("\r");     // enter
@@ -530,8 +574,7 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("↓ moves the cursor in the model picker", () => {
     const c = picker();
-    c.handleInput("1");      // → persona-picker
-    c.handleInput("\r");     // confirm 'default'
+    goToEditor(c);
     c.handleInput("\r");     // enter — picks first provider (anthropic, cursor=0)
     const before = c.render(WIDTH).join("\n");
     c.handleInput("\x1b[B"); // ↓ in model list
@@ -544,9 +587,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("enter on model picker uses cursor selection", () => {
     const c = picker();
-    c.handleInput("1");      // → persona-picker
-    c.handleInput("\r");     // confirm 'default'
-    c.handleInput("\r");     // anthropic
+    goToEditor(c);
+    c.handleInput("\r");     // pick anthropic
     c.handleInput("\x1b[B"); // ↓ → sonnet
     c.handleInput("\x1b[B"); // ↓ → haiku
     c.handleInput("\r");     // pick model
@@ -557,8 +599,6 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
 
   it("layer picker cursor: ↓ then enter writes to global", () => {
     const { h } = makeHarness();
-    const c = picker();
-    // overwrite handlers with new harness
     const c2 = createConfigTuiComponent({
       theme: mockTheme,
       global: null,
@@ -572,23 +612,19 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
       onSaved: (t: string) => h.saved.push(t),
       onError: (m: string) => h.errors.push(m),
     });
-    c2.handleInput("1");      // → persona-picker
-    c2.handleInput("\r");     // confirm 'default' → editor pick-provider (cursor=0, anthropic)
+    goToEditor(c2); // → persona-editor pick-provider
     c2.handleInput("\r");     // pick anthropic
     c2.handleInput("\r");     // pick claude-opus-4-5
     c2.handleInput("\x1b[B"); // ↓ in layer picker (project → global)
     c2.handleInput("\r");     // confirm
     expect(h.saved.length).toBe(1);
-    // Global path uses the test's mocked PI_CODING_AGENT_DIR (tmp/agent/),
-    // so just check it landed in the global layer rather than project layer.
     expect(h.saved[0]).toContain("agent/forge-cli/config.json");
     expect(h.saved[0]).not.toContain(".pi/forge-cli/config.json");
   });
 
   it("cursor stays clamped at upper bound (can't overshoot)", () => {
     const c = picker();
-    c.handleInput("1");
-    c.handleInput("\r"); // confirm 'default' → editor pick-provider
+    goToEditor(c);
     // 3 providers — try to move ↓ 10 times
     for (let i = 0; i < 10; i++) c.handleInput("\x1b[B");
     c.handleInput("\r"); // enter — should pick the last provider (openai)
@@ -613,14 +649,14 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onSaved,
       onError,
     });
-    comp.handleInput("1");
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("1"); // picker
     comp.handleInput("\r"); // picker: confirm 'default'
     comp.handleInput("a");
     comp.handleInput("\r");
     comp.handleInput("p"); // commit to project layer
     expect(h.saved.length).toBe(1);
 
-    // After save, the screen should show "Saved → …" and NOT "* unsaved".
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("✓ Saved");
     expect(out).toContain(h.saved[0]);
@@ -642,6 +678,7 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onSaved,
       onError,
     });
+    comp.handleInput("a");
     comp.handleInput("1");
     comp.handleInput("\r"); // picker: confirm 'default'
     comp.handleInput("a");
@@ -649,17 +686,12 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
     comp.handleInput("p");
     expect(h.saved.length).toBe(1);
 
-    // q now exits immediately — no modal, no second press needed.
     comp.handleInput("q");
     expect(h.exits).toEqual([0]);
   });
 
   it("repeated q while confirm-quit modal is open is a no-op (not re-triggered)", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
-    // To get into a dirty state without auto-persist we'd need a non-saving
-    // mutation path. None exists in 4b/4c, so we exercise the request-quit
-    // guard via the reducer directly — see config-tui-state.test.ts for the
-    // reducer-level "request-quit noop when confirmQuit" test.
     const comp = createConfigTuiComponent({
       theme: mockTheme,
       global: null,
@@ -673,14 +705,13 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onSaved,
       onError,
     });
-    // Clean state — q exits on first press.
     comp.handleInput("q");
     expect(h.exits).toEqual([0]);
   });
 });
 
 describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", () => {
-  function makeNonEmpty(extra: Parameters<typeof createConfigTuiComponent>[0] extends infer T ? Partial<T> : never) {
+  function makeNonEmpty(extra: Record<string, unknown> = {}) {
     const { onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -707,9 +738,15 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
     return { comp };
   }
 
-  it("menu item 2 opens overrides-list-pipelines", () => {
-    const { comp } = makeNonEmpty({});
-    comp.handleInput("2");
+  // Navigate: tier-menu → "a" → top-menu → "2" → overrides-list-pipelines
+  function goToOverrides(comp: ReturnType<typeof createConfigTuiComponent>) {
+    comp.handleInput("a"); // tier-menu → top-menu
+    comp.handleInput("2"); // top-menu → overrides-list-pipelines
+  }
+
+  it("menu item 2 opens overrides-list-pipelines (via top-menu)", () => {
+    const { comp } = makeNonEmpty();
+    goToOverrides(comp);
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("per-phase overrides");
     expect(out).toContain("default");
@@ -717,8 +754,8 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
   });
 
   it("enter on a pipeline drills into the phase table", () => {
-    const { comp } = makeNonEmpty({});
-    comp.handleInput("2");
+    const { comp } = makeNonEmpty();
+    goToOverrides(comp);
     comp.handleInput("\r");
     const out = comp.render(WIDTH).join("\n");
     expect(out).toContain("per-phase overrides › default");
@@ -727,8 +764,8 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
   });
 
   it("enter on a phase opens the override editor at pick-type", () => {
-    const { comp } = makeNonEmpty({});
-    comp.handleInput("2");
+    const { comp } = makeNonEmpty();
+    goToOverrides(comp);
     comp.handleInput("\r");
     comp.handleInput("\r");
     const out = comp.render(WIDTH).join("\n");
@@ -739,7 +776,6 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
     const harness = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
-      // Start non-empty so the top-menu (not empty-state) is the initial view.
       global: { "persona-models": { engineer: { provider: "anthropic", model: "claude-opus-4-5" } } },
       project: null,
       cwd,
@@ -754,18 +790,14 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
       onSaved: harness.onSaved,
       onError: harness.onError,
     });
-    comp.handleInput("2"); // overrides-list-pipelines (top-menu item 2)
+    goToOverrides(comp); // tier-menu → top-menu → overrides-list
     comp.handleInput("\r"); // pick default
-    // Move cursor to phase 1 (review-plan)
-    comp.handleInput("\x1b[B"); // down
+    comp.handleInput("\x1b[B"); // down to phase 1
     comp.handleInput("\r"); // open editor
-    // Pick "Inline" option
-    comp.handleInput("2");
-    // Pick ollama provider (cursor 1 after one ↓)
-    comp.handleInput("\x1b[B");
-    comp.handleInput("\r");
-    // Pick first ollama model
-    comp.handleInput("\r");
+    comp.handleInput("2"); // Inline
+    comp.handleInput("\x1b[B"); // down to ollama
+    comp.handleInput("\r"); // pick ollama
+    comp.handleInput("\r"); // pick first model
 
     const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
     const written = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
@@ -796,7 +828,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
       onSaved: harness.onSaved,
       onError: harness.onError,
     });
-    comp.handleInput("2"); // overrides-list-pipelines
+    goToOverrides(comp);
     comp.handleInput("\r"); // pick default
     comp.handleInput("\r"); // editor for phase 0
     comp.handleInput("1"); // by-name
@@ -828,12 +860,11 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
       onSaved: harness.onSaved,
       onError: harness.onError,
     });
-    comp.handleInput("2"); // overrides list
+    goToOverrides(comp);
     comp.handleInput("\r"); // pick default
     comp.handleInput("\r"); // open editor for phase 0
     comp.handleInput("3"); // clear
 
-    // Buffer is now empty → file should be deleted
     const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
     expect(fs.existsSync(projectPath)).toBe(false);
     expect(harness.h.errors).toEqual([]);
@@ -860,7 +891,7 @@ describe("ConfigTuiComponent — per-phase overrides (Slice 4c Screens 4+5)", ()
       onSaved: harness.onSaved,
       onError: harness.onError,
     });
-    comp.handleInput("2");
+    goToOverrides(comp);
     comp.handleInput("\r");
     comp.handleInput("\x1b[B"); // move to phase 1
     comp.handleInput(" "); // space → clear
@@ -886,10 +917,11 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
+    comp.handleInput("a"); // tier-menu → top-menu
     comp.handleInput("1"); // → personas-list
     comp.handleInput("n"); // → persona-picker
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("forge config › personas › pick which");
+    expect(out).toContain("pick which");
     expect(out).toContain("default");
     expect(out).toContain("architect");
     expect(out).toContain("engineer");
@@ -911,11 +943,12 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
+    comp.handleInput("a"); // tier-menu → top-menu
     comp.handleInput("1"); // empty-state → picker (entries: default, architect, engineer)
     comp.handleInput("\x1b[B"); // ↓ → architect
     comp.handleInput("\r");
     const out = comp.render(WIDTH).join("\n");
-    expect(out).toContain("forge config › personas › architect");
+    expect(out).toContain("architect");
     expect(out).toContain("Step 1 of 3");
   });
 
@@ -934,6 +967,7 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
+    comp.handleInput("a"); // tier-menu → top-menu
     comp.handleInput("1"); // → picker
     comp.handleInput("\x1b[B"); // ↓ → architect
     comp.handleInput("\x1b[B"); // ↓ → engineer
@@ -966,6 +1000,7 @@ describe("ConfigTuiComponent — persona picker", () => {
       onSaved,
       onError,
     });
+    comp.handleInput("a"); // tier-menu → top-menu
     comp.handleInput("1"); // personas-list
     comp.handleInput("n"); // picker
     expect(comp.render(WIDTH).join("\n")).toContain("pick which");

@@ -7,6 +7,7 @@ import type {
   PipelineConfig,
   ProjectConfig,
 } from "../../config-layer.js";
+import type { Tier } from "../tier-meta.js";
 
 // L4 phase override is either a persona-models key (string) or an inline {provider, model}.
 export type PhaseOverride = string | PersonaModel;
@@ -16,6 +17,10 @@ export type ConfigLayer = "global" | "project";
 // ── Views ────────────────────────────────────────────────────────────────────
 
 export type View =
+  // ── Tiered-baseline views (Phase A+) ──────────────────────────────────────
+  | { kind: "tier-menu"; cursor: number }
+  | { kind: "tier-picker"; tier: Tier; step: "pick-provider" | "pick-model"; provider: string | undefined; cursor: number }
+  // ── Legacy / advanced views ───────────────────────────────────────────────
   | { kind: "top-menu"; cursor: number }
   | { kind: "empty-state"; cursor: number }
   | { kind: "no-project"; cursor: number }
@@ -45,6 +50,11 @@ export type View =
     };
 
 // ── Selectors / accessors (read-only helpers used by renderers) ──────────────
+
+export type TierAssignment =
+  | { status: "set"; provider: string; model: string; layer: ConfigLayer }
+  | { status: "mixed" }
+  | { status: "unset" };
 
 export interface ResolvedPersonaEntry {
   persona: string;
@@ -99,6 +109,8 @@ export interface ConfigTuiState {
   authenticatedProviders: string[];
   /** True iff buffer differs from the initial state (or from disk). */
   dirty: boolean;
+  /** Active write scope for tier-level commits (toggled by `tab` on tier-menu). */
+  scope: ConfigLayer;
   /** True iff both global and project were absent at init. */
   isEmpty: boolean;
   /** If model/auth discovery failed at init, a diagnostic string. */
@@ -114,6 +126,12 @@ export interface ConfigTuiState {
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 export type ConfigTuiAction =
+  // ── Tiered-baseline actions (Phase A+) ────────────────────────────────────
+  | { kind: "select-tier"; tier: Tier }
+  | { kind: "set-tier-provider"; tier: Tier; provider: string }
+  | { kind: "commit-tier-model"; tier: Tier; provider: string; model: string; layer: ConfigLayer }
+  | { kind: "toggle-scope" }
+  // ── Legacy actions ────────────────────────────────────────────────────────
   | { kind: "push-view"; view: View }
   | { kind: "pop-view" }
   | { kind: "cursor-move"; delta: number }

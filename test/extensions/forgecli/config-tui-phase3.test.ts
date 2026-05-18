@@ -14,6 +14,7 @@ import {
   renderShowResolved,
   renderOverridesListPhases,
   renderActive,
+  renderTierMenu,
 } from "../../../src/extensions/forgecli/config-tui/screens.js";
 import { createConfigTuiComponent } from "../../../src/extensions/forgecli/config-tui/component.js";
 import { CANONICAL_PHASES } from "../../../src/extensions/forgecli/config-tui/state/constants.js";
@@ -244,8 +245,7 @@ describe("authError surfacing (Phase 3)", () => {
 
 describe("data-driven menu items (Phase 3)", () => {
   it("top-menu items carry actions that produce the correct dispatches", () => {
-    // This is tested indirectly through the component tests, but we verify
-    // that pressing number keys and enter still dispatch correctly.
+    // Phase A: landing is now tier-menu. Navigate via 'a' to top-menu.
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "config-tui-menu-"));
     const cwd = path.join(tmp, "proj");
     fs.mkdirSync(cwd, { recursive: true });
@@ -261,8 +261,8 @@ describe("data-driven menu items (Phase 3)", () => {
         authenticatedProviders: ["anthropic"],
         onExit: () => {},
       });
-      // "1" should open personas-list (data-driven action)
-      comp.handleInput("1");
+      comp.handleInput("a"); // tier-menu → top-menu
+      comp.handleInput("1"); // top-menu → personas-list
       expect(comp.render(WIDTH).join("\n")).toContain("forge config › personas");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -270,8 +270,7 @@ describe("data-driven menu items (Phase 3)", () => {
   });
 
   it("stub menu items return an error via cursor navigation", () => {
-    // "Pipelines" and "Plugin config" are stubs. Pressing enter when cursor
-    // is on a stub item triggers the error path.
+    // Navigate to top-menu via 'a', then move to stub items there.
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "config-tui-menu-2-"));
     const cwd = path.join(tmp, "proj");
     const errors: string[] = [];
@@ -289,7 +288,8 @@ describe("data-driven menu items (Phase 3)", () => {
         onExit: () => {},
         onError: (msg) => errors.push(msg),
       });
-      // Move cursor down 3 times to reach "Pipelines" (item 3), then enter
+      comp.handleInput("a"); // tier-menu → top-menu
+      // In top-menu: items are Personas, Per-phase, Show resolved, Pipelines, Plugin config
       comp.handleInput("\x1b[B"); // ↓ to Per-phase overrides
       comp.handleInput("\x1b[B"); // ↓ to Show resolved
       comp.handleInput("\x1b[B"); // ↓ to Pipelines (stub)

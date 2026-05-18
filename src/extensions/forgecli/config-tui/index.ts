@@ -16,6 +16,7 @@ export type {
   ResolvedPersonaEntry,
   PersonaPickerEntry,
   PipelineOverrideSummary,
+  TierAssignment,
 } from "./state/model.js";
 
 export {
@@ -28,10 +29,15 @@ export {
   uniqueProviders,
   listPipelineOverrideSummaries,
   getPhaseOverride,
+  getTierAssignment,
+  getAllTierAssignments,
+  getTierForPersona,
+  getPersonasInTier,
   writePersonaEntry,
   deletePersonaEntry,
   writePhaseOverride,
   clearPhaseOverride,
+  writeTierAssignment,
 } from "./state.js";
 
 // Re-export screen types for consumers that need them

@@ -17,7 +17,7 @@ import { loadLayeredConfig } from "../config-layer.js";
 import type { AvailableModel, InitOptions } from "./state.js";
 
 export type ConfigTuiRoute =
-  | { kind: "top-menu" }
+  | { kind: "tier-menu" }
   | { kind: "show"; resolved: boolean; json: boolean }
   | { kind: "edit-persona"; persona: string }
   | { kind: "edit-override"; pipeline: string; phaseRole: string };
@@ -30,7 +30,7 @@ export type ParseConfigTuiResult = ConfigTuiRoute | ConfigTuiArgsError;
 
 export function parseConfigTuiArgs(args: string[]): ParseConfigTuiResult {
   if (args.length === 0) {
-    return { kind: "top-menu" };
+    return { kind: "tier-menu" };
   }
 
   const [head, ...rest] = args;
@@ -230,7 +230,7 @@ export async function runConfigTui(
     return 1;
   }
 
-  if (parsed.kind === "top-menu" || parsed.kind === "edit-persona") {
+  if (parsed.kind === "tier-menu" || parsed.kind === "edit-persona") {
     if (!cb.ctx?.mountConfigTui) {
       // Non-interactive surface (bin without a pi session).
       for (const line of USAGE_LINES) cb.write(`${line}\n`);

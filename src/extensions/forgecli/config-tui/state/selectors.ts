@@ -1,7 +1,9 @@
 // Config TUI selectors — read-only derived data from state.
 // Split from state.ts (Phase 1).
 
-import type { ConfigTuiState, View, ResolvedPersonaEntry, PersonaPickerEntry, PipelineOverrideSummary, PhaseOverride } from "./model.js";
+import type { ConfigTuiState, View, ResolvedPersonaEntry, PersonaPickerEntry, PipelineOverrideSummary, PhaseOverride, TierAssignment } from "./model.js";
+import type { ConfigLayer } from "../../config-writer.js";
+import { TIERS, TIER_PERSONAS, PERSONA_META, type Tier } from "../tier-meta.js";
 
 export function getActiveView(state: ConfigTuiState): View {
   return state.view[state.view.length - 1];
@@ -75,4 +77,57 @@ export function getPhaseOverride(
   return state.buffer.project.pipelines?.[pipeline]?.phases?.[phaseRole]?.[
     "model-override"
   ];
+}
+
+// ── Tier selectors ───────────────────────────────────────────────────────────
+
+/** Determine the effective model for an entire tier.
+ *  Returns "set" when all personas in the tier resolve to the same model,
+ *  "mixed" when some are missing or they diverge, "unset" when none are resolved. */
+export function getTierAssignment(
+  state: ConfigTuiState,
+  tier: Tier,
+): TierAssignment {
+  const personas = TIER_PERSONAS[tier];
+  const resolved = listResolvedPersonas(state);
+  const resolvedMap = new Map(
+    resolved.map((p) => [p.persona, p] as const),
+  );
+
+  const entries = personas.map(
+    (p) => resolvedMap.get(p),
+  );
+
+  // All tier personas must be in the resolved map.
+  const allPresent = entries.every((e) => e !== undefined);
+  if (!allPresent) {
+    // If none are resolved → unset; if partial → mixed
+    const anyPresent = entries.some((e) => e !== undefined);
+    return anyPresent ? { status: "mixed" } : { status: "unset" };
+  }
+
+  // All present — check they agree on provider:model
+  const first = entries[0]!;
+  const allSame = entries.every(
+    (e) => e!.provider === first.provider && e!.model === first.model,
+  );
+  if (!allSame) return { status: "mixed" };
+
+  const layer: ConfigLayer = first.source.endsWith("L2") ? "project" : "global";
+  return { status: "set", provider: first.provider, model: first.model, layer };
+}
+
+/** Return all three tier assignments as an array (stable order: heavy, standard, light). */
+export function getAllTierAssignments(state: ConfigTuiState): Array<{ tier: Tier; assignment: TierAssignment }> {
+  return TIERS.map((tier) => ({ tier, assignment: getTierAssignment(state, tier) }));
+}
+
+/** Which tier does a persona belong to? Returns undefined for unknown names. */
+export function getTierForPersona(persona: string): Tier | undefined {
+  return PERSONA_META[persona]?.tier;
+}
+
+/** Persona names in a tier. */
+export function getPersonasInTier(tier: Tier): readonly string[] {
+  return TIER_PERSONAS[tier];
 }

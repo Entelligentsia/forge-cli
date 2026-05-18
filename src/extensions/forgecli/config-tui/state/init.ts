@@ -14,7 +14,10 @@ export function initialState(opts: InitOptions): ConfigTuiState {
   const firstView: View =
     opts.pipelineCatalogue === null
       ? { kind: "no-project", cursor: 0 }
-      : { kind: "top-menu", cursor: 0 };
+      : { kind: "tier-menu", cursor: 0 };
+
+  // Default scope: project when in a project, global otherwise.
+  const scope: ConfigTuiState["scope"] = opts.pipelineCatalogue !== null ? "project" : "global";
 
   return {
     buffer,
@@ -26,6 +29,7 @@ export function initialState(opts: InitOptions): ConfigTuiState {
     authenticatedProviders: opts.authenticatedProviders,
     dirty: false,
     isEmpty,
+    scope,
     authError: opts.authError ?? null,
     confirmQuit: false,
     shouldExit: false,

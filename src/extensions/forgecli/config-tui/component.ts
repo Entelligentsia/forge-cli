@@ -28,6 +28,8 @@ import {
 } from "./state.js";
 import { CANONICAL_PHASES } from "./state/constants.js";
 
+import { TierMenuScreen } from "./screens/tier-menu.js";
+// Phase B: import { TierPickerScreen } from "./screens/tier-picker.js";
 import { ConfirmQuitScreen, renderSaveBanner } from "./screens/confirm-quit.js";
 import { TopMenuScreen } from "./screens/top-menu.js";
 import { PersonasListScreen } from "./screens/personas-list.js";
@@ -64,6 +66,8 @@ function hexEscape(s: string): string {
 
 const SCREEN_INSTANCES: Record<string, Screen> = {
   "confirm-quit": new ConfirmQuitScreen(),
+  "tier-menu": new TierMenuScreen(),
+  "tier-picker": new TopMenuScreen(),  // Phase B placeholder: TierPickerScreen replaces this
   "top-menu": new TopMenuScreen(),
   "empty-state": new TopMenuScreen(),  // same screen handles both
   "no-project": new TopMenuScreen(),    // same screen handles both
@@ -77,13 +81,14 @@ const SCREEN_INSTANCES: Record<string, Screen> = {
 };
 
 function createScreen(view: View): Screen {
-  return SCREEN_INSTANCES[view.kind] ?? SCREEN_INSTANCES["top-menu"];
+  return SCREEN_INSTANCES[view.kind] ?? SCREEN_INSTANCES["tier-menu"];
 }
 
 // ── Hard Rule 4: Explicit layer-to-action mapping ──────────────────────────
 
 function persistLayerForAction(action: ConfigTuiAction): ConfigLayer | undefined {
   switch (action.kind) {
+    case "commit-tier-model":     return action.layer;
     case "commit-persona-edit":    return action.layer;
     case "delete-persona-entry":  return action.layer;
     case "commit-override-name":   return "project";  // L4 lives on project only

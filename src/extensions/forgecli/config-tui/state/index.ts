@@ -13,6 +13,7 @@ export type {
   ResolvedPersonaEntry,
   PersonaPickerEntry,
   PipelineOverrideSummary,
+  TierAssignment,
 } from "./model.js";
 
 export { CANONICAL_PHASES } from "./constants.js";
@@ -25,10 +26,15 @@ export {
   uniqueProviders,
   listPipelineOverrideSummaries,
   getPhaseOverride,
+  getTierAssignment,
+  getAllTierAssignments,
+  getTierForPersona,
+  getPersonasInTier,
 } from "./selectors.js";
 export {
   writePersonaEntry,
   deletePersonaEntry,
   writePhaseOverride,
   clearPhaseOverride,
+  writeTierAssignment,
 } from "./buffer.js";

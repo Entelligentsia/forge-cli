@@ -5,6 +5,8 @@ import type { ConfigBuffer, PhaseOverride } from "./model.js";
 import type { ConfigLayer } from "../../config-writer.js";
 import type { PersonaModel } from "../../config-layer.js";
 import type { PipelineConfig } from "../../config-layer.js";
+import type { Tier } from "../tier-meta.js";
+import { TIER_PERSONAS } from "../tier-meta.js";
 
 export function writePersonaEntry(
   buffer: ConfigBuffer,
@@ -35,6 +37,22 @@ export function deletePersonaEntry(
     updatedLayer["persona-models"] = personaModels;
   }
   return { ...buffer, [layer]: updatedLayer };
+}
+
+/** Fan out a single model into all persona entries for a tier.
+ *  E.g. setting Heavy → anthropic:claude-opus writes architect and supervisor. */
+export function writeTierAssignment(
+  buffer: ConfigBuffer,
+  layer: ConfigLayer,
+  tier: Tier,
+  entry: PersonaModel,
+): ConfigBuffer {
+  const personas = TIER_PERSONAS[tier];
+  let next = buffer;
+  for (const persona of personas) {
+    next = writePersonaEntry(next, layer, persona, entry);
+  }
+  return next;
 }
 
 export function writePhaseOverride(

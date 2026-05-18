@@ -40,9 +40,9 @@ afterEach(() => {
 });
 
 describe("parseConfigTuiArgs", () => {
-  it("no args → top-menu route", () => {
+  it("no args → tier-menu route", () => {
     const r = parseConfigTuiArgs([]);
-    expect((r as ConfigTuiRoute).kind).toBe("top-menu");
+    expect((r as ConfigTuiRoute).kind).toBe("tier-menu");
   });
 
   it("show → show route, resolved=false, json=false", () => {

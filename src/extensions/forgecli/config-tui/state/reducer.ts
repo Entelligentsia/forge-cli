@@ -3,7 +3,8 @@
 
 import type { ConfigTuiAction, ConfigTuiState, View } from "./model.js";
 import type { PersonaModel } from "../../config-layer.js";
-import { writePersonaEntry, deletePersonaEntry, writePhaseOverride, clearPhaseOverride } from "./buffer.js";
+import type { Tier } from "../tier-meta.js";
+import { writePersonaEntry, deletePersonaEntry, writePhaseOverride, clearPhaseOverride, writeTierAssignment } from "./buffer.js";
 
 export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigTuiState {
   switch (action.kind) {
@@ -19,6 +20,8 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
       // Every cursored view variant gets the same lower-bound clamp; the
       // component clamps the upper bound based on per-view item counts.
       if (
+        top.kind === "tier-menu" ||
+        top.kind === "tier-picker" ||
         top.kind === "personas-list" ||
         top.kind === "persona-picker" ||
         top.kind === "show-resolved" ||
@@ -73,6 +76,51 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
       };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
+
+    // ── Tiered-baseline actions (Phase A+) ───────────────────────────────────
+
+    case "select-tier": {
+      const tierPicker: View = {
+        kind: "tier-picker",
+        tier: action.tier,
+        step: "pick-provider",
+        provider: undefined,
+        cursor: 0,
+      };
+      return { ...state, view: [...state.view, tierPicker] };
+    }
+
+    case "set-tier-provider": {
+      const top = state.view[state.view.length - 1];
+      if (top.kind !== "tier-picker") return state;
+      const updated: View = {
+        ...top,
+        provider: action.provider,
+        step: "pick-model",
+        cursor: 0,
+      };
+      return { ...state, view: [...state.view.slice(0, -1), updated] };
+    }
+
+    case "commit-tier-model": {
+      const entry: PersonaModel = { provider: action.provider, model: action.model };
+      const buffer = writeTierAssignment(state.buffer, action.layer, action.tier, entry);
+      // Pop the tier-picker view, returning to tier-menu
+      const view = state.view.length > 1 ? state.view.slice(0, -1) : state.view;
+      return {
+        ...state,
+        buffer,
+        view,
+        dirty: true,
+      };
+    }
+
+    case "toggle-scope": {
+      const newScope = state.scope === "global" ? "project" : "global";
+      return { ...state, scope: newScope };
+    }
+
+    // ── Legacy actions ────────────────────────────────────────────────────────
 
     case "commit-persona-edit": {
       const top = state.view[state.view.length - 1];

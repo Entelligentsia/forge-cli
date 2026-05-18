@@ -27,10 +27,10 @@ const emptyState = (): ConfigTuiState =>
   });
 
 describe("initialState", () => {
-  it("starts on top-menu when no config files exist", () => {
+  it("starts on tier-menu when no config files exist", () => {
     const s = emptyState();
     expect(s.view.length).toBe(1);
-    expect(s.view[0].kind).toBe("top-menu");
+    expect(s.view[0].kind).toBe("tier-menu");
   });
 
   it("starts on no-project when pipelineCatalogue is null", () => {
@@ -51,9 +51,10 @@ describe("initialState", () => {
     expect(s.dirty).toBe(false);
     expect(s.buffer.global).toEqual({});
     expect(s.buffer.project).toEqual({});
-    // empty-state vs top-menu: top-menu always wins when we have a pipeline catalogue
-    // (the design doc shows empty state as a top-menu variant — content differs)
+    // Tier-menu replaces top-menu as the default view when a pipeline catalogue exists.
+    // isEmpty is still true (no config files), but the view is now tier-menu.
     expect(s.isEmpty).toBe(true);
+    expect(s.view[0].kind).toBe("tier-menu");
   });
 
   it("seeds buffer from global+project when both are present", () => {
@@ -89,7 +90,7 @@ describe("reducer — view stack navigation", () => {
 
     s = reducer(s, { kind: "pop-view" });
     expect(s.view.length).toBe(1);
-    expect(s.view[0].kind).toBe("top-menu");
+    expect(s.view[0].kind).toBe("tier-menu");
   });
 
   it("pop on the root view is a no-op (stack length never goes below 1)", () => {
@@ -276,8 +277,10 @@ describe("reducer — exhaustiveness", () => {
 });
 
 describe("View kinds", () => {
-  it("View is a discriminated union covering all screens in scope for 4b", () => {
+  it("View is a discriminated union covering all screens in scope for Phase A", () => {
     const views: View[] = [
+      { kind: "tier-menu", cursor: 0 },
+      { kind: "tier-picker", tier: "heavy", step: "pick-provider", provider: undefined, cursor: 0 },
       { kind: "top-menu", cursor: 0 },
       { kind: "empty-state", cursor: 0 },
       { kind: "no-project", cursor: 0 },
@@ -291,7 +294,7 @@ describe("View kinds", () => {
         cursor: 0,
       },
     ];
-    expect(views.length).toBe(5);
+    expect(views.length).toBe(7);
   });
 });
 
