@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   parseConfigTuiArgs,
+  readPipelineCatalogue,
   runConfigTui,
   type ConfigTuiRoute,
 } from "../../../src/extensions/forgecli/config-tui/handler.js";
@@ -212,5 +213,54 @@ describe("runConfigTui — interactive (with ctx + mountConfigTui)", () => {
     );
     expect(code).toBe(0);
     expect(notifications.some((n) => /4c/i.test(n.msg))).toBe(true);
+  });
+});
+
+describe("readPipelineCatalogue (Forge plugin config probe)", () => {
+  it("returns null when no .forge/ directory exists", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "forge-catalogue-"));
+    expect(readPipelineCatalogue(cwd)).toBeNull();
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("returns ['default'] when .forge/config.json exists with no pipelines key (real Forge project)", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "forge-catalogue-"));
+    fs.mkdirSync(path.join(cwd, ".forge"));
+    fs.writeFileSync(
+      path.join(cwd, ".forge", "config.json"),
+      JSON.stringify({ version: "1", project: { name: "x", prefix: "X" } }),
+    );
+    expect(readPipelineCatalogue(cwd)).toEqual(["default"]);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("returns custom pipeline names when .forge/config.json declares pipelines", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "forge-catalogue-"));
+    fs.mkdirSync(path.join(cwd, ".forge"));
+    fs.writeFileSync(
+      path.join(cwd, ".forge", "config.json"),
+      JSON.stringify({ pipelines: { default: {}, hotfix: {}, "bug-fix": {} } }),
+    );
+    expect(readPipelineCatalogue(cwd)).toEqual(["default", "hotfix", "bug-fix"]);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("returns ['default'] when .forge/config.json has an empty pipelines object", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "forge-catalogue-"));
+    fs.mkdirSync(path.join(cwd, ".forge"));
+    fs.writeFileSync(
+      path.join(cwd, ".forge", "config.json"),
+      JSON.stringify({ pipelines: {} }),
+    );
+    expect(readPipelineCatalogue(cwd)).toEqual(["default"]);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("returns ['default'] on malformed JSON if .forge/config.json exists", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "forge-catalogue-"));
+    fs.mkdirSync(path.join(cwd, ".forge"));
+    fs.writeFileSync(path.join(cwd, ".forge", "config.json"), "{ not json");
+    expect(readPipelineCatalogue(cwd)).toEqual(["default"]);
+    fs.rmSync(cwd, { recursive: true, force: true });
   });
 });

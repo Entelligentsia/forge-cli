@@ -128,21 +128,28 @@ function readPersonaCatalogue(): string[] {
   return [];
 }
 
-function readPipelineCatalogue(cwd: string): string[] | null {
+export function readPipelineCatalogue(cwd: string): string[] | null {
+  // Forge plugin's .forge/config.json doesn't carry `pipelines` in user
+  // projects — pipeline definitions live in the plugin install (forgeRoot).
+  // So presence of .forge/config.json alone is the "is this a Forge project?"
+  // signal. When the file exists but no pipelines key is present, fall back
+  // to ["default"] (the canonical 8-phase chain consumed by run-task).
   const forgeCfgPath = path.join(cwd, ".forge", "config.json");
+  if (!fs.existsSync(forgeCfgPath)) return null;
   try {
     const raw = fs.readFileSync(forgeCfgPath, "utf-8");
     const cfg = JSON.parse(raw) as unknown;
     if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
       const pipelines = (cfg as { pipelines?: unknown }).pipelines;
       if (pipelines && typeof pipelines === "object") {
-        return Object.keys(pipelines);
+        const keys = Object.keys(pipelines);
+        return keys.length > 0 ? keys : ["default"];
       }
-      return [];
     }
-    return null;
+    return ["default"];
   } catch {
-    return null;
+    // File exists but unreadable — still a Forge project; default pipeline applies.
+    return ["default"];
   }
 }
 
