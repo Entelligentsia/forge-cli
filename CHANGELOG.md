@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.11] — 2026-05-18
+
+### Changed
+- **Vendored pi bumped to 0.75.1** (from 0.74.2). Absorbs 30 upstream
+  commits from `earendil-works/pi` including the v0.75.0 and v0.75.1
+  releases. Notable upstream fixes: OpenAI Responses HTTP status
+  prefixing (auto-retry on 5xx/429), Bedrock unknown-content-block
+  resilience, Azure OpenAI status normalization, Windows npm-shim
+  spawn fix, compaction streamFn routing, OpenAI Codex model-list
+  refresh, copilot gpt minimal-thinking mapping. Our
+  `setOutputSource` divergence preserved end-to-end.
+
 ## [0.7.10] — 2026-05-17
 
 ### Fixed
