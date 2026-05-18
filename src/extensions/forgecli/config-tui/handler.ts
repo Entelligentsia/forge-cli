@@ -1,12 +1,20 @@
 // Shared entrypoint for the forge config TUI / show routes.
 //
-// Plan 16 Slice 4a. Both surfaces — `forge config` (bin) and `/forge:config`
-// (in-session pi command) — call into this module. Slice 4a wires:
-//   - arg parsing (top-menu | show | edit persona | edit override)
-//   - show route delegating to the existing runConfigShow (Slice 3)
-//   - stub responses for interactive routes (real screens land in 4b/4c)
+// Plan 16 Slice 4a+4b. Both surfaces — `forge config` (bin) and `/forge:config`
+// (in-session pi command) — call into this module.
+//
+// Slice 4a wired: arg parsing, show-route delegation, stub responses for
+// interactive routes.
+// Slice 4b wires: top-menu and edit-persona routes mount the TUI via
+// cb.ctx.mountConfigTui (supplied by the pi-extension wrapper). The bin path
+// stays non-interactive (no ctx) and prints a friendly fallback.
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseConfigArgs, runConfigShow } from "../../../bin/config.js";
+import { loadLayeredConfig } from "../config-layer.js";
+import type { AvailableModel, InitOptions } from "./state.js";
 
 export type ConfigTuiRoute =
   | { kind: "top-menu" }
@@ -71,9 +79,9 @@ export function parseConfigTuiArgs(args: string[]): ParseConfigTuiResult {
 }
 
 /**
- * Caller-provided interaction surface. Both bin and pi-extension wrap this
- * differently — the bin uses stdout/stderr writers; the extension passes a
- * notify-capable ctx and a write that goes to nowhere.
+ * Caller-provided interaction surface. The pi-extension wrapper supplies
+ * `ctx.mountConfigTui` to give us TUI access; the bin surface omits it (and
+ * gets a non-interactive fallback message).
  */
 export interface ConfigTuiCallbacks {
   write: (line: string) => void;
@@ -81,6 +89,7 @@ export interface ConfigTuiCallbacks {
   /** Present only when invoked inside a pi session (TUI mount available). */
   ctx?: {
     notify: (msg: string, level?: string) => void;
+    mountConfigTui?: (init: InitOptions) => Promise<number>;
   };
 }
 
@@ -92,6 +101,88 @@ const USAGE_LINES = [
   "  forge config edit override <pipeline> <phaseIndex>",
   "                                            Edit a per-phase model override",
 ];
+
+// ── Helpers: read catalogues + available models ─────────────────────────────
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function readPersonaCatalogue(): string[] {
+  // The compiled handler lives at dist/extensions/forgecli/config-tui/handler.js;
+  // the bundled personas dir is at dist/forge-payload/.base-pack/personas/. In
+  // source mode (vitest), the source tree's payload may be absent — return [].
+  const candidates = [
+    path.resolve(__dirname, "..", "..", "..", "forge-payload", ".base-pack", "personas"),
+    path.resolve(__dirname, "..", "..", "forge-payload", ".base-pack", "personas"),
+  ];
+  for (const dir of candidates) {
+    try {
+      return fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
+        .map((f) => f.replace(/\.md$/, ""));
+    } catch {
+      continue;
+    }
+  }
+  return [];
+}
+
+function readPipelineCatalogue(cwd: string): string[] | null {
+  const forgeCfgPath = path.join(cwd, ".forge", "config.json");
+  try {
+    const raw = fs.readFileSync(forgeCfgPath, "utf-8");
+    const cfg = JSON.parse(raw) as unknown;
+    if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
+      const pipelines = (cfg as { pipelines?: unknown }).pipelines;
+      if (pipelines && typeof pipelines === "object") {
+        return Object.keys(pipelines);
+      }
+      return [];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function readAvailableModels(): Promise<{
+  available: AvailableModel[];
+  authenticated: string[];
+}> {
+  // Defer the heavy imports to call-time so vitest specs that never hit this
+  // path don't pay the cost (or fail when auth.json is absent).
+  const { AuthStorage, ModelRegistry } = await import("@earendil-works/pi-coding-agent");
+  try {
+    const auth = AuthStorage.create();
+    const registry = ModelRegistry.create(auth);
+    const available: AvailableModel[] = registry
+      .getAvailable()
+      .map((m) => ({ provider: m.provider, id: m.id }));
+    const authenticated = Array.from(new Set(available.map((m) => m.provider)));
+    return { available, authenticated };
+  } catch {
+    return { available: [], authenticated: [] };
+  }
+}
+
+async function buildInitOptions(cwd: string): Promise<InitOptions> {
+  const layered = loadLayeredConfig(cwd);
+  const personaCatalogue = readPersonaCatalogue();
+  const pipelineCatalogue = readPipelineCatalogue(cwd);
+  const { available, authenticated } = await readAvailableModels();
+  return {
+    global: layered.global,
+    project: layered.project,
+    cwd,
+    personaCatalogue,
+    pipelineCatalogue,
+    availableModels: available,
+    authenticatedProviders: authenticated,
+  };
+}
+
+// ── Main entry ───────────────────────────────────────────────────────────────
 
 export async function runConfigTui(
   args: string[],
@@ -107,8 +198,6 @@ export async function runConfigTui(
   }
 
   if (parsed.kind === "show") {
-    // Delegate to the existing Slice 3 implementation. parseConfigArgs takes the
-    // legacy ["show", ...flags] form.
     const showArgs: string[] = ["show"];
     if (parsed.resolved) showArgs.push("--resolved");
     if (parsed.json) showArgs.push("--json");
@@ -124,28 +213,27 @@ export async function runConfigTui(
     return runConfigShow(showParsed, cwd, (line) => cb.write(`${line}\n`));
   }
 
-  if (parsed.kind === "top-menu") {
+  // Interactive routes (top-menu, edit-persona). edit-override stays a stub
+  // until Slice 4c.
+  if (parsed.kind === "edit-override") {
     if (cb.ctx) {
-      cb.ctx.notify(
-        "forge config TUI — interactive top menu lands in slice 4b. Try `forge config show --resolved` for now.",
-        "info",
-      );
+      cb.ctx.notify(`forge config: per-phase override editor lands in slice 4c.`, "info");
       return 0;
     }
-    for (const line of USAGE_LINES) cb.write(`${line}\n`);
-    return 0;
+    writeErr(`forge config: per-phase override editor lands in slice 4c.\n`);
+    return 1;
   }
 
-  if (parsed.kind === "edit-persona" || parsed.kind === "edit-override") {
-    if (cb.ctx) {
-      cb.ctx.notify(
-        `forge config TUI — interactive editor lands in slice 4b/4c.`,
-        "info",
-      );
+  if (parsed.kind === "top-menu" || parsed.kind === "edit-persona") {
+    if (!cb.ctx?.mountConfigTui) {
+      // Non-interactive surface (bin without a pi session).
+      for (const line of USAGE_LINES) cb.write(`${line}\n`);
+      cb.write(`\n`);
+      cb.write(`Interactive TUI requires a pi session. Use \`/forge:config\` from inside pi.\n`);
       return 0;
     }
-    writeErr(`forge config: interactive editing requires a pi session (slice 4b/4c).\n`);
-    return 1;
+    const init = await buildInitOptions(cwd);
+    return cb.ctx.mountConfigTui(init);
   }
 
   // Exhaustiveness — TS treats parsed as `never` here

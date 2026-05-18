@@ -267,22 +267,13 @@ export async function runConfigShow(
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export async function runConfig(args: string[], cwd: string = process.cwd()): Promise<number> {
-  const parsed = parseConfigArgs(args);
-
-  if ("error" in parsed) {
-    process.stderr.write(`${parsed.error}\n`);
-    return 1;
-  }
-
-  if (parsed.subcommand === "usage") {
-    process.stdout.write(
-      `Usage: forge config show [--resolved] [--json]\n\n` +
-      `  show              Print persona-model assignments and pipeline overrides\n` +
-      `  show --resolved   Include cascade source (L1/L2/L3/L4/default/inherit) per entry\n` +
-      `  show --json       Machine-readable JSON output\n`,
-    );
-    return 0;
-  }
-
-  return runConfigShow(parsed, cwd, (line) => process.stdout.write(`${line}\n`));
+  // Plan 16 Slice 4b: delegate to runConfigTui so the bin and pi-extension
+  // surfaces share the same argv parser + routing. The bin has no ctx, so
+  // interactive subcommands print a "use /forge:config from pi" fallback.
+  // Lazy import to avoid a circular dependency at module load.
+  const { runConfigTui } = await import("../extensions/forgecli/config-tui/handler.js");
+  return runConfigTui(args, cwd, {
+    write: (s) => process.stdout.write(s),
+    writeErr: (s) => process.stderr.write(s),
+  });
 }

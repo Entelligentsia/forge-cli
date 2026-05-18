@@ -122,15 +122,14 @@ describe("runConfigTui — non-interactive (no ctx)", () => {
     expect(parsed).toHaveProperty("pipelines");
   });
 
-  it("edit persona without ctx → exit 1 + message", async () => {
-    let errMsg = "";
+  it("edit persona without ctx → prints fallback usage (interactive requires pi session)", async () => {
     const code = await runConfigTui(
       ["edit", "persona", "engineer"],
       tmp,
-      { write: captureWrite, writeErr: (s) => { errMsg += s; } },
+      { write: captureWrite },
     );
-    expect(code).toBe(1);
-    expect(errMsg).toMatch(/interactive|pi session/i);
+    expect(code).toBe(0);
+    expect(captured.join("\n")).toMatch(/pi session|interactive/i);
   });
 
   it("edit override without ctx → exit 1 + message", async () => {
@@ -141,7 +140,7 @@ describe("runConfigTui — non-interactive (no ctx)", () => {
       { write: captureWrite, writeErr: (s) => { errMsg += s; } },
     );
     expect(code).toBe(1);
-    expect(errMsg).toMatch(/interactive|pi session/i);
+    expect(errMsg).toMatch(/slice 4c|override editor/i);
   });
 
   it("parse error → exit 1 + message on stderr", async () => {
@@ -156,15 +155,62 @@ describe("runConfigTui — non-interactive (no ctx)", () => {
   });
 });
 
-describe("runConfigTui — interactive (with ctx) — 4a stubs", () => {
-  it("top-menu route with ctx → 4a stub notify, exit 0", async () => {
+describe("runConfigTui — interactive (with ctx + mountConfigTui)", () => {
+  it("top-menu route calls mountConfigTui with the assembled InitOptions", async () => {
+    const calls: Array<{ cwd: string }> = [];
+    const ctx = {
+      notify: () => {},
+      mountConfigTui: async (init: { cwd: string }) => {
+        calls.push({ cwd: init.cwd });
+        return 0;
+      },
+    };
+    const code = await runConfigTui([], tmp, { write: captureWrite, ctx });
+    expect(code).toBe(0);
+    expect(calls.length).toBe(1);
+    expect(calls[0].cwd).toBe(tmp);
+  });
+
+  it("edit-persona route also mounts the TUI", async () => {
+    let mountCount = 0;
+    const ctx = {
+      notify: () => {},
+      mountConfigTui: async () => {
+        mountCount++;
+        return 0;
+      },
+    };
+    const code = await runConfigTui(
+      ["edit", "persona", "engineer"],
+      tmp,
+      { write: captureWrite, ctx },
+    );
+    expect(code).toBe(0);
+    expect(mountCount).toBe(1);
+  });
+
+  it("when ctx is present but mountConfigTui is not, falls back to printed usage", async () => {
     const notifications: Array<{ msg: string; level?: string }> = [];
     const ctx = {
       notify: (msg: string, level?: string) => notifications.push({ msg, level }),
     };
     const code = await runConfigTui([], tmp, { write: captureWrite, ctx });
     expect(code).toBe(0);
-    expect(notifications.length).toBeGreaterThan(0);
-    expect(notifications[0].msg).toMatch(/slice 4b|forthcoming|coming soon/i);
+    expect(captured.join("\n")).toMatch(/pi session|interactive/i);
+  });
+
+  it("edit-override route stays a 4c stub", async () => {
+    const notifications: Array<{ msg: string; level?: string }> = [];
+    const ctx = {
+      notify: (msg: string, level?: string) => notifications.push({ msg, level }),
+      mountConfigTui: async () => 0,
+    };
+    const code = await runConfigTui(
+      ["edit", "override", "default", "2"],
+      tmp,
+      { write: captureWrite, ctx },
+    );
+    expect(code).toBe(0);
+    expect(notifications.some((n) => /4c/i.test(n.msg))).toBe(true);
   });
 });
