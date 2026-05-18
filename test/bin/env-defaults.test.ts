@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyForgeOwnedEnvDefaults } from "../../src/bin/env-defaults.js";
 
 describe("applyForgeOwnedEnvDefaults", () => {
-	const VARS = ["PI_SKIP_VERSION_CHECK", "PI_SKIP_PACKAGE_UPDATE_CHECK"] as const;
+	const VARS = ["PI_SKIP_VERSION_CHECK", "PI_SKIP_PACKAGE_UPDATE_CHECK", "PI_SKIP_CHANGELOG"] as const;
 	const saved: Partial<Record<(typeof VARS)[number], string>> = {};
 
 	beforeEach(() => {
@@ -32,11 +32,18 @@ describe("applyForgeOwnedEnvDefaults", () => {
 		expect(process.env.PI_SKIP_PACKAGE_UPDATE_CHECK).toBe("1");
 	});
 
+	it("sets PI_SKIP_CHANGELOG=1", () => {
+		applyForgeOwnedEnvDefaults();
+		expect(process.env.PI_SKIP_CHANGELOG).toBe("1");
+	});
+
 	it("overwrites any pre-existing value", () => {
 		process.env.PI_SKIP_VERSION_CHECK = "0";
 		process.env.PI_SKIP_PACKAGE_UPDATE_CHECK = "0";
+		process.env.PI_SKIP_CHANGELOG = "0";
 		applyForgeOwnedEnvDefaults();
 		expect(process.env.PI_SKIP_VERSION_CHECK).toBe("1");
 		expect(process.env.PI_SKIP_PACKAGE_UPDATE_CHECK).toBe("1");
+		expect(process.env.PI_SKIP_CHANGELOG).toBe("1");
 	});
 });
