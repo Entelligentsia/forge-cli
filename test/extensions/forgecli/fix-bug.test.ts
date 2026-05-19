@@ -185,20 +185,19 @@ describe("BUG_TYPE_TOKENS", () => {
 // ── Test Case 4-6: Bug verdict reading ────────────────────────────────────
 
 describe("readBugVerdict", () => {
-	it("should return 'approved' when bug status is 'approved' for approve phase (status fallback)", () => {
-		const record = mkBugRecord({ status: "approved" });
-		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
-	});
-
-	it("should read 'approved' from approve summary for approve phase", () => {
+	// forge v0.44.0+ contract: bug.status enum is {reported, triaged,
+	// in-progress, fixed}. The approve-verdict signal travels through
+	// bug.summaries.approve.verdict ONLY — there is no status fallback
+	// because no status value maps to "approved" or "revision" anymore.
+	it("should return 'approved' when summaries.approve.verdict is 'approved'", () => {
 		const record = mkBugRecord({
-			status: "approved",
+			status: "in-progress",
 			summaries: { approve: { verdict: "approved", objective: "sign-off", written_at: "2026-01-01T00:00:00Z" } },
 		});
 		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
 	});
 
-	it("should read 'revision' from approve summary for approve phase", () => {
+	it("should return 'revision' when summaries.approve.verdict is 'revision'", () => {
 		const record = mkBugRecord({
 			status: "in-progress",
 			summaries: { approve: { verdict: "revision", objective: "needs rework", written_at: "2026-01-01T00:00:00Z" } },
@@ -206,29 +205,25 @@ describe("readBugVerdict", () => {
 		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
 	});
 
-	it("should return 'revision' when bug status is 'fixed' for approve phase (status fallback)", () => {
-		const record = mkBugRecord({ status: "fixed" });
-		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
-	});
-
-	it("should return 'revision' when bug status is 'in-progress' for approve phase (status fallback)", () => {
+	it("should return 'missing' for approve phase when no summary present", () => {
+		// No status fallback in v0.44.0+ — status alone cannot carry the verdict.
 		const record = mkBugRecord({ status: "in-progress" });
-		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
+		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("missing");
 	});
 
-	it("should return 'approved' when bug status is 'verified' for commit phase", () => {
-		const record = mkBugRecord({ status: "verified" });
+	it("should return 'approved' when bug status is 'fixed' for commit phase (terminal)", () => {
+		const record = mkBugRecord({ status: "fixed" });
 		expect(readBugVerdict(record, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
 	});
 
-	it("should return 'revision' when bug status is 'approved' for commit phase", () => {
-		const record = mkBugRecord({ status: "approved" });
+	it("should return 'revision' when bug status is 'in-progress' for commit phase (commit did not advance)", () => {
+		const record = mkBugRecord({ status: "in-progress" });
 		expect(readBugVerdict(record, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
 	});
 
-	it("should return 'missing' for unexpected approve status", () => {
+	it("should return 'missing' for unexpected commit status", () => {
 		const record = mkBugRecord({ status: "triaged" });
-		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("missing");
+		expect(readBugVerdict(record, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("missing");
 	});
 
 	it("should read review-plan verdict from summaries", () => {
@@ -260,25 +255,18 @@ describe("readBugVerdict", () => {
 // ── Test Case 7-8: Bug FSM transition logic ────────────────────────────────
 
 describe("Bug FSM transitions", () => {
-	it("fixed is NOT a terminal state — bugs in 'fixed' should be processable", () => {
-		// Bugs in 'fixed' status are mid-chain (awaiting architect approval)
-		// They should NOT be blocked by preflight
+	// forge v0.44.0+ contract: bug status enum collapsed to
+	// {reported, triaged, in-progress, fixed}. `fixed` is terminal.
+	// `approved` and `verified` were dropped (FORGE-BUG-002 trap source).
+	it("fixed is the terminal bug state — bug is done", () => {
 		const record = mkBugRecord({ status: "fixed" });
 		expect(record.status).toBe("fixed");
-		// fixed → approved (sign-off) or fixed → in-progress (revision loop)
-		// The handler should allow proceeding
 	});
 
-	it("approved is NOT a terminal state — bugs in 'approved' should continue to commit", () => {
-		const record = mkBugRecord({ status: "approved" });
-		expect(record.status).toBe("approved");
-		// approved → verified (commit) or approved → in-progress (revision loop)
-	});
-
-	it("verified is the ONLY terminal bug state", () => {
-		const record = mkBugRecord({ status: "verified" });
-		expect(record.status).toBe("verified");
-		// No transitions out of verified
+	it("in-progress is mid-chain — open for revision", () => {
+		const record = mkBugRecord({ status: "in-progress" });
+		expect(record.status).toBe("in-progress");
+		// in-progress → fixed (when commit lands)
 	});
 });
 
@@ -295,12 +283,27 @@ describe("composeBugBody", () => {
 		expect(body).toContain("ENTITY KIND OVERRIDE: This is a bug, not a task");
 	});
 
-	it("should include update-status bug commands for approve and commit phases", () => {
+	it("approve phase body MUST NOT instruct status writes (verdict via summaries)", () => {
 		const approveBody = composeBugBody("workflow content", "FORGE-BUG-042", "approve");
-		expect(approveBody).toContain("update-status bug FORGE-BUG-042 status approved");
+		// Critical: this is the FORGE-BUG-002 trap source. The prompt MUST
+		// instruct set-bug-summary for the approve verdict, NOT update-status.
+		expect(approveBody).toContain("set-bug-summary FORGE-BUG-042 approve");
+		expect(approveBody).not.toContain("update-status bug FORGE-BUG-042 status approved");
+		expect(approveBody).not.toContain("update-status bug FORGE-BUG-042 status verified");
+	});
 
+	it("commit phase body instructs status → fixed (terminal), not verified", () => {
 		const commitBody = composeBugBody("workflow content", "FORGE-BUG-042", "commit");
-		expect(commitBody).toContain("update-status bug FORGE-BUG-042 status verified");
+		expect(commitBody).toContain("update-status bug FORGE-BUG-042 status fixed");
+		expect(commitBody).not.toContain("status verified");
+		expect(commitBody).not.toContain("status approved");
+	});
+
+	it("triage phase body teaches the subagent about the route field", () => {
+		const triageBody = composeBugBody("workflow content", "FORGE-BUG-042", "triage");
+		expect(triageBody).toContain("route");
+		expect(triageBody).toContain("Path A");
+		expect(triageBody).toContain("Path B");
 	});
 
 	it("should NOT reference task-specific status values", () => {
@@ -308,14 +311,15 @@ describe("composeBugBody", () => {
 		expect(body).toContain("Do NOT reference task-specific status values");
 	});
 
-	it("should include phase-specific transition hint for approve phase", () => {
-		const body = composeBugBody("workflow content", "FORGE-BUG-042", "approve", "fixed");
-		expect(body).toContain("transition bug.status from 'fixed' to 'approved'");
+	it("approve phase reinforces NO status change (verdict in summary only)", () => {
+		const body = composeBugBody("workflow content", "FORGE-BUG-042", "approve", "in-progress");
+		expect(body).toContain("MUST NOT change in this phase");
+		expect(body).toContain("Record verdict in summaries.approve only");
 	});
 
-	it("should include phase-specific transition hint for commit phase", () => {
-		const body = composeBugBody("workflow content", "FORGE-BUG-042", "commit", "approved");
-		expect(body).toContain("transition bug.status from 'approved' to 'verified'");
+	it("commit phase reinforces the in-progress → fixed transition", () => {
+		const body = composeBugBody("workflow content", "FORGE-BUG-042", "commit", "in-progress");
+		expect(body).toContain("transition bug.status from 'in-progress' to 'fixed'");
 	});
 
 	it("should NOT include transition hints when bugStatusBeforePhase is not provided", () => {

@@ -49,12 +49,17 @@ const SPRINT_TRANSITIONS: Record<string, Set<string>> = {
 	abandoned: new Set([]),
 };
 
+// Mirror of store-cli.cjs BUG_TRANSITIONS (forge v0.44.0+).
+// Terminal: `fixed`. `approved` and `verified` enum values were dropped
+// in v0.44.0 — they were vestigial in the workflow and produced the
+// FORGE-BUG-002 LLM-translation trap. The architect-approve verdict
+// signal travels through `bug.summaries.approve.verdict` (read by
+// read-verdict.cjs § BUG_PHASE_VERDICT_SOURCE), not `bug.status`.
 const BUG_TRANSITIONS: Record<string, Set<string>> = {
 	reported: new Set(["triaged", "abandoned"]),
 	triaged: new Set(["in-progress", "abandoned"]),
 	"in-progress": new Set(["fixed", "abandoned"]),
-	fixed: new Set(["verified"]),
-	verified: new Set([]),
+	fixed: new Set([]),  // terminal
 	abandoned: new Set([]),
 };
 

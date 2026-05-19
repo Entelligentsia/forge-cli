@@ -102,7 +102,7 @@ export const BUG_SUMMARY_KEY_BY_ROLE: Record<string, string | null> = {
 	"implement":   "implementation",
 	"review-code": "code_review",
 	"approve":     "approve",  // read from bug.summaries.approve (set-bug-summary)
-	"commit":      null,    // commit transitions bug.status → verified, no summaries entry
+	"commit":      null,    // commit transitions bug.status → fixed (terminal), no summaries entry
 };
 
 // Bug-event type tokens — explicit mapping per review finding #3.
@@ -119,11 +119,11 @@ export const BUG_TYPE_TOKENS: Record<string, { pass: string; fail: string }> = {
 };
 
 // ── Bug FSM transitions ────────────────────────────────────────────────────
-// Mirrors store-cli BUG_TRANSITIONS. Only `verified` is terminal.
-// These are used locally for preflight gate logic; the canonical source
-// is store-cli.cjs.
+// Mirrors store-cli BUG_TRANSITIONS. Terminal: `fixed`.
+// `approved` and `verified` enum values were dropped in forge v0.44.0
+// (FORGE-BUG-002 trap). The canonical source is store-cli.cjs.
 
-const BUG_TERMINAL_STATES = new Set(["verified"]);
+const BUG_TERMINAL_STATES = new Set(["fixed"]);
 
 // ── Bug state persistence ──────────────────────────────────────────────────
 
@@ -290,11 +290,12 @@ export function readBugVerdict(
 ): BugVerdict {
 	if (!bugRecord) return "missing";
 
-	// Approve phase: read bug status OR approve summary verdict.
-	// After Fix 2, the approve summary key exists in bug.schema.json.
-	// Prefer the summary verdict if present; fall back to status.
+	// Approve phase: read approve summary verdict (set via set-bug-summary).
+	// The forge v0.44.0 contract makes summaries.approve.verdict the canonical
+	// approve signal for bugs — `bug.status` does NOT carry an "approved"
+	// value (that enum was dropped). See read-verdict.cjs §
+	// BUG_PHASE_VERDICT_SOURCE for the matching plugin-side wiring.
 	if (phaseRole === "approve") {
-		// Try summary first (set via set-bug-summary)
 		const summaryKey = summaryKeyByRole["approve"];
 		if (summaryKey) {
 			const summaries = bugRecord.summaries ?? {};
@@ -307,17 +308,14 @@ export function readBugVerdict(
 				}
 			}
 		}
-		// Fallback: read bug status directly.
-		if (bugRecord.status === "approved") return "approved";
-		if (bugRecord.status === "fixed" || bugRecord.status === "in-progress") return "revision";
 		return "missing";
 	}
 
-	// Commit phase: read bug status directly.
-	// verified → commit succeeded; approved → revision (commit did not advance).
+	// Commit phase: read bug status directly. Terminal target is `fixed`.
 	if (phaseRole === "commit") {
-		if (bugRecord.status === "verified") return "approved";
-		if (bugRecord.status === "approved") return "revision";
+		if (bugRecord.status === "fixed") return "approved";
+		// in-progress means commit did not advance status — treat as revision-needed.
+		if (bugRecord.status === "in-progress") return "revision";
 		return "missing";
 	}
 
@@ -340,15 +338,29 @@ export function readBugVerdict(
 
 export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: string, bugStatusBeforePhase?: string): string {
 	// Entity-kind override block prepended before workflow body.
-	// This tells the subagent that it's operating on a bug, not a task,
-	// and provides exact update-status commands for approve and commit phases.
+	// Conforms to forge v0.44.x meta-fix-bug contract:
+	//   - bug.status enum is {reported, triaged, in-progress, fixed}; `fixed` is terminal.
+	//   - `approved` and `verified` are NOT valid bug status values (dropped in v0.44.0).
+	//   - Approve phase: NO status write. Architect writes summaries.approve.verdict
+	//     via set-bug-summary; verdict signal IS the summary (read by
+	//     read-verdict.cjs § BUG_PHASE_VERDICT_SOURCE).
+	//   - Commit phase: status → fixed (the only status transition post-triage).
+	//
+	// Earlier revisions of this prompt told the architect to write
+	// `update-status bug ... approved` and the engineer to write `... verified`.
+	// Those instructions produced the FORGE-BUG-002 trap (LLM-translation of
+	// task-shaped approve workflow → illegal transition through a terminal state).
+	// The new contract removes the trap at its source.
 	const entityKindLines: string[] = [
 		`Bug ID: ${bugId}`,
 		"",
 		"⚠ ENTITY KIND OVERRIDE: This is a bug, not a task.",
 		"- All `update-status` calls must use entity kind `bug` (not `task`).",
-		`- Approve phase: on approval, run \`node "$FORGE_ROOT/tools/store-cli.cjs" update-status bug ${bugId} status approved\``,
-		`- Commit phase: on success, run \`node "$FORGE_ROOT/tools/store-cli.cjs" update-status bug ${bugId} status verified\``,
+		"- Approve phase: NO status write. Write the approval verdict via set-bug-summary:",
+		`  node "$FORGE_ROOT/tools/store-cli.cjs" set-bug-summary ${bugId} approve <APPROVE-SUMMARY.json>`,
+		`  The summary's "verdict" field MUST be "approved" or "revision". The downstream commit gate reads this, not bug.status.`,
+		`- Commit phase: on successful git commit, run \`node "$FORGE_ROOT/tools/store-cli.cjs" update-status bug ${bugId} status fixed\` (terminal).`,
+		`- Do NOT write \"approved\" or \"verified\" to bug.status — those values were removed from the schema in forge v0.44.0.`,
 		`- Do NOT reference task-specific status values (e.g., \"committed\") or task entity kind.`,
 		"- CRITICAL: All `set-summary` calls must use `set-bug-summary` (not `set-summary`).",
 		`  e.g. node "$FORGE_ROOT/tools/store-cli.cjs" set-bug-summary ${bugId} review_plan <jsonFile>`,
@@ -357,15 +369,23 @@ export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: 
 		"Any workflow text that says \"task\" should be read as \"bug\" for this context.",
 	];
 
-	// Add phase-specific transition hints.
+	// Phase-specific reinforcement when the orchestrator can name the current status.
 	if (phaseRole === "approve" && bugStatusBeforePhase) {
 		entityKindLines.push(
-			`- Approve phase: on approval, transition bug.status from '${bugStatusBeforePhase}' to 'approved'.`,
+			`- Approve phase (reinforce): bug.status is currently '${bugStatusBeforePhase}' and MUST NOT change in this phase. Record verdict in summaries.approve only.`,
 		);
 	}
 	if (phaseRole === "commit" && bugStatusBeforePhase) {
 		entityKindLines.push(
-			`- Commit phase: on success, transition bug.status from '${bugStatusBeforePhase}' to 'verified'.`,
+			`- Commit phase: after the git commit lands, transition bug.status from '${bugStatusBeforePhase}' to 'fixed'.`,
+		);
+	}
+	if (phaseRole === "triage") {
+		entityKindLines.push(
+			"- Triage phase: in addition to writing TRIAGE.md and TRIAGE-SUMMARY.json, the summary MUST include a `route` field set to `\"A\"` or `\"B\"`.",
+			"  Path A (short-circuit): severity == minor AND single-file fix ≤ ~20 lines AND no schema/API/migration AND regression test obvious from repro.",
+			"  Path B (default): everything else. When in doubt, choose B.",
+			"  The orchestrator reads bug.summaries.triage.route to select the downstream phase list.",
 		);
 	}
 
@@ -569,16 +589,21 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `sub-workflow read failed: ${e.message ?? "unknown"}` };
 		}
 
-		// ── 6a. Phase skip (state-aware) ───────────────────────────────
-		// Subagents sometimes do "Path A" — fixing the bug end-to-end during
-		// triage instead of just triaging. Rather than rolling back (which
-		// discards work), we skip non-review phases whose output is already
-		// reflected in the bug status. Review phases are never skipped —
-		// they are quality gates that must always run.
+		// ── 6a. Phase skip (state-aware, defense-in-depth) ─────────────
+		// Belt-and-suspenders alongside the explicit summaries.triage.route
+		// branch (handled in section 6c below). Some subagents in some
+		// runtimes still go end-to-end during triage instead of just triaging
+		// — rather than roll back the work they did, skip non-review phases
+		// whose output is already reflected in the bug status. Review phases
+		// are never skipped — they are quality gates that must always run.
+		//
+		// Post-v0.44.0: terminal status is `fixed` only. `approved` and
+		// `verified` are no longer valid bug status values; references
+		// removed.
 		const PHASE_SKIP_STATES: Record<string, Set<string>> = {
-			"plan-fix":  new Set(["fixed", "approved", "verified"]),
-			"implement": new Set(["fixed", "approved", "verified"]),
-			"commit":    new Set(["verified"]),    // commit produces verified
+			"plan-fix":  new Set(["fixed"]),
+			"implement": new Set(["fixed"]),
+			"commit":    new Set(["fixed"]),    // commit writes the terminal status; skip if already there
 		};
 		const bugNow = readBugRecord(bugId, storeCli, cwd);
 		const skipStates = PHASE_SKIP_STATES[phase.role];
@@ -1162,6 +1187,40 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			halted: false,
 			savedAt: new Date().toISOString(),
 		});
+
+		// ── 6c. Path A / Path B branch (post-triage) ──────────────────
+		// Per meta-fix-bug.md § Triage Judgement (forge v0.44.0+), the
+		// triage subagent records the route decision in
+		// bug.summaries.triage.route. The orchestrator reads it after
+		// triage returns and selects the downstream phase list:
+		//   Path A (short-circuit): skip plan-fix + review-plan
+		//   Path B (default, full loop): run all phases
+		//
+		// If route is missing or malformed, default to Path B (the safe
+		// choice — running extra phases never produces an unsafe outcome).
+		// The PHASE_SKIP_STATES heuristic at section 6a remains as
+		// defense-in-depth for cases where the field is missing but the
+		// bug status proves the work happened.
+		if (phase.role === "triage") {
+			const bugAfterTriage = readBugRecord(bugId, storeCli, cwd);
+			const triageSummary = bugAfterTriage?.summaries?.triage as
+				| { route?: unknown }
+				| undefined;
+			const route = triageSummary?.route;
+			if (route === "A") {
+				const skipUntilIndex = BUG_PHASES.findIndex((p) => p.role === "implement");
+				if (skipUntilIndex > currentPhaseIndex + 1) {
+					ctx.ui.notify(
+						`⊘ forge:fix-bug — Path A selected by triage; skipping plan-fix and review-plan.`,
+						"info",
+					);
+					currentPhaseIndex = skipUntilIndex;
+					continue;
+				}
+			}
+			// route === "B", missing, or any other value → fall through to standard advance
+		}
+
 		currentPhaseIndex++;
 	}
 

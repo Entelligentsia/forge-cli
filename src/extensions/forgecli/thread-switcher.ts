@@ -501,6 +501,13 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	let themeRef: Theme | undefined;
 	let spinnerTimer: NodeJS.Timeout | undefined;
 	let mounted = false;
+	// Pi invalidates the ExtensionContext after newSession / fork /
+	// switchSession / reload. The input-router handler and the focus
+	// helpers are registered once at mount but fire after arbitrary
+	// session replacements — they must read the *live* ctx, not the
+	// one captured at mount time. We refresh this on every
+	// session_start and on every forge:threads command invocation.
+	let currentCtx: ExtensionContext | undefined;
 
 	function ensureSpinnerTimer(): void {
 		// Tick re-renders while any session is "running" so the spinner
@@ -521,6 +528,7 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	}
 
 	function mount(ctx: ExtensionContext): void {
+		currentCtx = ctx;
 		if (mounted) return;
 		process.stderr.write("[forge:threads] mount() invoked\n");
 		try {
@@ -601,16 +609,20 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			getInputRouter().register(
 				(data) => {
 					if (!stripRef) return undefined;
+					const live = currentCtx;
+					if (!live) return undefined;
 
 					if (!stripRef.getStripActive()) {
 						if (!isDownArrow(data)) return undefined;
-						const editorText = ctx.ui.getEditorText();
+						let editorText = "";
+						try {
+							editorText = live.ui.getEditorText();
+						} catch {
+							return undefined;
+						}
 						if (editorText.includes("\n")) return undefined; // multi-line nav
 						if (!stripRef.hasSession()) return undefined; // strip hidden anyway
 						stripRef.setStripActive(true);
-						// Park cursor on the currently-running subagent — that's
-						// the chip the user almost always wants to see. Falls back
-						// to orchestrator (index 0) when no phase is live.
 						stripRef.parkCursorOnCurrentPhase();
 						return { consume: true };
 					}
@@ -628,12 +640,12 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 						return { consume: true };
 					}
 					if (isEnter(data)) {
-						commitFocus(ctx);
+						commitFocus(live);
 						return { consume: true };
 					}
 					if (isEsc(data)) {
 						stripRef.setStripActive(false);
-						setFocusToMain(ctx);
+						setFocusToMain(live);
 						return { consume: true };
 					}
 					return undefined;
@@ -661,7 +673,12 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 		// without needing user input.
 		if (tuiRef) tail.setInvalidationCallback(() => tuiRef?.requestRender());
 		tailRef = tail;
-		ctx.ui.setOutputSource(tail);
+		try {
+			ctx.ui.setOutputSource(tail);
+		} catch {
+			// ctx went stale between keypress and dispatch — drop quietly;
+			// the next session_start will refresh currentCtx.
+		}
 		registry.markRead(chip.taskId, chip.id);
 	}
 
@@ -669,7 +686,11 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 		stripRef?.setFocusedChipId("main");
 		tailRef?.dispose?.();
 		tailRef = undefined;
-		ctx.ui.setOutputSource(null);
+		try {
+			ctx.ui.setOutputSource(null);
+		} catch {
+			// see commitFocus
+		}
 	}
 
 	pi.registerCommand("forge:threads", {
@@ -685,6 +706,10 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 
 	// Mount at session_start so the Down listener + chip strip are live
 	// from the first keystroke. mount() is idempotent.
+	// session_start fires for the initial session and for every
+	// post-replacement session (newSession / fork / switchSession /
+	// reload), so mount() refreshing currentCtx here is the single
+	// chokepoint for keeping the input-router handler's ctx live.
 	pi.on("session_start", async (_event, ctx) => {
 		mount(ctx);
 	});

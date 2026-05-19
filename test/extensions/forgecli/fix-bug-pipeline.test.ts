@@ -54,9 +54,9 @@ describe("fix-bug pipeline integration", () => {
 		expect(BUG_TYPE_TOKENS["commit"].fail).toBe("bug-commit-failed");
 	});
 
-	it("approve phase should read approve summary verdict", () => {
+	it("approve phase should read approve summary verdict (no status fallback in v0.44.0+)", () => {
 		const record = mkBugRecord({
-			status: "approved",
+			status: "in-progress",
 			summaries: {
 				approve: { verdict: "approved", objective: "sign-off", written_at: "2026-01-01T00:00:00Z" },
 			},
@@ -72,12 +72,11 @@ describe("fix-bug pipeline integration", () => {
 		expect(readBugVerdict(revisionRecord, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
 	});
 
-	it("approve verdict should fall back to status when no summary", () => {
-		const record = mkBugRecord({ status: "approved", summaries: {} });
-		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
-
-		const fixedRecord = mkBugRecord({ status: "fixed", summaries: {} });
-		expect(readBugVerdict(fixedRecord, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
+	it("approve verdict returns 'missing' when summary absent (no status fallback)", () => {
+		// v0.44.0+ removed the bug.status === "approved" fallback because the
+		// status enum no longer carries that value.
+		const record = mkBugRecord({ status: "in-progress", summaries: {} });
+		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("missing");
 	});
 });
 
@@ -271,7 +270,7 @@ describe("concurrent run state isolation", () => {
 describe("read-verdict bug integration", () => {
 	it("should read bug approve verdict from summaries.approve", () => {
 		const record = mkBugRecord({
-			status: "approved",
+			status: "in-progress",
 			summaries: {
 				approve: { verdict: "approved", objective: "sign-off", written_at: "2026-05-15T00:00:00Z" },
 			},
@@ -289,12 +288,15 @@ describe("read-verdict bug integration", () => {
 		expect(readBugVerdict(record, "approve", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
 	});
 
-	it("commit phase should read bug status (verified = approved, approved = revision)", () => {
-		const verified = mkBugRecord({ status: "verified" });
-		expect(readBugVerdict(verified, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
+	it("commit phase reads bug status (fixed = approved/terminal, in-progress = revision)", () => {
+		// v0.44.0+: bug status enum collapsed to {reported, triaged,
+		// in-progress, fixed}. `fixed` is terminal; in-progress means
+		// commit did not advance status.
+		const fixed = mkBugRecord({ status: "fixed" });
+		expect(readBugVerdict(fixed, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("approved");
 
-		const stillApproved = mkBugRecord({ status: "approved" });
-		expect(readBugVerdict(stillApproved, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
+		const stillInProgress = mkBugRecord({ status: "in-progress" });
+		expect(readBugVerdict(stillInProgress, "commit", BUG_SUMMARY_KEY_BY_ROLE)).toBe("revision");
 	});
 
 	it("review-plan should read from summaries.review_plan", () => {

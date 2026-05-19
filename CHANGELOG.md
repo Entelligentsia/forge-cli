@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-05-19
+
+### Fixed
+- **Thread-switcher no longer crashes on session replacement** (FORGE-BUG-003
+  surfaced this). The input-router handler registered by
+  `forgecli/thread-switcher.ts` closed over the `ctx` captured at the first
+  `session_start`. After any subsequent `ctx.newSession()` / `ctx.fork()` /
+  `ctx.switchSession()` / `ctx.reload()` — which `/forge:fix-bug` triggers
+  on phase transitions — the captured ctx was stale, and the next ↓ keypress
+  hit `ctx.ui.getEditorText()` on a dead ctx, causing pi's `assertActive`
+  guard to throw an uncaught `extension ctx is stale` error and exit the
+  process. Fix tracks `currentCtx` via a closure ref refreshed on every
+  `session_start`; the input handler and `commitFocus` / `setFocusToMain`
+  now read the live ctx with defensive try/catch. Same hazard had been
+  spot-fixed earlier for `ctx.model` in the viewport footer factory; the
+  input-router handler had been missed.
+
 ### Changed
 - **Config TUI now uses the running session's `ModelRegistry`** for provider-aware
   model discovery instead of creating a fresh registry. This surfaces
