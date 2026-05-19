@@ -71,6 +71,7 @@ export function registerConfigCommand(pi: ExtensionAPI, _opts: RegisterConfigCom
             ctx.ui.notify(msg, lvl);
           },
           mountConfigTui,
+          modelRegistry: ctx.modelRegistry,
         },
       });
 

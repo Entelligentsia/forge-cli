@@ -98,6 +98,10 @@ export interface ConfigTuiCallbacks {
   ctx?: {
     notify: (msg: string, level?: string) => void;
     mountConfigTui?: (init: InitOptions) => Promise<number>;
+    /** The running session's ModelRegistry, which includes extension-registered
+     *  providers (e.g. ollama-cloud). When provided, discover models through
+     *  it instead of creating a fresh registry. */
+    modelRegistry?: import("@earendil-works/pi-coding-agent").ModelRegistry;
   };
 }
 
@@ -163,17 +167,26 @@ export function readPipelineCatalogue(cwd: string): string[] | null {
   }
 }
 
-async function readAvailableModels(): Promise<{
+async function readAvailableModels(
+  sessionRegistry?: import("@earendil-works/pi-coding-agent").ModelRegistry,
+): Promise<{
   available: AvailableModel[];
   authenticated: string[];
   authError: string | null;
 }> {
-  // Defer the heavy imports to call-time so vitest specs that never hit this
-  // path don't pay the cost (or fail when auth.json is absent).
-  const { AuthStorage, ModelRegistry } = await import("@earendil-works/pi-coding-agent");
-  try {
+  // Prefer the running session's ModelRegistry which includes extension-registered
+  // providers (e.g. ollama-cloud). Fall back to a fresh registry for CLI use.
+  let registry: import("@earendil-works/pi-coding-agent").ModelRegistry;
+  if (sessionRegistry) {
+    // Refresh to pick up any changes since the session started.
+    sessionRegistry.refresh();
+    registry = sessionRegistry;
+  } else {
+    const { AuthStorage, ModelRegistry } = await import("@earendil-works/pi-coding-agent");
     const auth = AuthStorage.create();
-    const registry = ModelRegistry.create(auth);
+    registry = ModelRegistry.create(auth);
+  }
+  try {
     const available: AvailableModel[] = registry
       .getAvailable()
       .map((m) => ({ provider: m.provider, id: m.id }));
@@ -185,11 +198,14 @@ async function readAvailableModels(): Promise<{
   }
 }
 
-async function buildInitOptions(cwd: string): Promise<InitOptions> {
+async function buildInitOptions(
+  cwd: string,
+  sessionRegistry?: import("@earendil-works/pi-coding-agent").ModelRegistry,
+): Promise<InitOptions> {
   const layered = loadLayeredConfig(cwd);
   const personaCatalogue = readPersonaCatalogue();
   const pipelineCatalogue = readPipelineCatalogue(cwd);
-  const { available, authenticated, authError } = await readAvailableModels();
+  const { available, authenticated, authError } = await readAvailableModels(sessionRegistry);
   return {
     global: layered.global,
     project: layered.project,
@@ -268,7 +284,7 @@ export async function runConfigTui(
       cb.write(`Interactive TUI requires a pi session. Use \`/forge:config\` from inside pi.\n`);
       return 0;
     }
-    const init = await buildInitOptions(cwd);
+    const init = await buildInitOptions(cwd, cb.ctx?.modelRegistry);
     return cb.ctx.mountConfigTui(init);
   }
 
