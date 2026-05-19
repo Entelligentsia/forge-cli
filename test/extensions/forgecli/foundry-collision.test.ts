@@ -19,21 +19,28 @@ import {
 } from "../../../src/extensions/forgecli/foundry-collision.js";
 
 let tmpDir: string;
-let origHome: string | undefined;
+let userRoot: string;
+let origForgeCliHome: string | undefined;
+let origSkipMig: string | undefined;
 
 beforeEach(() => {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "forgecli-collision-"));
-	// Redirect HOME so seen.json writes go to our tmp dir
-	origHome = process.env.HOME;
-	process.env.HOME = tmpDir;
+	// Post-FORGE-S20-T11 (v0.10.0): seen.json now lives under the
+	// forge-cli user root at $FORGE_CLI_HOME/cache/seen.json (resolved
+	// via the central path resolver). Scope via FORGE_CLI_HOME.
+	userRoot = path.join(tmpDir, "forge-cli-user");
+	fs.mkdirSync(userRoot, { recursive: true });
+	origForgeCliHome = process.env.FORGE_CLI_HOME;
+	origSkipMig = process.env.FORGE_CLI_SKIP_MIGRATION;
+	process.env.FORGE_CLI_HOME = userRoot;
+	process.env.FORGE_CLI_SKIP_MIGRATION = "1";
 });
 
 afterEach(() => {
-	if (origHome !== undefined) {
-		process.env.HOME = origHome;
-	} else {
-		delete process.env.HOME;
-	}
+	if (origForgeCliHome !== undefined) process.env.FORGE_CLI_HOME = origForgeCliHome;
+	else delete process.env.FORGE_CLI_HOME;
+	if (origSkipMig !== undefined) process.env.FORGE_CLI_SKIP_MIGRATION = origSkipMig;
+	else delete process.env.FORGE_CLI_SKIP_MIGRATION;
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 	vi.restoreAllMocks();
 });
@@ -64,7 +71,7 @@ describe("wasCollisionSeen", () => {
 
 	it("returns false for a path not in seen.json", () => {
 		// Write a seen.json with a different path
-		const cacheDir = path.join(tmpDir, ".cache", "forgecli");
+		const cacheDir = path.join(userRoot, "cache");
 		fs.mkdirSync(cacheDir, { recursive: true });
 		fs.writeFileSync(
 			path.join(cacheDir, "seen.json"),
@@ -76,7 +83,7 @@ describe("wasCollisionSeen", () => {
 	});
 
 	it("returns false on malformed seen.json", () => {
-		const cacheDir = path.join(tmpDir, ".cache", "forgecli");
+		const cacheDir = path.join(userRoot, "cache");
 		fs.mkdirSync(cacheDir, { recursive: true });
 		fs.writeFileSync(path.join(cacheDir, "seen.json"), "{ not valid json", "utf8");
 		const result = wasCollisionSeen("/usr/local/bin/forge");
@@ -110,10 +117,10 @@ describe("markCollisionSeen + wasCollisionSeen", () => {
 		}
 	});
 
-	it("seen.json is written to ~/.cache/forgecli/seen.json", () => {
+	it("seen.json is written to ~/.pi/forge-cli/cache/seen.json (v0.10.0 layout)", () => {
 		const colliderPath = "/usr/local/bin/forge";
 		markCollisionSeen(colliderPath);
-		const seenPath = path.join(tmpDir, ".cache", "forgecli", "seen.json");
+		const seenPath = path.join(userRoot, "cache", "seen.json");
 		expect(fs.existsSync(seenPath)).toBe(true);
 		const content = JSON.parse(fs.readFileSync(seenPath, "utf8")) as { collisions: Record<string, boolean> };
 		expect(content.collisions[colliderPath]).toBe(true);

@@ -7,6 +7,15 @@
  * License: MIT (Copyright (c) 2025 Mario Zechner) — see pi-mono/LICENSE
  * Notes:   Imports rewritten @entelligentsia/* → @entelligentsia/*.
  *          Upstream promotion: see forge-cli/architectural-review.md §R2.
+ *
+ * Forge-cli divergence (FORGE-S20-T11, must be re-applied on every pi-mono sync):
+ *   - The local `shortenPath` helper inside `formatToolCall` is replaced
+ *     by `shortenPath` imported from `../paths/paths.js` so every
+ *     home-prefix replacement in forge-cli funnels through the central
+ *     resolver (AC #1: no `os.homedir()` outside the resolver).
+ *   - This is a pure implementation refactor — behaviour is unchanged.
+ *   - The `os` import is dropped because the only consumer was that helper.
+ *   - See `forge-cli/vendor-pi/DIVERGENCE.md` (sync-pi-upstream picks it up).
  */
 
 /**
@@ -27,6 +36,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { shortenPath } from "../paths/paths.js";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -77,11 +87,8 @@ function formatToolCall(
 	args: Record<string, unknown>,
 	themeFg: (color: any, text: string) => string,
 ): string {
-	const shortenPath = (p: string) => {
-		const home = os.homedir();
-		return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
-	};
-
+	// shortenPath is imported from ../paths/paths.js (forge-cli divergence;
+	// see file-header note). Behaviour unchanged.
 	switch (toolName) {
 		case "bash": {
 			const command = (args.command as string) || "...";

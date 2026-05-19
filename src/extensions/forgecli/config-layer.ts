@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Ajv } from "ajv";
+import { getGlobalConfigPath, getProjectConfigPath } from "./paths/paths.js";
 import schema from "./forge-cli-schema.json" with { type: "json" };
 
 export interface PersonaModel {
@@ -77,8 +76,8 @@ function readJsonFile(filePath: string): unknown | null {
 export function loadLayeredConfig(cwd: string): LayeredConfig {
   const errors: string[] = [];
 
-  const globalPath = path.join(getAgentDir(), "forge-cli", "config.json");
-  const projectPath = path.join(cwd, ".pi", "forge-cli", "config.json");
+  const globalPath = getGlobalConfigPath();
+  const projectPath = getProjectConfigPath(cwd);
 
   let globalConfig: GlobalConfig | null = null;
   let projectConfig: ProjectConfig | null = null;

@@ -7,8 +7,8 @@
 // FORGE_DEBUG_UPDATE_CHECK=1.
 
 import { promises as fs } from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { getUserCacheDir } from "./paths/paths.js";
 
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5000;
@@ -33,8 +33,7 @@ export interface UpdateBannerCache {
 }
 
 function defaultCacheDir(): string {
-	const root = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
-	return path.join(root, "forgecli");
+	return getUserCacheDir();
 }
 
 function cachePath(cacheDir: string): string {

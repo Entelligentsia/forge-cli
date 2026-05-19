@@ -72,8 +72,16 @@ import { registerRunTask, runPreflightGate } from "../../../src/extensions/forge
 
 let tmpRoot: string;
 
+// Post-FORGE-S20-T11 (v0.10.0): scope FORGE_CLI_HOME so the path resolver
+// reads/writes from a tmpdir, otherwise the real ~/.pi/forge-cli/config.json
+// leaks into loadLayeredConfig() and silently changes model resolution.
+const PRIOR_FORGE_CLI_HOME = process.env.FORGE_CLI_HOME;
+const PRIOR_SKIP_MIG = process.env.FORGE_CLI_SKIP_MIGRATION;
+
 beforeEach(() => {
 	tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgecli-run-task-"));
+	process.env.FORGE_CLI_HOME = path.join(tmpRoot, "forge-cli-user");
+	process.env.FORGE_CLI_SKIP_MIGRATION = "1";
 	vi.mocked(createAgentSession).mockClear();
 	vi.mocked(spawnSync).mockClear();
 	mockSession.subscribe.mockClear();
@@ -85,6 +93,10 @@ afterEach(() => {
 	// Restore env vars
 	delete process.env.FORGE_YES;
 	delete process.env.FORGE_NON_INTERACTIVE;
+	if (PRIOR_FORGE_CLI_HOME === undefined) delete process.env.FORGE_CLI_HOME;
+	else process.env.FORGE_CLI_HOME = PRIOR_FORGE_CLI_HOME;
+	if (PRIOR_SKIP_MIG === undefined) delete process.env.FORGE_CLI_SKIP_MIGRATION;
+	else process.env.FORGE_CLI_SKIP_MIGRATION = PRIOR_SKIP_MIG;
 	fs.rmSync(tmpRoot, { recursive: true, force: true });
 	vi.restoreAllMocks();
 });

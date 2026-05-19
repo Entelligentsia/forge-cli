@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-19
+
+### Changed
+- **User-level data layout consolidated under `~/.pi/forge-cli/`**
+  (FORGE-S20-T11). Pre-v0.10.0 installs scattered runtime state across
+  `~/.pi/agent/forge-cli/` (config) and `~/.cache/forgecli/` (probe
+  caches), colliding with pi's `agent/settings.json` namespace. The new
+  layout is:
+  ```
+  ~/.pi/forge-cli/
+    config.json                   (replaces ~/.pi/agent/forge-cli/config.json)
+    cache/                        (replaces ~/.cache/forgecli/)
+      update-banner.json
+      whats-new-seen.json
+      seen.json                   (foundry-collision dismissals)
+      drift-seen.json
+    state/                        (reserved for future use)
+    .migrated-from-legacy         (idempotency marker)
+  ```
+- **One-shot, idempotent migration on first run after upgrade.** A new
+  `paths/migrator.ts` module moves legacy files into the new layout and
+  writes a `.migrated-from-legacy` marker so subsequent runs short-circuit
+  in O(1). Partial-success runs do NOT write the marker — the migrator
+  retries on the next startup until every legacy file has been moved or
+  the marker is set manually.
+- **Central path resolver (`paths/paths.ts`).** Every call site under
+  `src/` now reads paths through this module — no more inline
+  `os.homedir()`, `XDG_CACHE_HOME`, or string-literal `.pi/forge-cli`
+  paths outside the resolver. Tests and CI can override the user root
+  via `FORGE_CLI_HOME`.
+
+### Removed
+- **`PI_CODING_AGENT_DIR` no longer influences forge-cli's global
+  config location.** The forge-cli user root is intentionally outside
+  pi's `agent/` namespace to avoid the `agent/settings.json` collision.
+  Use `FORGE_CLI_HOME` to relocate the forge-cli user root.
+
+### Migration notes
+- Routine users: no action required — the migrator runs automatically
+  on first launch of v0.10.0 and is fail-silent.
+- Users who hand-edited `~/.pi/agent/forge-cli/config.json` can verify
+  the move with `cat ~/.pi/forge-cli/config.json`.
+- **Rollback** (revert to v0.9.x layout): `cp ~/.pi/forge-cli/config.json
+  ~/.pi/agent/forge-cli/config.json` after downgrading.
+- Themes and agents remain in pi's namespace
+  (`~/.pi/agent/themes/`, `~/.pi/agent/agents/`) because pi loads them
+  before forge-cli's extension hook runs — that boundary is unchanged.
+
 ## [0.9.4] — 2026-05-19
 
 ### Fixed

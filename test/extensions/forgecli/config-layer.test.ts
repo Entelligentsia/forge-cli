@@ -1,5 +1,11 @@
 // Tests for the layered forge-cli config loader (Slice 1 — Plan 16).
 //
+// Post-FORGE-S20-T11 (v0.10.0): the global config path is now resolved
+// via the central path resolver (`paths/paths.ts`) at
+// `~/.pi/forge-cli/config.json` (or `$FORGE_CLI_HOME/config.json`), not
+// `~/.pi/agent/forge-cli/config.json`. These tests stub the resolver
+// directly to keep the layered-merge coverage intact.
+//
 // Coverage:
 //  1. Both files missing → {global: null, project: null, merged: {}}
 //  2. Global only → merged equals global
@@ -8,49 +14,47 @@
 //  5. Schema-invalid global → error surfaced, project still loads
 //  6. Schema-invalid project → error surfaced, global still loads
 //  7. Walk-up discovery: project config located at cwd/.pi/forge-cli/config.json (cwd-direct)
-//  8. PI_CODING_AGENT_DIR env var honored for global path
-//  9. getAgentDir() used for global path (no reimplementation)
+//  8. FORGE_CLI_HOME env var honored for global path (via resolver)
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-// We mock getAgentDir so tests are hermetic (no ~/.pi dependency).
-vi.mock("@earendil-works/pi-coding-agent", () => ({
-  getAgentDir: vi.fn(),
-}));
-
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   loadLayeredConfig,
   type LayeredConfig,
 } from "../../../src/extensions/forgecli/config-layer.js";
 
-const mockGetAgentDir = getAgentDir as ReturnType<typeof vi.fn>;
+const PRIOR_ENV = { ...process.env };
 
 let tmpRoot: string;
-let agentDir: string;
+let userRoot: string;
 let projectDir: string;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forge-config-layer-"));
-  agentDir = path.join(tmpRoot, "agent");
+  userRoot = path.join(tmpRoot, "forge-cli-user");
   projectDir = path.join(tmpRoot, "project");
-  fs.mkdirSync(agentDir, { recursive: true });
+  fs.mkdirSync(userRoot, { recursive: true });
   fs.mkdirSync(projectDir, { recursive: true });
-  mockGetAgentDir.mockReturnValue(agentDir);
+  // Route the resolver's global config under our tmpdir, and disable
+  // the lazy migrator so it doesn't touch the real $HOME.
+  process.env.FORGE_CLI_HOME = userRoot;
+  process.env.FORGE_CLI_SKIP_MIGRATION = "1";
 });
 
 afterEach(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  vi.clearAllMocks();
+  if (PRIOR_ENV.FORGE_CLI_HOME !== undefined) process.env.FORGE_CLI_HOME = PRIOR_ENV.FORGE_CLI_HOME;
+  else delete process.env.FORGE_CLI_HOME;
+  if (PRIOR_ENV.FORGE_CLI_SKIP_MIGRATION !== undefined) process.env.FORGE_CLI_SKIP_MIGRATION = PRIOR_ENV.FORGE_CLI_SKIP_MIGRATION;
+  else delete process.env.FORGE_CLI_SKIP_MIGRATION;
 });
 
 function writeGlobal(content: unknown): void {
-  const dir = path.join(agentDir, "forge-cli");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(content));
+  fs.mkdirSync(userRoot, { recursive: true });
+  fs.writeFileSync(path.join(userRoot, "config.json"), JSON.stringify(content));
 }
 
 function writeProject(content: unknown): void {
@@ -213,18 +217,20 @@ describe("loadLayeredConfig", () => {
     expect(resultFromRoot.project).not.toBeNull();
   });
 
-  // 8. PI_CODING_AGENT_DIR honored: getAgentDir() is called (not reimplemented)
-  it("calls getAgentDir() to resolve global config path", () => {
-    const customAgentDir = path.join(tmpRoot, "custom-agent-dir");
-    fs.mkdirSync(path.join(customAgentDir, "forge-cli"), { recursive: true });
+  // 8. FORGE_CLI_HOME honored for the global config path (post-v0.10.0
+  // replacement for the PI_CODING_AGENT_DIR path the loader used in
+  // pre-resolver versions). The dedicated paths.test.ts unit owns the
+  // resolver invariant test; here we just verify the loader honors it.
+  it("honors FORGE_CLI_HOME for the global config path", () => {
+    const customUserRoot = path.join(tmpRoot, "custom-forge-cli-home");
+    fs.mkdirSync(customUserRoot, { recursive: true });
     fs.writeFileSync(
-      path.join(customAgentDir, "forge-cli", "config.json"),
+      path.join(customUserRoot, "config.json"),
       JSON.stringify({ "persona-models": { scribe: { provider: "google", model: "gemini-2.5-flash" } } }),
     );
-    mockGetAgentDir.mockReturnValue(customAgentDir);
+    process.env.FORGE_CLI_HOME = customUserRoot;
 
     const result = loadLayeredConfig(projectDir);
-    expect(mockGetAgentDir).toHaveBeenCalled();
     expect(result.global).not.toBeNull();
     expect(result.merged["persona-models"]?.["scribe"]).toEqual({
       provider: "google",

@@ -1,14 +1,16 @@
 // Persona-editor screen — 3-step wizard (provider → model → layer).
 // Phase 3: full theming, width safety.
+// Search/filter: type to fuzzy-search providers or models, like pi /model.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { ConfigLayer } from "../../config-writer.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { InputResult, Screen } from "./types.js";
-import { getActiveView, listResolvedPersonas, uniqueProviders } from "../state/selectors.js";
-import { rule, authBadgeFor, windowList, safeLines } from "./shared.js";
+import { getActiveView, uniqueProviders } from "../state/selectors.js";
+import { rule, authBadgeFor, windowList, safeLines, filterWithSearch, renderFilterLine, renderResultCount, handleSearchKey } from "./shared.js";
 import { padRight, cursor, accentBold, accent, muted, warning, dirtyMarker } from "../theme.js";
+import { getGlobalConfigPath, getProjectConfigPath, shortenPath } from "../../paths/paths.js";
 
 export class PersonaEditorScreen implements Screen {
   render(state: ConfigTuiState, width: number, theme: Theme): string[] {
@@ -28,28 +30,39 @@ export class PersonaEditorScreen implements Screen {
         lines.push(warning(`  ⚠ '${view.persona}' is not in the Forge persona catalogue.`, theme));
       }
       lines.push("");
-      lines.push(`  ${muted(padRight("Provider", 56), theme)}  ${muted("AUTH", theme)}`);
+
       const providers = uniqueProviders(state);
-      const win = windowList(providers, view.cursor);
-      if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
-      win.visible.forEach((p, i) => {
-        const absoluteIdx = win.start + i;
-        const cur = cursor(absoluteIdx === view.cursor, theme);
-        const auth = authBadgeFor(state, p, theme);
-        lines.push(`  ${cur} ${padRight(p, 56)}${auth}`);
-      });
-      if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
+      const filtered = filterWithSearch(providers, view.searchQuery, (p) => p);
+      lines.push(renderFilterLine(view.searchQuery, theme));
+      lines.push(`  ${muted(padRight("Provider", 56), theme)}  ${muted("AUTH", theme)}`);
+      if (filtered.length === 0) {
+        lines.push(muted("  No matching providers.", theme));
+      } else {
+        const win = windowList(filtered, view.cursor);
+        if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
+        win.visible.forEach((p, i) => {
+          const absoluteIdx = win.start + i;
+          const cur = cursor(absoluteIdx === view.cursor, theme);
+          const auth = authBadgeFor(state, p, theme);
+          lines.push(`  ${cur} ${padRight(p, 56)}${auth}`);
+        });
+        if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
+      }
+      const countLine = renderResultCount(filtered.length, providers.length, theme);
+      if (countLine) lines.push(countLine);
       lines.push("");
-      lines.push(muted("  ↑/↓ select   enter advance   esc back", theme));
+      lines.push(muted("  ↑↓ navigate   enter select   type to filter   esc back/clear", theme));
     } else if (view.step === "pick-model") {
       lines.push(accent(`  Step 2 of 3 — pick model (provider: ${view.provider ?? "(unknown)"})`, theme));
       lines.push("");
+
       const models = state.availableModels.filter((m) => m.provider === view.provider);
-      if (models.length === 0) {
-        lines.push(muted("  No models available for this provider.", theme));
-        lines.push(muted(`  (Run \`pi /login ${view.provider}\` then return.)`, theme));
+      const filtered = filterWithSearch(models, view.searchQuery, (m) => `${m.id} ${m.provider}/${m.id}`);
+      lines.push(renderFilterLine(view.searchQuery, theme));
+      if (filtered.length === 0) {
+        lines.push(muted("  No matching models.", theme));
       } else {
-        const win = windowList(models, view.cursor);
+        const win = windowList(filtered, view.cursor);
         if (win.aboveCount > 0) lines.push(muted(`    ↑ ${win.aboveCount} more above`, theme));
         win.visible.forEach((m, i) => {
           const absoluteIdx = win.start + i;
@@ -58,8 +71,10 @@ export class PersonaEditorScreen implements Screen {
         });
         if (win.belowCount > 0) lines.push(muted(`    ↓ ${win.belowCount} more below`, theme));
       }
+      const countLine = renderResultCount(filtered.length, models.length, theme);
+      if (countLine) lines.push(countLine);
       lines.push("");
-      lines.push(muted("  ↑/↓ select   enter advance   esc back", theme));
+      lines.push(muted("  ↑↓ navigate   enter select   type to filter   esc back/clear", theme));
     } else {
       // pick-layer
       lines.push(accent("  Step 3 of 3 — pick write target", theme));
@@ -68,8 +83,8 @@ export class PersonaEditorScreen implements Screen {
       lines.push("");
       const targets = ["project", "global"] as const;
       const targetLabels = [
-        `Project   ${state.cwd}/.pi/forge-cli/config.json`,
-        `Global    ~/.pi/agent/forge-cli/config.json`,
+        `Project   ${getProjectConfigPath(state.cwd)}`,
+        `Global    ${shortenPath(getGlobalConfigPath())}`,
       ];
       targets.forEach((_, i) => {
         const cur = cursor(i === view.cursor, theme);
@@ -99,39 +114,68 @@ export class PersonaEditorScreen implements Screen {
 
   private handlePickProviderInput(data: string, state: ConfigTuiState, view: Extract<import("../state/model.js").View, { kind: "persona-editor" }>): InputResult {
     const providers = uniqueProviders(state);
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+    const filtered = filterWithSearch(providers, view.searchQuery, (p) => p);
+
+    // Search input: backspace, ctrl+u/w, printable chars
+    const searchResult = handleSearchKey(view.searchQuery, data);
+    if (searchResult !== undefined) {
+      return { kind: "dispatch", action: { kind: "set-search", query: searchResult } };
+    }
+
+    // Escape: clear filter if present, otherwise go back
+    if (matchesKey(data, Key.escape)) {
+      if (view.searchQuery) {
+        return { kind: "dispatch", action: { kind: "set-search", query: "" } };
+      }
+      return { kind: "no-op" }; // Let the component handle pop-view
+    }
+
+    if (matchesKey(data, Key.up)) {
       return { kind: "dispatch", action: { kind: "cursor-move", delta: -1 } };
     }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      if (view.cursor < providers.length - 1) {
+    if (matchesKey(data, Key.down)) {
+      if (view.cursor < filtered.length - 1) {
         return { kind: "dispatch", action: { kind: "cursor-move", delta: 1 } };
       }
       return { kind: "consumed" };
     }
     if (matchesKey(data, Key.enter)) {
-      const provider = providers[view.cursor];
+      const provider = filtered[view.cursor];
       if (provider) return { kind: "dispatch", action: { kind: "set-persona-provider", provider } };
       return { kind: "consumed" };
     }
-    // Quick single-letter shortcuts: a=anthropic, o=openai, g=google, l=ollama
-    const shortcut = providerShortcut(data, providers);
-    if (shortcut) return { kind: "dispatch", action: { kind: "set-persona-provider", provider: shortcut } };
     return { kind: "no-op" };
   }
 
   private handlePickModelInput(data: string, state: ConfigTuiState, view: Extract<import("../state/model.js").View, { kind: "persona-editor" }>): InputResult {
     const models = state.availableModels.filter((m) => m.provider === view.provider);
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+    const filtered = filterWithSearch(models, view.searchQuery, (m) => `${m.id} ${m.provider}/${m.id}`);
+
+    // Search input: backspace, ctrl+u/w, printable chars
+    const searchResult = handleSearchKey(view.searchQuery, data);
+    if (searchResult !== undefined) {
+      return { kind: "dispatch", action: { kind: "set-search", query: searchResult } };
+    }
+
+    // Escape: clear filter if present, otherwise go back
+    if (matchesKey(data, Key.escape)) {
+      if (view.searchQuery) {
+        return { kind: "dispatch", action: { kind: "set-search", query: "" } };
+      }
+      return { kind: "no-op" }; // Let the component handle pop-view
+    }
+
+    if (matchesKey(data, Key.up)) {
       return { kind: "dispatch", action: { kind: "cursor-move", delta: -1 } };
     }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
-      if (view.cursor < models.length - 1) {
+    if (matchesKey(data, Key.down)) {
+      if (view.cursor < filtered.length - 1) {
         return { kind: "dispatch", action: { kind: "cursor-move", delta: 1 } };
       }
       return { kind: "consumed" };
     }
     if (matchesKey(data, Key.enter)) {
-      const target = models[view.cursor];
+      const target = filtered[view.cursor];
       if (target) return { kind: "dispatch", action: { kind: "set-persona-model", model: target.id } };
       return { kind: "consumed" };
     }
@@ -139,10 +183,10 @@ export class PersonaEditorScreen implements Screen {
   }
 
   private handlePickLayerInput(data: string, _state: ConfigTuiState, view: Extract<import("../state/model.js").View, { kind: "persona-editor" }>): InputResult {
-    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
+    if (matchesKey(data, Key.up)) {
       return { kind: "dispatch", action: { kind: "cursor-move", delta: -1 } };
     }
-    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
+    if (matchesKey(data, Key.down)) {
       if (view.cursor < 1) return { kind: "dispatch", action: { kind: "cursor-move", delta: 1 } };
       return { kind: "consumed" };
     }
@@ -164,20 +208,4 @@ export class PersonaEditorScreen implements Screen {
     }
     return { kind: "no-op" };
   }
-}
-
-function providerShortcut(data: string, providers: string[]): string | null {
-  const pairs: Array<[Parameters<typeof matchesKey>[1], string]> = [
-    ["a", "anthropic"],
-    ["o", "openai"],
-    ["g", "google"],
-    ["l", "ollama"],
-    ["r", "openrouter"],
-  ];
-  for (const [key, provider] of pairs) {
-    if (matchesKey(data, key) && providers.includes(provider)) {
-      return provider;
-    }
-  }
-  return null;
 }

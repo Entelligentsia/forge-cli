@@ -1,14 +1,16 @@
 // Foundry collision detection — Q17 (FORGE-S16-T02).
 //
 // Detects whether another `forge` binary is shadowing our own and provides
-// a one-time dismissal cache at ~/.cache/forgecli/seen.json.
+// a one-time dismissal cache at ~/.pi/forge-cli/cache/seen.json (resolved
+// via the central path resolver). Migrated from the pre-v0.10.0 location
+// at ~/.cache/forgecli/seen.json by the path-resolver migrator.
 //
 // All file I/O is silently no-op on any error (never throws to caller).
 
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { getUserCacheDir } from "./paths/paths.js";
 
 // ---------------------------------------------------------------------------
 // Detection
@@ -74,7 +76,7 @@ interface SeenJson {
 }
 
 function seenJsonPath(): string {
-	return path.join(os.homedir(), ".cache", "forgecli", "seen.json");
+	return path.join(getUserCacheDir(), "seen.json");
 }
 
 function readSeenJson(): SeenJson {

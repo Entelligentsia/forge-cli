@@ -7,6 +7,15 @@
  * License: MIT (Copyright (c) 2025 Mario Zechner) — see pi-mono/LICENSE
  * Notes:   Imports rewritten @entelligentsia/* → @entelligentsia/*.
  *          Upstream promotion: see forge-cli/architectural-review.md §R2.
+ *
+ * Forge-cli divergence (FORGE-S20-T11, must be re-applied on every pi-mono sync):
+ *   - `discoverAgents` derives the user agents directory via
+ *     `getPiAgentAgentsDir()` from `../paths/paths.js` instead of inlining
+ *     `path.join(getAgentDir(), "agents")`. The resolver re-exports pi's
+ *     getAgentDir so the resulting path is identical — this is a pure
+ *     centralization refactor that keeps AC #1 honest (no `getAgentDir()`
+ *     call sites in forge-cli outside the resolver).
+ *   - See `forge-cli/vendor-pi/DIVERGENCE.md` (sync-pi-upstream picks it up).
  */
 
 /**
@@ -15,7 +24,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { getPiAgentAgentsDir } from "../paths/paths.js";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -106,7 +116,7 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 }
 
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
-	const userDir = path.join(getAgentDir(), "agents");
+	const userDir = getPiAgentAgentsDir();
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
 
 	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");

@@ -9,9 +9,10 @@
 //   forge config dispatch --json       Machine-readable JSON output
 //
 // This command reads from:
-//   ~/.pi/agent/forge-cli/config.json        (L1 global)
+//   ~/.pi/forge-cli/config.json              (L1 global — post-v0.10.0 layout)
 //   <cwd>/.pi/forge-cli/config.json          (L2/L3/L4 project)
 //   <cwd>/.forge/config.json                 (pipeline catalogue — optional)
+// All paths resolve through `../extensions/forgecli/paths/paths.ts`.
 // And checks availability against the pi ModelRegistry (same as `forge doctor`).
 //
 // The persona catalogue is read from the bundled base-pack personas dir.
@@ -21,6 +22,12 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { loadLayeredConfig } from "../extensions/forgecli/config-layer.js";
+import {
+  ensureForgeCliPathsReady,
+  getGlobalConfigPath,
+  getProjectConfigPath,
+  shortenPath,
+} from "../extensions/forgecli/paths/paths.js";
 import { lookupPersonaModel, resolveModelForPhase } from "../extensions/forgecli/model-resolver.js";
 import { PHASES } from "../extensions/forgecli/run-task.js";
 import { BUG_PHASES } from "../extensions/forgecli/fix-bug.js";
@@ -160,7 +167,7 @@ export async function runConfigShow(
     } else {
       write("No forge-cli model routing config found.");
       write("");
-      write("Create ~/.pi/agent/forge-cli/config.json or <project>/.pi/forge-cli/config.json");
+      write(`Create ${shortenPath(getGlobalConfigPath())} or ${getProjectConfigPath(cwd)}`);
       write("to configure persona → model routing.");
     }
     return 0;
@@ -408,6 +415,9 @@ export function runConfigDispatch(
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export async function runConfig(args: string[], cwd: string = process.cwd()): Promise<number> {
+  // Trigger one-shot user-data layout migration so subsequent path reads
+  // resolve to the post-v0.10.0 layout (FORGE-S20-T11).
+  ensureForgeCliPathsReady();
   // Plan 16 Slice 4b: delegate to runConfigTui so the bin and pi-extension
   // surfaces share the same argv parser + routing. The bin has no ctx, so
   // interactive subcommands print a "use /forge:config from pi" fallback.

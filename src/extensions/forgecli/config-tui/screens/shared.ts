@@ -1,8 +1,9 @@
-// Shared screen rendering utilities — windowList, formatOverride, and themed helpers.
+// Shared screen rendering utilities — windowList, formatOverride, search helpers, and themed helpers.
 // Split from screens.ts (Phase 1). Phase 3: theming applied to all visible strings.
 
 import type { ConfigTuiState } from "../state/model.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { fuzzyFilter, Key, matchesKey } from "@earendil-works/pi-tui";
 import { authBadge, muted, rule as themedRule, error as themedError, truncateLines } from "../theme.js";
 
 /** Themed horizontal rule spanning the full width. */
@@ -111,4 +112,83 @@ export function tierBadge(tier: "heavy" | "standard" | "light", theme: Theme): s
 /** Width-safe final guard: truncate every line to the given terminal width. */
 export function safeLines(lines: string[], width: number): string[] {
   return truncateLines(lines, width);
+}
+
+// ── Search / filter helpers ──────────────────────────────────────────────────
+
+/**
+ * Filter a list of items using fuzzy search.
+ * When `query` is empty, returns items unfiltered (original order).
+ * When non-empty, returns items matching the fuzzy query (best matches first).
+ */
+export function filterWithSearch<T>(
+  items: T[],
+  query: string,
+  getText: (item: T) => string,
+): T[] {
+  if (!query) return items;
+  return fuzzyFilter(items, query, getText);
+}
+
+/**
+ * Render the search/filter input line.
+ * Shows a prompt, the current query, a block cursor, and a hint when empty.
+ */
+export function renderFilterLine(query: string, theme: Theme): string {
+  const prompt = theme.fg("accent", "  Filter: ");
+  const display = query || "";
+  const cursor = theme.fg("accent", "▏");
+  const hint = query ? "" : theme.fg("muted", " type to search…");
+  return `${prompt}${display}${cursor}${hint}`;
+}
+
+/**
+ * Render search result count line.
+ */
+export function renderResultCount(shown: number, total: number, theme: Theme): string {
+  if (shown === total) return "";
+  return theme.fg("muted", `  Showing ${shown} of ${total}`);
+}
+
+/**
+ * Determine if a raw key event represents a printable character suitable for
+ * appending to a search query. Excludes control sequences, ESC sequences,
+ * and other non-printable input.
+ */
+export function isPrintableInput(data: string): boolean {
+  if (data.length === 0) return false;
+  if (data.length === 1) {
+    const code = data.charCodeAt(0);
+    // Printable ASCII: space (0x20) through tilde (0x7e), excluding DEL (0x7f)
+    return code >= 0x20 && code <= 0x7e;
+  }
+  // Multi-byte sequences that don't start with ESC are likely UTF-8 printable chars
+  return data.charCodeAt(0) !== 0x1b;
+}
+
+/**
+ * Process a search key event and return the updated query, or undefined if
+ * the key is not search-related.
+ *
+ * - Printable characters: append to query
+ * - Backspace: remove last character
+ * - Ctrl+U / Ctrl+W: clear entire query
+ *
+ * Returns the new query string, or `undefined` if the key isn't a search action.
+ */
+export function handleSearchKey(currentQuery: string, data: string): string | undefined {
+  // Backspace: delete last char
+  if (matchesKey(data, Key.backspace)) {
+    return currentQuery.length > 0 ? currentQuery.slice(0, -1) : "";
+  }
+  // Ctrl+U: clear entire query
+  if (matchesKey(data, "ctrl+u") || matchesKey(data, "ctrl+w")) {
+    return "";
+  }
+  // Printable character: append to query
+  if (isPrintableInput(data)) {
+    return currentQuery + data;
+  }
+  // Not a search key
+  return undefined;
 }

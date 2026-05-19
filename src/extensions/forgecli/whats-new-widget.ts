@@ -39,8 +39,7 @@ import {
 	resolveChangelogPaths,
 	type WhatsNewRuntime,
 } from "./whats-new.js";
-import * as os from "node:os";
-import * as path from "node:path";
+import { getUserCacheDir } from "./paths/paths.js";
 
 const WIDGET_KEY = "forge:whats-new";
 
@@ -300,7 +299,7 @@ export function mountStripWithSummaries(
  * set — caller falls back to a notify message.
  */
 async function computeReplaySummaries(rt: WhatsNewRuntime): Promise<ChangeSummary[]> {
-	const cacheDir = rt.cacheDir ?? path.join(process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache"), "forgecli");
+	const cacheDir = rt.cacheDir ?? getUserCacheDir();
 	const seen = await readSeenState(cacheDir);
 	const sources = resolveChangelogPaths(rt.pkgRoot);
 	let s = computeSummaries({ sources, current: rt.current, seen, baseline: "prev" });

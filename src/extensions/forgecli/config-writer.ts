@@ -1,8 +1,9 @@
 // Atomic, schema-validated writer for forge-cli routing config files.
 //
-// Plan 16, Slice 4a. Writes ONLY to:
-//   - global layer (L1) → join(getAgentDir(), "forge-cli", "config.json")
-//   - project layer (L2/L3/L4) → join(cwd, ".pi", "forge-cli", "config.json")
+// Plan 16, Slice 4a. Writes ONLY to (paths resolved via paths/paths.ts):
+//   - global layer (L1) → getGlobalConfigPath() → ~/.pi/forge-cli/config.json
+//   - project layer (L2/L3/L4) → getProjectConfigPath(cwd) →
+//     <cwd>/.pi/forge-cli/config.json
 //
 // Never writes to .forge/config.json — that's the plugin's pipeline catalogue,
 // read-only from this TUI.
@@ -14,8 +15,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Ajv } from "ajv";
+import { getGlobalConfigPath, getProjectConfigPath } from "./paths/paths.js";
 import schema from "./forge-cli-schema.json" with { type: "json" };
 import type { PersonaModelsMap, PipelineConfig } from "./config-layer.js";
 
@@ -37,9 +38,9 @@ const validate = ajv.compile(schema);
 
 export function resolveTargetPath(opts: { layer: ConfigLayer; cwd: string }): string {
   if (opts.layer === "global") {
-    return path.join(getAgentDir(), "forge-cli", "config.json");
+    return getGlobalConfigPath();
   }
-  return path.join(opts.cwd, ".pi", "forge-cli", "config.json");
+  return getProjectConfigPath(opts.cwd);
 }
 
 function isEmpty(buffer: RoutingConfigBuffer): boolean {

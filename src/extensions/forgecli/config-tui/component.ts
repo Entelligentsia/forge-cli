@@ -198,6 +198,12 @@ export class ConfigTuiComponent implements Component, Focusable {
     }
 
     if (matchesKey(data, Key.escape)) {
+      // If the active view has a search query, clear it instead of popping
+      const top = this.state.view[this.state.view.length - 1];
+      if (top && 'searchQuery' in top && typeof top.searchQuery === 'string' && top.searchQuery) {
+        this.dispatch({ kind: "set-search", query: "" });
+        return;
+      }
       this.dispatch({ kind: "pop-view" });
       return;
     }

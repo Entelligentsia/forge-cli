@@ -19,7 +19,7 @@ export type ConfigLayer = "global" | "project";
 export type View =
   // ── Tiered-baseline views (Phase A+) ──────────────────────────────────────
   | { kind: "tier-menu"; cursor: number }
-  | { kind: "tier-picker"; tier: Tier; step: "pick-provider" | "pick-model"; provider: string | undefined; cursor: number }
+  | { kind: "tier-picker"; tier: Tier; step: "pick-provider" | "pick-model"; provider: string | undefined; cursor: number; searchQuery: string }
   // ── Advanced menu (Phase D) ───────────────────────────────────────────
   | { kind: "advanced-menu"; cursor: number }
   // ── Advanced views ───────────────────────────────────────────────────────
@@ -33,6 +33,8 @@ export type View =
       model: string | undefined;
       /** Cursor index inside the active step's list (provider/model/layer). */
       cursor: number;
+      /** Current search/filter string for the list (cleared on step transitions). */
+      searchQuery: string;
     }
   | { kind: "show-resolved"; cursor: number }
   // Slice 4c — per-phase overrides (Screens 4 + 5).
@@ -46,6 +48,8 @@ export type View =
       /** For the inline path: chosen provider before the model picker. */
       provider: string | undefined;
       cursor: number;
+      /** Current search/filter string for the list (cleared on step transitions). */
+      searchQuery: string;
     };
 
 // ── Selectors / accessors (read-only helpers used by renderers) ──────────────
@@ -132,6 +136,7 @@ export type ConfigTuiAction =
   | { kind: "push-view"; view: View }
   | { kind: "pop-view" }
   | { kind: "cursor-move"; delta: number }
+  | { kind: "set-search"; query: string }
   | { kind: "begin-persona-edit"; persona: string }
   | { kind: "set-persona-provider"; provider: string }
   | { kind: "set-persona-model"; model: string }

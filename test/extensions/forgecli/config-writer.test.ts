@@ -14,13 +14,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-vi.mock("@earendil-works/pi-coding-agent", () => ({
-  getAgentDir: vi.fn(),
-}));
-
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   writeRoutingConfig,
   resolveTargetPath,
@@ -28,30 +23,37 @@ import {
 } from "../../../src/extensions/forgecli/config-writer.js";
 import { loadLayeredConfig } from "../../../src/extensions/forgecli/config-layer.js";
 
-const mockGetAgentDir = getAgentDir as ReturnType<typeof vi.fn>;
-
+// Post-FORGE-S20-T11 (v0.10.0): the writer resolves the global config
+// path via paths/paths.ts at $FORGE_CLI_HOME (no longer under
+// getAgentDir()/forge-cli/). Variable name "agentDir" kept for
+// readability — semantically it's the forge-cli user root.
 let tmpRoot: string;
 let agentDir: string;
 let projectCwd: string;
+const PRIOR_ENV = { ...process.env };
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "config-writer-test-"));
-  agentDir = path.join(tmpRoot, "agent");
+  agentDir = path.join(tmpRoot, "forge-cli-user");
   projectCwd = path.join(tmpRoot, "proj");
   fs.mkdirSync(agentDir, { recursive: true });
   fs.mkdirSync(projectCwd, { recursive: true });
-  mockGetAgentDir.mockReturnValue(agentDir);
+  process.env.FORGE_CLI_HOME = agentDir;
+  process.env.FORGE_CLI_SKIP_MIGRATION = "1";
 });
 
 afterEach(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  vi.clearAllMocks();
+  if (PRIOR_ENV.FORGE_CLI_HOME !== undefined) process.env.FORGE_CLI_HOME = PRIOR_ENV.FORGE_CLI_HOME;
+  else delete process.env.FORGE_CLI_HOME;
+  if (PRIOR_ENV.FORGE_CLI_SKIP_MIGRATION !== undefined) process.env.FORGE_CLI_SKIP_MIGRATION = PRIOR_ENV.FORGE_CLI_SKIP_MIGRATION;
+  else delete process.env.FORGE_CLI_SKIP_MIGRATION;
 });
 
 describe("resolveTargetPath", () => {
-  it("global → ~/.pi/agent/forge-cli/config.json (via getAgentDir)", () => {
+  it("global → $FORGE_CLI_HOME/config.json (via path resolver)", () => {
     const p = resolveTargetPath({ layer: "global", cwd: projectCwd });
-    expect(p).toBe(path.join(agentDir, "forge-cli", "config.json"));
+    expect(p).toBe(path.join(agentDir, "config.json"));
   });
 
   it("project → <cwd>/.pi/forge-cli/config.json", () => {
@@ -91,7 +93,7 @@ describe("writeRoutingConfig — global layer", () => {
     };
     writeRoutingConfig({ layer: "global", cwd: projectCwd, buffer });
 
-    expect(fs.existsSync(path.join(agentDir, "forge-cli", "config.json"))).toBe(true);
+    expect(fs.existsSync(path.join(agentDir, "config.json"))).toBe(true);
   });
 });
 

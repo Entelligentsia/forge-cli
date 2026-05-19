@@ -119,14 +119,24 @@ describe("parseConfigArgs", () => {
 describe("runConfigShow", () => {
   let tmpCwd: string;
   let tmpAgentDir: string;
+  // Post-FORGE-S20-T11 (v0.10.0): the loader resolves the global config
+  // via paths/paths.ts honoring FORGE_CLI_HOME instead of getAgentDir().
+  // Scope both envs in beforeEach for hermeticity; otherwise a real
+  // ~/.pi/forge-cli/config.json on the runner leaks in.
   let savedAgentDir: string | undefined;
+  let savedForgeCliHome: string | undefined;
+  let savedSkipMig: string | undefined;
   let savedEnvValues: { key: string; value: string | undefined }[] = [];
 
   beforeEach(() => {
     tmpCwd = mkdtempSync(join(tmpdir(), "forge-cwd-"));
     tmpAgentDir = makeTmpAgentDir();
     savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+    savedForgeCliHome = process.env.FORGE_CLI_HOME;
+    savedSkipMig = process.env.FORGE_CLI_SKIP_MIGRATION;
     process.env.PI_CODING_AGENT_DIR = tmpAgentDir;
+    process.env.FORGE_CLI_HOME = tmpAgentDir; // hermetic forge-cli user root
+    process.env.FORGE_CLI_SKIP_MIGRATION = "1";
     savedEnvValues = PROVIDER_ENV_KEYS.map((k) => ({
       key: k,
       value: process.env[k],
@@ -135,11 +145,12 @@ describe("runConfigShow", () => {
   });
 
   afterEach(() => {
-    if (savedAgentDir === undefined) {
-      delete process.env.PI_CODING_AGENT_DIR;
-    } else {
-      process.env.PI_CODING_AGENT_DIR = savedAgentDir;
-    }
+    if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+    if (savedForgeCliHome === undefined) delete process.env.FORGE_CLI_HOME;
+    else process.env.FORGE_CLI_HOME = savedForgeCliHome;
+    if (savedSkipMig === undefined) delete process.env.FORGE_CLI_SKIP_MIGRATION;
+    else process.env.FORGE_CLI_SKIP_MIGRATION = savedSkipMig;
     for (const { key, value } of savedEnvValues) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

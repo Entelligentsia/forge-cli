@@ -2,9 +2,11 @@
 //
 // On `session_start`, compares the running versions of pi-coding-agent,
 // the bundled forge plugin, and forge-cli itself against the last-seen
-// versions in `~/.cache/forgecli/whats-new-seen.json`. When any has
-// advanced, emits a compact 3-line summary via `ctx.ui.notify`, then
-// records the new versions so subsequent sessions stay quiet.
+// versions in `~/.pi/forge-cli/cache/whats-new-seen.json` (resolved via
+// the central path resolver; migrated from the pre-v0.10.0 location at
+// `~/.cache/forgecli/whats-new-seen.json`). When any has advanced, emits
+// a compact 3-line summary via `ctx.ui.notify`, then records the new
+// versions so subsequent sessions stay quiet.
 //
 // `/whats-new` re-renders the summary from the same cache, and
 // `/whats-new <component>` drills into one component's full changelog
@@ -15,8 +17,8 @@
 
 import { promises as fs } from "node:fs";
 import { existsSync, readFileSync } from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { getUserCacheDir } from "./paths/paths.js";
 
 export type ComponentId = "pi" | "forge-plugin" | "forge-cli";
 
@@ -64,8 +66,7 @@ const COMPONENT_LABELS: Record<ComponentId, string> = {
 const COMPONENT_ORDER: ComponentId[] = ["pi", "forge-plugin", "forge-cli"];
 
 function defaultCacheDir(): string {
-	const root = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
-	return path.join(root, "forgecli");
+	return getUserCacheDir();
 }
 
 function cachePath(cacheDir: string): string {

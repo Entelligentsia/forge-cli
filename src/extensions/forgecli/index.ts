@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { VERSION as PI_VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
 import { readProjectMeta } from "./banner.js";
@@ -56,6 +56,7 @@ import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
 import { registerPostSprintHook } from "./hooks/post-sprint-hook.js";
+import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -84,6 +85,13 @@ const PKG_VERSIONS = readPkgVersions();
 let notified = false;
 
 export default async function forgecli(pi: ExtensionAPI): Promise<void> {
+	// ── Lazy one-shot user-data layout migration (FORGE-S20-T11) ─────────────
+	// Runs at most once per process. Moves pre-v0.10.0 user data from
+	// ~/.pi/agent/forge-cli/ + ~/.cache/forgecli/ into ~/.pi/forge-cli/.
+	// Idempotent and fail-silent — every downstream path read goes through
+	// the resolver in ./paths/paths.ts so post-migration paths "just work".
+	ensureForgeCliPathsReady();
+
 	// ── Spike R2 (env-gated) ──────────────────────────────────────────────────
 	// Validates that the vendored subagent module resolves cleanly from the
 	// installed tarball path. No-op in production.
@@ -155,13 +163,13 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// the user-supplied prompt. Multi-turn allowed. Status updates streamed.
 	registerTestOrchestrate(pi);
 
-	// ── Install bundled themes into ~/.pi/agent/themes/ ──────────────────────
-	// Themes in that directory are loaded by pi BEFORE initTheme() runs, so
-	// pi's /settings > theme picker lists them and setTheme(name) finds them
-	// by name in session_start. We ship one or more JSON themes under
-	// forge-cli/themes/ and copy each one into the global theme directory.
+	// ── Install bundled themes into pi's theme namespace ─────────────────────
+	// Themes live under pi's getAgentDir()/themes/ (NOT forge-cli's user root)
+	// because pi loads them before initTheme() runs — its /settings > theme
+	// picker reads from that exact path. The resolver re-exports the path so
+	// call sites stay funneled through paths.ts.
 	const bundledThemesDir = path.join(PKG_ROOT, "themes");
-	const globalThemesDir = path.join(getAgentDir(), "themes");
+	const globalThemesDir = getPiAgentThemesDir();
 	try {
 		fs.mkdirSync(globalThemesDir, { recursive: true });
 		const themeFiles = fs.readdirSync(bundledThemesDir).filter((f) => f.endsWith(".json"));
@@ -187,7 +195,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		const router = getInputRouter();
 		ctx.ui.onTerminalInput((data) => router.dispatch(data));
 
-		// Apply forge-dark as default. The theme is in ~/.pi/agent/themes/ so
+		// Apply forge-dark as default. The theme is in pi's themes namespace so
 		// loadThemeJson finds it by name. Only apply if user hasn't saved a
 		// custom preference (setTheme also persists via settingsManager).
 		const currentTheme = ctx.ui.theme.name;
@@ -287,7 +295,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		}
 
 		// 6. Model registry seed + missing-credentials banner (FORGE-S16-T16, issue #17).
-		// Project-scope only; never reads or writes ~/.pi/agent/settings.json.
+		// Project-scope only; never reads or writes pi's global settings.json.
 		if (forgeRoot && forgeConfig) {
 			try {
 				const projectRoot = path.dirname(path.dirname(forgeConfig.configPath));

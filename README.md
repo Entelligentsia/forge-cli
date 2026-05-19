@@ -261,6 +261,44 @@ forge config dispatch
 forge config show --strict-models
 ```
 
+## Where forge-cli stores data
+
+Since v0.10.0, forge-cli keeps all user-level state under a single
+pi-aligned tree:
+
+```
+~/.pi/forge-cli/
+  config.json           Global model-routing config (L1)
+  cache/                Probe + dismissal caches
+    update-banner.json    24h npm + GitHub release probe cache
+    whats-new-seen.json   Last-seen pi/forge-plugin/forge-cli versions
+    seen.json             Foundry-collision (PATH shadow) dismissals
+    drift-seen.json       Bundled-forge version-drift prompt cache
+  state/                Reserved for future state markers
+  .migrated-from-legacy Idempotency marker for the one-shot migration
+```
+
+Project-scoped config still lives at `<project>/.pi/forge-cli/config.json`
+(L2/L3/L4). The plugin's project KB at `<project>/.forge/` is owned by
+the Forge plugin — forge-cli does not write there.
+
+**Upgrading from v0.9.x:** the migrator runs automatically on the first
+launch of v0.10.0, moves `~/.pi/agent/forge-cli/config.json` and
+`~/.cache/forgecli/*.json` into the new layout, and writes the
+`.migrated-from-legacy` marker so subsequent runs are O(1).
+
+**Rolling back** (revert to v0.9.x): copy the global config back into
+the legacy location after downgrading:
+
+```sh
+cp ~/.pi/forge-cli/config.json ~/.pi/agent/forge-cli/config.json
+```
+
+**Overrides:** set `FORGE_CLI_HOME=/custom/path` to relocate the user
+root for tests or CI. Themes (`~/.pi/agent/themes/`) and agents
+(`~/.pi/agent/agents/`) stay in pi's namespace because pi loads them
+before forge-cli's extension hook runs.
+
 ## Where to go next
 
 - **[docs/](docs/)** — CLI flags, non-interactive mode, hook dispatcher, custom tools, publishing

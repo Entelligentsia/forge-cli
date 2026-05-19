@@ -12,10 +12,10 @@
 
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getUserCacheDir } from "./paths/paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -189,8 +189,7 @@ interface DriftCache {
 }
 
 function defaultCacheDir(): string {
-	const root = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
-	return path.join(root, "forgecli");
+	return getUserCacheDir();
 }
 
 function driftCachePath(dir: string): string {

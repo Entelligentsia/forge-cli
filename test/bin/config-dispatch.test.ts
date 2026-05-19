@@ -94,20 +94,30 @@ describe("runConfigDispatch", () => {
   let tmpAgent: string;
   let tmpCwd: string;
   let envBackup: string | undefined;
+  // Post-FORGE-S20-T11 (v0.10.0): scope FORGE_CLI_HOME for hermeticity —
+  // otherwise the real ~/.pi/forge-cli/config.json leaks into the
+  // dispatch resolver and the "empty config" assertion fails.
+  let savedForgeCliHome: string | undefined;
+  let savedSkipMig: string | undefined;
 
   beforeEach(() => {
     tmpAgent = makeTmpAgentDir();
     tmpCwd = mkdtempSync(join(tmpdir(), "forge-config-cwd-"));
     envBackup = process.env.PI_CODING_AGENT_DIR;
     process.env.PI_CODING_AGENT_DIR = tmpAgent;
+    savedForgeCliHome = process.env.FORGE_CLI_HOME;
+    savedSkipMig = process.env.FORGE_CLI_SKIP_MIGRATION;
+    process.env.FORGE_CLI_HOME = tmpAgent;
+    process.env.FORGE_CLI_SKIP_MIGRATION = "1";
   });
 
   afterEach(() => {
-    if (envBackup === undefined) {
-      delete process.env.PI_CODING_AGENT_DIR;
-    } else {
-      process.env.PI_CODING_AGENT_DIR = envBackup;
-    }
+    if (envBackup === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = envBackup;
+    if (savedForgeCliHome === undefined) delete process.env.FORGE_CLI_HOME;
+    else process.env.FORGE_CLI_HOME = savedForgeCliHome;
+    if (savedSkipMig === undefined) delete process.env.FORGE_CLI_SKIP_MIGRATION;
+    else process.env.FORGE_CLI_SKIP_MIGRATION = savedSkipMig;
     rmSync(tmpAgent, { recursive: true, force: true });
     rmSync(tmpCwd, { recursive: true, force: true });
   });

@@ -22,24 +22,33 @@ const mockTheme: Theme = {
 const WIDTH = 80;
 
 let tmp: string;
+// Post-FORGE-S20-T11 (v0.10.0): the global config now resolves via the
+// central path resolver at $FORGE_CLI_HOME (or ~/.pi/forge-cli). The
+// `agentDir` variable name is retained for readability — semantically
+// it's now the forge-cli user root.
 let agentDir: string;
 let cwd: string;
-let savedAgentDirEnv: string | undefined;
+let savedForgeCliHome: string | undefined;
+let savedSkipMig: string | undefined;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "config-tui-component-"));
-  agentDir = path.join(tmp, "agent");
+  agentDir = path.join(tmp, "forge-cli-user");
   cwd = path.join(tmp, "proj");
   fs.mkdirSync(agentDir, { recursive: true });
   fs.mkdirSync(cwd, { recursive: true });
-  savedAgentDirEnv = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+  savedForgeCliHome = process.env.FORGE_CLI_HOME;
+  savedSkipMig = process.env.FORGE_CLI_SKIP_MIGRATION;
+  process.env.FORGE_CLI_HOME = agentDir;
+  process.env.FORGE_CLI_SKIP_MIGRATION = "1";
 });
 
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
-  if (savedAgentDirEnv === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = savedAgentDirEnv;
+  if (savedForgeCliHome === undefined) delete process.env.FORGE_CLI_HOME;
+  else process.env.FORGE_CLI_HOME = savedForgeCliHome;
+  if (savedSkipMig === undefined) delete process.env.FORGE_CLI_SKIP_MIGRATION;
+  else process.env.FORGE_CLI_SKIP_MIGRATION = savedSkipMig;
 });
 
 interface Harness {
@@ -253,7 +262,7 @@ describe("ConfigTuiComponent — tier-picker flow (Phase A)", () => {
     comp.handleInput("\r"); // pick model → commit to global
 
     expect(h.saved.length).toBe(1);
-    expect(h.saved[0]).toContain("agent/forge-cli/config.json");
+    expect(h.saved[0]).toBe(path.join(agentDir, "config.json"));
     const written = JSON.parse(fs.readFileSync(h.saved[0], "utf-8"));
     expect(written["persona-models"]["architect"]).toBeDefined();
     expect(written["persona-models"]["supervisor"]).toBeDefined();
@@ -280,12 +289,13 @@ describe("ConfigTuiComponent — full edit flow with persistence (advanced-menu 
       onError,
     });
 
-    // Navigate: tier-menu → "a" → advanced-menu → "1" → persona-picker
+    // Navigate: tier-menu → "a" → advanced-menu → "3" → persona-picker
     comp.handleInput("a"); // tier-menu → advanced-menu
     comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\r"); // picker: confirm first entry → editor 'default' → editor
-    // Pick anthropic via shortcut
-    comp.handleInput("a");
+    // Pick anthropic via search + enter (replaces old shortcut)
+    comp.handleInput("a"); // type into search filter → filters to "anthropic"
+    comp.handleInput("\r"); // select filtered provider → advances to pick-model
     expect(comp.render(WIDTH).join("\n")).toContain("Step 2 of 3");
     // Pick first model via enter
     comp.handleInput("\r");
@@ -304,7 +314,7 @@ describe("ConfigTuiComponent — full edit flow with persistence (advanced-menu 
     });
   });
 
-  it("commit to global layer writes ~/.pi/agent/forge-cli/config.json", () => {
+  it("commit to global layer writes ~/.pi/forge-cli/config.json (v0.10.0 layout)", () => {
     const { h, onExit, onSaved, onError } = makeHarness();
     const comp = createConfigTuiComponent({
       theme: mockTheme,
@@ -322,11 +332,12 @@ describe("ConfigTuiComponent — full edit flow with persistence (advanced-menu 
     comp.handleInput("a"); // tier-menu → advanced-menu
     comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\r"); // picker: confirm 'default' → editor
-    comp.handleInput("l"); // ollama shortcut
+    comp.handleInput("l"); // type into search → filters to "ollama"
+    comp.handleInput("\r"); // select filtered provider (ollama)
     comp.handleInput("\r"); // pick first model
     comp.handleInput("g"); // global layer
 
-    expect(h.saved[0]).toBe(path.join(agentDir, "forge-cli", "config.json"));
+    expect(h.saved[0]).toBe(path.join(agentDir, "config.json"));
     const written = JSON.parse(fs.readFileSync(h.saved[0], "utf-8"));
     expect(written["persona-models"]["default"].provider).toBe("ollama");
   });
@@ -714,8 +725,8 @@ describe("ConfigTuiComponent — picker cursor (Slice 4c task #15)", () => {
     c2.handleInput("\x1b[B"); // ↓ in layer picker (project → global)
     c2.handleInput("\r");     // confirm
     expect(h.saved.length).toBe(1);
-    expect(h.saved[0]).toContain("agent/forge-cli/config.json");
-    expect(h.saved[0]).not.toContain(".pi/forge-cli/config.json");
+    expect(h.saved[0]).toBe(path.join(agentDir, "config.json"));
+    expect(h.saved[0]).not.toContain(path.join(cwd, ".pi", "forge-cli"));
   });
 
   it("cursor stays clamped at upper bound (can't overshoot)", () => {
@@ -748,8 +759,9 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
     comp.handleInput("a"); // tier-menu → advanced-menu
     comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\r"); // picker: confirm 'default'
-    comp.handleInput("a");
-    comp.handleInput("\r");
+    comp.handleInput("a"); // type into search → filters to "anthropic"
+    comp.handleInput("\r"); // select filtered provider (anthropic)
+    comp.handleInput("\r"); // pick first model
     comp.handleInput("p"); // commit to project layer
     expect(h.saved.length).toBe(1);
 
@@ -774,10 +786,11 @@ describe("ConfigTuiComponent — save clears dirty + lastSaved banner (Slice 4c 
       onSaved,
       onError,
     });
-    comp.handleInput("a");
+    comp.handleInput("a"); // tier-menu → advanced-menu
     comp.handleInput("3"); // advanced-menu → persona-picker
     comp.handleInput("\r"); // picker: confirm first entry
-    comp.handleInput("a"); // anthropic shortcut in persona-editor
+    comp.handleInput("a"); // type into search → filters to "anthropic"
+    comp.handleInput("\r"); // select filtered provider (anthropic)
     comp.handleInput("\r"); // pick first model
     comp.handleInput("p"); // project layer
     expect(h.saved.length).toBe(1);
@@ -1068,7 +1081,8 @@ describe("ConfigTuiComponent — persona picker", () => {
     comp.handleInput("\x1b[B"); // ↓ → architect
     comp.handleInput("\x1b[B"); // ↓ → engineer
     comp.handleInput("\r"); // confirm engineer
-    comp.handleInput("a"); // anthropic
+    comp.handleInput("a"); // type into search → filters to "anthropic"
+    comp.handleInput("\r"); // select filtered provider (anthropic)
     comp.handleInput("\r"); // first model
     comp.handleInput("p"); // project layer
     expect(h.saved.length).toBe(1);

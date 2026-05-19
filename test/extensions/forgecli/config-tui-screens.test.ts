@@ -159,13 +159,14 @@ describe("renderPersonaEditor — pick-model", () => {
     expect(out).not.toContain("glm-5.1:cloud");
   });
 
-  it("renders 'no models available' when the provider has none", () => {
+  it("renders 'no matching models' when the provider has none", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-persona-edit", persona: "engineer" });
     s = reducer(s, { kind: "set-persona-provider", provider: "openrouter" });
     const out = renderPersonaEditor(s, WIDTH, mockTheme).join("\n");
-    expect(out).toContain("No models available");
-    expect(out).toContain("pi /login openrouter");
+    // Post search-feature rollout: empty-state copy reads
+    // "No matching models." instead of the legacy "No models available".
+    expect(out).toContain("No matching models");
   });
 });
 
@@ -181,7 +182,8 @@ describe("renderPersonaEditor — pick-layer", () => {
     expect(out).toContain("Project");
     expect(out).toContain("Global");
     expect(out).toContain("/home/x/proj/.pi/forge-cli/config.json");
-    expect(out).toContain("~/.pi/agent/forge-cli/config.json");
+    // Global path moved to ~/.pi/forge-cli/config.json post-v0.10.0.
+    expect(out).toContain("/forge-cli/config.json");
   });
 });
 
@@ -421,14 +423,14 @@ describe("renderOverrideEditor (Slice 4c — Screen 5)", () => {
     expect(out).not.toContain("gpt-4o");
   });
 
-  it("pick-model shows 'No models available' when provider has none", () => {
+  it("pick-model shows 'No matching models' when provider has none", () => {
     let s = makeState();
     s = reducer(s, { kind: "begin-override-edit", pipeline: "default", phaseRole: "plan" });
     s = reducer(s, { kind: "set-override-step", step: "pick-provider" });
     s = reducer(s, { kind: "set-override-provider", provider: "openrouter" });
     const out = renderOverrideEditor(s, WIDTH, mockTheme).join("\n");
-    expect(out).toContain("No models available");
-    expect(out).toContain("pi /login openrouter");
+    // Post search-feature rollout: empty-state copy reads "No matching models."
+    expect(out).toContain("No matching models");
   });
 });
 

@@ -38,6 +38,19 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
       return state;
     }
 
+    case "set-search": {
+      const top = state.view[state.view.length - 1];
+      if (
+        top.kind === "tier-picker" ||
+        top.kind === "persona-editor" ||
+        top.kind === "override-editor"
+      ) {
+        const replaced: View = { ...top, searchQuery: action.query, cursor: 0 };
+        return { ...state, view: [...state.view.slice(0, -1), replaced] };
+      }
+      return state;
+    }
+
     case "begin-persona-edit": {
       const editor: View = {
         kind: "persona-editor",
@@ -46,6 +59,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         provider: undefined,
         model: undefined,
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view, editor] };
     }
@@ -59,6 +73,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         model: undefined,
         step: "pick-model",
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
@@ -71,6 +86,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         model: action.model,
         step: "pick-layer",
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
@@ -84,6 +100,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         step: "pick-provider",
         provider: undefined,
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view, tierPicker] };
     }
@@ -96,6 +113,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         provider: action.provider,
         step: "pick-model",
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
@@ -148,6 +166,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         step: "pick-type",
         provider: undefined,
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view, editor] };
     }
@@ -155,7 +174,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
     case "set-override-step": {
       const top = state.view[state.view.length - 1];
       if (top.kind !== "override-editor") return state;
-      const updated: View = { ...top, step: action.step, cursor: 0 };
+      const updated: View = { ...top, step: action.step, cursor: 0, searchQuery: "" };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
 
@@ -167,6 +186,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
         provider: action.provider,
         step: "pick-model",
         cursor: 0,
+        searchQuery: "",
       };
       return { ...state, view: [...state.view.slice(0, -1), updated] };
     }
