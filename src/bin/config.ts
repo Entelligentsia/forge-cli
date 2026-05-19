@@ -391,6 +391,12 @@ export function runConfigDispatch(
 
   write(`forge config dispatch — cwd=${cwd}`);
   write("");
+  write("Note: this trace uses the baseline ModelRegistry built from AuthStorage");
+  write("only — it does NOT see providers that get registered by extensions at");
+  write("session start (ollama-cloud, openrouter, …). Inside a live forge session");
+  write("runForgeSubagent now uses ctx.modelRegistry, which does see them. A MISS");
+  write("here means the model is extension-registered, not that dispatch will fail.");
+  write("");
   write(`── run-task PHASES (pipeline: ${taskPipeline}) ─────────────────────────────`);
   write("phase         persona          requested                            registry.find");
   write("─────         ───────          ─────────                            ─────────────");

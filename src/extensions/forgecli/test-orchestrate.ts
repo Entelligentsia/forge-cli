@@ -126,6 +126,7 @@ export function registerTestOrchestrate(pi: ExtensionAPI): void {
 					task: parsed.text,
 					cwd,
 					signal: ac.signal,
+					modelRegistry: ctx.modelRegistry,
 					onEvent: (event) => {
 						switch (event.type) {
 							case "agent_start":

@@ -849,6 +849,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				cacheSessionId: typeof bugRecordBefore?.sprintId === "string" ? `forge:${bugRecordBefore.sprintId}` : `forge:bug:${bugId}`,
 				onEvent: onSubagentEvent,
 				requestedModel: modelResolution.model,
+				modelRegistry: ctx.modelRegistry,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };

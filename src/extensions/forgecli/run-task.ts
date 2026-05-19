@@ -807,6 +807,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
 				onEvent: wrappedOnEvent,
 				requestedModel: modelResolution.model,
+				modelRegistry: ctx.modelRegistry,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };

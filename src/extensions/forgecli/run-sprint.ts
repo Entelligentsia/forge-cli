@@ -260,6 +260,7 @@ async function dispatchSprintCeremony(params: {
 			cacheSessionId: `forge:${sprintId}`,
 			onEvent: observer.onEvent,
 			requestedModel: ceremonyModelLookup.model,
+			modelRegistry: ctx.modelRegistry,
 		});
 		model    = result.model;
 		provider = result.provider;

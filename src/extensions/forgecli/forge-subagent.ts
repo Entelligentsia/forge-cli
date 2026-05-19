@@ -27,6 +27,7 @@ import {
 	parseFrontmatter,
 	SessionManager,
 	type AgentSessionEvent,
+	type ModelRegistry as ModelRegistryType,
 } from "@earendil-works/pi-coding-agent";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
@@ -85,6 +86,21 @@ export interface RunSubagentOptions {
 	 * (not this field) — IL10 emit path reads runtime telemetry, not the request.
 	 */
 	requestedModel?: { provider: string; model: string };
+	/**
+	 * FORGE-BUG-001 followup. The host pi session's ModelRegistry — the only
+	 * registry that contains extension-registered providers (e.g.
+	 * `ollama-cloud`). When omitted, runForgeSubagent builds a fresh
+	 * `ModelRegistry.create(AuthStorage.create())` which only sees the
+	 * baseline providers wired up at process start, and every per-persona
+	 * `setModel` call will MISS — silently falling back to pi's current
+	 * model (typically Anthropic). Callers running inside an extension
+	 * command context MUST pass `ctx.modelRegistry` here.
+	 *
+	 * The same registry is used both for `registry.find(...)` (so the
+	 * routing decision sees the right providers) and as the subagent
+	 * session's registry (so the spawned agent can resolve the model id).
+	 */
+	modelRegistry?: ModelRegistryType;
 	onEvent?: (event: AgentSessionEvent) => void;
 	/**
 	 * Optional tag included in the auto-exported transcript filename for
@@ -210,7 +226,15 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	await loader.reload();
 
 	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
+	// Prefer the host session's ModelRegistry — it carries extension-registered
+	// providers (ollama-cloud, openrouter, etc.). Without it, the freshly
+	// created registry would miss every per-persona model and setModel below
+	// would silently fall back to pi's current model. See FORGE-BUG-001 +
+	// the modelRegistry doc on RunSubagentOptions.
+	const modelRegistry: ModelRegistryType =
+		opts.modelRegistry ?? ModelRegistry.create(authStorage);
+	// Refresh in case providers were registered after the session started.
+	try { modelRegistry.refresh?.(); } catch { /* ignore */ }
 
 	const { session } = await createAgentSession({
 		sessionManager: SessionManager.inMemory(),
