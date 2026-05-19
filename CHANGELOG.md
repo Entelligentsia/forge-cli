@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-05-19
+
+### Fixed
+- **`forge update` version detection** — the command previously queried
+  the Entelligentsia/forge-cli GitHub releases endpoint for the latest
+  version, which had stalled at `v0.1.0`. It now probes the npm
+  `dist-tags.latest` field (the same authoritative source the startup
+  update-check banner already used correctly). The changelog body is
+  still fetched from the tag-specific GitHub release URL; if no release
+  exists for the tag, the notes section is shown as empty rather than
+  failing the upgrade.
+- **`forge update` error message** — corrected two user-facing strings
+  that blamed a GitHub outage when the npm registry probe fails.
+
 ## [0.9.1] — 2026-05-18
 
 ### Changed
