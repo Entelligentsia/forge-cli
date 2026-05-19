@@ -44,7 +44,7 @@ import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earend
 
 import { getInputRouter } from "./input-router.js";
 import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
-import { fmtTokenFooter } from "./viewport-renderer.js";
+import { fmtModelAndTokenFooter, fmtModelLabel, fmtTokenFooter } from "./viewport-renderer.js";
 import { paintFooterLine, paintTailLine } from "./viewport-theme.js";
 
 const WIDGET_KEY = "forge:thread-switcher";
@@ -88,7 +88,10 @@ class TailViewComponent implements Component {
 		const lines = this.registry.getTailLines(this.taskId, this.phaseRole);
 		const session = this.registry.getSession(this.taskId);
 		const phase = session?.phases.find((p) => p.role === this.phaseRole);
-		const footerText = fmtTokenFooter(phase?.usage);
+		const footerText = fmtModelAndTokenFooter(
+			phase ? { provider: phase.provider, model: phase.model } : undefined,
+			phase?.usage,
+		);
 
 		const bodyLines = lines.length === 0
 			? [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)]
@@ -130,6 +133,14 @@ class ViewportFooterComponent implements Component {
 	constructor(
 		private readonly registry: SessionRegistry,
 		private readonly theme: Theme,
+		/**
+		 * Returns the parent pi session's current (provider, model) — the
+		 * "outer orchestrator" model. Caller closes over ExtensionContext
+		 * and is responsible for guarding stale-ctx access; return undefined
+		 * on failure or when no model is set. When undefined, the footer
+		 * just shows `Σ ↑X ↓Y`.
+		 */
+		private readonly getOrchestratorModel?: () => { provider?: string; model?: string } | undefined,
 	) {
 		const onChange = () => this.invalidationCb?.();
 		registry.on("change", onChange);
@@ -143,9 +154,16 @@ class ViewportFooterComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		const text = fmtTokenFooter(this.registry.getAggregateUsage());
-		if (!text) return []; // cold-start: render nothing rather than blank row.
-		return [paintFooterLine(`Σ ${text}`, width, this.theme)];
+		const tokens = fmtTokenFooter(this.registry.getAggregateUsage());
+		const orchModel = fmtModelLabel(this.getOrchestratorModel?.());
+		// Cold-start: hide the row entirely (no model + no usage) so the
+		// editor area doesn't carry a permanent blank line. As soon as we
+		// know the orchestrator model OR have observed any usage, render.
+		if (!tokens && !orchModel) return [];
+		const left = orchModel ? `⌂ ${orchModel}` : "";
+		const right = tokens ? `Σ ${tokens}` : "";
+		const text = left && right ? `${left}  ${right}` : (left || right);
+		return [paintFooterLine(text, width, this.theme)];
 	}
 
 	invalidate(): void {
@@ -525,7 +543,19 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			ctx.ui.setWidget(
 				FOOTER_WIDGET_KEY,
 				(tui, theme) => {
-					const footer = new ViewportFooterComponent(registry, theme);
+					// Guard against stale-ctx access after session replacement
+					// (newSession / fork / switchSession / reload) — touching
+					// ctx.model on a stale ctx throws and would crash the row.
+					const getOrchestratorModel = (): { provider?: string; model?: string } | undefined => {
+						try {
+							const m = ctx.model;
+							if (!m) return undefined;
+							return { provider: m.provider, model: m.id };
+						} catch {
+							return undefined;
+						}
+					};
+					const footer = new ViewportFooterComponent(registry, theme, getOrchestratorModel);
 					footer.setInvalidationCallback(() => tui.requestRender());
 					return footer;
 				},

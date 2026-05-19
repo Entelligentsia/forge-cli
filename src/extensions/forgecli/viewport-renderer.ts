@@ -207,6 +207,34 @@ export function fmtTokenFooter(usage: UsageDelta | undefined): string {
 	return `↑${humanTokens(usage.input)} ↓${humanTokens(usage.output)}${cache}`;
 }
 
+/**
+ * Compact `(provider) model` label used to annotate token footers so users
+ * can see which model a phase ran with. Returns "" when neither field is
+ * populated.
+ */
+export function fmtModelLabel(info: { provider?: string; model?: string } | undefined): string {
+	if (!info) return "";
+	const { provider, model } = info;
+	if (!provider && !model) return "";
+	if (provider && model) return `(${provider}) ${model}`;
+	return provider ?? model ?? "";
+}
+
+/**
+ * Combine a model label with a token footer, separated by ` · `. Either
+ * half may be empty — the separator is only inserted when both halves are
+ * present. Returns "" when both are empty.
+ */
+export function fmtModelAndTokenFooter(
+	info: { provider?: string; model?: string } | undefined,
+	usage: UsageDelta | undefined,
+): string {
+	const left = fmtModelLabel(info);
+	const right = fmtTokenFooter(usage);
+	if (left && right) return `${left} · ${right}`;
+	return left || right;
+}
+
 function fmtWall(seconds: number): string {
 	if (seconds < 60) return `${seconds}s`;
 	const m = Math.floor(seconds / 60);

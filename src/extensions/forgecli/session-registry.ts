@@ -51,6 +51,15 @@ export interface PhaseSummary {
 		output: number;
 		cacheRead: number;
 	};
+	/**
+	 * Provider + model id observed on the most recent assistant turn of this
+	 * phase. Captured by viewport-events on every turn_end so the tail-view
+	 * footer can show e.g. `ollama-cloud/glm-5.1 · ↑1.2k ↓340`. Lets users
+	 * confirm at a glance which model a phase's subagent actually ran with,
+	 * instead of inferring it from config files or stderr.
+	 */
+	model?: string;
+	provider?: string;
 }
 
 export interface ToolEventRecord {
@@ -327,6 +336,27 @@ export class SessionRegistry extends EventEmitter {
 		if (s) s.updatedAt = Date.now();
 		// "tail" → TailViewComponent re-renders the per-phase footer.
 		// "change" → ChipStripComponent re-renders the aggregate Σ meter.
+		this.emit("tail", { taskId, phaseRole });
+		this.emit("change", taskId);
+	}
+
+	setPhaseModel(
+		taskId: string,
+		phaseRole: string,
+		modelInfo: { provider?: string; model?: string },
+	): void {
+		const p = this.findPhase(taskId, phaseRole);
+		if (!p) return;
+		// Only emit when the value actually changes — turn_end fires every
+		// turn and the (provider, model) is stable across the phase, so this
+		// keeps the tail re-render fan-out quiet.
+		const nextProvider = modelInfo.provider ?? p.provider;
+		const nextModel = modelInfo.model ?? p.model;
+		if (nextProvider === p.provider && nextModel === p.model) return;
+		p.provider = nextProvider;
+		p.model = nextModel;
+		const s = this.sessions.get(taskId);
+		if (s) s.updatedAt = Date.now();
 		this.emit("tail", { taskId, phaseRole });
 		this.emit("change", taskId);
 	}

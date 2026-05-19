@@ -154,6 +154,17 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				state.cumUsage.cacheRead += delta.cacheRead;
 				registry.setPhaseUsage(sessionId, phaseRole, state.cumUsage);
 
+				// Capture which (provider, model) actually served this turn so
+				// the per-phase tail-view footer can display it. Cheap; the
+				// registry no-ops when the value hasn't changed.
+				const msg = e.message as { provider?: string; model?: string } | undefined;
+				if (msg && (msg.provider || msg.model)) {
+					registry.setPhaseModel(sessionId, phaseRole, {
+						provider: msg.provider,
+						model: msg.model,
+					});
+				}
+
 				const closingBodies: string[] = [];
 				const thinking = extractThinkingOneLiner(e.message as never);
 				if (thinking) closingBodies.push(`✱ ${thinking}`);
