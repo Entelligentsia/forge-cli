@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-05-19
+
+### Changed
+- **Vendor-pi bumped to upstream 0.75.3** — weekly upstream sync from
+  earendil-works/pi @ 29b3417a. coding-agent vendored as
+  `0.75.3-forge.1` with the three forge-owned patches reapplied
+  (PI_SKIP_PACKAGE_UPDATE_CHECK, PI_SKIP_CHANGELOG, pre-release strip
+  in changelog.ts).
+- **coding-agent dep normalized to `file:` ref** — eliminates the
+  registry lookup that fails for `-forge.N` versions that are never
+  published upstream.
+
 ## [0.9.2] — 2026-05-19
 
 ### Fixed
