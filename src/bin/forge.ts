@@ -116,87 +116,101 @@ Slash commands (inside a Forge project):
 // Main
 // ---------------------------------------------------------------------------
 
-const parsed = parseForgeArgv(process.argv.slice(2));
+// Wrapped in an async IIFE rather than using top-level await.
+// Why: subcommands like `forge update` block on an interactive [y/N]
+// readline prompt for arbitrarily long. Node v22+ emits a
+// "Detected unsettled top-level await" warning when a top-level await
+// has been pending past ~10s with an idle-looking event loop. Pushing
+// the await one frame down into a regular async function silences it
+// without changing behaviour.
+async function run(): Promise<void> {
+	const parsed = parseForgeArgv(process.argv.slice(2));
 
-if (isParseError(parsed)) {
-	process.stderr.write(`${parsed.error}\n`);
-	process.exit(1);
-}
-
-if (parsed.forgeAction === "version") {
-	await printVersion();
-	process.exit(0);
-}
-
-if (parsed.forgeAction === "help") {
-	printHelp();
-	// Also forward --help to pi so the pi help section is shown
-	await main(["--help"], { extensionFactories: [forgecli] });
-	process.exit(0);
-}
-
-if (parsed.forgeAction === "doctor") {
-	const pkg = readForgeCliPkg();
-	const exitCode = await runDoctor(parsed.subcommandArgs ?? [], {
-		forgeCli: pkg.version ?? "unknown",
-		forgePlugin: pkg.forge?.bundledVersion ?? "unknown",
-		pi: await readPiVersion(),
-	});
-	process.exit(exitCode);
-}
-
-if (parsed.forgeAction === "update") {
-	const pkg = readForgeCliPkg();
-	const exitCode = await runUpdate(parsed.subcommandArgs ?? [], { forgeCli: pkg.version ?? "unknown" });
-	process.exit(exitCode);
-}
-
-if (parsed.forgeAction === "config") {
-	const exitCode = await runConfig(parsed.subcommandArgs ?? []);
-	process.exit(exitCode);
-}
-
-// Apply forge env overrides
-Object.assign(process.env, parsed.env);
-
-applyForgeOwnedEnvDefaults();
-
-// Default prompt-cache retention to "long" for all Forge sessions.
-//
-// Rationale: Forge subagent phases (plan, review_plan, implement, review_code,
-// approve, commit) routinely run ~10 minutes per phase, and a sprint chains
-// 4–8 such phases per task across the same persona/system-prompt prefix.
-// Anthropic's default 5-minute cache TTL expires mid-phase; OpenAI's default
-// in-memory cache evicts between phases. "long" gives Anthropic a 1h TTL and
-// OpenAI 24h retention — comfortably covering a phase and the gap to the next.
-//
-// Cost: on Anthropic, 1h cache writes cost 25% more than 5m writes — but a
-// single subsequent cache read (90% cheaper than fresh input) repays that
-// premium ~3.6×, and every Forge phase reads the same prefix many times. On
-// OpenAI, 24h retention is free. On proxies/compat backends, pi-ai ignores
-// this env var, so this default is safe everywhere.
-//
-// Users who want the upstream pi-ai default keep an explicit value:
-//   PI_CACHE_RETENTION=short forge ...
-if (!process.env.PI_CACHE_RETENTION) {
-	process.env.PI_CACHE_RETENTION = "long";
-}
-
-// Fast-path subcommand: spawn the bundled cjs tool directly. This skips
-// the entire pi/agent boot and turns 26s cold-starts into <100ms shells.
-if (parsed.forgeAction === "subcommand" && parsed.subcommandTool) {
-	const toolPath = path.resolve(__dirname, "..", "forge-payload", "tools", parsed.subcommandTool);
-	if (!fs.existsSync(toolPath)) {
-		process.stderr.write(
-			`forge: fast-path tool not found at ${toolPath}. Bundle may be corrupt — try \`forge --version\` and reinstall.\n`,
-		);
+	if (isParseError(parsed)) {
+		process.stderr.write(`${parsed.error}\n`);
 		process.exit(1);
 	}
-	const result = spawnSync(process.execPath, [toolPath, ...(parsed.subcommandArgs ?? [])], {
-		stdio: "inherit",
-	});
-	process.exit(result.status ?? 1);
+
+	if (parsed.forgeAction === "version") {
+		await printVersion();
+		process.exit(0);
+	}
+
+	if (parsed.forgeAction === "help") {
+		printHelp();
+		// Also forward --help to pi so the pi help section is shown
+		await main(["--help"], { extensionFactories: [forgecli] });
+		process.exit(0);
+	}
+
+	if (parsed.forgeAction === "doctor") {
+		const pkg = readForgeCliPkg();
+		const exitCode = await runDoctor(parsed.subcommandArgs ?? [], {
+			forgeCli: pkg.version ?? "unknown",
+			forgePlugin: pkg.forge?.bundledVersion ?? "unknown",
+			pi: await readPiVersion(),
+		});
+		process.exit(exitCode);
+	}
+
+	if (parsed.forgeAction === "update") {
+		const pkg = readForgeCliPkg();
+		const exitCode = await runUpdate(parsed.subcommandArgs ?? [], { forgeCli: pkg.version ?? "unknown" });
+		process.exit(exitCode);
+	}
+
+	if (parsed.forgeAction === "config") {
+		const exitCode = await runConfig(parsed.subcommandArgs ?? []);
+		process.exit(exitCode);
+	}
+
+	// Apply forge env overrides
+	Object.assign(process.env, parsed.env);
+
+	applyForgeOwnedEnvDefaults();
+
+	// Default prompt-cache retention to "long" for all Forge sessions.
+	//
+	// Rationale: Forge subagent phases (plan, review_plan, implement, review_code,
+	// approve, commit) routinely run ~10 minutes per phase, and a sprint chains
+	// 4–8 such phases per task across the same persona/system-prompt prefix.
+	// Anthropic's default 5-minute cache TTL expires mid-phase; OpenAI's default
+	// in-memory cache evicts between phases. "long" gives Anthropic a 1h TTL and
+	// OpenAI 24h retention — comfortably covering a phase and the gap to the next.
+	//
+	// Cost: on Anthropic, 1h cache writes cost 25% more than 5m writes — but a
+	// single subsequent cache read (90% cheaper than fresh input) repays that
+	// premium ~3.6×, and every Forge phase reads the same prefix many times. On
+	// OpenAI, 24h retention is free. On proxies/compat backends, pi-ai ignores
+	// this env var, so this default is safe everywhere.
+	//
+	// Users who want the upstream pi-ai default keep an explicit value:
+	//   PI_CACHE_RETENTION=short forge ...
+	if (!process.env.PI_CACHE_RETENTION) {
+		process.env.PI_CACHE_RETENTION = "long";
+	}
+
+	// Fast-path subcommand: spawn the bundled cjs tool directly. This skips
+	// the entire pi/agent boot and turns 26s cold-starts into <100ms shells.
+	if (parsed.forgeAction === "subcommand" && parsed.subcommandTool) {
+		const toolPath = path.resolve(__dirname, "..", "forge-payload", "tools", parsed.subcommandTool);
+		if (!fs.existsSync(toolPath)) {
+			process.stderr.write(
+				`forge: fast-path tool not found at ${toolPath}. Bundle may be corrupt — try \`forge --version\` and reinstall.\n`,
+			);
+			process.exit(1);
+		}
+		const result = spawnSync(process.execPath, [toolPath, ...(parsed.subcommandArgs ?? [])], {
+			stdio: "inherit",
+		});
+		process.exit(result.status ?? 1);
+	}
+
+	// Delegate to pi
+	await main(parsed.piArgv, { extensionFactories: [forgecli] });
 }
 
-// Delegate to pi
-await main(parsed.piArgv, { extensionFactories: [forgecli] });
+run().catch((err) => {
+	process.stderr.write(`forge: fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+	process.exit(1);
+});

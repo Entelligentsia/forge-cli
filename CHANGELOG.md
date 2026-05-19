@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-05-19
+
+### Fixed
+- **`forge update` no longer emits "Detected unsettled top-level await"
+  warning** while blocked at the `[y/N]` upgrade prompt. The bin entry
+  point's subcommand dispatch is now wrapped in an async function
+  invoked from a non-awaited `.catch()` chain at module scope, so the
+  long-running interactive readline never sits at a top-level `await`.
+  Pre-existing behaviour bug since long-prompt subcommands shipped;
+  surfaced loudly on Node v22+.
+
 ## [0.9.3] — 2026-05-19
 
 ### Changed
