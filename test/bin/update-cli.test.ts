@@ -22,11 +22,16 @@ function makeNonGlobalResolver(): () => Promise<string | null> {
 type FetchLike = typeof fetch;
 
 function makeFetch(tag: string, body = ""): FetchLike {
-	return (() =>
-		Promise.resolve({
-			ok: true,
-			json: () => Promise.resolve({ tag_name: tag, body }),
-		} as Response)) as FetchLike;
+	// fetchChangelog makes two requests: npm for version, GitHub for body.
+	const version = tag.startsWith("v") ? tag.slice(1) : tag;
+	let calls = 0;
+	return (async () => {
+		calls++;
+		if (calls === 1) {
+			return { ok: true, json: async () => ({ "dist-tags": { latest: version } }) } as Response;
+		}
+		return { ok: true, json: async () => ({ body }) } as Response;
+	}) as FetchLike;
 }
 
 function makeFailFetch(): FetchLike {

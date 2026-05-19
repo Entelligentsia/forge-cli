@@ -6,6 +6,9 @@
 // execFile (argv array — no shell). On the next session_start after upgrade,
 // detect bundled-forge version drift and emit a one-shot project-migrations
 // prompt (Q7 detect+prompt; never auto-applies).
+//
+// Version detection uses the npm registry (authoritative); GitHub releases are
+// used only for the changelog body via a tag-specific URL.
 
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -17,7 +20,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const execFileAsync = promisify(execFile);
 
 const PKG_NAME = "@entelligentsia/forgecli";
-const CHANGELOG_URL = "https://api.github.com/repos/Entelligentsia/forge-cli/releases/latest";
+const NPM_DIST_TAGS_URL = "https://registry.npmjs.org/@entelligentsia/forgecli";
+function changelogTagUrl(version: string): string {
+	return `https://api.github.com/repos/Entelligentsia/forge-cli/releases/tags/v${version}`;
+}
 const PROBE_TIMEOUT_MS = 5000;
 const UPGRADE_TIMEOUT_MS = 120_000;
 const NPM_ROOT_TIMEOUT_MS = 5000;
@@ -65,25 +71,48 @@ export interface ChangelogResult {
 }
 
 export async function fetchChangelog(fetchImpl: typeof fetch): Promise<ChangelogResult | null> {
-	const ctl = new AbortController();
-	const timer = setTimeout(() => ctl.abort(), PROBE_TIMEOUT_MS);
+	// Step 1: get latest version from npm (authoritative — GitHub releases may lag).
+	const npmCtl = new AbortController();
+	const npmTimer = setTimeout(() => npmCtl.abort(), PROBE_TIMEOUT_MS);
+	let npmVersion: string | null = null;
 	try {
-		const res = await fetchImpl(CHANGELOG_URL, {
-			signal: ctl.signal,
+		const res = await fetchImpl(NPM_DIST_TAGS_URL, {
+			signal: npmCtl.signal,
+			headers: { Accept: "application/json" },
+		});
+		if (res.ok) {
+			const body = (await res.json()) as { "dist-tags"?: { latest?: unknown } };
+			const tag = body["dist-tags"]?.latest;
+			npmVersion = typeof tag === "string" ? tag : null;
+		}
+	} catch {
+		// fall through to null return
+	} finally {
+		clearTimeout(npmTimer);
+	}
+	if (!npmVersion) return null;
+	const version = npmVersion.startsWith("v") ? npmVersion.slice(1) : npmVersion;
+
+	// Step 2: fetch changelog body from the tag-specific GitHub release (optional).
+	const ghCtl = new AbortController();
+	const ghTimer = setTimeout(() => ghCtl.abort(), PROBE_TIMEOUT_MS);
+	let releaseBody = "";
+	try {
+		const res = await fetchImpl(changelogTagUrl(version), {
+			signal: ghCtl.signal,
 			headers: { Accept: "application/vnd.github+json" },
 		});
-		if (!res.ok) return null;
-		const body = (await res.json()) as { tag_name?: unknown; body?: unknown };
-		if (typeof body.tag_name !== "string") return null;
-		const tag = body.tag_name;
-		const version = tag.startsWith("v") ? tag.slice(1) : tag;
-		const text = typeof body.body === "string" ? body.body : "";
-		return { tag, version, body: text };
+		if (res.ok) {
+			const json = (await res.json()) as { body?: unknown };
+			if (typeof json.body === "string") releaseBody = json.body;
+		}
 	} catch {
-		return null;
+		// changelog body is optional — proceed with empty
 	} finally {
-		clearTimeout(timer);
+		clearTimeout(ghTimer);
 	}
+
+	return { tag: `v${version}`, version, body: releaseBody };
 }
 
 function parseTriple(v: string): [number, number, number] | null {
@@ -257,7 +286,7 @@ export function registerForgeUpdateCommand(pi: ExtensionAPI, opts: RegisterUpdat
 			ctx.ui.setStatus("forge:update", undefined);
 			if (!release) {
 				ctx.ui.notify(
-					"forge:update — could not reach github.com/Entelligentsia/forge-cli releases. " +
+					"forge:update — could not reach the npm registry to check for updates. " +
 						`Check your network and retry, or upgrade manually: npm i -g ${PKG_NAME}@latest`,
 					"error",
 				);
@@ -313,7 +342,8 @@ export const __test__ = {
 	writeDriftCache,
 	defaultCacheDir,
 	PKG_NAME,
-	CHANGELOG_URL,
+	NPM_DIST_TAGS_URL,
+	changelogTagUrl,
 	UPGRADE_TIMEOUT_MS,
 	NPM_ROOT_TIMEOUT_MS,
 	PROBE_TIMEOUT_MS,

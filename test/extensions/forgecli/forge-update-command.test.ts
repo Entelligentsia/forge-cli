@@ -169,22 +169,32 @@ describe("composeChangelogSummary", () => {
 });
 
 describe("fetchChangelog", () => {
-	it("returns version, tag, and body on a successful release fetch", async () => {
-		const f = vi.fn().mockResolvedValue(jsonRes({ tag_name: "v0.2.0", body: "notes" }));
+	it("returns version (from npm) and body (from GitHub tag) on success", async () => {
+		const f = vi.fn()
+			.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "0.2.0" } }))
+			.mockResolvedValueOnce(jsonRes({ body: "notes" }));
 		const out = await fetchChangelog(f as unknown as typeof fetch);
 		expect(out).toEqual({ tag: "v0.2.0", version: "0.2.0", body: "notes" });
 	});
 
-	it("returns null when the API responds non-ok", async () => {
+	it("returns null when the npm API responds non-ok", async () => {
 		const f = vi.fn().mockResolvedValue(notOk());
 		const out = await fetchChangelog(f as unknown as typeof fetch);
 		expect(out).toBeNull();
 	});
 
-	it("returns null when fetch rejects (network failure)", async () => {
+	it("returns null when npm fetch rejects (network failure)", async () => {
 		const f = vi.fn().mockRejectedValue(new Error("ENETUNREACH"));
 		const out = await fetchChangelog(f as unknown as typeof fetch);
 		expect(out).toBeNull();
+	});
+
+	it("succeeds with empty body when GitHub tag release is not found", async () => {
+		const f = vi.fn()
+			.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "0.2.0" } }))
+			.mockResolvedValueOnce(notOk());
+		const out = await fetchChangelog(f as unknown as typeof fetch);
+		expect(out).toEqual({ tag: "v0.2.0", version: "0.2.0", body: "" });
 	});
 });
 
@@ -203,16 +213,16 @@ describe("registerForgeUpdateCommand handler", () => {
 		} = {},
 	) {
 		const { pi, commands } = makePi();
-		const fetchImpl = vi.fn().mockResolvedValue(
-			overrides.fetchOk === false
-				? notOk()
-				: overrides.releaseTag === null
-					? notOk()
-					: jsonRes({
-							tag_name: overrides.releaseTag ?? "v0.2.0",
-							body: overrides.releaseBody ?? "release notes",
-						}),
-		);
+		// fetchChangelog makes two requests: npm (version) then GitHub (body).
+		// Fail the npm call when fetchOk:false or releaseTag:null — that's enough to short-circuit.
+		const npmFails = overrides.fetchOk === false || overrides.releaseTag === null;
+		const version = (overrides.releaseTag ?? "v0.2.0").replace(/^v/, "");
+		const fetchImpl = npmFails
+			? vi.fn().mockResolvedValue(notOk())
+			: vi.fn()
+					.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: version } }))
+					.mockResolvedValueOnce(jsonRes({ body: overrides.releaseBody ?? "release notes" }))
+					.mockResolvedValue(notOk());
 		const upgradeRunner = vi.fn().mockResolvedValue({
 			ok: overrides.upgradeOk !== false,
 			stdout: "added 1 package",
@@ -257,7 +267,7 @@ describe("registerForgeUpdateCommand handler", () => {
 	it("walks the full happy path: probe → confirm → upgrade → success notify", async () => {
 		const { cmd, ctx, fetchImpl, upgradeRunner } = setup({ current: "0.1.0", releaseTag: "v0.2.0" });
 		await cmd.handler("", ctx);
-		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(fetchImpl).toHaveBeenCalledTimes(2); // npm (version) + GitHub (body)
 		expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
 		expect(upgradeRunner).toHaveBeenCalledWith("@entelligentsia/forgecli@0.2.0");
 		const lastNotify = ctx.ui.notify.mock.calls.at(-1)!;

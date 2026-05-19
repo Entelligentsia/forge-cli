@@ -114,7 +114,7 @@ export async function runUpdate(args: string[], opts: RunUpdateOptions): Promise
 
 	if (!release) {
 		process.stderr.write(
-			"forge update: could not reach github.com/Entelligentsia/forge-cli releases.\n" +
+			"forge update: could not reach the npm registry to check for updates.\n" +
 				`Check your network and retry, or upgrade manually: npm i -g ${PKG_NAME}@latest\n`,
 		);
 		return 1;
