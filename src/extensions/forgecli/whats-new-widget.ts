@@ -1,27 +1,30 @@
 // What's-New strip + detail widget.
 //
-// Mounts a single-row strip below the editor on session_start when the
-// running versions of pi / forge-plugin / forge-cli have advanced past
-// the last-seen baseline. UX mirrors thread-switcher.ts:
+// Startup behavior (post-FORGE-BUG-001 refactor): on session_start we emit
+// a one-line passive notify pointing the user at `/changelog` — we do NOT
+// auto-mount the interactive strip and we do NOT hook the input router.
+// The strip used to live below the editor for the entire session and steal
+// every ↓ key; users hated it.
+//
+// The interactive strip is now ONLY mounted in response to `/changelog`.
+// UX once mounted:
 //
 //   INACTIVE (default): "what's new ─ pi 30 · forge-plugin 8 · forge-cli 2  ↓ to view"
-//   ACTIVE   (↓):       "what's new ─ ▸● pi 30   ○ forge-plugin 8   ○ forge-cli 2  ←→ · enter · esc dismiss"
+//   ACTIVE   (↓):       "what's new ─ ▸● pi 30   ○ forge-plugin 8   ○ forge-cli 2  ←→ · enter · esc hide · d forget"
 //
-//   Enter on a chip → setOutputSource(WhatsNewDetailComponent) showing
-//   that component's full changelog between previous-seen and current.
-//   Esc → setOutputSource(null), strip remains until user dismisses.
-//   Esc twice (or `d`) → dismissWhatsNew(): collapse prev baseline to
-//   seen so the strip stops auto-mounting and /whats-new returns empty.
+//   Enter on a chip → setOutputSource(WhatsNewDetailComponent).
+//   Esc → soft hide for this session (unmounts widget, drops input handler;
+//         /changelog cache is untouched, so /changelog still replays).
+//   d   → permanent forget (collapses prev baseline so /changelog returns
+//         "no recent updates" until the next version bump).
 //
-// Activation key (↓) only fires when the editor has no newlines, same
-// guard thread-switcher uses to avoid breaking multi-line nav.
+// Activation key (↓) requires an empty editor (no text at all), not just
+// "no newlines" — single-line text used to be enough and that was too
+// eager.
 //
-// Coexistence with thread-switcher: both register widgets at
-// `belowEditor` and both consume ↓ when active. In practice the
-// What's-New strip is short-lived (clears on first Esc/dismiss), and
-// auto-clears its summaries once the user has interacted; thread-switcher
-// only activates once a run-task session exists, which doesn't happen
-// during the startup-banner window.
+// Mount is idempotent: a second /changelog while the strip is already
+// mounted unregisters the prior input-router handler before re-registering,
+// so handlers don't stack.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -134,7 +137,9 @@ class WhatsNewStripComponent implements Component {
 		const bold = (s: string) => this.theme.bold(s);
 
 		const prefix = this.stripActive ? accent("what's new ─ ") : dim("what's new ─ ");
-		const hint = this.stripActive ? dim("  ←→ · enter · esc dismiss") : dim("  ↓ to view");
+		const hint = this.stripActive
+			? dim("  ←→ · enter · esc hide · d forget")
+			: dim("  ↓ to view (empty editor)");
 
 		const parts = this.summaries.map((s, i) => {
 			const focusedGlyph = this.focusedComponent === s.component ? "●" : "○";
@@ -175,28 +180,45 @@ function isEsc(d: string): boolean {
 // ── Mount ────────────────────────────────────────────────────────────────
 
 /**
- * Compute startup summaries and, if any, mount the strip widget. Marks
- * versions as seen via the standard cache so subsequent sessions won't
- * auto-mount unless a new bump occurs. Returns true when mounted.
+ * Compute startup summaries and, if any, emit a one-line passive notify
+ * pointing the user at `/changelog`. Marks versions as seen via the
+ * standard cache so subsequent sessions won't re-notify unless a new bump
+ * occurs. Returns true when a notify was emitted.
+ *
+ * Pre-FORGE-BUG-001 this mounted the interactive strip directly; that was
+ * removed because the strip captured the ↓ key for the whole session and
+ * the auto-mount happened before the user had any chance to opt in.
  */
 export async function mountWhatsNewWidgetOnStartup(
-	pi: ExtensionAPI,
+	_pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	rt: WhatsNewRuntime,
 ): Promise<boolean> {
 	const result = await computeAndPersistStartupPanel(rt);
 	if (!result || result.summaries.length === 0) return false;
-	mountStripWithSummaries(pi, ctx, rt, result.summaries);
+	const parts = result.summaries.map((s) => `${s.label} ${s.totalChanges}`).join(" · ");
+	try {
+		ctx.ui.notify(`forge: what's new — ${parts}.  Type /changelog to view.`, "info");
+	} catch {
+		/* stale ctx — non-fatal */
+	}
 	return true;
 }
 
 /**
- * Mount the strip directly with a pre-computed summary list. Used by the
- * `/whats-new` slash command to replay the panel without re-touching the
- * seen baseline.
+ * Module-level mount state — used to make `mountStripWithSummaries`
+ * idempotent. Calling /changelog twice used to stack input-router
+ * handlers; we now tear down the previous mount first.
+ */
+let currentUnregister: (() => void) | null = null;
+
+/**
+ * Mount the strip with a pre-computed summary list. Idempotent — a second
+ * call unregisters the prior handler and replaces the widget surface.
+ * Only `/changelog` calls this; startup notify does not.
  */
 export function mountStripWithSummaries(
-	pi: ExtensionAPI,
+	_pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	rt: WhatsNewRuntime,
 	summaries: ChangeSummary[],
@@ -204,6 +226,22 @@ export function mountStripWithSummaries(
 	let stripRef: WhatsNewStripComponent | undefined;
 	let tuiRef: TUI | undefined;
 	let detailRef: WhatsNewDetailComponent | undefined;
+
+	// FORGE-BUG-001: the captured ExtensionContext goes stale after pi's
+	// session replacement events. Touching ctx.ui after that throws.
+	const safeUi = <T>(fn: () => T): T | undefined => {
+		try {
+			return fn();
+		} catch {
+			return undefined;
+		}
+	};
+
+	// Idempotency: drop any prior input-router handler before re-registering.
+	if (currentUnregister) {
+		try { currentUnregister(); } catch { /* ignore */ }
+		currentUnregister = null;
+	}
 
 	try {
 		ctx.ui.setWidget(
@@ -228,7 +266,7 @@ export function mountStripWithSummaries(
 		stripRef?.setFocused(null);
 		detailRef?.dispose?.();
 		detailRef = undefined;
-		ctx.ui.setOutputSource(null);
+		safeUi(() => ctx.ui.setOutputSource(null));
 	};
 
 	const commitFocus = () => {
@@ -243,19 +281,36 @@ export function mountStripWithSummaries(
 			detailRef = new WhatsNewDetailComponent(lines);
 			if (tuiRef) detailRef.setInvalidationCallback(() => tuiRef?.requestRender());
 		}
-		ctx.ui.setOutputSource(detailRef);
+		if (detailRef) safeUi(() => ctx.ui.setOutputSource(detailRef!));
 	};
 
-	// Plan 16 Slice 4c: register via forge-input-router so that overlays
-	// (e.g. /forge:config) suppress the ↓ activator while mounted.
-	getInputRouter().register(
+	// Tear down the entire mount — used by Esc (hide for this session) and
+	// by `d` (permanent forget). Both unmount the widget surface and drop
+	// the input-router handler so ↓ stops being captured. The difference is
+	// whether dismissWhatsNew() is invoked to collapse the prev baseline.
+	const tearDown = () => {
+		setFocusToMain();
+		safeUi(() => ctx.ui.setWidget(WIDGET_KEY, undefined));
+		stripRef?.clearSummaries();
+		stripRef = undefined;
+		if (currentUnregister) {
+			try { currentUnregister(); } catch { /* ignore */ }
+			currentUnregister = null;
+		}
+	};
+
+	const unregister = getInputRouter().register(
 		(data) => {
 			if (!stripRef || !stripRef.hasContent()) return undefined;
 
 			if (!stripRef.getStripActive()) {
 				if (!isDownArrow(data)) return undefined;
-				const editorText = ctx.ui.getEditorText();
-				if (editorText.includes("\n")) return undefined;
+				const editorText = safeUi(() => ctx.ui.getEditorText());
+				if (editorText === undefined) return undefined; // stale ctx
+				// Stricter than the legacy "no newlines" check — only an
+				// empty editor activates the strip. Any in-progress text
+				// (single-line included) means ↓ belongs to the editor.
+				if (editorText !== "") return undefined;
 				stripRef.setStripActive(true);
 				return { consume: true };
 			}
@@ -277,19 +332,28 @@ export function mountStripWithSummaries(
 				return { consume: true };
 			}
 			if (isEsc(data)) {
-				stripRef.setStripActive(false);
-				setFocusToMain();
-				// Permanent dismiss: collapse prev baseline to seen so the strip
-				// stops auto-mounting AND /whats-new returns empty.
-				void dismissWhatsNew(rt)
-					.catch(() => undefined)
-					.then(() => stripRef?.clearSummaries());
+				// Soft hide for this session — strip disappears, ↓ is
+				// released, but the cache is untouched so /changelog can
+				// re-summon the same set.
+				tearDown();
+				return { consume: true };
+			}
+			if (isForgetKey(data)) {
+				// Permanent forget — collapse prev baseline so /changelog
+				// returns "no recent updates" until the next version bump.
+				void dismissWhatsNew(rt).catch(() => undefined);
+				tearDown();
 				return { consume: true };
 			}
 			return undefined;
 		},
 		{ name: "whats-new-strip", skipWhenOverlayActive: true },
 	);
+	currentUnregister = unregister;
+}
+
+function isForgetKey(d: string): boolean {
+	return d === "d" || d === "D";
 }
 
 /**
@@ -339,7 +403,7 @@ export function registerChangelogCommand(pi: ExtensionAPI, rt: WhatsNewRuntime):
 				// users have a record of the change counts, then mount the
 				// strip below the editor for arrow-key drill-down.
 				ctx.ui.notify(
-					`${renderSummaryPanel(summaries)}\n\n(Use the strip below the editor: ↓ to activate, ←→ to navigate, Enter to expand.)`,
+					`${renderSummaryPanel(summaries)}\n\n(Strip is below the editor — ↓ on an empty prompt to activate, ←→ to navigate, Enter to expand, Esc to hide, d to forget.)`,
 					"info",
 				);
 				mountStripWithSummaries(pi, ctx, rt, summaries);

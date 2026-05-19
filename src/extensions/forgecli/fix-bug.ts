@@ -19,7 +19,10 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+// ModelRegistry/AuthStorage no longer instantiated here — use ctx.modelRegistry
+// so extension-registered providers (registered against the live session) are
+// visible to validateModelConfig. Creating a fresh registry here would miss
+// them and produce spurious MODEL_UNAVAILABLE warnings (FORGE-BUG-001).
 import { loadLayeredConfig } from "./config-layer.js";
 import { resolveModelForPhase } from "./model-resolver.js";
 import { validateModelConfig } from "./model-validator.js";
@@ -498,8 +501,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		const personaCatalogue = readPersonaDirBug(personasDir);
 		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
 		const pipelineCatalogue = readPipelineNamesBug(forgeCfgPath);
-		const modelRegistry = ModelRegistry.create(AuthStorage.create());
-		const availableModels = modelRegistry.getAvailable?.() ?? [];
+		const availableModels = ctx.modelRegistry?.getAvailable?.() ?? [];
 		const strict = process.env.FORGE_STRICT_MODELS === "1";
 
 		const { errors, warnings } = validateModelConfig(

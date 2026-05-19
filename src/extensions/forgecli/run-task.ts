@@ -18,7 +18,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+// ModelRegistry/AuthStorage no longer instantiated here — see fix-bug.ts note
+// (FORGE-BUG-001). Use ctx.modelRegistry so session-registered providers are
+// honored by validateModelConfig.
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
@@ -535,8 +537,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
 		const pipelineCatalogue = readPipelineNames(forgeCfgPath);
 
-		const modelRegistry = ModelRegistry.create(AuthStorage.create());
-		const availableModels = modelRegistry.getAvailable?.() ?? [];
+		const availableModels = ctx.modelRegistry?.getAvailable?.() ?? [];
 		const strict = process.env.FORGE_STRICT_MODELS === "1";
 
 		const { errors, warnings } = validateModelConfig(
