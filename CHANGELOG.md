@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Config TUI now uses the running session's `ModelRegistry`** for provider-aware
+  model discovery instead of creating a fresh registry. This surfaces
+  extension-registered providers (e.g. `ollama-cloud`) in the TUI's model list.
+
 ## [0.10.0] — 2026-05-19
 
 ### Changed
