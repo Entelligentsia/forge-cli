@@ -460,7 +460,7 @@ export function extractBugIdFromEvents(events: Array<{ toolName?: string; result
 
 // ── Bug pipeline result ──────────────────────────────────────────────────
 
-export type RunBugPipelineStatus = "completed" | "halted" | "escalated" | "failed";
+export type RunBugPipelineStatus = "completed" | "halted" | "escalated" | "failed" | "cancelled";
 
 export interface RunBugPipelineResult {
 	status: RunBugPipelineStatus;
@@ -487,6 +487,12 @@ export interface RunBugPipelineOptions {
 	preflightGate: string;
 	registry: ReturnType<typeof getSessionRegistry>;
 	resumeFromState?: RunBugState;
+	/**
+	 * Optional AbortSignal from SessionRegistry. When provided, the pipeline
+	 * checks signal.aborted between phases and passes the signal to
+	 * runForgeSubagent so in-flight subagents can be aborted.
+	 */
+	signal?: AbortSignal;
 }
 
 const STATUS_KEY = "forge:fix-bug";
@@ -548,6 +554,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	}
 
 	while (currentPhaseIndex < BUG_PHASES.length) {
+		// ── Between-phase cancellation gate ────────────────────────────
+		if (opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} cancelled by user.`, "info");
+			registry.completePhase(bugId, BUG_PHASES[currentPhaseIndex - 1]?.role ?? "unknown", "cancelled");
+			registry.confirmCancelled(bugId);
+			deleteBugState(cwd, bugId);
+			return { status: "cancelled", lastPhaseIndex: Math.max(0, currentPhaseIndex - 1), iterationCounts };
+		}
+
 		const phase = BUG_PHASES[currentPhaseIndex];
 		if (!phase) {
 			ctx.ui.notify(`× forge:fix-bug — invalid phase index ${currentPhaseIndex}`, "error");
@@ -875,6 +890,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				onEvent: onSubagentEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
+				signal: opts.signal,  // ← wire AbortSignal for cancellation
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -910,6 +926,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				savedAt: new Date().toISOString(),
 			});
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero" };
+		}
+
+		// ── Post-subagent abort detection ─────────────────────────────────
+		if (result.stopReason === "aborted" || opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
+			registry.completePhase(bugId, phase.role, "cancelled");
+			registry.confirmCancelled(bugId);
+			deleteBugState(cwd, bugId);
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		// Capture model/provider from subagent result.
@@ -1420,6 +1445,9 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			registry.startSession(bugId);
 
 			// ── Delegate to pipeline ─────────────────────────────────────────
+			// ── Delegate to pipeline ─────────────────────────────────────────
+			const signal = registry.getAbortSignal(bugId);
+
 			const pipelineResult = await runBugPipeline({
 				bugId,
 				originalArg: isNewBug ? rawArg : undefined,
@@ -1431,6 +1459,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 				preflightGate,
 				registry,
 				resumeFromState,
+				signal,  // ← wire AbortSignal for cancellation
 			});
 
 			// ── Handle result ────────────────────────────────────────────────
@@ -1440,6 +1469,8 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 					`〇 forge:fix-bug — ${bugId} pipeline complete (${BUG_PHASES.length} phases).`,
 					"info",
 				);
+			} else if (pipelineResult.status === "cancelled") {
+				registry.completeSession(bugId, "cancelled");
 			} else {
 				registry.completeSession(bugId, "failed");
 			}

@@ -125,6 +125,10 @@ function paintInner(trimmed: string, theme: Theme): string {
 			return theme.fg("warning", trimmed);
 		case "◌": // compaction
 			return theme.fg("muted", trimmed);
+		case "⊘": // cancelled
+			return theme.fg("muted", trimmed);
+		case "⏳": // cancelling
+			return theme.fg("warning", trimmed);
 		default:
 			return trimmed;
 	}

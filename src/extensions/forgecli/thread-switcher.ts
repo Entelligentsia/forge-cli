@@ -43,7 +43,7 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { getInputRouter } from "./input-router.js";
-import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState } from "./session-registry.js";
+import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState, type SessionStatus } from "./session-registry.js";
 import { fmtModelAndTokenFooter, fmtModelLabel, fmtTokenFooter } from "./viewport-renderer.js";
 import { paintFooterLine, paintTailLine } from "./viewport-theme.js";
 
@@ -186,6 +186,9 @@ class ChipStripComponent implements Component {
 	private focusedChipId = "main";
 	private stripActive = false;
 	private invalidationCb?: () => void;
+	/** When non-null, the strip shows a cancellation confirmation prompt
+	 *  for this chip instead of the normal chip view. */
+	private cancelTarget: ChipTarget | null = null;
 
 	constructor(
 		private readonly registry: SessionRegistry,
@@ -258,9 +261,15 @@ class ChipStripComponent implements Component {
 
 	private chipGlyph(chip: ChipTarget): string {
 		if (chip.id === "main") return this.focusedChipId === "main" ? "●" : "○";
+		const session = this.activeSession();
 		const p = this.chipPhase(chip);
 		if (!p) return "·";
 		if (this.focusedChipId === chip.id) return "●";
+		// Cancelling/cancelled glyphs are session-level, not phase-level.
+		// Show ⏳ for any phase when the session is cancelling, ⊘ when cancelled.
+		if (session?.status === "cancelled" && p.status !== "completed" && p.status !== "failed") return "⊘";
+		if (session?.status === "cancelling" && p.status === "running") return "⏳";
+		if (p.status === "cancelled") return "⊘";
 		if (p.status === "completed") return "✓";
 		if (p.status === "failed") return "✗";
 		if (p.unreadWarnings > 0) return "◆";
@@ -277,7 +286,7 @@ class ChipStripComponent implements Component {
 	}
 
 	private spinnerFrame(session: SessionState): string {
-		if (session.status !== "running") return "";
+		if (session.status !== "running" && session.status !== "cancelling") return "";
 		const idx = Math.floor(Date.now() / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length;
 		return SPINNER_FRAMES[idx];
 	}
@@ -285,6 +294,11 @@ class ChipStripComponent implements Component {
 	render(width: number): string[] {
 		const session = this.activeSession();
 		if (!session) return []; // UX-B: hide entirely when no session.
+
+		// If user is confirming cancellation, show the confirmation prompt.
+		if (this.cancelTarget) {
+			return this.renderCancelPrompt(width, this.cancelTarget);
+		}
 
 		const chips = this.chips();
 		// Clamp cursor.
@@ -314,6 +328,13 @@ class ChipStripComponent implements Component {
 
 		const prefix = dim("threads ─ ");
 		const hint = dim("  ↓ to navigate");
+		// Show status-based text for non-running sessions
+		let statusPart = "";
+		if (session.status === "cancelling") {
+			statusPart = "  cancelling…";
+		} else if (session.status === "cancelled") {
+			statusPart = "  cancelled";
+		}
 		const spinPart = spin ? `  ${spin}` : "";
 		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
 
@@ -321,11 +342,12 @@ class ChipStripComponent implements Component {
 			visibleWidth(prefix) +
 			visibleWidth(chipsLine) +
 			visibleWidth(spinPart) +
+			visibleWidth(statusPart) +
 			visibleWidth(hint);
 		const previewBudget = Math.max(0, width - fixedWidth);
 		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
 
-		let line = `${prefix}${chipsLine}${spinPart}${preview}${hint}`;
+		let line = `${prefix}${chipsLine}${spinPart}${statusPart}${preview}${hint}`;
 		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
 		return [line];
 	}
@@ -346,7 +368,14 @@ class ChipStripComponent implements Component {
 		});
 
 		const prefix = accent("threads ─ ");
-		const hint = dim("  ←→ · enter · ↑ back · esc back+main");
+		const hint = dim("  ←→ · enter · ↑ back · esc back+main · x cancel");
+		// Show status-based text for non-running sessions
+		let statusPart = "";
+		if (session.status === "cancelling") {
+			statusPart = "  cancelling…";
+		} else if (session.status === "cancelled") {
+			statusPart = "  cancelled";
+		}
 		const spin = this.spinnerFrame(session);
 		const spinPart = spin ? `  ${spin}` : "";
 		const previewText = session.currentTurnPreview ? `  "${session.currentTurnPreview}"` : "";
@@ -357,12 +386,33 @@ class ChipStripComponent implements Component {
 			visibleWidth(prefix) +
 			visibleWidth(chipsJoined) +
 			visibleWidth(spinPart) +
+			visibleWidth(statusPart) +
 			visibleWidth(hint);
 		const previewBudget = Math.max(0, width - fixed);
 		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
 
-		let line = `${prefix}${chipsJoined}${spinPart}${preview}${hint}`;
+		let line = `${prefix}${chipsJoined}${spinPart}${statusPart}${preview}${hint}`;
 		// Hard cap as last-resort defence (visibleWidth is best-effort).
+		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
+		return [line];
+	}
+
+	/**
+	 * Render the cancellation confirmation prompt. Replaces the normal
+	 * chip strip when cancelTarget is non-null.
+	 *   ⚠ Cancel [taskId] → [phaseRole]?  y/n · esc to abort
+	 */
+	private renderCancelPrompt(width: number, target: ChipTarget): string[] {
+		const dim = (s: string) => this.theme.fg("dim", s);
+		const warning = (s: string) => this.theme.fg("warning", s);
+		const bold = (s: string) => this.theme.bold(s);
+
+		const taskLabel = target.taskId ?? target.label;
+		const phaseLabel = target.id === "main" ? "session" : target.label;
+		const prompt = warning(`⚠ Cancel ${bold(taskLabel)} → ${bold(phaseLabel)}?`);
+		const hints = dim("  y confirm · n/esc dismiss");
+
+		let line = `${prompt}${hints}`;
 		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
 		return [line];
 	}
@@ -379,6 +429,45 @@ class ChipStripComponent implements Component {
 		if (this.stripActive === active) return;
 		this.stripActive = active;
 		this.invalidationCb?.();
+	}
+
+	/** Initiate cancel confirmation for a chip. Sets cancelTarget so the
+	 *  next render shows the confirmation prompt. */
+	requestCancelChip(chip: ChipTarget): void {
+		this.cancelTarget = chip;
+		this.invalidationCb?.();
+	}
+
+	/** Confirm the pending cancellation (user pressed y). */
+	confirmCancel(): ChipTarget | null {
+		const target = this.cancelTarget;
+		this.cancelTarget = null;
+		this.invalidationCb?.();
+		return target;
+	}
+
+	/** Dismiss the cancel prompt (user pressed n/Esc). */
+	dismissCancel(): void {
+		this.cancelTarget = null;
+		this.invalidationCb?.();
+	}
+
+	/** Whether a cancel confirmation prompt is active. */
+	isCancelPromptActive(): boolean {
+		return this.cancelTarget !== null;
+	}
+
+	/** Check if the chip at the current cursor is a running phase that can be cancelled. */
+	isCursorCancellable(): boolean {
+		const chip = this.cursorChip();
+		if (!chip) return false;
+		if (chip.id === "main") {
+			const session = this.activeSession();
+			return (session?.status ?? "") === "running";
+		}
+		const p = this.chipPhase(chip);
+		if (!p) return false;
+		return p.status === "running";
 	}
 
 	getStripActive(): boolean {
@@ -456,6 +545,17 @@ function isEsc(d: string): boolean {
 	return d === "\x1b";
 }
 
+function isXKey(d: string): boolean {
+	// 'x' key press
+	return d === "x";
+}
+function isYKey(d: string): boolean {
+	return d === "y" || d === "Y";
+}
+function isNKey(d: string): boolean {
+	return d === "n" || d === "N";
+}
+
 // ── Registrar ───────────────────────────────────────────────────────────────
 
 /**
@@ -510,13 +610,15 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	let currentCtx: ExtensionContext | undefined;
 
 	function ensureSpinnerTimer(): void {
-		// Tick re-renders while any session is "running" so the spinner
-		// glyph animates and the preview text refreshes between user input.
+		// Tick re-renders while any session is "running" or "cancelling" so the
+		// spinner glyph animates and the preview text refreshes between user input.
 		// When all sessions are terminal, the timer stops itself.
 		if (spinnerTimer) return;
 		spinnerTimer = setInterval(() => {
-			const anyRunning = registry.listSessions().some((s) => s.status === "running");
-			if (!anyRunning) {
+			const anyActive = registry.listSessions().some(
+				(s) => s.status === "running" || s.status === "cancelling",
+			);
+			if (!anyActive) {
 				if (spinnerTimer) clearInterval(spinnerTimer);
 				spinnerTimer = undefined;
 				// One last render to settle the spinner into its final frame.
@@ -627,7 +729,39 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 						return { consume: true };
 					}
 
-					if (isLeftArrow(data)) {
+					// ── Cancel-confirmation handling (cancelTarget active) ────────
+				// When the strip shows a cancel prompt, y/Enter confirms,
+				// n/Esc dismisses. All other keys are consumed (no passthrough).
+				if (stripRef.isCancelPromptActive()) {
+					if (isYKey(data) || isEnter(data)) {
+						const target = stripRef.confirmCancel();
+						if (target?.taskId) {
+							registry.requestCancel(target.taskId);
+						}
+					stripRef.setStripActive(false);
+					setFocusToMain(live);
+					return { consume: true };
+					}
+				// Dismiss: n, Esc
+				if (isNKey(data) || isEsc(data)) {
+					stripRef.dismissCancel();
+					stripRef.setStripActive(false);
+					return { consume: true };
+					}
+				// Any other key in cancel-confirmation mode is consumed silently.
+				return { consume: true };
+				}
+
+				if (isXKey(data)) {
+					const chip = stripRef.cursorChip();
+					if (chip && stripRef.isCursorCancellable()) {
+						stripRef.requestCancelChip(chip);
+						return { consume: true };
+					}
+					return undefined;
+				}
+
+				if (isLeftArrow(data)) {
 						stripRef.moveCursor(-1);
 						return { consume: true };
 					}

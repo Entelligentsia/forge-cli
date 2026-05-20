@@ -219,9 +219,15 @@ export interface RunTaskPipelineOptions {
 	 * fixtures/sprint-fixture.ts.
 	 */
 	streamFnFactory?: (ctx: { kind: "task-phase"; persona: string; phase: string; taskId: string }) => import("@earendil-works/pi-agent-core").StreamFn | undefined;
+	/**
+	 * Optional AbortSignal from SessionRegistry. When provided, the pipeline
+	 * checks signal.aborted between phases and passes the signal to
+	 * runForgeSubagent so in-flight subagents can be aborted.
+	 */
+	signal?: AbortSignal;
 }
 
-export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed";
+export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed" | "cancelled";
 
 export interface RunTaskPipelineResult {
 	status: RunTaskPipelineStatus;
@@ -580,6 +586,15 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	const cacheSessionId = taskRecordAtStart?.sprintId ? `forge:${taskRecordAtStart.sprintId}` : `forge:task:${taskId}`;
 
 	while (currentPhaseIndex < PHASES.length) {
+		// ── Between-phase cancellation gate ────────────────────────────
+		if (opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:run-task — ${taskId} cancelled by user.`, "info");
+			registry.completePhase(taskId, PHASES[currentPhaseIndex - 1]?.role ?? "unknown", "cancelled");
+			registry.confirmCancelled(taskId);
+			deleteState(cwd, taskId);
+			return { status: "cancelled", lastPhaseIndex: Math.max(0, currentPhaseIndex - 1), iterationCounts };
+		}
+
 		const phase = PHASES[currentPhaseIndex];
 		if (!phase) {
 			ctx.ui.notify(`× forge:run-task — invalid phase index ${currentPhaseIndex}`, "error");
@@ -808,6 +823,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				onEvent: wrappedOnEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
+				signal: opts.signal,  // ← wire AbortSignal for cancellation
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -843,6 +859,18 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				savedAt: new Date().toISOString(),
 			});
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero" };
+		}
+
+		// ── Post-subagent abort detection ─────────────────────────────────
+		// If the abort signal fired during the subagent run, treat it as
+		// cancellation regardless of the exit code (subagent may have been
+		// mid-turn when aborted — exitCode could be 0 or 1).
+		if (result.stopReason === "aborted" || opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:run-task — ${taskId} phase ${phase.role} cancelled.`, "info");
+			registry.completePhase(taskId, phase.role, "cancelled");
+			registry.confirmCancelled(taskId);
+			deleteState(cwd, taskId);
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		// Capture model/provider from subagent result (REVIEW FIX #1).
@@ -1124,6 +1152,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			}
 
 			// ── Delegate to pipeline ─────────────────────────────────────────
+			const signal = registry.getAbortSignal(taskId);
 			const pipelineResult = await runTaskPipeline({
 				taskId,
 				cwd,
@@ -1133,6 +1162,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				preflightGate,
 				registry,
 				resumeFromState,
+				signal,
 			});
 
 			// ── Handle result ────────────────────────────────────────────────
@@ -1142,6 +1172,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 					`〇 forge:run-task — ${taskId} pipeline complete (${PHASES.length} phases).`,
 					"info",
 				);
+			} else if (pipelineResult.status === "cancelled") {
+				// confirmCancelled was already called by the pipeline, but
+				// completeSession("cancelled") ensures the session ends cleanly.
+				registry.completeSession(taskId, "cancelled");
 			} else {
 				registry.completeSession(taskId, "failed");
 			}

@@ -14,7 +14,7 @@ export interface PhaseSummary {
 	index: number;
 	startedAt: number;
 	endedAt?: number;
-	status: "running" | "completed" | "failed" | "skipped";
+	status: "running" | "completed" | "failed" | "skipped" | "cancelled";
 	turn: number;
 	toolCount: number;
 	errCount: number;
@@ -73,14 +73,22 @@ export interface ToolEventRecord {
 	result?: unknown;
 }
 
+export type SessionStatus = "running" | "cancelling" | "cancelled" | "completed" | "failed" | "escalated";
+
 export interface SessionState {
 	taskId: string;
 	startedAt: number;
 	updatedAt: number;
-	status: "running" | "completed" | "failed" | "escalated";
+	status: SessionStatus;
 	currentPhaseRole?: string;
 	phases: PhaseSummary[];
 	events: ToolEventRecord[];
+	/**
+	 * Per-session AbortController created at startSession, cleared on any
+	 * terminal transition. Fires abort() when requestCancel() is called.
+	 * Drives the cancellation lifecycle: running → cancelling → cancelled.
+	 */
+	abortController?: AbortController;
 	/**
 	 * Latest assistant-turn preview from any subagent under this session.
 	 * Populated by run-task on `turn_end` via setTurnPreview. Drives the
@@ -138,6 +146,9 @@ export class SessionRegistry extends EventEmitter {
 			// Resume — refresh status, keep prior events for visibility.
 			existing.status = "running";
 			existing.updatedAt = now;
+			// Re-create AbortController on resume (previous one was from a
+			// prior run that may have been aborted or completed).
+			existing.abortController = new AbortController();
 		} else {
 			this.sessions.set(taskId, {
 				taskId,
@@ -146,6 +157,7 @@ export class SessionRegistry extends EventEmitter {
 				status: "running",
 				phases: [],
 				events: [],
+				abortController: new AbortController(),
 			});
 			this.evictIfNeeded();
 		}
@@ -245,9 +257,12 @@ export class SessionRegistry extends EventEmitter {
 		// it again. This lets every early-return path in run-task.ts blindly
 		// call completeSession("failed") without clobbering the success-path's
 		// prior "completed" mark.
-		if (s.status !== "running") return;
+		// "cancelling" is treated as non-terminal here — the phase loop will
+		// call confirmCancelled() to transition it to "cancelled".
+		if (s.status !== "running" && s.status !== "cancelling") return;
 		s.status = status;
 		s.currentPhaseRole = undefined;
+		s.abortController = undefined; // clear on any terminal transition
 		s.updatedAt = Date.now();
 		this.emit("change", taskId);
 	}
@@ -256,6 +271,49 @@ export class SessionRegistry extends EventEmitter {
 		if (s.events.length > MAX_EVENTS_PER_SESSION) {
 			s.events.splice(0, s.events.length - MAX_EVENTS_PER_SESSION);
 		}
+	}
+
+	/**
+	 * Request cancellation of a running session. Transitions status to
+	 * "cancelling" and fires the session's AbortController.abort().
+	 * Returns false if session not found or already terminal.
+	 */
+	requestCancel(taskId: string): boolean {
+		const s = this.sessions.get(taskId);
+		if (!s) return false;
+		// Only running sessions can be cancelled.
+		if (s.status !== "running") return false;
+		s.status = "cancelling";
+		s.abortController?.abort();
+		s.updatedAt = Date.now();
+		this.emit("change", taskId);
+		return true;
+	}
+
+	/**
+	 * Confirm that cancellation has fully unwound. Called by the orchestrator
+	 * after abort is detected and the pipeline exits. Transitions
+	 * "cancelling" → "cancelled".
+	 */
+	confirmCancelled(taskId: string): void {
+		const s = this.sessions.get(taskId);
+		if (!s) return;
+		if (s.status !== "cancelling") return;
+		s.status = "cancelled";
+		s.currentPhaseRole = undefined;
+		s.abortController = undefined;
+		s.updatedAt = Date.now();
+		this.emit("change", taskId);
+	}
+
+	/**
+	 * Convenience accessor — returns the AbortSignal from the session's
+	 * AbortController, or undefined if the session doesn't exist or has
+	 * no controller.
+	 */
+	getAbortSignal(taskId: string): AbortSignal | undefined {
+		const s = this.sessions.get(taskId);
+		return s?.abortController?.signal;
 	}
 
 	// ── Per-phase tail buffer + unread tracking ──────────────────────────────
