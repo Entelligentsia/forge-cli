@@ -137,29 +137,9 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 	// /forge:update is registered in index.ts via registerForgeUpdateCommand
 	// (FORGE-S16-T15) so it works inside or outside a Forge project.
 
-	// ── /forge:status ─────────────────────────────────────────────────────────
-	// Delegates to the plugin's commands/status.md if shipped, otherwise emits
-	// a fallback notify. forge<=0.40.x does not ship status.md yet.
-	pi.registerCommand("forge:status", {
-		description: "Sprint and task summary widget",
-		async handler(args, ctx) {
-			if (!forgeRoot) return outsideProjectNoOp("status", ctx);
-			try {
-				await delegateMarkdownCommand(pi, forgeRoot, "status", args, ctx);
-			} catch (err: unknown) {
-				const e = err as { code?: string };
-				if (e.code === "ENOENT") {
-					ctx.ui.notify(
-						"forge:status — sprint/task widget ships with the next forge plugin release; " +
-							"use /forge:health for now.",
-						"info",
-					);
-					return;
-				}
-				throw err;
-			}
-		},
-	});
+	// /forge:status — native v0 handler registered in index.ts via
+	// registerStatusCommand (FORGE-S23-T10). Removed delegateMarkdownCommand
+	// stub. forge:status stays in EXPLICITLY_REGISTERED_NAMES below.
 }
 
 // ── Phase G: registerAllForgeCommands (FORGE-S17-T02) ─────────────────────
@@ -224,6 +204,8 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:calibrate",    // FORGE-S23-T08: real orchestrator handler registered in calibrate.ts
 	"forge:materialize",  // FORGE-S23-T09: Atomic handler registered in materialize.ts
 	"forge:migrate",      // FORGE-S23-T09: Hybrid handler registered in migrate.ts
+	"forge:update-tools", // FORGE-S23-T10: Atomic handler registered in update-tools.ts
+	"forge:store-query",  // FORGE-S23-T10: Atomic handler registered in store-query.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.

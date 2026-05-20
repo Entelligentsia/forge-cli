@@ -59,6 +59,9 @@ import { registerRetrospective } from "./retrospective.js";
 import { registerCalibrate } from "./calibrate.js";
 import { registerMaterialize } from "./materialize.js";
 import { registerMigrate } from "./migrate.js";
+import { registerUpdateTools } from "./update-tools.js";
+import { registerStoreQuery } from "./store-query.js";
+import { registerStatusCommand } from "./status-command.js";
 import { registerConfigCommand } from "./config-command.js";
 import { getInputRouter } from "./input-router.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
@@ -470,6 +473,9 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerCalibrate(pi); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
 	registerMaterialize(pi); // FORGE-S23-T09: Atomic handler — fill missing/stubbed artifacts
 	registerMigrate(pi);    // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
+	registerUpdateTools(pi); // FORGE-S23-T10: Atomic handler — copy bundled schemas to .forge/schemas/
+	registerStoreQuery(pi, { forgeRoot }); // FORGE-S23-T10: Atomic handler — store-cli query/nlp dispatch
+	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget
 
 	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
 	// Resolution order: CWD/workflows/<id> first (user-authored workflows),
