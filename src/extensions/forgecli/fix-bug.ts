@@ -909,6 +909,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}` };
 		}
 
+		// ── Post-subagent abort detection ─────────────────────────────────
+		if (result.stopReason === "aborted" || opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
+			registry.completePhase(bugId, phase.role, "cancelled");
+			registry.confirmCancelled(bugId);
+			deleteBugState(cwd, bugId);
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
+		}
+
 		// ── Halt-on-failure ───────────────────────────────────────────
 		if (result.exitCode !== 0) {
 			ctx.ui.notify(
@@ -926,15 +935,6 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				savedAt: new Date().toISOString(),
 			});
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero" };
-		}
-
-		// ── Post-subagent abort detection ─────────────────────────────────
-		if (result.stopReason === "aborted" || opts.signal?.aborted) {
-			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
-			registry.completePhase(bugId, phase.role, "cancelled");
-			registry.confirmCancelled(bugId);
-			deleteBugState(cwd, bugId);
-			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		// Capture model/provider from subagent result.

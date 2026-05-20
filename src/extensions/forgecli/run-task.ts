@@ -842,6 +842,21 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}` };
 		}
 
+		// ── Post-subagent abort detection ─────────────────────────────────
+		// If the abort signal fired during the subagent run, treat it as
+		// cancellation regardless of the exit code (subagent may have been
+		// mid-turn when aborted — exitCode could be 0 or 1).
+		// This check MUST come before halt-on-failure so that
+		// stopReason="aborted" + exitCode=1 is classified as cancellation,
+		// not a phase failure.
+		if (result.stopReason === "aborted" || opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:run-task — ${taskId} phase ${phase.role} cancelled.`, "info");
+			registry.completePhase(taskId, phase.role, "cancelled");
+			registry.confirmCancelled(taskId);
+			deleteState(cwd, taskId);
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
+		}
+
 		// ── Halt-on-failure ───────────────────────────────────────────
 		if (result.exitCode !== 0) {
 			ctx.ui.notify(
@@ -859,18 +874,6 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				savedAt: new Date().toISOString(),
 			});
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero" };
-		}
-
-		// ── Post-subagent abort detection ─────────────────────────────────
-		// If the abort signal fired during the subagent run, treat it as
-		// cancellation regardless of the exit code (subagent may have been
-		// mid-turn when aborted — exitCode could be 0 or 1).
-		if (result.stopReason === "aborted" || opts.signal?.aborted) {
-			ctx.ui.notify(`⊘ forge:run-task — ${taskId} phase ${phase.role} cancelled.`, "info");
-			registry.completePhase(taskId, phase.role, "cancelled");
-			registry.confirmCancelled(taskId);
-			deleteState(cwd, taskId);
-			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		// Capture model/provider from subagent result (REVIEW FIX #1).
