@@ -37,6 +37,12 @@ import { registerRegenerate } from "./regenerate.js";
 import { registerSprintIntake } from "./sprint-intake.js";
 import { registerSprintPlan } from "./sprint-plan.js";
 import { triggerUpdateCheck } from "./update-check.js";
+import {
+	buildForgeAwarenessMsg,
+	buildMultiPluginMsg,
+	buildPendingMigrationMsg,
+	syncForgeRootAndRef,
+} from "./hooks/check-update.js";
 import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./whats-new-widget.js";
 import { registerUsageHook } from "./usage-hook.js";
 import { registerReadCommand } from "./read-command.js";
@@ -245,6 +251,35 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		const meta = forgeConfig ? readProjectMeta(forgeConfig.configPath) : null;
 		if (meta) {
 			ctx.ui.notify(`${meta.name} [${meta.prefix}]`, "info");
+		}
+
+		// 3a. Forge-awareness context + project-state sync (FORGE-S23-T05).
+		// Port of check-update.js functions (1), (3), (4), (5).
+		// All wrapped in try/catch — session_start must never throw.
+		if (forgeConfig) {
+			// (1) Forge-awareness context injection (AC#1)
+			try {
+				const awarenessMsg = buildForgeAwarenessMsg(forgeConfig.configPath);
+				if (awarenessMsg) ctx.ui.notify(awarenessMsg, "info");
+			} catch { /* non-fatal */ }
+
+			// (4) Multi-plugin scan — notify if multiple Forge installations found (AC#3)
+			try {
+				const multiPluginMsg = buildMultiPluginMsg({ forgeRoot: forgeRoot!, configPath: forgeConfig.configPath });
+				if (multiPluginMsg) ctx.ui.notify(multiPluginMsg, "info");
+			} catch { /* non-fatal */ }
+
+			// (3) Distribution-switch detection + forgeRoot/forgeRef sync (AC#2, AC#6)
+			try {
+				const switchMsg = syncForgeRootAndRef({ forgeRoot: forgeRoot!, configPath: forgeConfig.configPath });
+				if (switchMsg) ctx.ui.notify(switchMsg, "warning");
+			} catch { /* non-fatal */ }
+
+			// (5) Pending-migration state surfacing (AC#4)
+			try {
+				const pendingMsg = buildPendingMigrationMsg(forgeConfig.configPath);
+				if (pendingMsg) ctx.ui.notify(pendingMsg, "warning");
+			} catch { /* non-fatal */ }
 		}
 
 		// 4. Update-check probe + banner (FORGE-S16-T14, issue #18 part 1).
