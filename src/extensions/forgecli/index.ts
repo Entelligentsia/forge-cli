@@ -56,6 +56,7 @@ import { registerCommit } from "./commit.js";
 import { registerValidate } from "./validate.js";
 import { registerCollate } from "./collate.js";
 import { registerRetrospective } from "./retrospective.js";
+import { registerCalibrate } from "./calibrate.js";
 import { registerConfigCommand } from "./config-command.js";
 import { getInputRouter } from "./input-router.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
@@ -464,6 +465,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerValidate(pi);
 	registerCollate(pi);
 	registerRetrospective(pi);
+	registerCalibrate(pi); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
 
 	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
 	// Resolution order: CWD/workflows/<id> first (user-authored workflows),

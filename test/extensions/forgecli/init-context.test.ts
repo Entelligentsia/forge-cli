@@ -167,7 +167,9 @@ describe("computeCalibrationBaseline", () => {
 
 		expect(baseline.version).toBe("0.40.3");
 		expect(baseline.masterIndexHash).toBeNull();
-		expect(baseline.sprintsCovered).toBe(0);
+		// sprintsCovered is now string[] (IDs of completed sprints)
+		expect(Array.isArray(baseline.sprintsCovered)).toBe(true);
+		expect(baseline.sprintsCovered).toEqual([]);
 		expect(typeof baseline.lastCalibrated).toBe("string");
 	});
 
@@ -182,19 +184,29 @@ describe("computeCalibrationBaseline", () => {
 		expect(baseline.masterIndexHash!.length).toBe(64); // SHA-256 hex
 	});
 
-	it("counts sprint directories", () => {
-		mockFs.readFileSync.mockImplementation(() => {
-			const err = new Error("ENOENT") as NodeJS.ErrnoException;
-			err.code = "ENOENT";
-			throw err;
-		});
+	it("collects completed sprint IDs from .forge/store/sprints/", () => {
+		// First readFileSync: MASTER_INDEX.md (ENOENT)
+		// Second + third readFileSync: sprint JSON files
+		mockFs.readFileSync
+			.mockImplementationOnce(() => {
+				const err = new Error("ENOENT") as NodeJS.ErrnoException;
+				err.code = "ENOENT";
+				throw err;
+			})
+			.mockReturnValueOnce(JSON.stringify({ sprintId: "FORGE-S01", status: "done" }))
+			.mockReturnValueOnce(JSON.stringify({ sprintId: "FORGE-S02", status: "retrospective-done" }));
+
+		// readdirSync for .forge/store/sprints/ returns .json filenames
 		mockFs.readdirSync.mockReturnValue([
-			{ name: "FORGE-S01", isDirectory: () => true } as unknown as fs.Dirent,
-			{ name: "FORGE-S02", isDirectory: () => true } as unknown as fs.Dirent,
-			{ name: "MASTER_INDEX.md", isDirectory: () => false } as unknown as fs.Dirent,
-		] as fs.Dirent[]);
+			"FORGE-S01.json",
+			"FORGE-S02.json",
+		] as unknown as fs.Dirent[]);
 
 		const baseline = computeCalibrationBaseline("/proj", "engineering", "0.40.3");
-		expect(baseline.sprintsCovered).toBe(2);
+		// sprintsCovered is now a sorted array of completed sprint IDs
+		expect(Array.isArray(baseline.sprintsCovered)).toBe(true);
+		expect(baseline.sprintsCovered).toContain("FORGE-S01");
+		expect(baseline.sprintsCovered).toContain("FORGE-S02");
+		expect(baseline.sprintsCovered).toHaveLength(2);
 	});
 });

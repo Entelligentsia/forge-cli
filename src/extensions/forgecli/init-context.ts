@@ -212,7 +212,7 @@ export interface CalibrationBaseline {
 	lastCalibrated: string; // ISO 8601
 	version: string; // bundled plugin version
 	masterIndexHash: string | null; // SHA-256 of MASTER_INDEX.md if present, null otherwise
-	sprintsCovered: number; // count of sprint dirs in <kbPath>/sprints/
+	sprintsCovered: string[]; // IDs of completed sprints (status: done or retrospective-done) at calibration time
 }
 
 /**
@@ -231,7 +231,7 @@ export function computeCalibrationBaseline(
 		lastCalibrated: new Date().toISOString(),
 		version: bundledPluginVersion,
 		masterIndexHash: null,
-		sprintsCovered: 0,
+		sprintsCovered: [],
 	};
 
 	// Compute SHA-256 of MASTER_INDEX.md if it exists
@@ -243,13 +243,29 @@ export function computeCalibrationBaseline(
 		// File not yet present — leave as null (init just started Phase 2)
 	}
 
-	// Count sprint directories
-	const sprintsDir = path.join(cwd, kbPath, "sprints");
+	// Collect completed sprint IDs from .forge/store/sprints/
+	// Matches the algorithm used by /forge:calibrate Step 2 auto-init branch.
+	const storeSprintsDir = path.join(cwd, ".forge", "store", "sprints");
 	try {
-		const entries = fs.readdirSync(sprintsDir, { withFileTypes: true });
-		baseline.sprintsCovered = entries.filter((e) => e.isDirectory()).length;
+		const files = fs.readdirSync(storeSprintsDir).filter((f) => f.endsWith(".json"));
+		const completedIds: string[] = [];
+		for (const f of files) {
+			try {
+				const raw = fs.readFileSync(path.join(storeSprintsDir, f), "utf8");
+				const sprint = JSON.parse(raw) as { sprintId?: string; status?: string };
+				if (
+					typeof sprint.sprintId === "string" &&
+					(sprint.status === "done" || sprint.status === "retrospective-done")
+				) {
+					completedIds.push(sprint.sprintId);
+				}
+			} catch {
+				// Skip malformed sprint file
+			}
+		}
+		baseline.sprintsCovered = completedIds.sort();
 	} catch {
-		// Sprints dir not yet created — leave as 0
+		// Store sprints dir not yet created — leave as []
 	}
 
 	return baseline;

@@ -221,6 +221,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:threads", // Thread-switcher chip strip; registered in thread-switcher.ts
 	"forge:regenerate", // Native handler registered in regenerate.ts — re-materialize .forge/ from bundled payload
 	"forge:retrospective", // FORGE-S23-T06: real kickoff shim registered in retrospective.ts
+	"forge:calibrate",    // FORGE-S23-T08: real orchestrator handler registered in calibrate.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.
