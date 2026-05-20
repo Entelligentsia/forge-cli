@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] — 2026-05-20
+
+### Fixed
+
+- **`package.json.bundledVersion` actually advanced to `0.44.6`.** The 0.11.1 CHANGELOG entry claimed bundled 0.44.6 but the manifest still read 0.44.5; downstream `/forge:update` heuristics that key off `bundledVersion` were stale.
+- **`thread-switcher.ts` — hide viewport footer when no orchestrator session is active.** `ViewportFooterComponent.render()` previously kept the row visible across sessions; now returns `[]` unless at least one session is `running` or `cancelling`, removing a permanent blank line in the editor area between sessions.
+
+---
+
 ## [0.11.1] — 2026-05-20
 
 ### Fixed

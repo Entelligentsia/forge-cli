@@ -154,11 +154,16 @@ class ViewportFooterComponent implements Component {
 	}
 
 	render(width: number): string[] {
+		// Only show the footer when an orchestrator session is active.
+		// When all sessions are terminal (completed/failed/cancelled) or
+		// when no session exists, hide the footer — main viewport has no
+		// subagent aggregate to display.
+		const sessions = this.registry.listSessions();
+		const hasActive = sessions.some((s) => s.status === "running" || s.status === "cancelling");
+		if (!hasActive) return [];
+
 		const tokens = fmtTokenFooter(this.registry.getAggregateUsage());
 		const orchModel = fmtModelLabel(this.getOrchestratorModel?.());
-		// Cold-start: hide the row entirely (no model + no usage) so the
-		// editor area doesn't carry a permanent blank line. As soon as we
-		// know the orchestrator model OR have observed any usage, render.
 		if (!tokens && !orchModel) return [];
 		const left = orchModel ? `⌂ ${orchModel}` : "";
 		const right = tokens ? `Σ ${tokens}` : "";
