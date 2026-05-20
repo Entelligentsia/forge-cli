@@ -132,6 +132,8 @@ export interface RunBugState {
 	phaseIndex: number;
 	iterationCounts: Record<string, number>;
 	halted: boolean;
+	/** Set on cancellation so the resume prompt says "cancelled" vs "halted". */
+	status?: "cancelled" | "halted" | "running";
 	lastError?: string;
 	savedAt: string;
 }
@@ -557,10 +559,19 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// ── Between-phase cancellation gate ────────────────────────────
 		if (opts.signal?.aborted) {
 			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} cancelled by user.`, "info");
-			registry.completePhase(bugId, BUG_PHASES[currentPhaseIndex - 1]?.role ?? "unknown", "cancelled");
+			registry.completePhase(bugId, BUG_PHASES[currentPhaseIndex]?.role ?? "unknown", "cancelled");
 			registry.confirmCancelled(bugId);
-			deleteBugState(cwd, bugId);
-			return { status: "cancelled", lastPhaseIndex: Math.max(0, currentPhaseIndex - 1), iterationCounts };
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			writeBugState(cwd, {
+				bugId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		const phase = BUG_PHASES[currentPhaseIndex];
@@ -926,7 +937,16 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
 			registry.completePhase(bugId, phase.role, "cancelled");
 			registry.confirmCancelled(bugId);
-			deleteBugState(cwd, bugId);
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			writeBugState(cwd, {
+				bugId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
 			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
@@ -1379,28 +1399,37 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 						return;
 					}
 				} else {
+					// ADR-S21-01: offer resume for ALL non-stale states — halted=true
+					// (explicit failure), halted=false (cancelled/interrupted), and
+					// any state with existing.status set.
+					const stateStatus = existing.status ?? (existing.halted ? "halted" : "interrupted");
+					const statusLabel = stateStatus === "cancelled" ? "cancelled"
+						: stateStatus === "halted" ? "halted"
+						: "interrupted";
+					const phaseRole = BUG_PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex;
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
 							`Resume ${bugId}?`,
-							`Cached state found at phase ${existing.phaseIndex} (saved at ${formatLocalTime(existing.savedAt)}). Resume from here?`,
+							`Cached state — phase ${existing.phaseIndex} (${phaseRole}), ${statusLabel}, ` +
+								`saved at ${formatLocalTime(existing.savedAt)}. Resume from here?`,
 						);
 						if (resume) {
 							resumeFromState = existing;
 							ctx.ui.notify(
-								`forge:fix-bug — resuming ${bugId} from phase ${BUG_PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex}`,
+								`forge:fix-bug — resuming ${bugId} from phase ${phaseRole} (${statusLabel})`,
 								"info",
 							);
 						} else {
 							deleteBugState(cwd, bugId);
 						}
 					} else {
+						// Non-interactive: auto-resume from state (no confirmation).
+						// Cancelled/interrupted states are valid resume points.
+						resumeFromState = existing;
 						ctx.ui.notify(
-							`forge:fix-bug — cached state for ${bugId} found but non-interactive mode; aborting.`,
+							`forge:fix-bug — resuming ${bugId} from phase ${phaseRole} (${statusLabel})`,
 							"info",
 						);
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
-						ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
-						return;
 					}
 				}
 			}

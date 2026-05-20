@@ -118,6 +118,8 @@ export interface RunTaskState {
 	phaseIndex: number;
 	iterationCounts: Record<string, number>;
 	halted: boolean;
+	/** Set on cancellation so the resume prompt can say "cancelled" vs "halted". */
+	status?: "cancelled" | "halted" | "running";
 	lastError?: string;
 	savedAt: string;
 }
@@ -589,10 +591,20 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// ── Between-phase cancellation gate ────────────────────────────
 		if (opts.signal?.aborted) {
 			ctx.ui.notify(`⊘ forge:run-task — ${taskId} cancelled by user.`, "info");
-			registry.completePhase(taskId, PHASES[currentPhaseIndex - 1]?.role ?? "unknown", "cancelled");
+			registry.completePhase(taskId, PHASES[currentPhaseIndex]?.role ?? "unknown", "cancelled");
 			registry.confirmCancelled(taskId);
-			deleteState(cwd, taskId);
-			return { status: "cancelled", lastPhaseIndex: Math.max(0, currentPhaseIndex - 1), iterationCounts };
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			// from the beginning of the cancelled phase (not deleted).
+			writeState(cwd, {
+				taskId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		const phase = PHASES[currentPhaseIndex];
@@ -853,7 +865,16 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			ctx.ui.notify(`⊘ forge:run-task — ${taskId} phase ${phase.role} cancelled.`, "info");
 			registry.completePhase(taskId, phase.role, "cancelled");
 			registry.confirmCancelled(taskId);
-			deleteState(cwd, taskId);
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			writeState(cwd, {
+				taskId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
 			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
@@ -1124,32 +1145,37 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						return;
 					}
 				} else {
-					// Fresh state: offer resume
+					// Fresh state: offer resume for ALL non-stale states — halted=true
+					// (explicit failure), halted=false (cancelled/interrupted), and
+					// any state with existing.status set (ADR-S21-01).
+					const stateStatus = existing.status ?? (existing.halted ? "halted" : "interrupted");
+					const statusLabel = stateStatus === "cancelled" ? "cancelled"
+						: stateStatus === "halted" ? "halted"
+						: "interrupted";
+					const phaseRole = PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex;
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
 							`Resume ${taskId}?`,
-							`Cached state found at phase ${existing.phaseIndex} (saved at ${formatLocalTime(existing.savedAt)}). Resume from here?`,
+							`Cached state — phase ${existing.phaseIndex} (${phaseRole}), ${statusLabel}, ` +
+								`saved at ${formatLocalTime(existing.savedAt)}. Resume from here?`,
 						);
 						if (resume) {
 							resumeFromState = existing;
 							ctx.ui.notify(
-								`forge:run-task — resuming ${taskId} from phase ${PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex}`,
+								`forge:run-task — resuming ${taskId} from phase ${phaseRole} (${statusLabel})`,
 								"info",
 							);
 						} else {
-							// Restart from beginning
 							deleteState(cwd, taskId);
 						}
 					} else {
-						// Non-interactive + halted state: auto-abort
+						// Non-interactive: auto-resume from state (no confirmation).
+						// Cancelled/interrupted states are valid resume points.
+						resumeFromState = existing;
 						ctx.ui.notify(
-							`forge:run-task — cached state for ${taskId} found but non-interactive mode; aborting.`,
+							`forge:run-task — resuming ${taskId} from phase ${phaseRole} (${statusLabel})`,
 							"info",
 						);
-						registry.completeSession(taskId, "failed");
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
-						ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
-						return;
 					}
 				}
 			}
