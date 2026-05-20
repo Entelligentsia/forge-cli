@@ -63,6 +63,12 @@ import { registerUpdateTools } from "./update-tools.js";
 import { registerStoreQuery } from "./store-query.js";
 import { registerStatusCommand } from "./status-command.js";
 import { registerConfigCommand } from "./config-command.js";
+import { registerAddTask } from "./add-task.js";
+import { registerAddPipeline } from "./add-pipeline.js";
+import { registerQuizAgent } from "./quiz-agent.js";
+import { registerRemoveCommand } from "./remove-command.js";
+import { registerReportBug } from "./report-bug.js";
+import { registerStoreRepair } from "./store-repair.js";
 import { getInputRouter } from "./input-router.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
@@ -476,6 +482,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerUpdateTools(pi); // FORGE-S23-T10: Atomic handler — copy bundled schemas to .forge/schemas/
 	registerStoreQuery(pi, { forgeRoot }); // FORGE-S23-T10: Atomic handler — store-cli query/nlp dispatch
 	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget
+	registerAddTask(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — add a task mid-sprint
+	registerAddPipeline(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — pipeline manager
+	registerQuizAgent(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — KB quiz
+	registerRemoveCommand(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — remove Forge artifacts
+	registerReportBug(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — file bug against Forge
+	registerStoreRepair(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — diagnose/repair store
 
 	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
 	// Resolution order: CWD/workflows/<id> first (user-authored workflows),

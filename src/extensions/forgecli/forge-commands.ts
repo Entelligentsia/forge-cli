@@ -206,6 +206,12 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:migrate",      // FORGE-S23-T09: Hybrid handler registered in migrate.ts
 	"forge:update-tools", // FORGE-S23-T10: Atomic handler registered in update-tools.ts
 	"forge:store-query",  // FORGE-S23-T10: Atomic handler registered in store-query.ts
+	"forge:add-task",     // FORGE-S23-T11: Kickoff shim registered in add-task.ts
+	"forge:add-pipeline", // FORGE-S23-T11: Kickoff shim registered in add-pipeline.ts
+	"forge:quiz-agent",   // FORGE-S23-T11: Kickoff shim registered in quiz-agent.ts
+	"forge:remove",       // FORGE-S23-T11: Kickoff shim registered in remove-command.ts
+	"forge:report-bug",   // FORGE-S23-T11: Kickoff shim registered in report-bug.ts
+	"forge:store-repair", // FORGE-S23-T11: Kickoff shim registered in store-repair.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.

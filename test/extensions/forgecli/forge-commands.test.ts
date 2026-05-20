@@ -239,7 +239,8 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		//   - forge:retrospective (FORGE-S23-T06)
 		//   - forge:materialize (FORGE-S23-T09)
 		//   - forge:migrate (FORGE-S23-T09)
-		const REAL_HANDLER_CMD_FILES = 16; // commands with .md files AND real handlers (added T10 chain shims + retro + T09 materialize/migrate)
+		//   - forge:quiz-agent (FORGE-S23-T11) — only quiz-agent has a bundle .md file among T11's 6 commands
+		const REAL_HANDLER_CMD_FILES = 17; // +1 from T11 (only quiz-agent.md in bundle; add-task/add-pipeline/remove/report-bug/store-repair have no .md in bundle)
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
 		// Total calls = stub count + forge:refresh-kb-links + forge:enhance

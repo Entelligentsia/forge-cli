@@ -202,6 +202,21 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 			expect(registeredCommands.has("forge:commit")).toBe(false);
 			expect(registeredCommands.has("forge:validate")).toBe(false);
 			expect(registeredCommands.has("forge:collate")).toBe(false);
+
+			// forge:add-task, forge:add-pipeline, forge:quiz-agent, forge:remove,
+			// forge:report-bug, forge:store-repair: as of FORGE-S23-T11, native kickoff
+			// shim handlers are registered separately in their respective .ts files.
+			// They appear in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
+			// MUST NOT register them (would clobber real handlers).
+			// Note: only forge:quiz-agent has a bundled .md file — the others have no
+			// .md in the bundle, so the auto-stub loop would never encounter them anyway.
+			// EXPLICITLY_REGISTERED_NAMES entries are belt-and-braces for future .md additions.
+			expect(registeredCommands.has("forge:add-task")).toBe(false);
+			expect(registeredCommands.has("forge:add-pipeline")).toBe(false);
+			expect(registeredCommands.has("forge:quiz-agent")).toBe(false);
+			expect(registeredCommands.has("forge:remove")).toBe(false);
+			expect(registeredCommands.has("forge:report-bug")).toBe(false);
+			expect(registeredCommands.has("forge:store-repair")).toBe(false);
 	});
 
 	it("after Phase-4, .claude/commands/ is cleaned up in pi mode (isPiRuntime=true)", async () => {
