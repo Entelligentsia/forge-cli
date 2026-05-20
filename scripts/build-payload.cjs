@@ -188,6 +188,12 @@ const TOOLS_TO_COPY = [
 	// Plan-11 / Slice 2: friction recorder (subagent) and provider backfill helper.
 	"friction-emit.cjs",
 	"backfill-provider.cjs",
+	// forge-cli#25 defect B: health-check tools omitted from previous build.
+	// /forge:health invokes all three; missing tools produce "(skipped — <tool>
+	// not available in this Forge version)" for 3 of 14 checks on every install.
+	"check-structure.cjs",
+	"list-skills.js",
+	"verify-integrity.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
@@ -245,6 +251,31 @@ if (fs.existsSync(libSrc)) {
 }
 
 console.log(`build-payload: tools/ — ${TOOLS_TO_COPY.length} tools copied`);
+
+// 2a2: meta/ — forge/forge/meta/ (personas + skills source-of-truth)
+// forge-cli#25 defect A: meta/ was not bundled. build-persona-pack.cjs hashes
+// meta/personas/ and meta/skills/ to produce the persona-pack cache key; without
+// these directories the hash is always the empty-input SHA (e3b0c4...) and
+// /forge:health flags "persona pack stale — meta/ has changed since last build"
+// on every fresh install.
+const metaSrcDir = path.join(forgeRoot, "meta");
+const metaDestDir = path.join(outDir, "meta");
+if (fs.existsSync(metaSrcDir)) {
+	copyDir(metaSrcDir, metaDestDir);
+	// Count total files for report
+	let metaFileCount = 0;
+	function countMetaFiles(dir) {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const e of entries) {
+			if (e.isDirectory()) countMetaFiles(path.join(dir, e.name));
+			else metaFileCount++;
+		}
+	}
+	countMetaFiles(metaDestDir);
+	console.log(`build-payload: meta/ — ${metaFileCount} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/meta/ not found — skipping");
+}
 
 // 2b: .init/discovery/ — discover-*.md (5 files)
 const discoveryDestDir = path.join(outDir, ".init", "discovery");

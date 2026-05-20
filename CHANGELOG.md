@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-05-20
+
+### Fixed
+
+**P1 bug-fix batch (forge-cli#25 — defects A and B) — payload packaging gaps.**
+
+- **Defect A — meta/ directory missing from bundled payload.** `scripts/build-payload.cjs` now copies `forge/forge/meta/` (personas + skills source-of-truth) into `dist/forge-payload/meta/`. Without this directory, `build-persona-pack.cjs` hashed an empty input tree and produced SHA `e3b0c4...` for every install, causing `/forge:health` to permanently flag "persona pack stale" on fresh installs.
+
+- **Defect B — three health-check tools missing from bundled payload.** `check-structure.cjs`, `list-skills.js`, and `verify-integrity.cjs` are now included in `TOOLS_TO_COPY` in `build-payload.cjs`. Previously these tools were absent from `dist/forge-payload/tools/`, causing `/forge:health` to silently skip 3 of its 14 checks on every install (reported as "(skipped — `<tool>` not available in this Forge version)").
+
+**Bundled plugin version**: 0.44.6 (defects C, D, E fixes included).
+
+---
+
 ## [0.11.0] — 2026-05-20
 
 ### Added
