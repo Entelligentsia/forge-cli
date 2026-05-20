@@ -118,6 +118,8 @@ export interface RunTaskState {
 	phaseIndex: number;
 	iterationCounts: Record<string, number>;
 	halted: boolean;
+	/** Set on cancellation so the resume prompt can say "cancelled" vs "halted". */
+	status?: "cancelled" | "halted" | "running";
 	lastError?: string;
 	savedAt: string;
 }
@@ -219,9 +221,15 @@ export interface RunTaskPipelineOptions {
 	 * fixtures/sprint-fixture.ts.
 	 */
 	streamFnFactory?: (ctx: { kind: "task-phase"; persona: string; phase: string; taskId: string }) => import("@earendil-works/pi-agent-core").StreamFn | undefined;
+	/**
+	 * Optional AbortSignal from SessionRegistry. When provided, the pipeline
+	 * checks signal.aborted between phases and passes the signal to
+	 * runForgeSubagent so in-flight subagents can be aborted.
+	 */
+	signal?: AbortSignal;
 }
 
-export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed";
+export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed" | "cancelled";
 
 export interface RunTaskPipelineResult {
 	status: RunTaskPipelineStatus;
@@ -580,6 +588,25 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	const cacheSessionId = taskRecordAtStart?.sprintId ? `forge:${taskRecordAtStart.sprintId}` : `forge:task:${taskId}`;
 
 	while (currentPhaseIndex < PHASES.length) {
+		// ── Between-phase cancellation gate ────────────────────────────
+		if (opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:run-task — ${taskId} cancelled by user.`, "info");
+			registry.completePhase(taskId, PHASES[currentPhaseIndex]?.role ?? "unknown", "cancelled");
+			registry.confirmCancelled(taskId);
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			// from the beginning of the cancelled phase (not deleted).
+			writeState(cwd, {
+				taskId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
+		}
+
 		const phase = PHASES[currentPhaseIndex];
 		if (!phase) {
 			ctx.ui.notify(`× forge:run-task — invalid phase index ${currentPhaseIndex}`, "error");
@@ -808,6 +835,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				onEvent: wrappedOnEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
+				signal: opts.signal,  // ← wire AbortSignal for cancellation
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -824,6 +852,30 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				savedAt: new Date().toISOString(),
 			});
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}` };
+		}
+
+		// ── Post-subagent abort detection ─────────────────────────────────
+		// If the abort signal fired during the subagent run, treat it as
+		// cancellation regardless of the exit code (subagent may have been
+		// mid-turn when aborted — exitCode could be 0 or 1).
+		// This check MUST come before halt-on-failure so that
+		// stopReason="aborted" + exitCode=1 is classified as cancellation,
+		// not a phase failure.
+		if (result.stopReason === "aborted" || opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:run-task — ${taskId} phase ${phase.role} cancelled.`, "info");
+			registry.completePhase(taskId, phase.role, "cancelled");
+			registry.confirmCancelled(taskId);
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			writeState(cwd, {
+				taskId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		// ── Halt-on-failure ───────────────────────────────────────────
@@ -1093,37 +1145,43 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						return;
 					}
 				} else {
-					// Fresh state: offer resume
+					// Fresh state: offer resume for ALL non-stale states — halted=true
+					// (explicit failure), halted=false (cancelled/interrupted), and
+					// any state with existing.status set (ADR-S21-01).
+					const stateStatus = existing.status ?? (existing.halted ? "halted" : "interrupted");
+					const statusLabel = stateStatus === "cancelled" ? "cancelled"
+						: stateStatus === "halted" ? "halted"
+						: "interrupted";
+					const phaseRole = PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex;
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
 							`Resume ${taskId}?`,
-							`Cached state found at phase ${existing.phaseIndex} (saved at ${formatLocalTime(existing.savedAt)}). Resume from here?`,
+							`Cached state — phase ${existing.phaseIndex} (${phaseRole}), ${statusLabel}, ` +
+								`saved at ${formatLocalTime(existing.savedAt)}. Resume from here?`,
 						);
 						if (resume) {
 							resumeFromState = existing;
 							ctx.ui.notify(
-								`forge:run-task — resuming ${taskId} from phase ${PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex}`,
+								`forge:run-task — resuming ${taskId} from phase ${phaseRole} (${statusLabel})`,
 								"info",
 							);
 						} else {
-							// Restart from beginning
 							deleteState(cwd, taskId);
 						}
 					} else {
-						// Non-interactive + halted state: auto-abort
+						// Non-interactive: auto-resume from state (no confirmation).
+						// Cancelled/interrupted states are valid resume points.
+						resumeFromState = existing;
 						ctx.ui.notify(
-							`forge:run-task — cached state for ${taskId} found but non-interactive mode; aborting.`,
+							`forge:run-task — resuming ${taskId} from phase ${phaseRole} (${statusLabel})`,
 							"info",
 						);
-						registry.completeSession(taskId, "failed");
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
-						ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
-						return;
 					}
 				}
 			}
 
 			// ── Delegate to pipeline ─────────────────────────────────────────
+			const signal = registry.getAbortSignal(taskId);
 			const pipelineResult = await runTaskPipeline({
 				taskId,
 				cwd,
@@ -1133,6 +1191,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				preflightGate,
 				registry,
 				resumeFromState,
+				signal,
 			});
 
 			// ── Handle result ────────────────────────────────────────────────
@@ -1142,6 +1201,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 					`〇 forge:run-task — ${taskId} pipeline complete (${PHASES.length} phases).`,
 					"info",
 				);
+			} else if (pipelineResult.status === "cancelled") {
+				// confirmCancelled was already called by the pipeline, but
+				// completeSession("cancelled") ensures the session ends cleanly.
+				registry.completeSession(taskId, "cancelled");
 			} else {
 				registry.completeSession(taskId, "failed");
 			}

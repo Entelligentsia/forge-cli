@@ -39,10 +39,12 @@ describe("writeSubagentTranscript", () => {
 			},
 		});
 		expect(fs.existsSync(outPath)).toBe(true);
+		// New path: .forge/transcripts/<entityId>/<entityId>__<role>.json
+		// entityId = "HLO-S01-T01", role = "plan"
+		const dir = path.dirname(outPath);
 		const fname = path.basename(outPath);
-		expect(fname).toMatch(/^forge-subagent-/);
-		expect(fname).toMatch(/__engineer__/);
-		expect(fname).toMatch(/HLO-S01-T01__plan/);
+		expect(path.basename(dir)).toBe("HLO-S01-T01");
+		expect(fname).toBe("HLO-S01-T01__plan.json");
 		expect(fname).toMatch(/\.json$/);
 	});
 
@@ -77,9 +79,12 @@ describe("writeSubagentTranscript", () => {
 			persona: "engineer",
 			result: { exitCode: 0, messages: [], usage: emptyUsage },
 		});
+		// No tag → falls to general/ dir with persona as filename
+		const dir = path.dirname(outPath);
 		const fname = path.basename(outPath);
-		expect(fname).toMatch(/^forge-subagent-/);
-		expect(fname).toMatch(/__engineer\.json$/);
+		expect(path.basename(dir)).toBe("general");
+		expect(fname).toBe("engineer.json");
+		expect(fname).toMatch(/\.json$/);
 	});
 
 	it("sanitises unsafe characters from persona and tag for filesystem safety", () => {

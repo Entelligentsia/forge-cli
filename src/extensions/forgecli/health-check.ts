@@ -6,14 +6,26 @@
 // function directly. sendUserMessage is NOT used here (skill §198 pitfall).
 //
 // Implements a programmatic subset of the checks listed in
-// forge/forge/commands/health.md (config-completeness + KB freshness +
-// store integrity). Full check output is returned as structured data;
-// the caller formats it for display.
+// forge/forge/commands/health.md. As of FORGE-S23-T07, covers 6/15 checks:
+//   1. Config completeness
+//   2. KB freshness
+//   3. Stale docs (NEW — architecture/*.md files older than STALE_DOCS_THRESHOLD_MS)
+//   8. Store integrity
+//   9. Modified generated files (NEW — generation-manifest.cjs list --modified)
+//  15. Plugin integrity (NEW — native TS hash check against forgeRoot/integrity.json)
+//
+// Full check output is returned as structured data; the caller formats it for
+// display. See forge-cli/doc/health-parity-audit.md for the full parity table.
 
 import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+
+// ── Constants ──────────────────────────────────────────────────────────────
+
+/** Architecture docs older than this are flagged as stale (90 days). */
+const STALE_DOCS_THRESHOLD_MS = 90 * 24 * 60 * 60 * 1000;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -44,8 +56,13 @@ const REQUIRED_PATHS = ["engineering", "store", "workflows", "commands", "templa
  *
  * @param cwd - project working directory (where .forge/ lives)
  * @param bundleRoot - path to dist/forge-payload/ (contains tools/)
+ * @param forgeRoot - optional path to the installed Forge plugin root (for plugin integrity check)
  */
-export async function runHealthCheck(cwd: string, bundleRoot: string): Promise<HealthCheckResult> {
+export async function runHealthCheck(
+	cwd: string,
+	bundleRoot: string,
+	forgeRoot?: string,
+): Promise<HealthCheckResult> {
 	const gaps: HealthGap[] = [];
 
 	// 1. Config-completeness check
@@ -172,6 +189,20 @@ export async function runHealthCheck(cwd: string, bundleRoot: string): Promise<H
 		}
 	}
 
+	// 4. Stale docs check — engineering/architecture/*.md files older than 90 days
+	// This check runs regardless of .forge/ presence (only needs cwd + engPath).
+	gaps.push(...checkStaleDocs(cwd, configRecord));
+
+	// 5. Modified generated files check — generation-manifest.cjs list --modified
+	// Only runs when config is present (manifest lives in .forge/).
+	gaps.push(...checkModifiedGeneratedFiles(cwd, bundleRoot));
+
+	// 6. Plugin integrity check — native TS hash check against forgeRoot/integrity.json
+	// Only runs when forgeRoot is provided.
+	if (forgeRoot) {
+		gaps.push(...checkPluginIntegrity(forgeRoot));
+	}
+
 	const clean = gaps.length === 0;
 	const summary = clean ? "〇 /forge:health: clean." : `△ /forge:health: ${gaps.length} gap(s) detected.`;
 
@@ -181,4 +212,184 @@ export async function runHealthCheck(cwd: string, bundleRoot: string): Promise<H
 		configPresent: true,
 		summary,
 	};
+}
+
+// ── Check: Stale docs ──────────────────────────────────────────────────────
+
+/**
+ * Check for architecture docs not updated in over 90 days.
+ * Returns one HealthGap per stale file.
+ * Silently returns [] if the architecture directory does not exist.
+ */
+export function checkStaleDocs(
+	cwd: string,
+	config: Record<string, unknown>,
+): HealthGap[] {
+	const gaps: HealthGap[] = [];
+	const engPath =
+		(config.paths as Record<string, string> | undefined)?.engineering ?? "engineering";
+	const archDir = path.join(cwd, engPath, "architecture");
+
+	if (!fs.existsSync(archDir)) {
+		return gaps;
+	}
+
+	let files: string[];
+	try {
+		files = fs.readdirSync(archDir).filter((f) => f.endsWith(".md"));
+	} catch {
+		return gaps;
+	}
+
+	const now = Date.now();
+	for (const file of files) {
+		const filePath = path.join(archDir, file);
+		try {
+			const stat = fs.statSync(filePath);
+			const ageMs = now - stat.mtimeMs;
+			if (ageMs > STALE_DOCS_THRESHOLD_MS) {
+				const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+				gaps.push({
+					check: "stale-docs",
+					severity: "warning",
+					message: `${engPath}/architecture/${file} not updated in ${ageDays} days — may be stale. Run /forge:collate to refresh.`,
+				});
+			}
+		} catch {
+			// Skip files we can't stat
+		}
+	}
+
+	return gaps;
+}
+
+// ── Check: Modified generated files ───────────────────────────────────────
+
+/**
+ * Check for generated files that have been manually edited.
+ * Spawns generation-manifest.cjs list --modified from the bundled tools.
+ * Returns one HealthGap per modified/missing file.
+ * Silently returns [] if the tool is absent.
+ */
+export function checkModifiedGeneratedFiles(
+	cwd: string,
+	bundleRoot: string,
+): HealthGap[] {
+	const gaps: HealthGap[] = [];
+	const genManifestTool = path.join(bundleRoot, "tools", "generation-manifest.cjs");
+
+	if (!fs.existsSync(genManifestTool)) {
+		return gaps;
+	}
+
+	let stdout = "";
+	try {
+		stdout = execFileSync("node", [genManifestTool, "list", "--modified"], {
+			cwd,
+			encoding: "utf8",
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+	} catch (err: unknown) {
+		// generation-manifest exits non-zero when modifications are found.
+		// Parse stdout from the error object.
+		const e = err as { stdout?: string };
+		stdout = e.stdout ?? "";
+	}
+
+	const lines = stdout
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0 && !l.startsWith("#"));
+
+	for (const line of lines) {
+		gaps.push({
+			check: "modified-generated-files",
+			severity: "warning",
+			message: `Generated file modified: ${line} — regeneration will warn before overwriting. Run /forge:regenerate to review.`,
+		});
+	}
+
+	return gaps;
+}
+
+// ── Check: Plugin integrity ────────────────────────────────────────────────
+
+/** Shape of integrity.json (subset we consume). */
+interface IntegrityManifest {
+	version?: string;
+	files: Record<string, string>;
+}
+
+/**
+ * Check plugin files against the integrity.json manifest.
+ * Natively implemented in TypeScript — no subprocess required.
+ * Returns one HealthGap per modified or missing file.
+ * Silently returns [] if forgeRoot is not provided or integrity.json is missing.
+ */
+export function checkPluginIntegrity(forgeRoot: string): HealthGap[] {
+	const gaps: HealthGap[] = [];
+	const integrityPath = path.join(forgeRoot, "integrity.json");
+
+	if (!fs.existsSync(integrityPath)) {
+		gaps.push({
+			check: "plugin-integrity",
+			severity: "warning",
+			message: "integrity.json not found in forge plugin root — run /forge:update to restore.",
+		});
+		return gaps;
+	}
+
+	let manifest: IntegrityManifest;
+	try {
+		manifest = JSON.parse(fs.readFileSync(integrityPath, "utf8")) as IntegrityManifest;
+	} catch (err: unknown) {
+		const e = err as Error;
+		gaps.push({
+			check: "plugin-integrity",
+			severity: "warning",
+			message: `integrity.json is not valid JSON: ${e.message}`,
+		});
+		return gaps;
+	}
+
+	if (!manifest.files || typeof manifest.files !== "object") {
+		gaps.push({
+			check: "plugin-integrity",
+			severity: "warning",
+			message: "integrity.json has no files section — run /forge:update to restore.",
+		});
+		return gaps;
+	}
+
+	for (const [relativePath, expectedHash] of Object.entries(manifest.files)) {
+		const absolutePath = path.join(forgeRoot, relativePath);
+		if (!fs.existsSync(absolutePath)) {
+			gaps.push({
+				check: "plugin-integrity",
+				severity: "warning",
+				message: `Plugin file missing: ${relativePath} — run /forge:update to restore.`,
+			});
+			continue;
+		}
+		try {
+			const content = fs.readFileSync(absolutePath);
+			const actualHash = crypto.createHash("sha256").update(content).digest("hex");
+			if (actualHash !== expectedHash) {
+				gaps.push({
+					check: "plugin-integrity",
+					severity: "warning",
+					message: `Plugin file modified: ${relativePath} — run /forge:update to restore.`,
+				});
+			}
+		} catch {
+			gaps.push({
+				check: "plugin-integrity",
+				severity: "warning",
+				message: `Cannot read plugin file: ${relativePath} — permission or I/O error.`,
+			});
+		}
+	}
+
+	return gaps;
 }

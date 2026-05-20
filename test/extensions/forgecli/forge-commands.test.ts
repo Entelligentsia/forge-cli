@@ -69,16 +69,18 @@ afterEach(() => {
 });
 
 describe("registerForgeCommands", () => {
-	it("registers three /forge:* commands and the before_agent_start handler", () => {
+	it("registers two /forge:* commands and the before_agent_start handler", () => {
 		// Plan 16 Slice 4a: /forge:config is now registered by registerConfigCommand
 		// in index.ts, not here. The slot stays in EXPLICITLY_REGISTERED_NAMES so
 		// the auto-stub loop does not re-register a fallback.
+		// FORGE-S23-T10: /forge:status delegate stub removed — native handler
+		// registered via registerStatusCommand in index.ts.
 		const pi = makePi();
 		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
 
-		expect(pi.registerCommand).toHaveBeenCalledTimes(3);
+		expect(pi.registerCommand).toHaveBeenCalledTimes(2);
 		const names = Array.from(pi.commands.keys()).sort();
-		expect(names).toEqual(["forge:ask", "forge:health", "forge:status"]);
+		expect(names).toEqual(["forge:ask", "forge:health"]);
 		expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function));
 		expect(pi.beforeAgentStart).not.toBeNull();
 	});
@@ -86,9 +88,9 @@ describe("registerForgeCommands", () => {
 
 describe("outside-project no-op (Q14)", () => {
 	// Plan 16 Slice 4a: config dropped from this set — its outside-project
-	// behavior is now owned by registerConfigCommand (Slice 4b/4c). Health and
-	// status still no-op when forgeRoot is null.
-	const cases = ["health", "status"] as const;
+	// behavior is now owned by registerConfigCommand (Slice 4b/4c).
+	// FORGE-S23-T10: status dropped — native registerStatusCommand owns outside-project guard.
+	const cases = ["health"] as const;
 	for (const cmd of cases) {
 		it(`/forge:${cmd} emits warning notify and skips delegation when forgeRoot is null`, async () => {
 			const pi = makePi();
@@ -177,22 +179,17 @@ describe("/forge:ask Tomoshibi injection", () => {
 // /forge:update is now registered by registerForgeUpdateCommand (see
 // forge-update-command.test.ts) — FORGE-S16-T15 replaced the stub.
 
-describe("/forge:status ENOENT fallback", () => {
-	it("emits the fallback notify when commands/status.md does not exist", async () => {
+// /forge:status ENOENT fallback removed — FORGE-S23-T10 replaced the
+// delegateMarkdownCommand stub with a native handler (registerStatusCommand).
+// The outside-project guard and active-sprint rendering are tested in
+// test/extensions/forgecli/status-command.test.ts.
+describe("/forge:status native handler (FORGE-S23-T10)", () => {
+	it("forge:status is NOT registered by registerForgeCommands (delegate stub removed)", () => {
 		const pi = makePi();
 		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
-		const ctx = makeCtx();
-		const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
-		vi.spyOn(fs, "readFile").mockRejectedValue(enoent);
-
-		const handler = pi.commands.get("forge:status");
-		await handler!("", ctx);
-
-		expect(pi.sendUserMessage).not.toHaveBeenCalled();
-		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-		const [msg, level] = ctx.ui.notify.mock.calls[0] as [string, string];
-		expect(msg).toContain("ships with the next forge plugin release");
-		expect(level).toBe("info");
+		// The native handler is registered by registerStatusCommand in index.ts,
+		// not by registerForgeCommands. Verify the command is absent here.
+		expect(pi.commands.has("forge:status")).toBe(false);
 	});
 });
 
@@ -239,7 +236,11 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		//   - forge:commit (FORGE-S21-T10)
 		//   - forge:validate (FORGE-S21-T10)
 		//   - forge:collate (FORGE-S21-T10)
-		const REAL_HANDLER_CMD_FILES = 13; // commands with .md files AND real handlers (added T10 chain shims)
+		//   - forge:retrospective (FORGE-S23-T06)
+		//   - forge:materialize (FORGE-S23-T09)
+		//   - forge:migrate (FORGE-S23-T09)
+		//   - forge:quiz-agent (FORGE-S23-T11) — only quiz-agent has a bundle .md file among T11's 6 commands
+		const REAL_HANDLER_CMD_FILES = 17; // +1 from T11 (only quiz-agent.md in bundle; add-task/add-pipeline/remove/report-bug/store-repair have no .md in bundle)
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
 		// Total calls = stub count + forge:refresh-kb-links + forge:enhance

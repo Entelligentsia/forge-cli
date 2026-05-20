@@ -344,9 +344,12 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		result.exitCode = 1;
 	}
 
-	// ── Auto-export subagent transcript (forge-cli#8) ────────────────────
-	// Default-on while stabilizing. Failure is non-fatal — log to stderr
-	// and continue. Filename includes optional tag for greppability.
+	// ── Auto-export subagent transcript ─────────────────────────────────
+	// Default-on. One file per phase — overwrites any prior run of the
+	// same phase so the latest transcript is always what the user sees.
+	// Location: .forge/transcripts/<entity>/<phase>.json
+	// .forge/ is .gitignored by the existing .forge/ entry, so transcripts
+	// are excluded from version control by default.
 	try {
 		writeSubagentTranscript({
 			cwd: cwdAbs,
@@ -364,7 +367,17 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	return result;
 }
 
-// ── Transcript auto-export (forge-cli#8) ─────────────────────────────────
+// ── Transcript auto-export ───────────────────────────────────────────────
+//
+// Location: .forge/transcripts/<entity>/<phase>.json
+//
+//   run-task:   exportTag = "<taskId>__<phase>"  → transcripts/<taskId>/<phase>.json
+//   run-sprint: exportTag = "<sprintId>__ceremony" → transcripts/<sprintId>/ceremony.json
+//   fix-bug:    exportTag = "<bugId>__<phase>"    → transcripts/<bugId>/<phase>.json
+//   untagged:   (no exportTag)                    → transcripts/general/<persona>.json
+//
+// .forge/ is .gitignored by the existing .forge/ entry, so transcripts are
+// excluded from version control by default.
 
 interface WriteTranscriptOptions {
 	cwd: string;
@@ -380,12 +393,41 @@ function sanitizeForFilename(s: string): string {
 		.slice(0, 80);
 }
 
+/** Derive the subdirectory and filename from the export tag.
+ *
+ * exportTag format for tasks/bugs/sprints: "<entityId>__<role>"
+ *   → dir  = <entityId>  (e.g. "FORGE-S21-T04")
+ *   → file = <entityId>__<role>.json
+ *
+ * Untagged / partial tag: "general" as dir, persona as filename.
+ */
+function computeTranscriptPath(cwd: string, persona: string, tag: string | undefined): string {
+	const base = path.join(cwd, ".forge", "transcripts");
+
+	if (tag) {
+		const parts = tag.split("__");
+		if (parts.length >= 2) {
+			// "<entityId>__<role>" — dir = entityId, file = entityId__role.json
+			const entityId = parts[0];
+			const role = parts.slice(1).join("__");
+			const dir = path.join(base, sanitizeForFilename(entityId));
+			const filename = `${sanitizeForFilename(entityId)}__${sanitizeForFilename(role)}.json`;
+			return path.join(dir, filename);
+		}
+	}
+
+	// No tag or malformed — put in general/ with persona as filename.
+	const dir = path.join(base, "general");
+	const filename = `${sanitizeForFilename(persona)}.json`;
+	return path.join(dir, filename);
+}
+
 export function writeSubagentTranscript(opts: WriteTranscriptOptions): string {
 	const { cwd, persona, tag, result } = opts;
-	const iso = new Date().toISOString().replace(/[:.]/g, "-");
-	const tagSegment = tag ? `__${sanitizeForFilename(tag)}` : "";
-	const filename = `forge-subagent-${iso}__${sanitizeForFilename(persona)}${tagSegment}.json`;
-	const outPath = path.join(cwd, filename);
+	const outPath = computeTranscriptPath(cwd, persona, tag);
+
+	fs.mkdirSync(path.dirname(outPath), { recursive: true });
+
 	const payload = {
 		schema: "forge-subagent-transcript/v1",
 		timestamp: new Date().toISOString(),

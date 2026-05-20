@@ -236,6 +236,70 @@ else
 	record SKIP "E2E-16: IL10 enforcement on run-task.ts" "run-task.ts not found at $RUN_TASK_SRC"
 fi
 
+# ── E2E-16b: IL10 enforcement on calibrate.ts + migrate.ts (FORGE-S23-T13) ──
+# Extends E2E-16 to cover the new Orchestrator/Hybrid handlers from FORGE-S23.
+# calibrate.ts (Orchestrator) and migrate.ts (Hybrid structural branch) MUST
+# import + call runForgeSubagent.
+# materialize.ts (Atomic) MUST NOT import runForgeSubagent (correct atomic shape).
+# The vitest suite in e2e-16-orchestrator-handlers.test.ts is the primary gate;
+# these bash checks are belt-and-braces for the pre-publish smoke run.
+
+echo "▶ smoke gate — IL10 enforcement on calibrate.ts + migrate.ts (E2E-16b)"
+
+CALIBRATE_SRC="$PKG_DIR/src/extensions/forgecli/calibrate.ts"
+MATERIALIZE_SRC="$PKG_DIR/src/extensions/forgecli/materialize.ts"
+MIGRATE_SRC="$PKG_DIR/src/extensions/forgecli/migrate.ts"
+
+# calibrate.ts — Orchestrator: must import + call runForgeSubagent
+if [[ -f "$CALIBRATE_SRC" ]]; then
+	if grep -q "runForgeSubagent" "$CALIBRATE_SRC"; then
+		record PASS "E2E-16b: runForgeSubagent present in calibrate.ts" ""
+	else
+		record FAIL "E2E-16b: runForgeSubagent missing from calibrate.ts (IL10 violation)" "Orchestrator handler must import + call runForgeSubagent"
+	fi
+
+	# Non-comment call site check
+	CALIBRATE_CALL=$(grep -v '^\s*//' "$CALIBRATE_SRC" | grep "runForgeSubagent(" || true)
+	if [[ -n "$CALIBRATE_CALL" ]]; then
+		record PASS "E2E-16b: runForgeSubagent called in calibrate.ts (non-comment)" ""
+	else
+		record FAIL "E2E-16b: runForgeSubagent not called in calibrate.ts non-comment code" "IL10 violation"
+	fi
+else
+	record SKIP "E2E-16b: calibrate.ts not found at $CALIBRATE_SRC" ""
+fi
+
+# migrate.ts — Hybrid structural branch: must import + call runForgeSubagent
+if [[ -f "$MIGRATE_SRC" ]]; then
+	if grep -q "runForgeSubagent" "$MIGRATE_SRC"; then
+		record PASS "E2E-16b: runForgeSubagent present in migrate.ts" ""
+	else
+		record FAIL "E2E-16b: runForgeSubagent missing from migrate.ts (IL10 violation)" "Hybrid handler structural branch must import + call runForgeSubagent"
+	fi
+
+	MIGRATE_CALL=$(grep -v '^\s*//' "$MIGRATE_SRC" | grep "runForgeSubagent(" || true)
+	if [[ -n "$MIGRATE_CALL" ]]; then
+		record PASS "E2E-16b: runForgeSubagent called in migrate.ts (non-comment)" ""
+	else
+		record FAIL "E2E-16b: runForgeSubagent not called in migrate.ts non-comment code" "IL10 violation"
+	fi
+else
+	record SKIP "E2E-16b: migrate.ts not found at $MIGRATE_SRC" ""
+fi
+
+# materialize.ts — Atomic: must NOT import runForgeSubagent
+if [[ -f "$MATERIALIZE_SRC" ]]; then
+	MATERIALIZE_SUBAGENT=$(grep -v '^\s*//' "$MATERIALIZE_SRC" | grep "runForgeSubagent" || true)
+	if [[ -z "$MATERIALIZE_SUBAGENT" ]]; then
+		record PASS "E2E-16b: runForgeSubagent absent from materialize.ts (correct atomic shape)" ""
+	else
+		record FAIL "E2E-16b: runForgeSubagent found in materialize.ts (Atomic handler must use spawn argv-arrays, not runForgeSubagent)" \
+			"$MATERIALIZE_SUBAGENT"
+	fi
+else
+	record SKIP "E2E-16b: materialize.ts not found at $MATERIALIZE_SRC" ""
+fi
+
 # ── E2E-17: Project Orientation — single source of truth (forge-cli#6) ─────
 # Asserts that project-orientation.ts exists and is imported by both
 # forge-subagent.ts (subagent path) and index.ts (main-thread path), so the

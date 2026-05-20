@@ -132,6 +132,8 @@ export interface RunBugState {
 	phaseIndex: number;
 	iterationCounts: Record<string, number>;
 	halted: boolean;
+	/** Set on cancellation so the resume prompt says "cancelled" vs "halted". */
+	status?: "cancelled" | "halted" | "running";
 	lastError?: string;
 	savedAt: string;
 }
@@ -460,7 +462,7 @@ export function extractBugIdFromEvents(events: Array<{ toolName?: string; result
 
 // ── Bug pipeline result ──────────────────────────────────────────────────
 
-export type RunBugPipelineStatus = "completed" | "halted" | "escalated" | "failed";
+export type RunBugPipelineStatus = "completed" | "halted" | "escalated" | "failed" | "cancelled";
 
 export interface RunBugPipelineResult {
 	status: RunBugPipelineStatus;
@@ -487,6 +489,12 @@ export interface RunBugPipelineOptions {
 	preflightGate: string;
 	registry: ReturnType<typeof getSessionRegistry>;
 	resumeFromState?: RunBugState;
+	/**
+	 * Optional AbortSignal from SessionRegistry. When provided, the pipeline
+	 * checks signal.aborted between phases and passes the signal to
+	 * runForgeSubagent so in-flight subagents can be aborted.
+	 */
+	signal?: AbortSignal;
 }
 
 const STATUS_KEY = "forge:fix-bug";
@@ -548,6 +556,24 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	}
 
 	while (currentPhaseIndex < BUG_PHASES.length) {
+		// ── Between-phase cancellation gate ────────────────────────────
+		if (opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} cancelled by user.`, "info");
+			registry.completePhase(bugId, BUG_PHASES[currentPhaseIndex]?.role ?? "unknown", "cancelled");
+			registry.confirmCancelled(bugId);
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			writeBugState(cwd, {
+				bugId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
+		}
+
 		const phase = BUG_PHASES[currentPhaseIndex];
 		if (!phase) {
 			ctx.ui.notify(`× forge:fix-bug — invalid phase index ${currentPhaseIndex}`, "error");
@@ -619,7 +645,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				const synthSummary = {
 					objective: `Phase ${phase.role} skipped — bug already ${bugNow.status}`,
 					findings: ["Subagent completed fix during triage (Path A); phase output implicitly satisfied."],
-					verdict: "approved",
+					// Non-review phases should have verdict "n/a" — the phase
+					// didn't produce a gate verdict. This matches the `after
+					// <phase> = n/a` preflight gate contract. Review phases
+					// use "approved" since they are gate phases.
+					verdict: phase.isReview ? "approved" : "n/a",
 					written_at: new Date().toISOString(),
 				};
 				const synthFile = path.join(cwd, ".forge", "cache", `synthetic-summary-${bugId}-${summaryKey}.json`);
@@ -641,8 +671,16 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// Skip preflight gate for triage phase of new bugs (PENDING- placeholder)
 		// because the bug record doesn't exist yet — gates referencing bug fields
 		// would always fail.
+		//
+		// Also skip for review phases when the bug is already in a terminal
+		// state ("fixed"). Path A bugs get fixed during triage, then the
+		// preflight gate's `forbid bug.status == fixed` and `after implement
+		// = n/a` checks block review-code/review-plan even though we
+		// deliberately want to run those reviews. The review subagent handles
+		// the already-fixed scenario internally.
 		const pendingBugId = bugId.startsWith("PENDING-");
-		if (!pendingBugId && fs.existsSync(preflightGate)) {
+		const bugAlreadyFixed = bugNow?.status === "fixed" && phase.isReview;
+		if (!pendingBugId && !bugAlreadyFixed && fs.existsSync(preflightGate)) {
 			const preflightResult = runPreflightGate(preflightGate, phase.role, bugId, cwd, "bug");
 			if (preflightResult === "halt") {
 				ctx.ui.notify(
@@ -875,6 +913,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				onEvent: onSubagentEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
+				signal: opts.signal,  // ← wire AbortSignal for cancellation
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -891,6 +930,24 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				savedAt: new Date().toISOString(),
 			});
 			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}` };
+		}
+
+		// ── Post-subagent abort detection ─────────────────────────────────
+		if (result.stopReason === "aborted" || opts.signal?.aborted) {
+			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
+			registry.completePhase(bugId, phase.role, "cancelled");
+			registry.confirmCancelled(bugId);
+			// ADR-S21-01: preserve state file so cancelled runs are resumable
+			writeBugState(cwd, {
+				bugId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				status: "cancelled",
+				lastError: undefined,
+				savedAt: new Date().toISOString(),
+			});
+			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 		}
 
 		// ── Halt-on-failure ───────────────────────────────────────────
@@ -1342,28 +1399,37 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 						return;
 					}
 				} else {
+					// ADR-S21-01: offer resume for ALL non-stale states — halted=true
+					// (explicit failure), halted=false (cancelled/interrupted), and
+					// any state with existing.status set.
+					const stateStatus = existing.status ?? (existing.halted ? "halted" : "interrupted");
+					const statusLabel = stateStatus === "cancelled" ? "cancelled"
+						: stateStatus === "halted" ? "halted"
+						: "interrupted";
+					const phaseRole = BUG_PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex;
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
 							`Resume ${bugId}?`,
-							`Cached state found at phase ${existing.phaseIndex} (saved at ${formatLocalTime(existing.savedAt)}). Resume from here?`,
+							`Cached state — phase ${existing.phaseIndex} (${phaseRole}), ${statusLabel}, ` +
+								`saved at ${formatLocalTime(existing.savedAt)}. Resume from here?`,
 						);
 						if (resume) {
 							resumeFromState = existing;
 							ctx.ui.notify(
-								`forge:fix-bug — resuming ${bugId} from phase ${BUG_PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex}`,
+								`forge:fix-bug — resuming ${bugId} from phase ${phaseRole} (${statusLabel})`,
 								"info",
 							);
 						} else {
 							deleteBugState(cwd, bugId);
 						}
 					} else {
+						// Non-interactive: auto-resume from state (no confirmation).
+						// Cancelled/interrupted states are valid resume points.
+						resumeFromState = existing;
 						ctx.ui.notify(
-							`forge:fix-bug — cached state for ${bugId} found but non-interactive mode; aborting.`,
+							`forge:fix-bug — resuming ${bugId} from phase ${phaseRole} (${statusLabel})`,
 							"info",
 						);
-						ctx.ui.setStatus?.(STATUS_KEY, undefined);
-						ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
-						return;
 					}
 				}
 			}
@@ -1420,6 +1486,9 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			registry.startSession(bugId);
 
 			// ── Delegate to pipeline ─────────────────────────────────────────
+			// ── Delegate to pipeline ─────────────────────────────────────────
+			const signal = registry.getAbortSignal(bugId);
+
 			const pipelineResult = await runBugPipeline({
 				bugId,
 				originalArg: isNewBug ? rawArg : undefined,
@@ -1431,6 +1500,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 				preflightGate,
 				registry,
 				resumeFromState,
+				signal,  // ← wire AbortSignal for cancellation
 			});
 
 			// ── Handle result ────────────────────────────────────────────────
@@ -1440,6 +1510,8 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 					`〇 forge:fix-bug — ${bugId} pipeline complete (${BUG_PHASES.length} phases).`,
 					"info",
 				);
+			} else if (pipelineResult.status === "cancelled") {
+				registry.completeSession(bugId, "cancelled");
 			} else {
 				registry.completeSession(bugId, "failed");
 			}

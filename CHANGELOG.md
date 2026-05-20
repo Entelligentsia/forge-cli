@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] — 2026-05-20
+
+### Added
+- **Triage-error hook — post-Bash-failure context injection** (FORGE-S23-T03).
+  When a Bash tool call exits non-zero and the command matches Forge-related patterns
+  (`FORGE_PATTERNS` — 11 regexes ported verbatim from `triage-error.js:10-20`),
+  `hook-dispatcher.ts` now calls `ctx.ui.notify` with a `FORGE_ERROR_TRIAGE` message
+  suggesting the user run `/forge:report-bug`. Non-Forge commands and successful exits
+  are silent. Port of `forge/forge/hooks/triage-error.js` for the pi extension context.
+
+## [0.10.2] — 2026-05-20
+
 ## [0.10.1] — 2026-05-19
 
 ### Fixed

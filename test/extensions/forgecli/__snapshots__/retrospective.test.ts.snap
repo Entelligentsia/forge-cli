@@ -1,0 +1,44 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`composeKickoff > snapshot — kickoff body for empty-arg case matches snapshot 1`] = `
+"# /forge:retrospective
+
+🗻 **Forge Architect** — I hold the shape of the whole.
+
+## Dispatch
+
+Run the retrospective workflow below. Specifically:
+
+1. Identify the sprint to retrospect: if a sprint ID was provided (e.g. FORGE-SNN) use it directly; otherwise ask the user which sprint to retrospect before proceeding.
+2. Load the architect persona from \`.forge/personas/architect.md\` for full identity context.
+3. Follow the workflow at \`.forge/workflows/sprint_retrospective.md\` verbatim: load all sprint task manifests, event logs, and retrospective notes; compute cost and bottlenecks; write RETROSPECTIVE.md.
+4. Use \`forge_store_query\` for all store reads — do NOT raw-read \`.forge/store/\`.
+5. Write retrospective artifacts using the \`write\` tool.
+6. Honour Pack-06 Read/Write/Ask/Store discipline: in-conversation clarifications use \`forge_ask_user\`.
+
+---
+
+## Workflow
+
+---
+requirements:
+  reasoning: High
+deps:
+  personas: [architect]
+  skills: [architect, generic]
+---
+
+# Retrospective
+
+## Algorithm
+
+1. Load all task manifests for the sprint.
+2. Compute cost and bottlenecks.
+3. Write RETROSPECTIVE.md.
+
+---
+
+## Input
+
+(no sprint specified — ask the user which sprint to retrospect before proceeding)"
+`;

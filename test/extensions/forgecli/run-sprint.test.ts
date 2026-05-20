@@ -81,6 +81,9 @@ vi.mock("../../../src/extensions/forgecli/session-registry.js", async (importOri
 			recordToolStart: vi.fn(),
 			recordToolEnd: vi.fn(),
 			appendTail: vi.fn(),
+			getAbortSignal: vi.fn(() => undefined),
+			requestCancel: vi.fn(() => false),
+			confirmCancelled: vi.fn(),
 		})),
 	};
 });

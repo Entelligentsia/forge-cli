@@ -585,6 +585,8 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				// ── Session lifecycle for thread-switcher (REVIEW FIX #2) ──────
 				registry.startSession(taskId);
 
+				const taskSignal = registry.getAbortSignal(taskId);
+
 				const taskResult: RunTaskPipelineResult = await runTaskPipeline({
 					taskId,
 					cwd,
@@ -594,6 +596,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					preflightGate,
 					registry,
 					resumeFromState,
+					signal: taskSignal,  // ← wire AbortSignal for cancellation
 					streamFnFactory: options.streamFnFactory
 						? (c) => options.streamFnFactory?.({
 							kind: "task-phase",
@@ -612,6 +615,38 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				if (taskResult.status === "completed") {
 					completedTaskIds.push(taskId);
 					registry.completeSession(taskId, "completed");
+				} else if (taskResult.status === "cancelled") {
+					// Task was cancelled by user — mark session, persist sprint
+					// state, emit sprint-halted with cancellation detail, exit.
+					registry.completeSession(taskId, "cancelled");
+					const cancelledEvent: Record<string, unknown> = {
+						eventId:         `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
+						sprintId,
+						role:            "orchestrator",
+						action:          "sprint-halted",
+						startTimestamp:  new Date(sprintStartMs).toISOString(),
+						endTimestamp:    new Date(Date.now()).toISOString(),
+						durationMinutes: Math.round(((Date.now() - sprintStartMs) / 60000) * 100) / 100,
+						model:           lastModel    ?? "orchestrator",
+						provider:        lastProvider ?? "orchestrator",
+						type:            "sprint-halted",
+						haltedAtTaskIndex: i,
+						haltedAtTaskId:    taskId,
+						lastError:         "cancelled",
+					};
+					emitEvent(storeCli, cwd, sprintId, cancelledEvent);
+
+					writeSprintState(cwd, {
+						sprintId,
+						taskIndex: i,
+						completedTaskIds,
+						halted: true,
+						lastError: "cancelled",
+						savedAt: new Date().toISOString(),
+					});
+					ctx.ui.notify(`⊘ forge:run-sprint — ${sprintId} halted: task ${taskId} cancelled.`, "info");
+					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+					return;
 				} else {
 					// Task halted/escalated/failed: mark session failed, persist sprint state, emit sprint-halted, exit.
 					registry.completeSession(taskId, "failed");
