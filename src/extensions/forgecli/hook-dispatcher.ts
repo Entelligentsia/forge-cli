@@ -1,4 +1,4 @@
-// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04 / FORGE-S23-T02
+// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04 / FORGE-S23-T02 / FORGE-S23-T03
 //
 // Wires Forge's hook semantics onto pi's tool_call / tool_result events.
 // T02: Provides audit-only observation scaffolding.
@@ -11,6 +11,8 @@
 // T02 (S23): Adds full FS-level write-boundary schema guard via write-guard.ts —
 //      validates Write/Edit tool calls targeting .forge/store/**/*.json and
 //      .forge/config.json against Forge JSON schemas. Composed after two-layer-guard.
+// T03 (S23): Adds triage-error hook — on Bash tool_result with isError=true and a
+//      Forge-related command, injects ctx.ui.notify suggesting /forge:report-bug.
 //
 // Audit logging: set FORGE_HOOK_AUDIT=1 to write to .forge/logs/hooks.log.
 // In enforcement mode (default): violations are blocked.
@@ -30,13 +32,15 @@ import type {
 	BashToolCallEvent,
 	ExtensionAPI,
 	ExtensionCommandContext,
+	ExtensionContext,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
-import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { applyPiEdits, checkWriteGuard } from "./hooks/write-guard.js";
+import { buildTriageMessage, isForgeRelated } from "./hooks/triage-error.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
 
@@ -464,9 +468,26 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 		return undefined;
 	});
 
-	// ── tool_result: fires after any tool completes (observe-only) ──────────────
-	pi.on("tool_result", (event: ToolResultEvent): void => {
+	// ── tool_result: fires after any tool completes ───────────────────────────
+	pi.on("tool_result", (event: ToolResultEvent, ctx: ExtensionContext): void => {
 		appendAudit(logsDir, `[tool_result] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
-		// Audit-only in T02 — return void (no result replacement).
+
+		// ── Triage-error: post-Bash-failure context injection (FORGE-S23-T03) ──
+		// When a Bash command exits non-zero and matches Forge-related patterns,
+		// notify the user to file a bug via /forge:report-bug.
+		if (isBashToolResult(event) && event.isError) {
+			const command = typeof event.input.command === "string" ? event.input.command : "";
+			if (isForgeRelated(command)) {
+				const snippet = event.content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("")
+					.split("\n")
+					.slice(0, 3)
+					.join(" ")
+					.trim();
+				ctx.ui.notify(buildTriageMessage(command, snippet), "warning");
+			}
+		}
 	});
 }

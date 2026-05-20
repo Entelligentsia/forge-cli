@@ -1,4 +1,4 @@
-// Unit tests for hook-dispatcher module (FORGE-S18-T02 + FORGE-S18-T03 + FORGE-S23-T02).
+// Unit tests for hook-dispatcher module (FORGE-S18-T02 + FORGE-S18-T03 + FORGE-S23-T02 + FORGE-S23-T03).
 //
 // Coverage:
 //   registerHookDispatcher (T02):
@@ -39,6 +39,11 @@
 //    27.  Write event targeting store path with valid payload → undefined (allowed)
 //    28.  Non-Forge-path Write → undefined (allowed)
 //    29.  FORGE_SKIP_WRITE_VALIDATION=1 + bad payload → undefined (bypassed)
+//
+//   registerHookDispatcher — S23-T03: triage-error (Bash failure context injection)
+//    30.  Bash tool_result isError=true + Forge-related command → ctx.ui.notify with "warning"
+//    31.  Bash tool_result isError=true + non-Forge command → no notify
+//    32.  Bash tool_result isError=false + Forge-related command → no notify
 
 import { mkdirSync, readFileSync } from "node:fs";
 import * as os from "node:os";
@@ -140,6 +145,29 @@ vi.mock("../../../src/extensions/forgecli/hooks/write-guard.js", async () => {
 	};
 });
 
+// ── Mock triage-error (S23-T03) ───────────────────────────────────────────────
+// The triage-error helper is a pure module. We mock it at the boundary so
+// hook-dispatcher integration tests stay focused on wiring, not pattern logic.
+
+const { triageMockState } = vi.hoisted(() => {
+	return {
+		triageMockState: {
+			isForgeRelated: true as boolean,
+		},
+	};
+});
+
+vi.mock("../../../src/extensions/forgecli/hooks/triage-error.js", async () => {
+	return {
+		isForgeRelated: vi.fn((_command: string) => triageMockState.isForgeRelated),
+		buildTriageMessage: vi.fn(
+			(_command: string, _snippet: string) =>
+				"FORGE_ERROR_TRIAGE: A Forge command just failed. Would you like to file a bug? Run /forge:report-bug",
+		),
+		FORGE_PATTERNS: [],
+	};
+});
+
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
 const FAKE_FORGE_ROOT = "/fake/forge-root";
@@ -228,6 +256,44 @@ function makeToolResultEvent(): ToolResultEvent {
 	} as unknown as ToolResultEvent;
 }
 
+/**
+ * Build a minimal BashToolResultEvent with configurable isError and command.
+ * Used for S23-T03 triage-error tests.
+ */
+function makeBashToolResultEvent(command: string, isError: boolean, output = ""): ToolResultEvent {
+	return {
+		type: "tool_result",
+		toolName: "bash",
+		toolCallId: "tc-triage-001",
+		input: { command },
+		isError,
+		content: output ? [{ type: "text", text: output }] : [],
+		details: undefined,
+	} as unknown as ToolResultEvent;
+}
+
+/**
+ * Call the registered tool_result handler with a spy ctx.
+ * Returns the spy's notify calls.
+ */
+function callToolResultHandlerWithCtx(
+	handlers: Map<string, (event: unknown, ctx: unknown) => unknown>,
+	event: ToolResultEvent,
+): Array<{ message: string; type: string }> {
+	const notifyCalls: Array<{ message: string; type: string }> = [];
+	const ctx = {
+		ui: {
+			notify: (message: string, type?: string) => {
+				notifyCalls.push({ message, type: type ?? "info" });
+			},
+		},
+	};
+	const handler = handlers.get("tool_result");
+	if (!handler) throw new Error("tool_result handler not registered");
+	handler(event, ctx);
+	return notifyCalls;
+}
+
 // ── Setup / Teardown ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -246,6 +312,8 @@ beforeEach(() => {
 	// Reset write-guard mock to "allow" by default.
 	writeGuardMockState.block = false;
 	writeGuardMockState.reason = "";
+	// Reset triage-error mock to "forge-related" by default.
+	triageMockState.isForgeRelated = true;
 });
 
 afterEach(() => {
@@ -636,5 +704,53 @@ describe("registerHookDispatcher — write-guard FS-level schema guard (S23-T02)
 		);
 
 		expect(result).toBeUndefined();
+	});
+});
+
+// ── S23-T03: triage-error Bash failure context injection ──────────────────────
+
+describe("registerHookDispatcher — S23-T03 triage-error: Bash failure context injection", () => {
+	it("30. Bash tool_result isError=true + Forge-related command → ctx.ui.notify with 'warning'", () => {
+		triageMockState.isForgeRelated = true;
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const notifyCalls = callToolResultHandlerWithCtx(
+			handlers,
+			makeBashToolResultEvent("node .forge/tools/store-cli.cjs list tasks", true, "Error: ENOENT"),
+		);
+
+		expect(notifyCalls).toHaveLength(1);
+		expect(notifyCalls[0].type).toBe("warning");
+		expect(notifyCalls[0].message).toContain("FORGE_ERROR_TRIAGE");
+	});
+
+	it("31. Bash tool_result isError=true + non-Forge command → no notify", () => {
+		triageMockState.isForgeRelated = false;
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const notifyCalls = callToolResultHandlerWithCtx(
+			handlers,
+			makeBashToolResultEvent("npm install", true, "error: ENOENT"),
+		);
+
+		expect(notifyCalls).toHaveLength(0);
+	});
+
+	it("32. Bash tool_result isError=false + Forge-related command → no notify", () => {
+		triageMockState.isForgeRelated = true;
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const notifyCalls = callToolResultHandlerWithCtx(
+			handlers,
+			makeBashToolResultEvent("node .forge/tools/store-cli.cjs list tasks", false, "task1\ntask2"),
+		);
+
+		expect(notifyCalls).toHaveLength(0);
 	});
 });
