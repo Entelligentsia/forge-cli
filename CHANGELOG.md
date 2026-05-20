@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-20
+
+### Added
+
+**FORGE-S23: Full /forge:\* surface port + migration runner + thread cancellation**
+
+- **Migration runner (`/forge:update`)** (FORGE-S23-T01): `runMigrations()` deterministic engine. Executes pending migrations in version order, idempotent, integrated with the `/forge:update` upgrade flow. Migrations are defined in `forge-cli/dist/forge-payload/.schemas/migrations.json` and applied automatically on `forge update`.
+
+- **Validate-write hook** (FORGE-S23-T02): Port of `forge/forge/hooks/validate-write.js` as a pi `PostToolUse` hook. Full FS-level schema guard — rejects JSON writes to forge-owned paths (`.forge/store/**`, `.forge/config.json`) that violate their schema. Schema errors are surfaced in the pi notification strip.
+
+- **Triage-error hook** (FORGE-S23-T03): Port of `forge/forge/hooks/triage-error.js`. When a Bash tool call exits non-zero and matches Forge-related patterns (11 regexes), emits a `FORGE_ERROR_TRIAGE` notify suggesting `/forge:report-bug`. Non-Forge commands and successful exits are silent.
+
+- **Forge-permissions hook** (FORGE-S23-T04): Port of `forge/forge/hooks/forge-permissions.js`. Pattern-match auto-allow for forge-owned tool invocations; surfaces a permission prompt for unknown patterns.
+
+- **Check-update hook** (FORGE-S23-T05): Port of `forge/forge/hooks/check-update.js`. Full parity (5 functions): version fetch, stale-check, banner injection, changelog delta, and auto-dismiss on upgrade.
+
+- **`/forge:retrospective`** (FORGE-S23-T06): Kickoff shim. Reads the retrospective workflow and injects into the LLM conversation with the sprint context.
+
+- **`/forge:health` programmatic checks** (FORGE-S23-T07): 3 new checks added: schema integrity scan (validates `.forge/schemas/` JSON Schemas), store referential integrity (detects orphaned task/bug references), forgeRef drift detection (compares `paths.forgeRef` vs bundled plugin version). Health output now includes structured check results with pass/fail/warning states.
+
+- **`/forge:calibrate`** (FORGE-S23-T08): Orchestrator handler. Drift detection + patch proposal: reads `.forge/config.json`, compares against expected schema, proposes a patch for stale or missing fields. Allows one-shot config repair from within pi.
+
+- **`/forge:materialize` + `/forge:migrate`** (FORGE-S23-T09): Two new atomic handlers. `materialize` regenerates `.forge/` from the bundled plugin source (calls `forge:regenerate` logic). `migrate` applies pending schema migrations to the active `.forge/store/`.
+
+- **`/forge:update-tools`, `/forge:store-query`, `/forge:status`** (FORGE-S23-T10): Three new atomic handlers. `update-tools` refreshes `.forge/schemas/` from the bundled plugin. `store-query` exposes store inspection (list sprints, tasks, bugs with filters). `status` renders a sprint-status widget in the main viewport.
+
+- **6 kickoff-shim commands** (FORGE-S23-T11): `/forge:add-task`, `/forge:add-pipeline`, `/forge:quiz-agent`, `/forge:remove`, `/forge:report-bug`, `/forge:store-repair` — all now have real handlers (previously advisory stubs that fell back to the Claude Code plugin).
+
+- **Thread cancellation** (`feat/thread-cancellation`): User can cancel an in-progress orchestrator run (`/forge:run-task`, `/forge:run-sprint`, `/forge:fix-bug`) from the session-monitor strip UI. Between-phase cancellation gate in `run-task.ts` and `fix-bug.ts`. State file preserved on cancellation so runs are resumable (ADR-S21-01). Cancellation status tracked in bug state (`status: "cancelled"` vs `"halted"`).
+
+- **Structured transcript paths**: Subagent transcripts now land in `.forge/transcripts/<entityId>/<entityId>__<phase>.json` (previously `forge-subagent-<timestamp>__<persona>__<tag>.json`). Deterministic, overwrite-on-rerun, gitignored via the existing `.forge/` entry in `.gitignore`.
+
+### Changed
+
+- **`forge.bundledVersion` updated to `0.44.5`**: New installs via `/forge:init` materialize at Forge plugin 0.44.5 (was 0.44.3 since v0.10.0).
+
+### Notes
+
+- All 36 `/forge:*` commands now have real handlers. Zero advisory stubs remain.
+- Smoke matrix gate (113/113 structural checks) passes on all T06–T12 handlers for both `openai-compatible` and `anthropic` model classes (FORGE-S23-T14).
+- Sprint parity audit (FORGE-S23-T12) documents command coverage against the plugin's workflow surface.
+- Versions 0.10.4–0.10.11 were internal pre-release version bumps during sprint development; they were never published to npm. This release (0.11.0) supersedes all of them.
+
 ## [0.10.3] — 2026-05-20
 
 ### Added
