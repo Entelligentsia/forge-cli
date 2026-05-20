@@ -120,4 +120,4 @@ Per FORGE-S23-T12 acceptance criteria:
 - Drift found in Layer B: filing as separate sub-task (per AC 2 — does not block sprint close)
 - Layer A (TS handlers): parity verified at 2026-05-20
 
-**Parity status: Partial — TS handlers verified; generated workflow regeneration gap filed separately.**
+**Parity status: Partial — TS handlers verified; generated workflow regeneration gap filed as [Entelligentsia/forge#103](https://github.com/Entelligentsia/forge/issues/103).**
