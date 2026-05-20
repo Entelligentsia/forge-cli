@@ -222,6 +222,8 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:regenerate", // Native handler registered in regenerate.ts — re-materialize .forge/ from bundled payload
 	"forge:retrospective", // FORGE-S23-T06: real kickoff shim registered in retrospective.ts
 	"forge:calibrate",    // FORGE-S23-T08: real orchestrator handler registered in calibrate.ts
+	"forge:materialize",  // FORGE-S23-T09: Atomic handler registered in materialize.ts
+	"forge:migrate",      // FORGE-S23-T09: Hybrid handler registered in migrate.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.

@@ -240,7 +240,9 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		//   - forge:validate (FORGE-S21-T10)
 		//   - forge:collate (FORGE-S21-T10)
 		//   - forge:retrospective (FORGE-S23-T06)
-		const REAL_HANDLER_CMD_FILES = 14; // commands with .md files AND real handlers (added T10 chain shims + retro)
+		//   - forge:materialize (FORGE-S23-T09)
+		//   - forge:migrate (FORGE-S23-T09)
+		const REAL_HANDLER_CMD_FILES = 16; // commands with .md files AND real handlers (added T10 chain shims + retro + T09 materialize/migrate)
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
 		// Total calls = stub count + forge:refresh-kb-links + forge:enhance
