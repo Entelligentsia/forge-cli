@@ -8,7 +8,7 @@
 [![npm](https://img.shields.io/npm/v/@entelligentsia/forgecli?style=flat-square&color=000&label=npm)](https://www.npmjs.com/package/@entelligentsia/forgecli)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-000?style=flat-square)](#)
 [![license](https://img.shields.io/badge/license-MIT-000?style=flat-square)](#)
-[![forge plugin](https://img.shields.io/badge/forge--plugin-v0.43.16-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
+[![forge plugin](https://img.shields.io/badge/forge--plugin-v0.44.5-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
 [![pi runtime](https://img.shields.io/badge/runtime-pi--coding--agent-000?style=flat-square)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
 
 </div>
@@ -77,12 +77,20 @@ Idempotent and resumable. Re-running picks up at the last checkpoint via `.forge
 ```
 SETUP    /forge:init          Bootstrap Forge SDLC into the project
          /forge:regenerate    Refresh generated workflows + KB
+         /forge:materialize   Fill in stub artifacts after fast-mode init
+         /forge:migrate       Schema + structural migration of legacy stores
          /forge:update        Check for + apply forge-cli updates
+         /forge:update-tools  Refresh .forge/schemas/ to bundled version
+         /forge:add-pipeline  Add or customize a pipeline interactively
          /forge:remove        Tear down the Forge install
 
 RUN      /forge:run-task      Execute one task pipeline end-to-end
          /forge:run-sprint    Orchestrate every task in a sprint
          /forge:fix-bug       Triage + fix flow
+         /forge:sprint-intake Elicit sprint requirements
+         /forge:sprint-plan   Decompose a sprint into tasks
+         /forge:add-task      Add a task to an existing sprint mid-flight
+         /forge:retrospective Produce a sprint retrospective document
 
 CHAIN    /forge:plan          plan
          /forge:implement     implement
@@ -96,6 +104,11 @@ ASK      /forge:health        KB freshness + store integrity
          /forge:status        Sprint + task status
          /forge:ask <q>       Ask the Tomoshibi concierge
          /forge:config        Set up AI models for your workflow
+         /forge:store-query   Query the JSON store by NLP or flags
+         /forge:store-repair  Diagnose + repair corrupted store records
+         /forge:quiz-agent    Verify an agent has loaded the KB
+         /forge:calibrate     Detect KB↔agent drift, propose patches
+         /forge:report-bug    File a Forge bug as a GitHub issue
 ```
 
 → [Full reference](docs/cli-reference.md) · [Non-interactive mode](docs/non-interactive.md) · [Hook safety net](docs/hook-safety-net.md) · [Custom tools](docs/custom-tools.md) · [Publishing](docs/publishing.md)
@@ -309,6 +322,8 @@ before forge-cli's extension hook runs.
 
 | Up next                                            | Status              |
 |----------------------------------------------------|---------------------|
+| Full `/forge:*` surface + 4 hooks + migration runner | Shipped (0.11.0)  |
+| Pi-aligned data layout under `~/.pi/forge-cli/`    | Shipped (0.10.0)    |
 | Per-persona model routing + tiered config TUI      | Shipped (0.9.0)     |
 | 4ge brand wordmark in CLI banner + 3 themes        | Shipped (0.7.7)     |
 | Slim README + docs/ split                          | Shipped (0.7.7)     |
@@ -316,7 +331,6 @@ before forge-cli's extension hook runs.
 | Bundled plugin command markdowns                   | Shipped (0.7.6)     |
 | `/forge:run-task`, `run-sprint`, `fix-bug`         | Shipped (0.7.5)     |
 | Atomic chain shims (`/forge:plan` … `commit`) ×6   | Shipped (0.7.5)     |
-| Port admin commands (`migrate`, `calibrate`, …)    | Roadmap             |
 
 → Full roadmap + history: [CHANGELOG.md](CHANGELOG.md)
 
@@ -348,6 +362,10 @@ MIT © Entelligentsia
   0.5.0 · 0.5.1 · 0.5.2 · 0.5.3 · 0.5.4 · 0.5.5 · 0.5.6 · 0.5.7 ·
   0.6.1 · 0.6.2 · 0.6.3 · 0.6.4 · 0.6.5 · 0.6.6 ·
   0.7.0 · 0.7.1 · 0.7.2 · 0.7.3 · 0.7.4 · 0.7.5 · 0.7.6 · 0.7.7 ·
-  0.8.0 · 0.8.1 · 0.8.2 · 0.8.3 · 0.8.4 · 0.9.0
+  0.7.8 · 0.7.9 · 0.7.10 · 0.7.11 ·
+  0.8.0 · 0.8.1 · 0.8.2 · 0.8.3 · 0.8.4 ·
+  0.9.0 · 0.9.1 · 0.9.2 · 0.9.3 · 0.9.4 ·
+  0.10.0 · 0.10.1 · 0.10.2 · 0.10.3 ·
+  0.11.0
 -->
 

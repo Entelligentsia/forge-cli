@@ -2,6 +2,8 @@
 
 forge-cli intercepts `store-cli write` and `store-cli update-status` bash calls and validates them before they reach the store. This prevents malformed payloads and illegal status transitions from corrupting the project's engineering knowledge base.
 
+> **See also (0.11.0):** three additional hooks ported from the Claude Code plugin now ship with forge-cli — `triage-error` (suggests `/forge:report-bug` after a forge-related Bash failure), `forge-permissions` (pattern-match auto-allow for forge-owned tool invocations), and `check-update` (banner injection + auto-dismiss on upgrade). All three are wired via `hook-dispatcher.ts` and active by default. They are operationally independent of the store-cli intercept described below.
+
 ## Default-on enforcement
 
 When enforcement is active (default), the hook dispatcher:
