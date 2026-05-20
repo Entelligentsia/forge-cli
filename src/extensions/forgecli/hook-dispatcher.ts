@@ -41,6 +41,7 @@ import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { applyPiEdits, checkWriteGuard } from "./hooks/write-guard.js";
 import { buildTriageMessage, isForgeRelated } from "./hooks/triage-error.js";
+import { matchForgePermission } from "./hooks/forge-permissions.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
 
@@ -346,29 +347,73 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 	pi.on("tool_call", (event: ToolCallEvent): ToolCallEventResult | void => {
 		appendAudit(logsDir, `[tool_call] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
 
+		// ── Forge-permission auto-allow (FORGE-S23-T04) ───────────────────────
+		// Port of forge-permissions.js pattern-match logic. Pi has no PermissionRequest
+		// event, so matched patterns silently return undefined (no block) from the
+		// tool_call handler.
+		//
+		// Bash match:  full short-circuit — skip all downstream bash handling.
+		// Write/Edit:  skip two-layer-guard (sets skipTwoLayerGuard=true), but
+		//              FALL THROUGH to write-guard schema check (AC#4: an allowed
+		//              write to .forge/store/ that fails schema is still blocked).
+		//
+		// Security: this guard can only ALLOW, never DENY. Patterns are ported
+		// verbatim from forge-permissions.js including the node -e exclusion.
+		//
+		// Important: bash commands targeting store-cli.cjs must NOT be short-circuited
+		// here — they need to fall through to the store-cli schema/transition validation
+		// below. The node-tool BASH_PATTERN matches store-cli.cjs invocations, but the
+		// security invariant is: store-cli payloads are always validated against schema,
+		// regardless of permission match. Skip forge-permissions for store-cli commands.
+		if (isToolCallEventType("bash", event)) {
+			const bashCmd = (event as BashToolCallEvent).input.command ?? "";
+			if (!bashCmd.includes("store-cli.cjs")) {
+				const bashRule = matchForgePermission("bash", { command: bashCmd });
+				if (bashRule !== null) {
+					appendAudit(logsDir, `[forge-permissions] allowed bash: ${bashRule}`);
+					return undefined;
+				}
+			}
+		}
+
+		let skipTwoLayerGuard = false;
+		if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
+			const filePath = event.input.path ?? "";
+			const writeRule = matchForgePermission(event.toolName, { path: filePath });
+			if (writeRule !== null) {
+				appendAudit(logsDir, `[forge-permissions] allowed ${event.toolName}: ${writeRule}`);
+				skipTwoLayerGuard = true;
+			}
+		}
+
 		// ── Two-layer boundary guard (FORGE-S20-T07) ───────────────────────────
 		// Reject any write/edit whose target path resolves under
 		// <cwd>/forge/forge/meta/. Two-layer rule: fixes to Forge itself go
 		// through forge-engineer/forge-bugfixer against forge/, not via
 		// forge-cli runtime edits. FORGE_HOOK_AUDIT=1 logs but never blocks.
+		// Skipped when forge-permissions already matched the path (skipTwoLayerGuard=true).
 		if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
-			const verdict = checkTwoLayerBoundary(event.input.path, process.cwd());
-			if (!verdict.allowed) {
-				appendAudit(
-					logsDir,
-					`[two-layer-guard] decision=would-block path=${verdict.resolvedPath} reason=${verdict.reason}`,
-				);
-				if (auditEnabled()) {
-					return undefined;
+			if (!skipTwoLayerGuard) {
+				const verdict = checkTwoLayerBoundary(event.input.path, process.cwd());
+				if (!verdict.allowed) {
+					appendAudit(
+						logsDir,
+						`[two-layer-guard] decision=would-block path=${verdict.resolvedPath} reason=${verdict.reason}`,
+					);
+					if (auditEnabled()) {
+						return undefined;
+					}
+					return { block: true, reason: verdict.reason as string };
 				}
-				return { block: true, reason: verdict.reason as string };
 			}
 
 			// ── Write-boundary schema guard (FORGE-S23-T02) ─────────────────────
-			// After two-layer passes, validate the post-write contents against
-			// the Forge schema for the target path. Only applies to .forge/store/**
-			// and .forge/config.json paths (registry-matched). Fail-open on
-			// internal errors. FORGE_SKIP_WRITE_VALIDATION=1 bypasses.
+			// After two-layer passes (or is skipped), validate the post-write contents
+			// against the Forge schema for the target path. Always runs regardless of
+			// skipTwoLayerGuard — AC#4: an allowed write to .forge/store/ that fails
+			// schema is still blocked. Only applies to .forge/store/** and
+			// .forge/config.json paths (registry-matched). Fail-open on internal errors.
+			// FORGE_SKIP_WRITE_VALIDATION=1 bypasses.
 			const resolvedPath = path.resolve(process.cwd(), event.input.path);
 			let postContents: string;
 			if (isToolCallEventType("write", event)) {
