@@ -1,21 +1,23 @@
 // Guided /forge:update command + bundled-forge drift prompt — FORGE-S16-T15.
+// Migration apply integration — FORGE-S23-T01.
 //
 // Single update path: detect npm install method, refuse non-global, show
 // changelog from GitHub releases (Entelligentsia/forge-cli), confirm via
 // ctx.ui.confirm, then spawn `npm i -g @entelligentsia/forgecli@latest` via
-// execFile (argv array — no shell). On the next session_start after upgrade,
-// detect bundled-forge version drift and emit a one-shot project-migrations
-// prompt (Q7 detect+prompt; never auto-applies).
+// execFile (argv array — no shell). After upgrade, prompt to run migrations
+// from the old bundled-forge version to the new one.
 //
 // Version detection uses the npm registry (authoritative); GitHub releases are
 // used only for the changelog body via a tag-specific URL.
 
 import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { promises as fs, existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getUserCacheDir } from "./paths/paths.js";
+import { getBundledPayloadRoot } from "./forge-init.js";
+import { runMigrations } from "./migration-engine.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -235,7 +237,7 @@ export async function checkBundledForgeDrift(opts: DriftCheckOptions): Promise<v
 	if (last && last !== current && !cache.promptedForVersions.includes(current)) {
 		opts.notify(
 			`forge: bundled forge plugin changed (${last} → ${current}). ` +
-				"Run /forge:health to check for project migrations affecting this project.",
+				`Run /forge:update to apply project migrations from v${last} to v${current}.`,
 			"info",
 		);
 		cache.promptedForVersions = [...cache.promptedForVersions, current];
@@ -256,6 +258,14 @@ export interface RegisterUpdateCommandOptions {
 	fetchImpl?: typeof fetch;
 	globalRootResolver?: () => Promise<string | null>;
 	upgradeRunner?: (spec: string) => Promise<UpgradeResult>;
+	/** Migration runner — defaults to the production runMigrations engine (injected for testing) */
+	migrationRunner?: typeof runMigrations;
+	/** Resolved bundled-forge version for migrations — defaults to reading plugin.json from bundle */
+	currentBundledForgeVersion?: string;
+	/** Override CWD for migration projectRoot — defaults to process.cwd() */
+	migrationProjectRoot?: string;
+	/** Override drift cache path for migration lastSeenBundledForgeVersion — read from cache at migration time */
+	driftCacheDir?: string;
 }
 
 export function registerForgeUpdateCommand(pi: ExtensionAPI, opts: RegisterUpdateCommandOptions): void {
@@ -324,10 +334,135 @@ export function registerForgeUpdateCommand(pi: ExtensionAPI, opts: RegisterUpdat
 
 			ctx.ui.notify(
 				`forge:update — installed ${PKG_NAME}@${release.version}. ` +
-					"Restart your forge session for the new version to take effect. " +
-					"Project migrations (if any) will be prompted on the next session_start.",
+					"Restart your forge session for the new version to take effect.",
 				"info",
 			);
+
+			// 5. Migration prompt — offer to apply project migrations (§2A, §2D)
+			// Only runs when the caller has opted into migration support by providing
+			// migrationRunner or currentBundledForgeVersion. Without those the command
+			// was invoked in a context where migrations are not wired (e.g. tests for
+			// the base upgrade flow, or environments without a bundled payload).
+			if (opts.migrationRunner === undefined && opts.currentBundledForgeVersion === undefined) {
+				return;
+			}
+
+			// fromVersion comes from the drift cache (what the bundle was before upgrade).
+			// toVersion comes from the newly installed bundle's plugin.json.
+			const cacheDir = opts.driftCacheDir ?? defaultCacheDir();
+			const driftCache = await readDriftCache(cacheDir);
+			const fromVersion = driftCache.lastSeenBundledForgeVersion;
+
+			// Read toVersion from the newly installed bundle's plugin.json
+			let toVersion: string | null = opts.currentBundledForgeVersion ?? null;
+			if (!toVersion) {
+				try {
+					const bundleRoot = getBundledPayloadRoot();
+					const pluginJsonPath = path.join(bundleRoot, ".claude-plugin", "plugin.json");
+					if (existsSync(pluginJsonPath)) {
+						const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as {
+							version?: string;
+						};
+						toVersion = pluginJson.version ?? null;
+					}
+				} catch {
+					// Unable to read plugin.json — skip migration prompt
+				}
+			}
+
+			if (fromVersion && toVersion && fromVersion !== toVersion) {
+				// Determine whether to auto-apply (FORGE_NON_INTERACTIVE=1) or prompt
+				const nonInteractive = process.env["FORGE_NON_INTERACTIVE"] === "1";
+				let applyMigrations = nonInteractive;
+
+				if (!nonInteractive) {
+					applyMigrations = await ctx.ui.confirm(
+						`Run migrations from v${fromVersion} to v${toVersion}?`,
+						`The bundled forge plugin was updated from v${fromVersion} to v${toVersion}.\n` +
+							`Applying migrations will regenerate any changed .forge/ files to match the new version.`,
+					);
+				}
+
+				if (applyMigrations) {
+					ctx.ui.setStatus("forge:update", `Applying migrations v${fromVersion} → v${toVersion}…`);
+					try {
+						const migRunner = opts.migrationRunner ?? runMigrations;
+						const bundleRoot = getBundledPayloadRoot();
+						const projectRoot = opts.migrationProjectRoot ?? process.cwd();
+						const migResult = await migRunner({
+							bundleRoot,
+							projectRoot,
+							fromVersion,
+							toVersion,
+						});
+						ctx.ui.setStatus("forge:update", undefined);
+
+						// Emit SYS-migration event for each applied version (mandatory per §2D)
+						// These are informational store events that survive post-session analysis.
+						for (const applied of migResult.applied) {
+							try {
+								const payload = JSON.stringify({
+									fromVersion: applied.fromVersion,
+									toVersion: applied.toVersion,
+									appliedCategories: applied.categories,
+									timestamp: new Date().toISOString(),
+								});
+								await execFileAsync("node", [
+									path.join(bundleRoot, "tools", "store-cli.cjs"),
+									"emit",
+									"SYS-migration",
+									payload,
+								], { cwd: projectRoot }).catch(() => {
+									// store-cli not available or project not initialized — non-fatal
+								});
+							} catch {
+								// Non-fatal: event emission failure doesn't block migration result
+							}
+						}
+
+						// Report results
+						if (migResult.applied.length > 0) {
+							ctx.ui.notify(
+								`forge:update — applied ${migResult.applied.length} migration(s) from v${fromVersion} to v${toVersion}. ` +
+									`${migResult.schemasRefreshed.length} schema file(s) refreshed.`,
+								"info",
+							);
+						} else {
+							ctx.ui.notify(
+								`forge:update — no migrations needed from v${fromVersion} to v${toVersion}.`,
+								"info",
+							);
+						}
+
+						if (migResult.skippedBreaking.length > 0) {
+							ctx.ui.notify(
+								`forge:update — ${migResult.skippedBreaking.length} breaking migration(s) skipped. Manual review required.`,
+								"warning",
+							);
+						}
+
+						if (migResult.manualSteps.length > 0) {
+							const steps = migResult.manualSteps.flatMap((m) => m.steps);
+							ctx.ui.notify(
+								`forge:update — manual steps required:\n${steps.map((s) => `  • ${s}`).join("\n")}`,
+								"warning",
+							);
+						}
+					} catch (err: unknown) {
+						ctx.ui.setStatus("forge:update", undefined);
+						const msg = err instanceof Error ? err.message : String(err);
+						ctx.ui.notify(
+							`forge:update — migration failed: ${msg}. Check .forge/ state manually.`,
+							"error",
+						);
+					}
+				} else if (!nonInteractive) {
+					ctx.ui.notify(
+						`forge:update — migrations skipped. Run /forge:update again to apply migrations from v${fromVersion} to v${toVersion}.`,
+						"info",
+					);
+				}
+			}
 		},
 	});
 }

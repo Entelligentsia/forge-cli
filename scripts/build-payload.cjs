@@ -326,6 +326,19 @@ if (fs.existsSync(schemasSrc)) {
 	console.warn("build-payload: forge/forge/schemas/ not found — skipping");
 }
 
+// 2e1: migrations.json — forge/forge/migrations.json
+// Required by migration-engine.ts at runtime (FORGE-S23-T01).
+// Placed in .schemas/ alongside schema files; read via bundleRoot/.schemas/migrations.json.
+// Source: lowercase 'm' (confirmed on disk: forge/forge/migrations.json).
+const migrationsSrc = path.join(forgeRoot, "migrations.json");
+const migrationsDest = path.join(schemasDest, "migrations.json");
+if (fs.existsSync(migrationsSrc)) {
+	copyFile(migrationsSrc, migrationsDest);
+	console.log("build-payload: migrations.json copied to .schemas/");
+} else {
+	console.warn("build-payload: migrations.json not found — skipping");
+}
+
 // 2e2: commands/ — forge/forge/commands/*.md (plugin slash-command markdowns
 // like health.md, config.md, status.md). delegateMarkdownCommand reads them
 // from <forgeRoot>/commands/<name>.md at runtime. Distinct from

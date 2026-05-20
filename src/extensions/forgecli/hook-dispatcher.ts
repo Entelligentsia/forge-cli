@@ -77,8 +77,33 @@ export interface SprintCollateCompleteEvent {
 	cwd: string;
 }
 
+/**
+ * Payload for the migration-applied synthetic event (FORGE-S23-T01).
+ *
+ * Emitted by forge-update-command.ts after runMigrations() completes
+ * successfully. Enables future hook handlers to react to migration completion
+ * (e.g. trigger /forge:health checks, update-check resets).
+ *
+ * NOTE: No emitSyntheticEvent call is wired in this task — the event type is
+ * added to the union for forward compatibility. The interim emit path uses
+ * `store-cli emit SYS-migration` directly from forge-update-command.ts.
+ * event.schema.json is NOT modified in this task (system-migration type deferred
+ * to a follow-on task per PLAN.md §1D).
+ */
+export interface MigrationAppliedEvent {
+	type: "migration-applied";
+	/** Version the user was running before migration */
+	fromVersion: string;
+	/** Version the user upgraded to */
+	toVersion: string;
+	/** Number of migration entries applied */
+	appliedCount: number;
+	/** Absolute path to the project root */
+	cwd: string;
+}
+
 /** Union of all synthetic event payloads. Extend here as new events are added. */
-export type SyntheticEvent = InitCompleteEvent | SprintCollateCompleteEvent;
+export type SyntheticEvent = InitCompleteEvent | SprintCollateCompleteEvent | MigrationAppliedEvent;
 
 /**
  * Handler signature for synthetic events.

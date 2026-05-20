@@ -323,7 +323,7 @@ describe("checkBundledForgeDrift", () => {
 		expect(cache.lastSeenBundledForgeVersion).toBe("0.40.3");
 	});
 
-	it("emits a migration prompt when the bundled version changes", async () => {
+	it("emits a migration prompt when the bundled version changes (updated message §2C)", async () => {
 		await __test__.writeDriftCache(dir, {
 			lastSeenBundledForgeVersion: "0.40.3",
 			promptedForVersions: [],
@@ -334,6 +334,9 @@ describe("checkBundledForgeDrift", () => {
 		const [msg, level] = notify.mock.calls[0]!;
 		expect(level).toBe("info");
 		expect(msg).toContain("0.40.3 → 0.41.0");
+		// §2C: drift message now says "Run /forge:update to apply project migrations"
+		expect(msg).toContain("Run /forge:update");
+		expect(msg).toContain("migrations");
 		const cache = await __test__.readDriftCache(dir);
 		expect(cache.lastSeenBundledForgeVersion).toBe("0.41.0");
 		expect(cache.promptedForVersions).toContain("0.41.0");
@@ -348,5 +351,190 @@ describe("checkBundledForgeDrift", () => {
 		await checkBundledForgeDrift({ currentBundledForgeVersion: "0.41.0", notify, cacheDir: dir });
 		await checkBundledForgeDrift({ currentBundledForgeVersion: "0.41.0", notify, cacheDir: dir });
 		expect(notify).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ── Migration integration tests (FORGE-S23-T01) ────────────────────────────
+//
+// Integration tests for post-upgrade migration prompt (§2A), FORGE_NON_INTERACTIVE
+// handling (§2B), drift notification message (§2C), and SYS-migration event
+// emission (§2D).
+
+describe("Migration integration — registerForgeUpdateCommand", () => {
+	let dir: string;
+
+	beforeEach(async () => {
+		dir = tmpCacheDir();
+		await fs.mkdir(dir, { recursive: true });
+	});
+
+	afterEach(async () => {
+		await fs.rm(dir, { recursive: true, force: true });
+		delete process.env["FORGE_NON_INTERACTIVE"];
+	});
+
+	function setupWithMigration(opts: {
+		confirmMigration?: boolean;
+		migrationResult?: Awaited<ReturnType<typeof import("../../../src/extensions/forgecli/migration-engine.js")["runMigrations"]>>;
+		lastSeenVersion?: string;
+		nonInteractive?: boolean;
+	} = {}) {
+		const { pi, commands } = makePi();
+		const ctx = makeCtx(true); // confirm upgrade = true
+
+		// Override confirm to return true for upgrade, and configurable for migration
+		let callCount = 0;
+		ctx.ui.confirm = vi.fn().mockImplementation(async () => {
+			callCount++;
+			if (callCount === 1) return true; // upgrade confirm
+			return opts.confirmMigration ?? true; // migration confirm
+		});
+
+		const migrationResult = opts.migrationResult ?? {
+			applied: [
+				{ fromVersion: "0.43.19", toVersion: "0.44.0", categories: ["workflows:fix_bug"] },
+			],
+			skippedBreaking: [],
+			manualSteps: [],
+			dryRun: false,
+			schemasRefreshed: ["event.schema.json"],
+			forgeRootUpdated: false,
+		};
+
+		const migrationRunner = vi.fn().mockResolvedValue(migrationResult);
+
+		// Prime drift cache with a lastSeenBundledForgeVersion
+		const lastSeen = opts.lastSeenVersion ?? "0.43.19";
+
+		if (opts.nonInteractive) {
+			process.env["FORGE_NON_INTERACTIVE"] = "1";
+		}
+
+		return { pi, ctx, commands, migrationRunner, lastSeen, migrationResult };
+	}
+
+	it("post-upgrade migration prompt appears after successful npm upgrade with drift", async () => {
+		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration();
+
+		// Prime drift cache
+		await __test__.writeDriftCache(dir, {
+			lastSeenBundledForgeVersion: lastSeen,
+			promptedForVersions: [],
+		});
+
+		registerForgeUpdateCommand(pi, {
+			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
+			currentCliVersion: "0.9.0",
+			fetchImpl: vi.fn()
+				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
+				.mockResolvedValueOnce(jsonRes({ body: "release notes" })) as unknown as typeof fetch,
+			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
+			upgradeRunner: vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" }),
+			migrationRunner,
+			currentBundledForgeVersion: "0.44.4",
+			migrationProjectRoot: dir,
+			driftCacheDir: dir,
+		});
+
+		const cmd = commands.get("forge:update")!;
+		await cmd.handler("", ctx);
+
+		// Migration confirm should have been called (2nd confirm call)
+		expect(ctx.ui.confirm).toHaveBeenCalledTimes(2);
+		const migrationConfirmCall = ctx.ui.confirm.mock.calls[1]!;
+		expect(migrationConfirmCall[0]).toContain("migrations");
+		expect(migrationConfirmCall[0]).toContain(lastSeen);
+		expect(migrationConfirmCall[0]).toContain("0.44.4");
+
+		// Migration runner should have been called
+		expect(migrationRunner).toHaveBeenCalledWith(
+			expect.objectContaining({
+				fromVersion: lastSeen,
+				toVersion: "0.44.4",
+			}),
+		);
+	});
+
+	it("FORGE_NON_INTERACTIVE=1 skips migration confirm and applies automatically (§2B)", async () => {
+		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration({ nonInteractive: true });
+
+		await __test__.writeDriftCache(dir, {
+			lastSeenBundledForgeVersion: lastSeen,
+			promptedForVersions: [],
+		});
+
+		registerForgeUpdateCommand(pi, {
+			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
+			currentCliVersion: "0.9.0",
+			fetchImpl: vi.fn()
+				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
+				.mockResolvedValueOnce(jsonRes({ body: "" })) as unknown as typeof fetch,
+			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
+			upgradeRunner: vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" }),
+			migrationRunner,
+			currentBundledForgeVersion: "0.44.4",
+			migrationProjectRoot: dir,
+			driftCacheDir: dir,
+		});
+
+		const cmd = commands.get("forge:update")!;
+		await cmd.handler("", ctx);
+
+		// Only ONE confirm call (upgrade confirm) — migration confirm skipped
+		expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
+		// Migration runner still called (auto-applied)
+		expect(migrationRunner).toHaveBeenCalled();
+	});
+
+	it("migration skipped when user declines migration confirm", async () => {
+		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration({
+			confirmMigration: false,
+		});
+
+		await __test__.writeDriftCache(dir, {
+			lastSeenBundledForgeVersion: lastSeen,
+			promptedForVersions: [],
+		});
+
+		registerForgeUpdateCommand(pi, {
+			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
+			currentCliVersion: "0.9.0",
+			fetchImpl: vi.fn()
+				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
+				.mockResolvedValueOnce(jsonRes({ body: "" })) as unknown as typeof fetch,
+			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
+			upgradeRunner: vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" }),
+			migrationRunner,
+			currentBundledForgeVersion: "0.44.4",
+			migrationProjectRoot: dir,
+			driftCacheDir: dir,
+		});
+
+		const cmd = commands.get("forge:update")!;
+		await cmd.handler("", ctx);
+
+		expect(migrationRunner).not.toHaveBeenCalled();
+		// Should notify about skipping
+		const notifyMessages = ctx.ui.notify.mock.calls.map((c) => c[0] as string);
+		expect(notifyMessages.some((m) => m.includes("migrations skipped"))).toBe(true);
+	});
+
+	it("drift notification message contains 'Run /forge:update' and 'migrations' (§2C)", async () => {
+		const notify = vi.fn();
+		const cacheDir = tmpCacheDir();
+		try {
+			await __test__.writeDriftCache(cacheDir, {
+				lastSeenBundledForgeVersion: "0.43.0",
+				promptedForVersions: [],
+			});
+			await checkBundledForgeDrift({ currentBundledForgeVersion: "0.44.0", notify, cacheDir });
+			const [msg] = notify.mock.calls[0]!;
+			expect(msg).toContain("Run /forge:update");
+			expect(msg).toContain("migrations");
+			expect(msg).toContain("v0.43.0");
+			expect(msg).toContain("v0.44.0");
+		} finally {
+			await fs.rm(cacheDir, { recursive: true, force: true });
+		}
 	});
 });
