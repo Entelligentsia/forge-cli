@@ -634,7 +634,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				const synthSummary = {
 					objective: `Phase ${phase.role} skipped — bug already ${bugNow.status}`,
 					findings: ["Subagent completed fix during triage (Path A); phase output implicitly satisfied."],
-					verdict: "approved",
+					// Non-review phases should have verdict "n/a" — the phase
+					// didn't produce a gate verdict. This matches the `after
+					// <phase> = n/a` preflight gate contract. Review phases
+					// use "approved" since they are gate phases.
+					verdict: phase.isReview ? "approved" : "n/a",
 					written_at: new Date().toISOString(),
 				};
 				const synthFile = path.join(cwd, ".forge", "cache", `synthetic-summary-${bugId}-${summaryKey}.json`);
@@ -656,8 +660,16 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// Skip preflight gate for triage phase of new bugs (PENDING- placeholder)
 		// because the bug record doesn't exist yet — gates referencing bug fields
 		// would always fail.
+		//
+		// Also skip for review phases when the bug is already in a terminal
+		// state ("fixed"). Path A bugs get fixed during triage, then the
+		// preflight gate's `forbid bug.status == fixed` and `after implement
+		// = n/a` checks block review-code/review-plan even though we
+		// deliberately want to run those reviews. The review subagent handles
+		// the already-fixed scenario internally.
 		const pendingBugId = bugId.startsWith("PENDING-");
-		if (!pendingBugId && fs.existsSync(preflightGate)) {
+		const bugAlreadyFixed = bugNow?.status === "fixed" && phase.isReview;
+		if (!pendingBugId && !bugAlreadyFixed && fs.existsSync(preflightGate)) {
 			const preflightResult = runPreflightGate(preflightGate, phase.role, bugId, cwd, "bug");
 			if (preflightResult === "halt") {
 				ctx.ui.notify(
