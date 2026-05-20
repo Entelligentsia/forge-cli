@@ -1,4 +1,4 @@
-// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04
+// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04 / FORGE-S23-T02
 //
 // Wires Forge's hook semantics onto pi's tool_call / tool_result events.
 // T02: Provides audit-only observation scaffolding.
@@ -8,6 +8,9 @@
 // T04: Adds typed synthetic event taxonomy (InitCompleteEvent) with
 //      onSyntheticEvent / emitSyntheticEvent for in-process hook dispatch
 //      that bridges deterministic TS handler phases to registered hook handlers.
+// T02 (S23): Adds full FS-level write-boundary schema guard via write-guard.ts —
+//      validates Write/Edit tool calls targeting .forge/store/**/*.json and
+//      .forge/config.json against Forge JSON schemas. Composed after two-layer-guard.
 //
 // Audit logging: set FORGE_HOOK_AUDIT=1 to write to .forge/logs/hooks.log.
 // In enforcement mode (default): violations are blocked.
@@ -16,6 +19,10 @@
 // --force scope:
 //   When --force is present in store-cli argv, transition-guard is bypassed.
 //   store-validator still runs — a malformed payload is always invalid.
+//
+// Write-guard bypass:
+//   FORGE_SKIP_WRITE_VALIDATION=1 bypasses checkWriteGuard for one turn.
+//   The write-guard itself handles this env var; hook-dispatcher defers to it.
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import * as path from "node:path";
@@ -29,6 +36,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
+import { applyPiEdits, checkWriteGuard } from "./hooks/write-guard.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
 
@@ -351,6 +359,34 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 				}
 				return { block: true, reason: verdict.reason as string };
 			}
+
+			// ── Write-boundary schema guard (FORGE-S23-T02) ─────────────────────
+			// After two-layer passes, validate the post-write contents against
+			// the Forge schema for the target path. Only applies to .forge/store/**
+			// and .forge/config.json paths (registry-matched). Fail-open on
+			// internal errors. FORGE_SKIP_WRITE_VALIDATION=1 bypasses.
+			const resolvedPath = path.resolve(process.cwd(), event.input.path);
+			let postContents: string;
+			if (isToolCallEventType("write", event)) {
+				postContents = typeof event.input.content === "string" ? event.input.content : "";
+			} else {
+				// Edit event: apply pi edits array to current file contents
+				const editsInput = (event.input as { edits?: Array<{ oldText: string; newText: string }> }).edits;
+				const edits = Array.isArray(editsInput) ? editsInput : [];
+				postContents = applyPiEdits(resolvedPath, edits);
+			}
+			const guardResult = checkWriteGuard(resolvedPath, postContents, forgeRoot);
+			if (guardResult.block) {
+				appendAudit(
+					logsDir,
+					`[write-guard] decision=would-block path=${resolvedPath} reason=${guardResult.reason ?? "schema violation"}`,
+				);
+				if (auditEnabled()) {
+					return undefined;
+				}
+				return { block: true, reason: guardResult.reason as string };
+			}
+			appendAudit(logsDir, `[write-guard] decision=would-allow path=${resolvedPath}`);
 		}
 
 		// Bash interception: identify store-cli write/update-status calls.

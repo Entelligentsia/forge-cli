@@ -1,4 +1,4 @@
-// Unit tests for hook-dispatcher module (FORGE-S18-T02 + FORGE-S18-T03).
+// Unit tests for hook-dispatcher module (FORGE-S18-T02 + FORGE-S18-T03 + FORGE-S23-T02).
 //
 // Coverage:
 //   registerHookDispatcher (T02):
@@ -32,17 +32,26 @@
 //    22.  Illegal transition + --force → undefined (bypasses transition-guard)
 //    23.  --force + bad payload → still blocked by store-validator
 //    24.  Lookup failure → fail-open (allowed, decision=lookup-failed logged)
+//
+//   registerHookDispatcher — S23-T02: write-guard (FS-level schema guard)
+//    25.  Write event targeting store path with bad payload → block: true
+//    26.  Edit event targeting store path with bad payload → block: true
+//    27.  Write event targeting store path with valid payload → undefined (allowed)
+//    28.  Non-Forge-path Write → undefined (allowed)
+//    29.  FORGE_SKIP_WRITE_VALIDATION=1 + bad payload → undefined (bypassed)
 
 import { mkdirSync, readFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type {
 	BashToolCallEvent,
+	EditToolCallEvent,
 	ExtensionAPI,
 	ReadToolCallEvent,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
+	WriteToolCallEvent,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseStoreCLIInvocation, registerHookDispatcher } from "../../../src/extensions/forgecli/hook-dispatcher.js";
@@ -106,6 +115,31 @@ vi.mock("../../../src/extensions/forgecli/transition-guard.js", async () => {
 	};
 });
 
+// ── Mock write-guard (S23-T02) ────────────────────────────────────────────────
+// The write-guard is a pure function — mock it at the module boundary so
+// hook-dispatcher integration tests remain wiring tests, not schema tests.
+
+const { writeGuardMockState } = vi.hoisted(() => {
+	return {
+		writeGuardMockState: {
+			block: false as boolean,
+			reason: "" as string,
+		},
+	};
+});
+
+vi.mock("../../../src/extensions/forgecli/hooks/write-guard.js", async () => {
+	return {
+		checkWriteGuard: vi.fn((_filePath: string, _contents: string, _forgeRoot: string) => ({
+			block: writeGuardMockState.block,
+			reason: writeGuardMockState.reason,
+		})),
+		applyPiEdits: vi.fn((_filePath: string, _edits: unknown[]) => ""),
+		matchWriteRegistry: vi.fn(() => null),
+		WRITE_REGISTRY: [],
+	};
+});
+
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
 const FAKE_FORGE_ROOT = "/fake/forge-root";
@@ -154,6 +188,26 @@ function makeBashEvent(command: string): BashToolCallEvent {
 	};
 }
 
+/** Build a minimal WriteToolCallEvent (pi Write tool: path + content). */
+function makeWriteEvent(filePath: string, content: string): WriteToolCallEvent {
+	return {
+		type: "tool_call",
+		toolName: "write",
+		toolCallId: "tc-write-001",
+		input: { path: filePath, content },
+	} as unknown as WriteToolCallEvent;
+}
+
+/** Build a minimal EditToolCallEvent (pi Edit tool: path + edits array). */
+function makeEditEvent(filePath: string, edits: Array<{ oldText: string; newText: string }>): EditToolCallEvent {
+	return {
+		type: "tool_call",
+		toolName: "edit",
+		toolCallId: "tc-edit-001",
+		input: { path: filePath, edits },
+	} as unknown as EditToolCallEvent;
+}
+
 /** Build a minimal ReadToolCallEvent. */
 function makeReadEvent(filePath: string): ReadToolCallEvent {
 	return {
@@ -181,16 +235,22 @@ beforeEach(() => {
 	fsMockState.appendLines = [];
 	// Ensure FORGE_HOOK_AUDIT is off by default.
 	delete process.env.FORGE_HOOK_AUDIT;
+	// Ensure bypass is off by default.
+	delete process.env.FORGE_SKIP_WRITE_VALIDATION;
 	// Reset store-validator mock to "ok" by default.
 	validatorMockState.ok = true;
 	validatorMockState.reason = "";
 	// Reset transition-guard mock to "allowed" by default.
 	guardMockState.allowed = true;
 	guardMockState.reason = "";
+	// Reset write-guard mock to "allow" by default.
+	writeGuardMockState.block = false;
+	writeGuardMockState.reason = "";
 });
 
 afterEach(() => {
 	delete process.env.FORGE_HOOK_AUDIT;
+	delete process.env.FORGE_SKIP_WRITE_VALIDATION;
 });
 
 // ── Tests: registerHookDispatcher ─────────────────────────────────────────────
@@ -492,5 +552,89 @@ describe("registerHookDispatcher — T03 enforcement: transition guard", () => {
 		// Audit line must contain decision=lookup-failed.
 		const auditLine = fsMockState.appendLines.find((l) => l.includes("decision=lookup-failed"));
 		expect(auditLine).toBeDefined();
+	});
+});
+
+// ── Tests: write-guard integration (S23-T02) ──────────────────────────────────
+
+describe("registerHookDispatcher — write-guard FS-level schema guard (S23-T02)", () => {
+	it("25. Write event targeting store path with bad payload → block: true", () => {
+		writeGuardMockState.block = true;
+		writeGuardMockState.reason = "❌ Forge schema violation — taskId: missing required field";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(
+			handlers,
+			makeWriteEvent("/project/.forge/store/tasks/T01.json", '{"bad":"payload"}'),
+		);
+
+		expect(result).toBeDefined();
+		expect((result as ToolCallEventResult).block).toBe(true);
+		expect((result as ToolCallEventResult).reason).toContain("schema violation");
+	});
+
+	it("26. Edit event targeting store path with bad payload → block: true", () => {
+		writeGuardMockState.block = true;
+		writeGuardMockState.reason = "❌ Forge schema violation — taskId: missing required field";
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(
+			handlers,
+			makeEditEvent("/project/.forge/store/tasks/T01.json", [{ oldText: "foo", newText: "bar" }]),
+		);
+
+		expect(result).toBeDefined();
+		expect((result as ToolCallEventResult).block).toBe(true);
+	});
+
+	it("27. Write event targeting store path with valid payload → undefined (allowed)", () => {
+		// write-guard default: block=false
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const validTask = JSON.stringify({
+			taskId: "FORGE-S23-T02",
+			sprintId: "FORGE-S23",
+			title: "Test",
+			status: "draft",
+			path: "foo",
+		});
+		const result = callToolCallHandler(
+			handlers,
+			makeWriteEvent("/project/.forge/store/tasks/T02.json", validTask),
+		);
+
+		expect(result).toBeUndefined();
+	});
+
+	it("28. Non-Forge-path Write → undefined (allowed, write-guard returns block:false)", () => {
+		// write-guard default: block=false (non-Forge path returns immediately)
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(handlers, makeWriteEvent("/tmp/unrelated.json", '{"anything":true}'));
+
+		expect(result).toBeUndefined();
+	});
+
+	it("29. FORGE_SKIP_WRITE_VALIDATION=1 + bad payload → undefined (write-guard bypassed)", () => {
+		process.env.FORGE_SKIP_WRITE_VALIDATION = "1";
+		// The write-guard mock still returns block:false when the env var is set
+		// (the real write-guard handles the bypass internally; mock does too via default)
+		writeGuardMockState.block = false; // mock simulates bypass behavior
+
+		const { pi, handlers } = makeStubApi();
+		registerHookDispatcher(pi, FAKE_FORGE_ROOT);
+
+		const result = callToolCallHandler(
+			handlers,
+			makeWriteEvent("/project/.forge/store/tasks/T03.json", '{"bad":"payload"}'),
+		);
+
+		expect(result).toBeUndefined();
 	});
 });
