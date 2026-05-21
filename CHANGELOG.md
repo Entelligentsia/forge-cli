@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.5] — 2026-05-21
+
+### Fixed
+
+- **`index.ts` — `process.env.FORGE_ROOT` now exported on main-thread activation.** When forge-cli activates inside a Forge project, `process.env.FORGE_ROOT` is set to the absolute path resolved from `.forge/config.json`'s `paths.forgeRoot`, alongside the existing `before_agent_start` orientation injection. Subagent dispatch via `runForgeSubagent` already set this (forge-subagent.ts:200), but kickoff handlers (`/forge:enhance`, `/forge:health`, `/forge:calibrate`, etc.) bypass the subagent path — so `$FORGE_ROOT/...` in their workflow bodies' bash command literals previously substituted to an empty string, producing the symptom "Snapshot: not written (Forge manage-versions not available in this context)" during `/forge:enhance` Phase 2. Closes [forge-cli#28](https://github.com/Entelligentsia/forge-cli/issues/28). Phase 1 of the snapshot-replay durability story tracked in forge#107 / forge-cli#27.
+
+---
+
 ## [0.11.4] — 2026-05-21
 
 ### Fixed

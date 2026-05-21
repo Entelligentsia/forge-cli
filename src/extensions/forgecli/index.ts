@@ -137,9 +137,18 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// inside a Forge project. Symmetric to the subagent path in
 	// runForgeSubagent. Single source of truth: project-orientation.ts.
 	// Philosophy: context, not enforcement. See forge-cli#6.
+	//
+	// Also exports FORGE_ROOT into process.env so kickoff handlers' bash
+	// invocations (e.g. `node "$FORGE_ROOT/tools/manage-versions.cjs"`) resolve.
+	// Subagent dispatch via runForgeSubagent already sets this (forge-subagent.ts);
+	// kickoff handlers don't go through that path, so without this line the
+	// shell substitutes `$FORGE_ROOT` to empty string. See forge-cli#28.
 	if (forgeConfig && typeof pi.on === "function") {
 		const projectRoot = path.dirname(path.dirname(forgeConfig.configPath));
 		const orientation = buildProjectOrientation(projectRoot);
+		if (forgeRoot) {
+			process.env.FORGE_ROOT = forgeRoot;
+		}
 		pi.on("before_agent_start", async (event) => {
 			const existing = event.systemPrompt ?? "";
 			return { systemPrompt: `${orientation}\n${existing}` };
