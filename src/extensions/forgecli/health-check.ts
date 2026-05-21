@@ -21,6 +21,7 @@ import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { remediateValidationOutput } from "./lib/store-error-remediation.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -170,7 +171,6 @@ export async function runHealthCheck(
 
 	// 3. Store integrity check
 	const validateStoreTool = path.join(bundleRoot, "tools", "validate-store.cjs");
-	const storeCliTool = path.join(bundleRoot, "tools", "store-cli.cjs");
 	if (fs.existsSync(validateStoreTool)) {
 		try {
 			execFileSync("node", [validateStoreTool, "--dry-run"], {
@@ -189,79 +189,49 @@ export async function runHealthCheck(
 					message: "Store integrity check failed with no output.",
 				});
 			} else {
-				// Parse validation output into individual errors with remediation.
-				// Lines are: "ERROR  <entity>: <message>" or "WARN   <entity>: <message>"
+				// Parse validation output into individual errors with remediation (forge-cli#24).
+				// Uses the shared store-error-remediation module for consistent
+				// user-facing hints across health-check, write-guard, and hook-dispatcher.
 				const lines = output.split("\n").filter((l: string) => l.trim());
 				const errors = lines.filter((l: string) => l.startsWith("ERROR"));
 				const warnings = lines.filter((l: string) => l.startsWith("WARN"));
 
-				// Group errors by entity for concise reporting.
-				// Track which entities have enum violations (remediable via update-status).
-				const entityErrors = new Map<string, { msgs: string[]; enumViolations: string[] }>();
-				for (const line of errors) {
-					const afterPrefix = line.replace(/^ERROR\s+/, "");
-					const colonIdx = afterPrefix.indexOf(":");
-					const entity = colonIdx > 0 ? afterPrefix.slice(0, colonIdx).trim() : afterPrefix.trim();
-					const msg = colonIdx > 0 ? afterPrefix.slice(colonIdx + 1).trim() : "";
-					if (!entityErrors.has(entity)) {
-						entityErrors.set(entity, { msgs: [], enumViolations: [] });
-					}
-					const entry = entityErrors.get(entity)!;
-					entry.msgs.push(msg);
-					// Detect enum violations: "Value 'X' not in [...]"
-					const enumMatch = msg.match(/Value\s+'([^']+)'\s+not in\s+\[([^\]]+)\]/);
-					if (enumMatch) {
-						entry.enumViolations.push(enumMatch[1]);
-					}
-				}
-
-				// Build concise summary with remediation.
 				const errorCount = errors.length;
 				const warnCount = warnings.length;
 				const summary = errorCount > 0
 					? `${errorCount} error(s)${warnCount > 0 ? `, ${warnCount} warning(s)` : ""}`
 					: (warnCount > 0 ? `${warnCount} warning(s)` : "");
 
-				// For each entity with enum violations, suggest a store-cli fix command.
-				// For other errors, suggest reading the entity record.
-				const remediations: string[] = [];
-				for (const [entity, info] of entityErrors) {
-					// Determine entity type from ID format.
-					let entityType = "task"; // default
-					if (/BUG/i.test(entity)) entityType = "bug";
-					else if (/^\w+-S\d+$/i.test(entity)) entityType = "sprint";
-					else if (/^\w+-F\d+$/i.test(entity)) entityType = "feature";
+				// Use shared remediation module to generate per-error hints and commands.
+				const remediations = remediateValidationOutput(output);
 
-					if (info.enumViolations.length > 0 && fs.existsSync(storeCliTool)) {
-						for (const invalidVal of info.enumViolations) {
-							remediations.push(
-								`  Fix: node "$FORGE_ROOT/tools/store-cli.cjs" update-status ${entityType} ${entity} status <valid-status>`,
-							);
-						}
-					} else if (fs.existsSync(storeCliTool)) {
-						remediations.push(
-							`  Inspect: node "$FORGE_ROOT/tools/store-cli.cjs" read ${entityType} ${entity}`,
-						);
+				// Build user-friendly message with hints + commands.
+				const remediationLines: string[] = [];
+				for (const { errorLine, remediation } of remediations) {
+					if (remediation.hint) {
+						remediationLines.push(`  💡 ${remediation.hint}`);
+					}
+					if (remediation.command) {
+						remediationLines.push(`  → ${remediation.command}`);
 					}
 				}
 
 				// Cap remediations to avoid overwhelming output.
 				const maxRemediations = 5;
-				const shownRemediations = remediations.slice(0, maxRemediations);
-				const moreCount = remediations.length - maxRemediations;
+				const shown = remediationLines.slice(0, maxRemediations * 2); // hint + command per error
+				const moreCount = remediationLines.length - shown.length;
 
 				let message = `Store integrity: ${summary}`;
-				if (shownRemediations.length > 0) {
-					message += "\n" + shownRemediations.join("\n");
+				if (shown.length > 0) {
+					message += "\n" + shown.join("\n");
 					if (moreCount > 0) {
-						message += `\n  ... and ${moreCount} more.`;
+						message += `\n  ... and ${Math.ceil(moreCount / 2)} more.`;
 					}
 				}
 
 				gaps.push({
 					check: "store-integrity",
-					severity: errorCount > 0 ? "error" : "warning",
-					message,
+					severity: errorCount > 0 ? "error" : "warning",					message,
 				});
 			}
 		}

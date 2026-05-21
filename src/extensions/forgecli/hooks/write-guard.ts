@@ -22,6 +22,7 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { enhanceBlockMessage } from "../lib/store-error-remediation.js";
 
 // ── Path → schema registry ────────────────────────────────────────────────────
 //
@@ -240,6 +241,7 @@ export function checkWriteGuard(
 				`Path: ${relPath}\n` +
 				`Kind: ${entry.kind}\n` +
 				`Violation: Invalid JSON: ${msg}\n` +
+				`💡 Fix the JSON syntax error (common: trailing comma, unquoted key, missing brace).\n` +
 				`Hint: see forge/schemas/${entry.schema} for the expected shape.\n` +
 				"To bypass for one turn (emergency repair): FORGE_SKIP_WRITE_VALIDATION=1.",
 		};
@@ -261,13 +263,15 @@ export function checkWriteGuard(
 
 	if (errors.length > 0) {
 		const relPath = path.relative(process.cwd(), filePath);
+		const violationLines = errors.map((e) => `  - ${e}`).join("\n");
+		const enhancedViolations = enhanceBlockMessage(violationLines, entry.kind, "unknown");
 		return {
 			block: true,
 			reason:
 				`❌ Forge schema violation — write blocked\n` +
 				`Path: ${relPath}\n` +
 				`Kind: ${entry.kind}\n` +
-				`Violations:\n  - ${errors.join("\n  - ")}\n` +
+				`Violations:\n${enhancedViolations}\n` +
 				`Hint: see forge/schemas/${entry.schema} for the full shape.\n` +
 				"To bypass for one turn (emergency repair): FORGE_SKIP_WRITE_VALIDATION=1.",
 		};

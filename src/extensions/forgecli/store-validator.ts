@@ -10,10 +10,14 @@
 
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import { enhanceBlockMessage } from "./lib/store-error-remediation.js";
 
 export interface StoreValidatorResult {
 	ok: boolean;
+	/** Raw error output from store-cli. Present when ok=false. */
 	reason: string;
+	/** Enhanced message with remediation hints. Present when ok=false. */
+	remediation: string;
 }
 
 /**
@@ -42,8 +46,9 @@ export function validateStoreCLIPayload(entity: string, payload: unknown, forgeR
 			result.error?.message ||
 			`store-cli validate exited with code ${String(result.status)}` ||
 			"validation failed (no error message)";
-		return { ok: false, reason };
+		const remediation = enhanceBlockMessage(reason, entity, "unknown");
+		return { ok: false, reason, remediation };
 	}
 
-	return { ok: true, reason: "" };
+	return { ok: true, reason: "", remediation: "" };
 }

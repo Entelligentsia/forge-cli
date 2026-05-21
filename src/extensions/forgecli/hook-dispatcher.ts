@@ -462,7 +462,7 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 							// Audit mode: log and allow.
 							return undefined;
 						}
-						return { block: true, reason: validation.reason };
+						return { block: true, reason: validation.remediation || validation.reason };
 					}
 					appendAudit(logsDir, `[store-cli-intercept] decision=would-allow`);
 				} else if (intercept.subcmd === "update-status") {
@@ -497,7 +497,9 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 							if (auditEnabled()) {
 								return undefined;
 							}
-							return { block: true, reason: guard.reason };
+							// Add remediation command to transition error (forge-cli#24)
+							const transitionHint = `\n  → node "$FORGE_ROOT/tools/store-cli.cjs" update-status ${intercept.entity} ${payloadRecord.entityId} status <legal-value>\n  Or add --force to bypass transition guard.`;
+							return { block: true, reason: guard.reason + transitionHint };
 						}
 						appendAudit(logsDir, `[store-cli-intercept] decision=would-allow`);
 					} else {
