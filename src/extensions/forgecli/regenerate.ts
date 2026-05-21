@@ -157,22 +157,28 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				const modified = findModifiedStructuralFiles(cwd, toolsRoot);
 				if (modified.length > 0) {
 					const summary = [
-						`${modified.length} file(s) in .forge/ have been manually modified ` +
-							`(typically by /forge:enhance Phase 2). Re-materialization will overwrite them.`,
+						`${modified.length} file(s) in .forge/ differ from the manifest baseline.`,
 						"",
 						"Modified files:",
 						...modified.map((m) => `  △ ${m.relativePath}`),
 						"",
-						"To preserve these edits, answer 'no' and run /forge:regenerate <category>",
-						"per-category (or use --force to overwrite without prompting).",
+						"Edits applied by /forge:enhance Phase 2 are CAPTURED by snapshots in",
+						".forge/structure-versions.json and will be RESTORED automatically after",
+						"regeneration via `manage-versions replay` (forge#107 / Approach A).",
+						"",
+						"Manual edits NOT captured in any snapshot will be lost.",
+						"",
+						"Answer 'yes' to proceed (snapshot-captured edits survive automatically).",
+						"Answer 'no' to abort if you have uncaptured manual edits.",
+						"Use --force to skip this prompt AND skip replay (pristine base-pack).",
 					].join("\n");
 					const proceed = await ctx.ui.confirm(
-						`Overwrite ${modified.length} manual modification(s)?`,
+						`Proceed with regenerate? (${modified.length} modified file(s) detected)`,
 						summary,
 					);
 					if (!proceed) {
 						ctx.ui.notify(
-							`〇 forge:regenerate cancelled — ${modified.length} manual modification(s) preserved.`,
+							`〇 forge:regenerate cancelled — ${modified.length} modified file(s) preserved.`,
 							"info",
 						);
 						return;
@@ -234,7 +240,52 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				60_000,
 			);
 
-			// 3. Refresh schemas from bundled .schemas/. substitute-placeholders does
+			// 3a. Replay user enhancements (forge#107 / forge-cli#27 — Approach A layer 3).
+			//     After substitute-placeholders wrote fresh base-pack content over
+			//     .forge/{personas,skills,workflows,templates}/, restore any user-enhanced
+			//     files captured by /forge:enhance Phase 2 snapshots from .forge/archive/snap-N/.
+			//     Mirrors regenerate.md's per-category replay step. Pure additive — replay
+			//     is a no-op when no snapshots match. Skipped when --force is used (force
+			//     is "I want pristine base-pack content, no overlay").
+			const manageVersionsTool = path.join(toolsRoot, "manage-versions.cjs");
+			let replayTotal = 0;
+			if (ok && !force && fs.existsSync(manageVersionsTool)) {
+				ctx.ui.setStatus?.("forge:regenerate", "replaying user enhancements…");
+				const replayCategories = ["personas", "skills", "workflows", "templates"];
+				for (const category of replayCategories) {
+					await new Promise<void>((resolve) => {
+						const child = spawn("node", [manageVersionsTool, "replay", "--target", category], {
+							cwd,
+							stdio: ["ignore", "pipe", "pipe"],
+						});
+						let stdoutBuf = "";
+						child.stdout?.on("data", (d) => {
+							stdoutBuf += d.toString();
+						});
+						child.on("close", (code) => {
+							if (code === 0) {
+								// Parse "restored — N file(s)" out of stdout to track total
+								const m = stdoutBuf.match(/(\d+)\s+file\(s\)\s+restored/);
+								if (m) {
+									replayTotal += parseInt(m[1], 10);
+								}
+							}
+							// Non-zero exit (e.g. structure-versions.json missing on a
+							// project that never ran /forge:enhance): treat as no-op.
+							resolve();
+						});
+						child.on("error", () => resolve());
+					});
+				}
+				if (replayTotal > 0) {
+					ctx.ui.notify(
+						`〇 replay: ${replayTotal} user enhancement(s) restored from snapshots`,
+						"info",
+					);
+				}
+			}
+
+			// 3b. Refresh schemas from bundled .schemas/. substitute-placeholders does
 			//    not touch .forge/schemas/, but a forge plugin version bump can ship
 			//    schema changes (e.g. 0.43.13 added `provider` required + dropped
 			//    `estimatedCostUSD`). Without this step, regenerated workflows assume

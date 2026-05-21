@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-21
+
+### Added
+
+- **`regenerate.ts` — snapshot replay (Approach A layer 3).** Mirrors the new plugin behaviour in forge v0.45.0. After `substitute-placeholders.cjs` writes fresh base-pack content over `.forge/{personas,skills,workflows,templates}/`, the handler now invokes `manage-versions replay --target <category>` for each of the four structural-element categories. Restores user-enhanced files captured by `/forge:enhance` Phase 2 snapshots from `.forge/archive/snap-N/`. Pure additive — no-op when no snapshots match. Skipped when `--force` is used (force == "I want pristine base-pack content, no overlay"). Closes [forge-cli#27](https://github.com/Entelligentsia/forge-cli/issues/27).
+
+### Changed
+
+- **Modification guard text softened** to reflect the new replay behaviour. The pre-write prompt now states that snapshot-captured edits will be restored automatically post-regenerate, and only manual edits NOT captured in any snapshot are at risk. Guard remains as defence-in-depth.
+
+- Bundled forge-plugin advanced to **0.45.0** (replay subcommand + regenerate replay step).
+
+---
+
 ## [0.11.6] — 2026-05-21
 
 ### Fixed
