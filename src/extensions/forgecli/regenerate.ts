@@ -34,14 +34,24 @@ const STRUCTURAL_CATEGORIES = ["personas", "skills", "workflows", "templates"] a
 export interface ModifiedFile {
 	category: string;
 	relativePath: string; // e.g. ".forge/skills/engineer-skills.md"
+	/** "modified" = manifest hash mismatch; "untracked" = no manifest entry (file exists but never recorded). */
+	state: "modified" | "untracked";
 }
 
 /**
  * Enumerate files in .forge/{personas,skills,workflows,templates}/ and return
- * those whose generation-manifest hash no longer matches on-disk content.
+ * those whose state diverges from the manifest baseline. Two divergence states
+ * are surfaced (both warrant a prompt before overwrite):
  *
- * Pure function (no I/O beyond fs reads + manifest tool spawns). Synchronous;
- * the manifest tool is fast (sha256 of a small file).
+ * - "modified": file content differs from the recorded manifest hash. Typically
+ *   caused by /forge:enhance Phase 2 applying edits in-place.
+ * - "untracked": file exists on disk but has NO manifest entry. Caused by a
+ *   prior regenerate that ran `clear-namespace` without re-recording. A fresh
+ *   /forge:init records hashes for every generated file, so "untracked" should
+ *   never appear in a clean install — its presence signals user content that's
+ *   been disconnected from the tracking system. See forge-cli#30.
+ *
+ * Pure function (no I/O beyond fs reads + manifest tool spawns).
  */
 export function findModifiedStructuralFiles(cwd: string, toolsRoot: string): ModifiedFile[] {
 	const manifestTool = path.join(toolsRoot, "generation-manifest.cjs");
@@ -64,7 +74,9 @@ export function findModifiedStructuralFiles(cwd: string, toolsRoot: string): Mod
 			// generation-manifest check exit codes:
 			//   0 = pristine, 1 = modified, 2 = untracked, 3 = file missing
 			if (result.status === 1) {
-				modified.push({ category, relativePath: relPath });
+				modified.push({ category, relativePath: relPath, state: "modified" });
+			} else if (result.status === 2) {
+				modified.push({ category, relativePath: relPath, state: "untracked" });
 			}
 		}
 	}
@@ -154,31 +166,36 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			// and require explicit confirmation before overwriting them.
 			const force = (args ?? []).includes("--force");
 			if (!force) {
-				const modified = findModifiedStructuralFiles(cwd, toolsRoot);
-				if (modified.length > 0) {
+				const divergent = findModifiedStructuralFiles(cwd, toolsRoot);
+				if (divergent.length > 0) {
+					const modCount = divergent.filter((m) => m.state === "modified").length;
+					const untCount = divergent.filter((m) => m.state === "untracked").length;
 					const summary = [
-						`${modified.length} file(s) in .forge/ differ from the manifest baseline.`,
+						`${divergent.length} file(s) in .forge/ diverge from the manifest baseline:`,
+						`  ${modCount} modified (hash mismatch — typical /forge:enhance Phase 2 edit)`,
+						`  ${untCount} untracked (no manifest entry — usually means a prior regenerate cleared the namespace)`,
 						"",
-						"Modified files:",
-						...modified.map((m) => `  △ ${m.relativePath}`),
+						"Divergent files:",
+						...divergent.map((m) => `  △ [${m.state}] ${m.relativePath}`),
 						"",
-						"Edits applied by /forge:enhance Phase 2 are CAPTURED by snapshots in",
-						".forge/structure-versions.json and will be RESTORED automatically after",
-						"regeneration via `manage-versions replay` (forge#107 / Approach A).",
+						"Edits CAPTURED by /forge:enhance Phase 2 snapshots (.forge/archive/snap-N/)",
+						"will be RESTORED automatically post-regenerate via `manage-versions replay`",
+						"(forge#107 / Approach A — overlay semantics, later snapshots win).",
 						"",
-						"Manual edits NOT captured in any snapshot will be lost.",
+						"Edits NOT captured in any snapshot will be lost. To capture before regen, run",
+						"/forge:enhance Phase 2 → approve edits → ensure `add-snapshot` was called.",
 						"",
 						"Answer 'yes' to proceed (snapshot-captured edits survive automatically).",
-						"Answer 'no' to abort if you have uncaptured manual edits.",
+						"Answer 'no' to abort.",
 						"Use --force to skip this prompt AND skip replay (pristine base-pack).",
 					].join("\n");
 					const proceed = await ctx.ui.confirm(
-						`Proceed with regenerate? (${modified.length} modified file(s) detected)`,
+						`Proceed with regenerate? (${divergent.length} divergent file(s): ${modCount} modified, ${untCount} untracked)`,
 						summary,
 					);
 					if (!proceed) {
 						ctx.ui.notify(
-							`〇 forge:regenerate cancelled — ${modified.length} modified file(s) preserved.`,
+							`〇 forge:regenerate cancelled — ${divergent.length} divergent file(s) preserved.`,
 							"info",
 						);
 						return;

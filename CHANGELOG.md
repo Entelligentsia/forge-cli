@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-21
+
+### Fixed
+
+- **`enhance.ts` — explicit `add-snapshot` instruction in Phase 2 kickoff.** Previously the kickoff said nothing about snapshots; agents had to discover the requirement buried in `meta-enhance.md` step 8. In practice many agents applied edits but skipped the snapshot call, breaking the entire durability story — replay (v0.12.0) had nothing to restore from. Kickoff now explicitly instructs: after applying any approved edits, MUST call `node "$FORGE_ROOT/tools/manage-versions.cjs" add-snapshot --source post-sprint:<SPRINT_ID> --enhanced-elements <paths>`. Discovered via hello testbench transcript: `currentSnapshot` stayed at 3 after a Phase 2 apply session, leading to silent data loss on the next regenerate. Closes part 1 of [forge-cli#30](https://github.com/Entelligentsia/forge-cli/issues/30).
+- **`regenerate.ts` — modification guard now fires on untracked files.** Previously only fired on `generation-manifest check` exit 1 (modified hash mismatch); exit 2 (untracked — no manifest entry) was ignored. After a prior regenerate ran `clear-namespace` without re-recording, files end up in untracked state — and the next regenerate silently overwrote them. Guard now surfaces both "modified" and "untracked" states with state-aware prompt text. `ModifiedFile` interface extended with a `state: "modified" | "untracked"` field. Closes part 2 of [forge-cli#30](https://github.com/Entelligentsia/forge-cli/issues/30).
+
+---
+
 ## [0.12.0] — 2026-05-21
 
 ### Added

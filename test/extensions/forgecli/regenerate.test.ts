@@ -86,6 +86,28 @@ describe("findModifiedStructuralFiles (forge-cli#26 / forge#106)", () => {
 		expect(modified[0]).toEqual({
 			category: "personas",
 			relativePath: ".forge/personas/architect.md",
+			state: "modified",
+		});
+	});
+
+	it("forge-cli#30 — flags untracked files (exist on disk but no manifest entry)", () => {
+		// Scenario: prior regenerate ran clear-namespace, then user (or enhance)
+		// re-applied edits. The file is on disk but has no manifest hash. The
+		// v0.11.4-era guard ignored this case and silently overwrote.
+		const file = ".forge/personas/orchestrator.md";
+		fs.writeFileSync(
+			path.join(tmp, file),
+			"# Orchestrator\n\nContent with no manifest entry.\n",
+			"utf8",
+		);
+		// Deliberately NOT calling recordHash — file is untracked.
+
+		const divergent = findModifiedStructuralFiles(tmp, toolsRoot);
+		expect(divergent).toHaveLength(1);
+		expect(divergent[0]).toEqual({
+			category: "personas",
+			relativePath: ".forge/personas/orchestrator.md",
+			state: "untracked",
 		});
 	});
 
@@ -124,15 +146,19 @@ describe("findModifiedStructuralFiles (forge-cli#26 / forge#106)", () => {
 		expect(modified[0].relativePath).toBe(".forge/skills/engineer-skills.md");
 	});
 
-	it("ignores untracked files (no manifest entry)", () => {
+	it("forge-cli#30 — flags untracked files as state=untracked (was previously ignored)", () => {
 		// File on disk but never recorded — exit 2 (untracked).
+		// Pre-#30 behaviour: ignored. Post-#30: surfaced as state="untracked"
+		// because their appearance signals a prior incomplete regenerate (clear-namespace
+		// without re-record), and the user should be prompted before they're overwritten.
 		fs.writeFileSync(
 			path.join(tmp, ".forge/personas/new-persona.md"),
 			"# Untracked\n",
 			"utf8",
 		);
-		const modified = findModifiedStructuralFiles(tmp, toolsRoot);
-		expect(modified).toEqual([]);
+		const divergent = findModifiedStructuralFiles(tmp, toolsRoot);
+		expect(divergent).toHaveLength(1);
+		expect(divergent[0].state).toBe("untracked");
 	});
 
 	it("returns empty list when the manifest tool is missing (graceful no-op)", () => {

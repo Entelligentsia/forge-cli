@@ -271,6 +271,24 @@ describe("composeKickoff", () => {
 		expect(out).toMatch(/both.*empty|both the MCP query AND the fs-walk/i);
 	});
 
+	it("forge-cli#30 — Phase 2 body explicitly instructs add-snapshot after applying edits", () => {
+		const out = composeKickoff({
+			workflowMd: FULL_WORKFLOW,
+			personaIdentity: "id",
+			parsed: { phase: 2, extra: "", rawPhaseFlag: "" },
+			cwd: "/proj",
+			timestamp: "20260510T120000Z",
+		});
+		// The kickoff must explicitly name manage-versions add-snapshot
+		expect(out).toContain("manage-versions add-snapshot");
+		// Must reference the --source flag for the post-sprint label
+		expect(out).toContain("--source post-sprint");
+		// Must mention --enhanced-elements with the path format
+		expect(out).toContain("--enhanced-elements");
+		// Must explain why (replay can't restore without a snapshot)
+		expect(out).toMatch(/cannot be restored via replay|durability story relies on a snapshot/i);
+	});
+
 	it("Phase 1 body excludes Phase-2-specific directives", () => {
 		const out = composeKickoff({
 			workflowMd: FULL_WORKFLOW,
