@@ -55,6 +55,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 // Mock child_process for store-cli and preflight-gate spawnSync calls
 vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn(() => ({ status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") })),
+	execFile: vi.fn(),
 }));
 
 // Mock runTaskPipeline to return controlled results for sprint coordination tests

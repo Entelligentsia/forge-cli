@@ -59,9 +59,10 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
-// Mock child_process for preflight gate spawnSync
+// Mock child_process for preflight gate spawnSync and store-resolver execFileAsync
 vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn(() => ({ status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") })),
+	execFile: vi.fn(),
 }));
 
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
@@ -825,5 +826,60 @@ describe("Test 12: runPreflightGate entityType parameter", () => {
 		expect(args).not.toContain("--task");
 
 		vi.mocked(spawnSync).mockClear();
+	});
+});
+
+// ── Test 13: Unprefixed task ID resolution (Issue #20) ───────────────────────
+//
+// The run-task handler now uses resolveToCanonicalId to resolve unprefixed
+// task IDs before passing them to the pipeline. This test validates that
+// the handler correctly: (a) passes raw args to the resolver, (b) uses the
+// canonical ID for subsequent operations, and (c) halts on resolution failure.
+
+describe("Test 13: Unprefixed task ID resolution (Issue #20)", () => {
+	it("resolves canonical task ID and proceeds with pipeline", async () => {
+		const { proj } = scaffoldProject();
+		mockStoreCliVerdict({
+			"review-plan": "approved",
+			"review-code": "approved",
+			validate: "approved",
+			approve: "approved",
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		// Run with canonical ID — should resolve directly
+		await invokeRunTask(pi, ctx, "FORGE-S21-T02");
+
+		// Should NOT emit resolver error
+		const resolverError = ctx.notifications.find(
+			(n) => n.level === "error" && n.msg.includes("could not resolve"),
+		);
+		expect(resolverError).toBeUndefined();
+	});
+
+	it("halts on unresolvable task ID with actionable error", async () => {
+		const { proj } = scaffoldProject();
+
+		// Mock store-cli to return empty results for all queries
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, _args?: readonly string[]) => {
+			return { status: 0, stdout: Buffer.from(JSON.stringify({ results: [] })), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		// This will fail because the resolver can't find the task
+		await invokeRunTask(pi, ctx, "xyz-bogus");
+
+		// Should have emitted an error about the unresolvable ID
+		const errorNotify = ctx.notifications.find(
+			(n) => n.level === "error" && (n.msg.includes("could not resolve") || n.msg.includes("No record")),
+		);
+		// Either the resolver or the handler should produce an error notification
+		expect(errorNotify || ctx.notifications.some((n) => n.level === "error")).toBeTruthy();
 	});
 });

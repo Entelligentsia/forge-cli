@@ -1,8 +1,9 @@
 // store-resolver.ts — Shared store-cli resolver for `@path` / canonical ID /
-// ID-suffix / keyword / NLP cascade. Used by /forge:read and (eventually)
-// /forge:plan, /forge:implement, /forge:fix-bug ports. Co-locates the spawn
-// helper, regex constants, and the multi-result picker so future ports do not
-// drift from the canonical cascade.
+// ID-suffix / keyword / NLP cascade. Used by /forge:read, /forge:run-task,
+// /forge:run-sprint, /forge:fix-bug, and (eventually) /forge:plan,
+// /forge:implement ports. Co-locates the spawn helper, regex constants, and
+// the multi-result picker so future ports do not drift from the canonical
+// cascade.
 
 import * as fsSync from "node:fs";
 import * as path from "node:path";
@@ -260,4 +261,89 @@ export async function resolveEntityRef(
 		return null;
 	}
 	return pick(items);
+}
+
+// ── Convenience: resolve to canonical ID string ─────────────────────────────
+//
+// Used by command handlers (run-task, run-sprint, fix-bug) to turn a raw
+// user-supplied arg (which may be missing a project prefix, be a fragment,
+// or be a keyword) into the canonical ID that the rest of the pipeline
+// expects (e.g. "S22-T03" → "FORGE-S22-T03").
+//
+// Returns the canonical ID string, or null with an actionable error already
+// emitted via ctx.ui.notify.
+
+export interface ResolveToCanonicalIdOptions {
+	/** Which entity types to search. Defaults to a single-element set matching `kind`. */
+	entityTypes?: Set<string>;
+	/** Command label used in error messages (e.g. "forge:run-task"). */
+	commandLabel?: string;
+}
+
+/**
+ * Resolve a raw user arg to a canonical entity ID string.
+ *
+ * 1. If the arg is already a canonical ID that resolves directly → return it.
+ * 2. If the arg is an unprefixed ID (e.g. "S22-T03") → suffix-match or
+ *    prefix-normalize to the canonical form → return it.
+ * 3. If the arg is ambiguous → prompt the user (or hard-fail in non-interactive).
+ * 4. If the arg cannot be resolved → emit an actionable error and return null.
+ */
+export async function resolveToCanonicalId(
+	arg: string,
+	toolDir: string,
+	cwd: string,
+	kind: "task" | "sprint" | "bug" | "feature",
+	opts: ResolveToCanonicalIdOptions & { ctx?: ExtensionCommandContext },
+): Promise<string | null> {
+	const {
+		ctx,
+		entityTypes = new Set([kind]),
+		commandLabel = `forge:${kind}`,
+	} = opts;
+
+	const resolved = await resolveEntityRef(arg, toolDir, cwd, {
+		entityTypes,
+		ctx,
+		statusLabel: `${commandLabel}: resolving`,
+	});
+
+	if (!resolved) {
+		ctx?.ui.notify(
+			`× ${commandLabel} — could not resolve "${arg}". ` +
+			`No matching ${kind} found. ` +
+			`Try a canonical ID like <PREFIX>-S<N>-T<N> or use /forge:read for search.`,
+			"error",
+		);
+		return null;
+	}
+
+	if ("dir" in resolved) {
+		// @path resolution — not a task/sprint/bug ID pattern.
+		ctx?.ui.notify(
+			`× ${commandLabel} — "${arg}" resolved to a directory path, not a ${kind} ID. ` +
+			`Provide a canonical ${kind} ID instead.`,
+			"error",
+		);
+		return null;
+	}
+
+	const canonicalId = resolved.item?.id;
+	if (!canonicalId || typeof canonicalId !== "string") {
+		ctx?.ui.notify(
+			`× ${commandLabel} — resolved "${arg}" but record has no canonical ID.`,
+			"error",
+		);
+		return null;
+	}
+
+	// If the canonical ID differs from the raw arg, notify the user.
+	if (canonicalId !== arg) {
+		ctx?.ui.notify(
+			`ℹ ${commandLabel} — resolved "${arg}" → ${canonicalId}`,
+			"info",
+		);
+	}
+
+	return canonicalId;
 }

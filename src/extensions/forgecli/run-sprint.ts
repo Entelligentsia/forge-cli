@@ -32,6 +32,7 @@ import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { checkMaterialization } from "./plan.js";
 import { loadWorkflow } from "./loaders/workflow-loader.js";
 import { discoverForgeConfig } from "./forge-root.js";
@@ -324,7 +325,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			"Orchestrator archetype: delegates per-task execution to runTaskPipeline.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const cwd = options.cwd ?? process.cwd();
-			const sprintId = args.trim();
+			let sprintId = args.trim();
 
 			if (!sprintId) {
 				ctx.ui.notify("× forge:run-sprint — sprint ID required. Usage: /forge:run-sprint <SPRINT_ID>", "error");
@@ -347,6 +348,29 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				return;
 			}
 			const forgeRoot = forgeConfig.forgeRoot;
+
+			// ── Resolve sprint ID (prefix-normalize, suffix-match, NLP fallback) ──
+			// Handles unprefixed IDs like "S22" → "FORGE-S22".
+			// Issue #20: unprefixed entity IDs silently poisoned substitutions.
+			const toolDir = resolveToolDir(forgeRoot);
+			const resolvedSprintId = await resolveToCanonicalId(
+				sprintId,
+				toolDir,
+				cwd,
+				"sprint",
+				{ ctx, commandLabel: "forge:run-sprint" },
+			);
+			if (!resolvedSprintId) {
+				// Error already emitted by resolver
+				ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+				return;
+			}
+
+			// Replace raw arg with canonical ID for all subsequent operations.
+			sprintId = resolvedSprintId;
+
+			// Update status with canonical ID so the user sees the resolved form.
+			ctx.ui.setStatus?.(SPRINT_STATUS_KEY, `run-sprint ${sprintId}: ready`);
 			const storeCli = path.join(forgeRoot, "tools", "store-cli.cjs");
 			const preflightGate = path.join(forgeRoot, "tools", "preflight-gate.cjs");
 

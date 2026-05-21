@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { checkMaterialization } from "./plan.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
@@ -1082,7 +1083,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			"Orchestrator archetype: each phase is an isolated subagent session (IL10).",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const cwd = options.cwd ?? process.cwd();
-			const taskId = args.trim();
+			let taskId = args.trim();
 
 			if (!taskId) {
 				ctx.ui.notify("× forge:run-task — task ID required. Usage: /forge:run-task <TASK_ID>", "error");
@@ -1105,6 +1106,33 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				return;
 			}
 			const forgeRoot = forgeConfig.forgeRoot;
+
+			// ── Resolve task ID (prefix-normalize, suffix-match, NLP fallback) ──
+			// Handles unprefixed IDs like "S22-T03" → "FORGE-S22-T03".
+			// Issue #20: unprefixed task IDs silently poisoned substitutions.
+			const toolDir = resolveToolDir(forgeRoot);
+			const resolvedTaskId = await resolveToCanonicalId(
+				taskId,
+				toolDir,
+				cwd,
+				"task",
+				{ ctx, commandLabel: "forge:run-task" },
+			);
+			if (!resolvedTaskId) {
+				// Error already emitted by resolver
+				registry.completeSession(taskId, "failed");
+				ctx.ui.setStatus?.(STATUS_KEY, undefined);
+				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
+				return;
+			}
+
+			// Replace raw arg with canonical ID for all subsequent operations
+			// (state files, store reads, preflight gates, orchestrator emits).
+			// Issue #20: unprefixed task IDs silently poisoned substitutions.
+			taskId = resolvedTaskId;
+
+			// Update status with canonical ID so the user sees the resolved form.
+			ctx.ui.setStatus?.(STATUS_KEY, `run-task ${taskId}: ready`);
 
 			// Tool paths
 			const storeCli = path.join(forgeRoot, "tools", "store-cli.cjs");

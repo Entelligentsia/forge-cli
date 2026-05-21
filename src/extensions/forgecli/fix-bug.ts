@@ -28,6 +28,7 @@ import { resolveModelForPhase } from "./model-resolver.js";
 import { validateModelConfig } from "./model-validator.js";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { checkMaterialization } from "./plan.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
@@ -1327,8 +1328,13 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			let bugId: string;
 			let isNewBug = false;
 
+			// Check if arg looks like it could be a bug ID (prefixed or unprefixed).
+			// Covers: FORGE-BUG-042, BUG-042, B042.
+			const looksLikeBugId = /^(?:[A-Z0-9]+-)?(?:BUG-?\d+|B\d+)$/i.test(rawArg) ||
+				/^BUG-\d+$/i.test(rawArg);
+
 			if (/^FORGE-BUG-\d+$/.test(rawArg)) {
-				// Existing bug ID — verify it exists
+				// Canonical bug ID — verify it exists
 				bugId = rawArg;
 				const bugRecord = readBugRecord(bugId, storeCli, cwd);
 				if (!bugRecord) {
@@ -1337,6 +1343,39 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 					return;
 				}
 				// Check if bug is already in a terminal state
+				if (BUG_TERMINAL_STATES.has(bugRecord.status ?? "")) {
+					ctx.ui.notify(
+						`× forge:fix-bug — bug ${bugId} is already in terminal state '${bugRecord.status}'. No further processing.`,
+						"error",
+					);
+					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					return;
+				}
+			} else if (looksLikeBugId) {
+				// Unprefixed bug ID — resolve through the store cascade.
+				// Issue #20: unprefixed entity IDs silently poisoned substitutions.
+				const toolDir = resolveToolDir(forgeRoot);
+				const resolvedBugId = await resolveToCanonicalId(
+					rawArg,
+					toolDir,
+					cwd,
+					"bug",
+					{ ctx, commandLabel: "forge:fix-bug" },
+				);
+				if (!resolvedBugId) {
+					// Error already emitted by resolver
+					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
+					return;
+				}
+				bugId = resolvedBugId;
+				// Re-verify the resolved bug exists
+				const bugRecord = readBugRecord(bugId, storeCli, cwd);
+				if (!bugRecord) {
+					ctx.ui.notify(`× forge:fix-bug — bug ${bugId} not found in store.`, "error");
+					ctx.ui.setStatus?.(STATUS_KEY, undefined);
+					return;
+				}
 				if (BUG_TERMINAL_STATES.has(bugRecord.status ?? "")) {
 					ctx.ui.notify(
 						`× forge:fix-bug — bug ${bugId} is already in terminal state '${bugRecord.status}'. No further processing.`,
