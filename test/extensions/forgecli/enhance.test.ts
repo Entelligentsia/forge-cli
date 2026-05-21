@@ -253,6 +253,24 @@ describe("composeKickoff", () => {
 		expect(out).toContain("〇 no friction events present");
 	});
 
+	it("forge-cli#29 — Phase 2 body instructs fs-walk fallback when forge_store_query returns zero", () => {
+		const out = composeKickoff({
+			workflowMd: FULL_WORKFLOW,
+			personaIdentity: "id",
+			parsed: { phase: 2, extra: "", rawPhaseFlag: "" },
+			cwd: "/proj",
+			timestamp: "20260510T120000Z",
+		});
+		// MCP query is preferred but not exclusive
+		expect(out).toContain("Preferred");
+		// fs-walk fallback explicitly mentioned (workflow body's discovery path)
+		expect(out).toMatch(/fall back to.*workflow body|fs[-\s]?walk|filesystem walk/i);
+		// Source-of-truth language for type filter
+		expect(out).toContain("type === 'friction'");
+		// Zero-friction guard only fires after BOTH paths empty
+		expect(out).toMatch(/both.*empty|both the MCP query AND the fs-walk/i);
+	});
+
 	it("Phase 1 body excludes Phase-2-specific directives", () => {
 		const out = composeKickoff({
 			workflowMd: FULL_WORKFLOW,

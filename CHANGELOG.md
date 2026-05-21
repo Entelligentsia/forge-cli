@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.6] — 2026-05-21
+
+### Fixed
+
+- **`enhance.ts` — Phase 2 kickoff no longer over-restricts friction discovery to `forge_store_query`.** The kickoff previously instructed agents to discover friction events "ONLY via the `forge_store_query` tool — do NOT raw-read `.forge/store/events/`". But the underlying NLP engine matches by keyword-on-title heuristics, not by `type === 'friction'` exactly — a testbench with 10 friction events on disk returned only 6 via NLP and zero in one agent's path, producing `frictionCount: 0` Phase 2 outputs despite events being present. Kickoff now: (a) keeps `forge_store_query` as **preferred** path, (b) explicitly instructs the agent to **fall back to the workflow body's filesystem walk** (`meta-enhance.md` Step 1's `e.type === 'friction'` filter) when MCP returns suspiciously low / zero, (c) zero-friction guard fires only when **both paths** are empty. Closes [forge-cli#29](https://github.com/Entelligentsia/forge-cli/issues/29).
+- Bundled forge-plugin advanced to **0.44.10**, which includes the fix for `manage-versions add-snapshot` silently failing to archive files ([forge#108](https://github.com/Entelligentsia/forge/issues/108)) — layer 2 of the composition contract is now functional. Unblocks future Approach A work (forge#107 / forge-cli#27).
+
+---
+
 ## [0.11.5] — 2026-05-21
 
 ### Fixed
