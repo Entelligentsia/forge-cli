@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3] — 2026-05-21
+
+### Fixed
+
+- **`ask-user-tool.ts` — chip strip no longer steals arrow keys from `forge_ask_user` dialogs.** `ctx.ui.confirm`/`select`/`input` are pi's built-in overlay dialogs but `forge_ask_user` never called `pushOverlay`/`popOverlay` on the `ForgeInputRouter`. The thread-switcher's arrow-key handler (registered with `skipWhenOverlayActive`) was never suppressed because `overlayDepth` stayed at 0. All three dialog calls are now wrapped in `router.pushOverlay()` / `router.popOverlay()` (try/finally), matching the pattern in `config-command.ts`.
+
+- **`run-task.ts` — chip strip no longer appears before task ID is resolved.** `registry.startSession(taskId)` was called with the raw user arg (e.g. `"T01"`) before `resolveToCanonicalId` had a chance to disambiguate ambiguous matches. The chip strip appeared showing `T01` before the user answered the `ctx.ui.select` choice dialog — and arrow keys were stolen by the strip. `startSession` is now deferred to after `resolveToCanonicalId` and all resume-detection `ctx.ui.confirm` prompts, right before pipeline delegation.
+
+---
+
 ## [0.11.2] — 2026-05-20
 
 ### Fixed
