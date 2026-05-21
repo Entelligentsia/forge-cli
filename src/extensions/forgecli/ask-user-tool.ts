@@ -22,6 +22,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { getInputRouter } from "./input-router.js";
+
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 export const AskUserParams = Type.Object({
@@ -152,36 +154,46 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 			// losing the question text.
 			ctx.ui.notify(`forge:ask_user — ${params.question}`, "info");
 
-			if (params.type === "confirm") {
-				// ctx.ui.confirm returns true/false or undefined (cancel).
-				const answer = await ctx.ui.confirm(params.question, "", opts);
-				if (answer === undefined) {
-					return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
+			// Mark overlay active so the input router suppresses arrow-key
+			// listeners (thread-switcher's ←→ navigation, ↓ activator) while
+			// pi's built-in dialog owns keyboard focus. Matches the pattern in
+			// config-command.ts — see input-router.ts skipWhenOverlayActive.
+			const router = getInputRouter();
+			router.pushOverlay();
+			try {
+				if (params.type === "confirm") {
+					// ctx.ui.confirm returns true/false or undefined (cancel).
+					const answer = await ctx.ui.confirm(params.question, "", opts);
+					if (answer === undefined) {
+						return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
+					}
+					return okResult(answer ? "Y" : "N");
 				}
-				return okResult(answer ? "Y" : "N");
-			}
 
-			if (params.type === "choice") {
-				if (!params.options || params.options.length === 0) {
-					return errResult("forge:ask_user error — type 'choice' requires a non-empty 'options' array.");
+				if (params.type === "choice") {
+					if (!params.options || params.options.length === 0) {
+						return errResult("forge:ask_user error — type 'choice' requires a non-empty 'options' array.");
+					}
+					// ctx.ui.select returns the selected string or undefined (cancel).
+					const answer = await ctx.ui.select(params.question, params.options, opts);
+					if (answer === undefined) {
+						return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
+					}
+					return okResult(answer);
 				}
-				// ctx.ui.select returns the selected string or undefined (cancel).
-				const answer = await ctx.ui.select(params.question, params.options, opts);
+
+				// type === "text"
+				// ctx.ui.input returns the entered string or undefined (cancel/ESC).
+				// Pass `default` (if any) as the placeholder ghost text so the user
+				// sees a hint of the model's suggested answer.
+				const answer = await ctx.ui.input(params.question, params.default ?? "", opts);
 				if (answer === undefined) {
 					return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
 				}
 				return okResult(answer);
+			} finally {
+				router.popOverlay();
 			}
-
-			// type === "text"
-			// ctx.ui.input returns the entered string or undefined (cancel/ESC).
-			// Pass `default` (if any) as the placeholder ghost text so the user
-			// sees a hint of the model's suggested answer.
-			const answer = await ctx.ui.input(params.question, params.default ?? "", opts);
-			if (answer === undefined) {
-				return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
-			}
-			return okResult(answer);
 		},
 	});
 }

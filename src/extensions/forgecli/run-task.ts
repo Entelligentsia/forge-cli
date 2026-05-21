@@ -1092,15 +1092,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 
 			ctx.ui.setStatus?.(STATUS_KEY, `run-task ${taskId}: initializing…`);
 
-			// Register the session in the live registry that the thread-switcher reads from.
-			const registry = getSessionRegistry();
-			registry.startSession(taskId);
-
 			// ── Discover forge config ────────────────────────────────────────
 			const forgeConfig = discoverForgeConfig(cwd);
 			if (!forgeConfig) {
 				ctx.ui.notify("× forge:run-task — no Forge project found at cwd. Run /forge:init first.", "error");
-				registry.completeSession(taskId, "failed");
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);
 				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 				return;
@@ -1110,6 +1105,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			// ── Resolve task ID (prefix-normalize, suffix-match, NLP fallback) ──
 			// Handles unprefixed IDs like "S22-T03" → "FORGE-S22-T03".
 			// Issue #20: unprefixed task IDs silently poisoned substitutions.
+			// NOTE: resolveToCanonicalId may surface ctx.ui.select (disambiguation)
+			// or ctx.ui.confirm prompts. The session must NOT be registered yet
+			// at this point — the chip strip would appear before the user has
+			// chosen which task they meant, stealing arrow keys from the dialog.
 			const toolDir = resolveToolDir(forgeRoot);
 			const resolvedTaskId = await resolveToCanonicalId(
 				taskId,
@@ -1120,7 +1119,6 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			);
 			if (!resolvedTaskId) {
 				// Error already emitted by resolver
-				registry.completeSession(taskId, "failed");
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);
 				ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 				return;
@@ -1159,7 +1157,6 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 							deleteState(cwd, taskId);
 						} else {
 							ctx.ui.notify("forge:run-task — stale state kept; aborting.", "info");
-							registry.completeSession(taskId, "failed");
 							ctx.ui.setStatus?.(STATUS_KEY, undefined);
 							ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 							return;
@@ -1167,7 +1164,6 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 					} else {
 						// Non-interactive: auto-abort on stale state
 						ctx.ui.notify("forge:run-task — stale state; non-interactive mode auto-aborting.", "info");
-						registry.completeSession(taskId, "failed");
 						ctx.ui.setStatus?.(STATUS_KEY, undefined);
 						ctx.ui.setStatus?.(MESSAGE_KEY, undefined);
 						return;
@@ -1208,7 +1204,14 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				}
 			}
 
-			// ── Delegate to pipeline ─────────────────────────────────────────
+			// ── Register session & delegate to pipeline ────────────────────
+			// Session registration MUST happen after all interactive disambiguation
+			// (resolveToCanonicalId, resume confirm) so the chip strip doesn't appear
+			// before the user has confirmed which task they meant — the strip would
+			// steal arrow keys from ctx.ui.select / ctx.ui.confirm dialogs.
+			const registry = getSessionRegistry();
+			registry.startSession(taskId);
+
 			const signal = registry.getAbortSignal(taskId);
 			const pipelineResult = await runTaskPipeline({
 				taskId,
