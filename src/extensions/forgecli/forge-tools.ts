@@ -119,6 +119,7 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 	registerForgeStoreDescribe(pi, toolDir, projectRoot);
 	registerForgeStoreTemplate(pi, toolDir, projectRoot);
 	registerForgeStoreQuery(pi, toolDir, projectRoot);
+	registerForgeVerifyApply(pi, toolDir, projectRoot);
 	registerForgeToolDiscipline(pi);
 }
 
@@ -471,6 +472,101 @@ function registerForgeStoreQuery(pi: ExtensionAPI, toolDir: string, projectRoot:
 				const e = err as { message?: string };
 				return errResult(`forge_store_query failed: ${e.message ?? "unknown error"}`);
 			}
+		},
+	});
+}
+
+// ── forge_verify_apply (forge-cli#31) ────────────────────────────────────────
+//
+// Detects hallucinated Edit calls — when the agent claims to have modified a
+// file but the actual on-disk content is unchanged. Background: hello testbench
+// 17:48 session showed the agent's "Files Modified" UI report claimed 5 edits
+// applied; the snap-4 archive captured by add-snapshot afterwards showed only
+// 1 of 5 files actually changed on disk. The other 4 were silent Edit-tool
+// failures (typically old_string whitespace mismatches) the agent didn't notice.
+//
+// Contract: agent calls this tool AFTER applying edits, BEFORE calling
+// manage-versions add-snapshot. Tool runs generation-manifest check on each
+// claimed file and returns structured results. Agent uses the output to detect
+// its own failures, re-apply hallucinated edits, then re-verify.
+//
+// Output schema (JSON string):
+//   {
+//     "modified":  ["<path>", ...],   // verified — content differs from manifest baseline (exit 1)
+//     "unchanged": ["<path>", ...],   // pristine — agent claim was wrong (exit 0)
+//     "untracked": ["<path>", ...],   // no manifest entry — ambiguous
+//     "missing":   ["<path>", ...]    // file doesn't exist
+//   }
+//
+// Exit semantics from generation-manifest.cjs check:
+//   0 = pristine     → file matches recorded hash, NO change → "unchanged"
+//   1 = modified     → file differs from recorded hash → "modified" (verified ✓)
+//   2 = untracked    → no manifest entry → "untracked"
+//   3 = file missing → "missing"
+function registerForgeVerifyApply(pi: ExtensionAPI, toolDir: string, projectRoot: string): void {
+	pi.registerTool({
+		name: "forge_verify_apply",
+		label: "Forge Verify Apply",
+		description:
+			"Verify file modifications actually landed on disk. Call AFTER applying enhancement edits, " +
+			"BEFORE invoking manage-versions add-snapshot. Detects hallucinated Edit-tool calls (e.g. when " +
+			"old_string didn't match exactly and the Edit silently no-op'd). Returns structured results: " +
+			"`modified` (verified — change is on disk), `unchanged` (agent claim was wrong — re-apply needed), " +
+			"`untracked` (no manifest entry — ambiguous, treat as potentially modified), `missing` (file gone). " +
+			"If `unchanged.length > 0`, RE-APPLY those edits via Edit/Write and call this tool again until empty.",
+		promptSnippet:
+			"After Phase 2 apply, call forge_verify_apply with the list of claimed file paths. " +
+			"If `unchanged` is non-empty, re-apply those edits before snapshot.",
+		parameters: Type.Object({
+			claimed_paths: Type.Array(Type.String(), {
+				description:
+					"Project-root-relative paths of files you claim to have modified (e.g. " +
+					"['.forge/personas/architect.md', '.forge/skills/engineer-skills.md']). Paths " +
+					"outside .forge/{personas,skills,workflows,templates}/ are accepted but classified " +
+					"according to manifest state regardless.",
+			}),
+		}),
+		async execute(_toolCallId, params, signal) {
+			void signal;
+			const manifestTool = path.join(toolDir, "generation-manifest.cjs");
+			if (!fs.existsSync(manifestTool)) {
+				return errResult(`forge_verify_apply failed: generation-manifest.cjs not found at ${manifestTool}`);
+			}
+
+			const result: {
+				modified: string[];
+				unchanged: string[];
+				untracked: string[];
+				missing: string[];
+			} = { modified: [], unchanged: [], untracked: [], missing: [] };
+
+			const { spawnSync } = await import("node:child_process");
+			for (const claimedPath of params.claimed_paths) {
+				const r = spawnSync(
+					"node",
+					[manifestTool, "check", claimedPath],
+					{ cwd: projectRoot, encoding: "utf8", timeout: 5_000 },
+				);
+				switch (r.status) {
+					case 0:
+						result.unchanged.push(claimedPath);
+						break;
+					case 1:
+						result.modified.push(claimedPath);
+						break;
+					case 2:
+						result.untracked.push(claimedPath);
+						break;
+					case 3:
+						result.missing.push(claimedPath);
+						break;
+					default:
+						// Tool error — surface as missing for safety; the agent should investigate
+						result.missing.push(claimedPath);
+				}
+			}
+
+			return okResult(JSON.stringify(result, null, 2));
 		},
 	});
 }

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-21
+
+### Added
+
+- **`forge_verify_apply` MCP tool** detects hallucinated Edit calls. The agent is instructed to call it AFTER applying Phase 2 enhancement edits and BEFORE invoking `manage-versions add-snapshot`. The tool runs `generation-manifest.cjs check` on each claimed file path and returns structured buckets: `modified` (verified ✓), `unchanged` (Edit silently no-op'd — usually `old_string` mismatch), `untracked` (no manifest entry), `missing` (file gone). If `unchanged.length > 0`, the agent MUST re-apply via Edit/Write and re-verify before snapshotting. Closes [forge-cli#31](https://github.com/Entelligentsia/forge-cli/issues/31).
+
+  Background: hello testbench session 17:48 UTC showed the agent's UI claimed 5 file modifications; the snap-4 archive captured by add-snapshot afterwards contained pristine content for 4 of 5 files. The Edit tool had failed silently and the agent reported success regardless. The verification logic is now in forge-cli code (deterministic, testable) rather than relying on agent self-inspection.
+
+### Changed
+
+- **`enhance.ts` Phase 2 kickoff** restructured: previous Step 5 (snapshot) split into Step 5 (VERIFY via `forge_verify_apply`) and Step 6 (snapshot after verify). Snapshot is now explicitly gated on verification completing with no `unchanged` files.
+
+---
+
 ## [0.12.1] — 2026-05-21
 
 ### Fixed

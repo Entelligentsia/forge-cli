@@ -286,7 +286,29 @@ describe("composeKickoff", () => {
 		// Must mention --enhanced-elements with the path format
 		expect(out).toContain("--enhanced-elements");
 		// Must explain why (replay can't restore without a snapshot)
-		expect(out).toMatch(/cannot be restored via replay|durability story relies on a snapshot/i);
+		expect(out).toMatch(/cannot restore via replay|durability story relies on a snapshot/i);
+	});
+
+	it("forge-cli#31 — Phase 2 body mandates forge_verify_apply between Edit and add-snapshot", () => {
+		const out = composeKickoff({
+			workflowMd: FULL_WORKFLOW,
+			personaIdentity: "id",
+			parsed: { phase: 2, extra: "", rawPhaseFlag: "" },
+			cwd: "/proj",
+			timestamp: "20260510T120000Z",
+		});
+		// Must name the verify tool
+		expect(out).toContain("forge_verify_apply");
+		// Must describe the four-bucket output schema
+		expect(out).toMatch(/modified.*unchanged.*untracked.*missing/);
+		// Must instruct re-apply loop when unchanged is non-empty
+		expect(out).toMatch(/unchanged\.length\s*>\s*0|`unchanged`\s+is\s+non-empty/i);
+		// Must mandate verify BEFORE add-snapshot (ordering constraint)
+		const verifyIdx = out.indexOf("forge_verify_apply");
+		const snapshotIdx = out.indexOf("manage-versions add-snapshot");
+		expect(verifyIdx).toBeGreaterThan(0);
+		expect(snapshotIdx).toBeGreaterThan(0);
+		expect(verifyIdx).toBeLessThan(snapshotIdx);
 	});
 
 	it("Phase 1 body excludes Phase-2-specific directives", () => {
