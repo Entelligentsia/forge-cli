@@ -170,6 +170,7 @@ export async function runHealthCheck(
 
 	// 3. Store integrity check
 	const validateStoreTool = path.join(bundleRoot, "tools", "validate-store.cjs");
+	const storeCliTool = path.join(bundleRoot, "tools", "store-cli.cjs");
 	if (fs.existsSync(validateStoreTool)) {
 		try {
 			execFileSync("node", [validateStoreTool, "--dry-run"], {
@@ -180,12 +181,89 @@ export async function runHealthCheck(
 			});
 		} catch (err: unknown) {
 			const e = err as { stderr?: string; stdout?: string };
-			const detail = e.stderr || e.stdout || "unknown error";
-			gaps.push({
-				check: "store-integrity",
-				severity: "warning",
-				message: `Store integrity check failed: ${detail.trim().slice(0, 200)}`,
-			});
+			const output = (e.stderr || e.stdout || "").trim();
+			if (!output) {
+				gaps.push({
+					check: "store-integrity",
+					severity: "warning",
+					message: "Store integrity check failed with no output.",
+				});
+			} else {
+				// Parse validation output into individual errors with remediation.
+				// Lines are: "ERROR  <entity>: <message>" or "WARN   <entity>: <message>"
+				const lines = output.split("\n").filter((l: string) => l.trim());
+				const errors = lines.filter((l: string) => l.startsWith("ERROR"));
+				const warnings = lines.filter((l: string) => l.startsWith("WARN"));
+
+				// Group errors by entity for concise reporting.
+				// Track which entities have enum violations (remediable via update-status).
+				const entityErrors = new Map<string, { msgs: string[]; enumViolations: string[] }>();
+				for (const line of errors) {
+					const afterPrefix = line.replace(/^ERROR\s+/, "");
+					const colonIdx = afterPrefix.indexOf(":");
+					const entity = colonIdx > 0 ? afterPrefix.slice(0, colonIdx).trim() : afterPrefix.trim();
+					const msg = colonIdx > 0 ? afterPrefix.slice(colonIdx + 1).trim() : "";
+					if (!entityErrors.has(entity)) {
+						entityErrors.set(entity, { msgs: [], enumViolations: [] });
+					}
+					const entry = entityErrors.get(entity)!;
+					entry.msgs.push(msg);
+					// Detect enum violations: "Value 'X' not in [...]"
+					const enumMatch = msg.match(/Value\s+'([^']+)'\s+not in\s+\[([^\]]+)\]/);
+					if (enumMatch) {
+						entry.enumViolations.push(enumMatch[1]);
+					}
+				}
+
+				// Build concise summary with remediation.
+				const errorCount = errors.length;
+				const warnCount = warnings.length;
+				const summary = errorCount > 0
+					? `${errorCount} error(s)${warnCount > 0 ? `, ${warnCount} warning(s)` : ""}`
+					: (warnCount > 0 ? `${warnCount} warning(s)` : "");
+
+				// For each entity with enum violations, suggest a store-cli fix command.
+				// For other errors, suggest reading the entity record.
+				const remediations: string[] = [];
+				for (const [entity, info] of entityErrors) {
+					// Determine entity type from ID format.
+					let entityType = "task"; // default
+					if (/BUG/i.test(entity)) entityType = "bug";
+					else if (/^\w+-S\d+$/i.test(entity)) entityType = "sprint";
+					else if (/^\w+-F\d+$/i.test(entity)) entityType = "feature";
+
+					if (info.enumViolations.length > 0 && fs.existsSync(storeCliTool)) {
+						for (const invalidVal of info.enumViolations) {
+							remediations.push(
+								`  Fix: node "$FORGE_ROOT/tools/store-cli.cjs" update-status ${entityType} ${entity} status <valid-status>`,
+							);
+						}
+					} else if (fs.existsSync(storeCliTool)) {
+						remediations.push(
+							`  Inspect: node "$FORGE_ROOT/tools/store-cli.cjs" read ${entityType} ${entity}`,
+						);
+					}
+				}
+
+				// Cap remediations to avoid overwhelming output.
+				const maxRemediations = 5;
+				const shownRemediations = remediations.slice(0, maxRemediations);
+				const moreCount = remediations.length - maxRemediations;
+
+				let message = `Store integrity: ${summary}`;
+				if (shownRemediations.length > 0) {
+					message += "\n" + shownRemediations.join("\n");
+					if (moreCount > 0) {
+						message += `\n  ... and ${moreCount} more.`;
+					}
+				}
+
+				gaps.push({
+					check: "store-integrity",
+					severity: errorCount > 0 ? "error" : "warning",
+					message,
+				});
+			}
 		}
 	}
 
@@ -202,6 +280,14 @@ export async function runHealthCheck(
 	if (forgeRoot) {
 		gaps.push(...checkPluginIntegrity(forgeRoot));
 	}
+
+	// 7. Generated file structure check — check-structure.cjs
+	// Runs the bundled check-structure tool to verify expected files exist.
+	gaps.push(...checkStructure(cwd, bundleRoot));
+
+	// 8. Integrity verification — verify-integrity.cjs
+	// Runs the bundled verify-integrity tool to detect tampering.
+	gaps.push(...checkVerifyIntegrity(forgeRoot ?? bundleRoot));
 
 	const clean = gaps.length === 0;
 	const summary = clean ? "〇 /forge:health: clean." : `△ /forge:health: ${gaps.length} gap(s) detected.`;
@@ -387,6 +473,94 @@ export function checkPluginIntegrity(forgeRoot: string): HealthGap[] {
 				check: "plugin-integrity",
 				severity: "warning",
 				message: `Cannot read plugin file: ${relativePath} — permission or I/O error.`,
+			});
+		}
+	}
+
+	return gaps;
+}
+
+// ── Check: Generated file structure ──────────────────────────────────────────
+
+/**
+ * Run check-structure.cjs to verify expected generated files exist.
+ * Returns one HealthGap per missing/extra file, or silently [] if absent.
+ */
+export function checkStructure(cwd: string, bundleRoot: string): HealthGap[] {
+	const gaps: HealthGap[] = [];
+	const checkStructureTool = path.join(bundleRoot, "tools", "check-structure.cjs");
+
+	if (!fs.existsSync(checkStructureTool)) {
+		return gaps; // Tool absent — skip silently rather than per-check noise.
+	}
+
+	try {
+		const result = execFileSync("node", [checkStructureTool, "--path", cwd], {
+			cwd,
+			encoding: "utf8",
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		// check-structure exits 0 when all files are present.
+		// If it exits non-zero, the missing files are in stdout.
+		if (result.trim()) {
+			const lines = result.trim().split("\n").filter((l: string) => l.trim());
+			for (const line of lines) {
+				gaps.push({
+					check: "generated-structure",
+					severity: "warning",
+					message: `Generated file structure: ${line.trim()} — run /forge:update to regenerate.`,
+				});
+			}
+		}
+	} catch (err: unknown) {
+		const e = err as { stdout?: string; stderr?: string };
+		const output = (e.stdout || e.stderr || "").trim();
+		if (output) {
+			const lines = output.split("\n").filter((l: string) => l.trim());
+			for (const line of lines) {
+				gaps.push({
+					check: "generated-structure",
+					severity: "warning",
+					message: `Generated file structure: ${line.trim()} — run /forge:update to regenerate.`,
+				});
+			}
+		}
+	}
+
+	return gaps;
+}
+
+// ── Check: Integrity verification ─────────────────────────────────────────────
+
+/**
+ * Run verify-integrity.cjs to detect plugin file tampering.
+ * Returns one HealthGap per modified file, or silently [] if absent.
+ */
+export function checkVerifyIntegrity(forgeRoot: string): HealthGap[] {
+	const gaps: HealthGap[] = [];
+	const verifyTool = path.join(forgeRoot, "tools", "verify-integrity.cjs");
+
+	if (!fs.existsSync(verifyTool)) {
+		return gaps; // Tool absent — skip silently.
+	}
+
+	try {
+		execFileSync("node", [verifyTool, "--forge-root", forgeRoot], {
+			cwd: forgeRoot,
+			encoding: "utf8",
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		// verify-integrity exits 0 when all files pass.
+	} catch (err: unknown) {
+		const e = err as { stdout?: string; stderr?: string };
+		const output = (e.stdout || e.stderr || "").trim();
+		if (output) {
+			gaps.push({
+				check: "plugin-integrity-verify",
+				severity: "warning",
+				message: `Integrity verification: ${output.slice(0, 300)}`,
 			});
 		}
 	}
