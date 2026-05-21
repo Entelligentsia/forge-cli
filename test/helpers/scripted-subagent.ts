@@ -109,6 +109,57 @@ export function scriptHalt(opts: ScriptHaltOptions = {}): StreamFn {
 		});
 }
 
+// ── Approved-phase summaries for fixture pre-population ──────────────────
+//
+// When scripting a task through the full pipeline (all phases complete
+// successfully), review phases call readVerdict() which reads from the store.
+// Pre-populate these summaries in the fixture so each review gate passes.
+// The "approve" phase is special — it reads task.status === "approved" rather
+// than a summary verdict. Set fixture.updateTaskStatus(taskId, "approved")
+// before running the pipeline with these summaries in place.
+
+export interface PhaseSummary {
+	objective: string;
+	written_at: string;
+	verdict: string;
+}
+
+/** Approved-phase summaries for every review gate in the task pipeline. */
+export const APPROVED_PHASE_SUMMARIES: Record<string, PhaseSummary> = {
+	plan:          { objective: "Plan created",       written_at: "2026-01-01T00:00:00Z", verdict: "approved" },
+	review_plan:   { objective: "Plan reviewed",      written_at: "2026-01-01T00:01:00Z", verdict: "approved" },
+	implementation: { objective: "Implementation done", written_at: "2026-01-01T00:02:00Z", verdict: "approved" },
+	code_review:   { objective: "Code reviewed",      written_at: "2026-01-01T00:03:00Z", verdict: "approved" },
+	validation:   { objective: "Validation passed",   written_at: "2026-01-01T00:04:00Z", verdict: "approved" },
+};
+
+/**
+ * Prepare a task for full pipeline completion by pre-populating all review
+ * verdict summaries and transitioning task status through to "approved".
+ * The verdicts let the pipeline's readVerdict() checks pass, so the task
+ * can complete all phases when scripted with scriptTaskPipelinePhase().
+ *
+ * Status transitions: plan-approved → implementing → implemented →
+ * review-approved → approved (via real store-cli).
+ *
+ * Note: we stop at "approved" rather than "committed" because the sprint
+ * handler skips tasks with status "committed" or "completed". A task at
+ * "approved" status will run through the pipeline normally.
+ */
+export function approveTaskInFixture(
+	updateTaskStatus: (taskId: string, status: string) => void,
+	addTaskSummaries: (taskId: string, phases: Record<string, PhaseSummary>) => void,
+	taskId: string,
+): void {
+	addTaskSummaries(taskId, APPROVED_PHASE_SUMMARIES);
+	// Transition through valid statuses to reach "approved".
+	// The sprint handler skips tasks at "committed"/"completed" but NOT
+	// "approved", so a task at "approved" will run through the pipeline.
+	for (const status of ["implementing", "implemented", "review-approved", "approved"]) {
+		updateTaskStatus(taskId, status);
+	}
+}
+
 // ── Factory for sprint-level orchestration ────────────────────────────────
 
 export interface ScriptFactoryContext {

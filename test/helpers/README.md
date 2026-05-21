@@ -94,6 +94,26 @@ Factory that scripts both per-phase pipeline and ceremony in one place.
 that phase, `scriptHalt` is returned. All other phases use a successful
 no-op stream. The ceremony defaults to `scriptArchitectCeremony()`.
 
+```ts
+APPROVED_PHASE_SUMMARIES: Record<string, PhaseSummary>
+```
+
+Pre-built approved verdict summaries for every review gate in the task
+pipeline (`plan`, `review_plan`, `implementation`, `code_review`,
+`validation`). Use with `fixture.addTaskSummaries()` to pre-populate a
+task's store record so the pipeline's `readVerdict()` checks pass without
+needing real tool calls from the scripted stream.
+
+```ts
+approveTaskInFixture(updateTaskStatus, addTaskSummaries, taskId): void
+```
+
+Convenience helper: adds `APPROVED_PHASE_SUMMARIES` to the task record
+via `fixture.addTaskSummaries()` and transitions task status from
+`plan-approved` through to `approved` (via `fixture.updateTaskStatus()`).
+Stops at `approved` (not `committed`) because the sprint handler skips
+tasks with `committed` or `completed` status.
+
 ### `../fixtures/sprint-fixture.ts`
 
 ```ts
@@ -106,10 +126,13 @@ real schemas from `forge/forge/schemas/` so `store-cli emit` validates
 events against the live schema. Cleanup via `fixture.cleanup()`.
 
 ```ts
-fixture.readEmittedEvents() → Record<string, unknown>[]
-fixture.updateSprintStatus(status: string) → void   // via real store-cli
-fixture.eventSchemaPath                              // real event.schema.json
-fixture.forgeRoot                                    // real forge payload
+fixture.readEmittedEvents() -> Record<string, unknown>[]
+fixture.updateSprintStatus(status: string) -> void   // via real store-cli
+fixture.updateTaskStatus(taskId: string, status: string) -> void  // via real store-cli
+fixture.addTaskSummaries(taskId: string, phases: Record<string, FixturePhaseSummary>) -> void  // via real store-cli set-summary
+fixture.readTaskRecord(taskId: string) -> Record<string, unknown> | null  // via real store-cli
+eventSchemaPath                              // real event.schema.json
+forageRoot                                    // real forge payload
 ```
 
 ---
@@ -159,11 +182,37 @@ fixture.cleanup();
 | Pattern | When | Trade-off |
 |---|---|---|
 | **Pre-completed tasks** (status=committed) | Testing ceremony / event emission only | Bypasses pipeline; can't catch per-phase orchestration bugs |
-| **Real pipeline + scripted phases** | Testing pipeline → ceremony flow | Slower; each phase needs a viable scripted stream |
+| **Real pipeline + scripted phases** | Testing pipeline > ceremony flow | Slower; each phase needs a viable scripted stream |
+| **Real pipeline + pre-populated verdicts** | Testing user-pause flows where tasks must complete through the pipeline | Must pre-populate verdict summaries and transition task status to "approved" via fixture helpers; review phases pass because `readVerdict` finds them in the store |
 
 Pick the pattern that isolates the concern you're testing. See
-`run-sprint.ceremony.test.ts` for both — clean-complete uses pre-completed
-tasks; halt-on-failure runs the real pipeline with a scripted halt.
+`run-sprint.ceremony.test.ts` for all three — clean-complete uses pre-completed
+tasks; halt-on-failure runs the real pipeline with a scripted halt; user-paused
+uses pre-populated verdicts to drive a task through the full phase loop.
+
+### Pre-populating verdicts for full-pipeline tests
+
+When a test needs a task to complete all phases (plan through commit) but
+doesn't want to emit real tool calls from scripted streams, pre-populate the
+store with approved verdict summaries:
+
+```ts
+import { APPROVED_PHASE_SUMMARIES, approveTaskInFixture } from "../../helpers/scripted-subagent.js";
+
+// Pre-populate verdict summaries and transition task status to "approved"
+approveTaskInFixture(
+  fixture.updateTaskStatus.bind(fixture),
+  fixture.addTaskSummaries.bind(fixture),
+  taskId,
+);
+```
+
+This writes `plan`, `review_plan`, `implementation`, `code_review`, and
+`validation` phase summaries with `verdict: "approved"` and transitions the
+task status from `plan-approved` through to `approved`, so that every
+`readVerdict()` check in the pipeline finds "approved" and advances the
+phase loop. The scripted stream (`scriptTaskPipelinePhase()`) simply emits
+`done(stop)` for each phase — no tool calls needed.
 
 ---
 
@@ -188,18 +237,21 @@ status. Two options:
 
 ## Limitations / follow-ups
 
-- **Pipeline coverage in scripted mode is shallow.** A scripted phase emits
-  `done(stop)` immediately with no tool calls, so the orchestrator's verdict
-  read between phases sees stale store state. This is fine for halt tests
-  (failure at first phase) and ceremony-isolated tests (pre-committed
-  tasks), but a full real-pipeline test (e.g. T01 walks plan→implement→…→
-  commit with scripted streams) would require scripted streams that emit
-  `Bash` tool calls to set verdicts at each review phase.
+- **Pipeline coverage in scripted mode is shallow for review phases.** A
+  scripted phase emits `done(stop)` immediately with no tool calls. Without
+  pre-populated verdict summaries, the orchestrator's `readVerdict()` check
+  between review phases returns "missing" and the pipeline fails. The
+  `approveTaskInFixture` helper works around this by pre-populating
+  verdict summaries in the store, so review phases pass automatically.
+  This is adequate for testing orchestration flows (pause, halt, ceremony)
+  but doesn't test real subagent verdict-writing behavior.
 
 - **No support yet for emitting tool calls from scripts.** The current
   builders emit only `start` + `done`/`error`. A future addition could
-  accept a tool-call sequence and emit `toolcall_start` + `toolcall_end` so
-  tests can drive real bash sessions through scripted reasoning.
+  accept a tool-call sequence and emit `toolcall_start` + `toolcall_end`
+  so tests can drive real bash sessions through scripted reasoning. This
+  would enable testing verdict-writing behavior without pre-populated
+  store state.
 
 - **The legacy `run-sprint.test.ts` is unchanged.** It retains its
   module-level `vi.mock` blocks; rewriting all of its cases against this
@@ -208,13 +260,16 @@ status. Two options:
   unmocked approach in the same file. New ceremony cases go in
   `run-sprint.ceremony.test.ts`.
 
-- **`run-sprint.ceremony.test.ts` covers four of the six Plan-12 cases
+- **`run-sprint.ceremony.test.ts` covers all six Plan-12 cases
   listed in forge-cli#17**: clean-complete (with full schema validation
   against the real `event.schema.json`), halt-on-failure (sprint-halted
   emitted, no ceremony), verdict=partial fallback when ceremony doesn't
-  transition the sprint, and the streamFnFactory threading seam through
-  `runTaskPipeline`. The remaining two cases (user-paused with 0
-  completed, user-paused with N completed) require driving real per-task
-  pipeline runs to "completed" via scripted streams that emit Bash
-  tool calls — they're left to the same follow-up that adds tool-call
-  emission support to the script builders.
+  transition the sprint, streamFnFactory threading seam through
+  `runTaskPipeline`, user-paused with N completed (real pipeline with
+  pre-populated verdicts), and pre-flight decline (tests the
+  structurally-reachable branch of "zero progress pause"). The original
+  "user-paused with zero completed" case is structurally unreachable in
+  the current handler — the post-task confirm only fires after at least
+  one task completes, so `completedTaskIds` is always non-empty at the
+  pause branch. The pre-flight decline test covers the closest reachable
+  scenario (abort before any work starts).

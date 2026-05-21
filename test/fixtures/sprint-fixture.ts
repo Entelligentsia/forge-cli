@@ -117,11 +117,17 @@ export interface SprintFixtureOptions {
 	sprintTitle?: string;
 }
 
+export interface FixturePhaseSummary {
+	objective: string;
+	written_at: string;
+	verdict?: string;
+}
+
 export interface SprintFixture {
 	/** Project directory (the test cwd). */
 	projDir: string;
 	/** Forge root containing tools/, schemas/. Real forge payload. */
-	forgeRoot: string;
+	forageRoot: string;
 	/** Absolute path to store-cli.cjs (real). */
 	storeCli: string;
 	/** Absolute path to event.schema.json (real). */
@@ -130,8 +136,13 @@ export interface SprintFixture {
 	taskIds: string[];
 	/** Update sprint status via real store-cli (used to drive ceremony verdict). */
 	updateSprintStatus(status: string): void;
+	/** Update task status via real store-cli. */	updateTaskStatus(taskId: string, status: string): void;
+	/** Add phase summaries to a task record via real store-cli set-summary. */
+	addTaskSummaries(taskId: string, phases: Record<string, FixturePhaseSummary>): void;
 	/** Read the latest sprint-* event written to .forge/store/events/<sprintId>/. */
 	readEmittedEvents(): Array<Record<string, unknown>>;
+	/** Read a task record from the store. */
+	readTaskRecord(taskId: string): Record<string, unknown> | null;
 	/** Recursive remove of projDir. */
 	cleanup(): void;
 }
@@ -236,6 +247,43 @@ export function buildSprintFixture(opts: SprintFixtureOptions): SprintFixture {
 		}
 	}
 
+	function updateTaskStatus(taskId: string, status: string): void {
+		const r = spawnSync("node", [storeCli, "update-status", "task", taskId, "status", status], {
+			cwd: projDir,
+			encoding: "utf8",
+		});
+		if (r.status !== 0) {
+			throw new Error(`store-cli update-status task failed: ${r.stderr}`);
+		}
+	}
+
+	function addTaskSummaries(taskId: string, phases: Record<string, FixturePhaseSummary>): void {
+		for (const [phase, summary] of Object.entries(phases)) {
+			const tmpFile = path.join(tmpRoot, `summary-${taskId}-${phase}.json`);
+			fs.writeFileSync(tmpFile, JSON.stringify(summary), "utf8");
+			const r = spawnSync("node", [storeCli, "set-summary", taskId, phase, tmpFile], {
+				cwd: projDir,
+				encoding: "utf8",
+			});
+			if (r.status !== 0) {
+				throw new Error(`store-cli set-summary ${phase} failed: ${r.stderr}`);
+			}
+		}
+	}
+
+	function readTaskRecord(taskId: string): Record<string, unknown> | null {
+		const r = spawnSync("node", [storeCli, "read", "task", taskId], {
+			cwd: projDir,
+			encoding: "utf8",
+		});
+		if (r.status !== 0) return null;
+		try {
+			return JSON.parse(r.stdout as string);
+		} catch {
+			return null;
+		}
+	}
+
 	return {
 		projDir,
 		forgeRoot,
@@ -244,7 +292,10 @@ export function buildSprintFixture(opts: SprintFixtureOptions): SprintFixture {
 		sprintId: opts.sprintId,
 		taskIds,
 		updateSprintStatus,
+		updateTaskStatus,
+		addTaskSummaries,
 		readEmittedEvents,
+		readTaskRecord,
 		cleanup() {
 			fs.rmSync(tmpRoot, { recursive: true, force: true });
 		},

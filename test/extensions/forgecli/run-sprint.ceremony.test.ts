@@ -30,7 +30,10 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 }));
 import {
 	scriptArchitectCeremony,
+	scriptTaskPipelinePhase,
 	scriptHalt,
+	APPROVED_PHASE_SUMMARIES,
+	approveTaskInFixture,
 	type StreamFnFactory,
 } from "../../helpers/scripted-subagent.js";
 
@@ -303,5 +306,125 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		const events = fixture.readEmittedEvents();
 		const sprintHalted = events.find((e) => e.type === "sprint-halted");
 		expect(sprintHalted).toBeDefined();
+	});
+
+	it("user-paused with N completed tasks dispatches partial ceremony and emits schema-valid sprint-complete event", async () => {
+		// Plan 12 case 5: Sprint with 4 tasks. T01 and T02 pre-committed (skipped
+		// by orchestrator, accumulated into completedTaskIds). T03 runs through the
+		// real pipeline with scripted phases + pre-populated verdicts. After T03
+		// completes, the post-task "Continue?" confirm fires (because T04 remains).
+		// User declines -> user-paused branch dispatches ceremony with mode=partial.
+		//
+		// Pre-populated verdict summaries on T03 let the review phases pass
+		// (readVerdict finds "approved" in the store), so the pipeline completes
+		// T03 successfully without needing tool-call emission from the scripted
+		// stream.
+		fixture = buildSprintFixture({
+			sprintId: "FORGE-S96",
+			sprintStatus: "active",
+			tasks: [
+				{ id: "FORGE-S96-T01", status: "committed" },
+				{ id: "FORGE-S96-T02", status: "committed" },
+				{ id: "FORGE-S96-T03", status: "plan-approved" },
+				{ id: "FORGE-S96-T04", status: "plan-approved" },
+			],
+		});
+
+		// Pre-populate T03 verdict summaries so the pipeline's review phases pass
+		// and transition status to "approved" so the approve-phase gate passes.
+		approveTaskInFixture(
+			fixture.updateTaskStatus.bind(fixture),
+			fixture.addTaskSummaries.bind(fixture),
+			"FORGE-S96-T03",
+		);
+
+		// Confirm sequence:
+		//   1st call: "Begin sprint FORGE-S96?" -> yes
+		//   2nd call: "Continue to next task?" (after T03) -> no (user pauses)
+		let confirmCount = 0;
+		const ctx = makeCtx({
+			confirm: () => {
+				confirmCount++;
+				return Promise.resolve(confirmCount === 1);
+			},
+		});
+
+		const streamFnFactory: StreamFnFactory = (sfctx) => {
+			if (sfctx.kind === "ceremony") {
+				return scriptArchitectCeremony({
+					model:    "test-architect-model",
+					provider: "test-architect-provider",
+				});
+			}
+			// All task phases succeed (verdicts pre-populated in store)
+			return scriptTaskPipelinePhase();
+		};
+
+		const pi = makePi();
+		registerRunSprint(pi as never, {
+			cwd: fixture.projDir,
+			streamFnFactory,
+		});
+
+		await invokeRunSprint(pi, ctx, fixture.sprintId);
+
+		// Sprint-complete event with verdict=partial should have been emitted.
+		// The orchestrator dispatches ceremony with mode=partial after user pause.
+		// Ceremony streamFn returns success (no tool calls), so sprint status is
+		// unchanged -> verdict resolution falls back to "partial" (the mode
+		// parameter carries from the dispatch call).
+		const events = fixture.readEmittedEvents();
+		const sprintComplete = events.find((e) => e.type === "sprint-complete");
+		expect(sprintComplete, "sprint-complete event was written").toBeDefined();
+		if (!sprintComplete) return;
+
+		expect(sprintComplete.verdict).toBe("partial");
+		expect(sprintComplete.sprintId).toBe("FORGE-S96");
+		// T01, T02 are pre-committed (skipped), T03 completed via pipeline
+		expect(Array.isArray(sprintComplete.completedTaskIds)).toBe(true);
+		expect((sprintComplete.completedTaskIds as string[]).sort()).toEqual([
+			"FORGE-S96-T01",
+			"FORGE-S96-T02",
+			"FORGE-S96-T03",
+		]);
+		expect(typeof sprintComplete.pausedAfterTaskIndex).toBe("number");
+
+		// Schema validation
+		const schema = JSON.parse(fs.readFileSync(fixture.eventSchemaPath, "utf8"));
+		const errors = realValidateRecord(sprintComplete, schema);
+		expect(errors, `expected zero schema errors, got: ${JSON.stringify(errors)}`).toEqual([]);
+	});
+
+	it("user decline at pre-flight confirm: no ceremony dispatched, no event emitted", async () => {
+		fixture = buildSprintFixture({
+			sprintId: "FORGE-S94",
+			sprintStatus: "active",
+			tasks: [
+				{ id: "FORGE-S94-T01" },
+				{ id: "FORGE-S94-T02" },
+			],
+		});
+
+		const ctx = makeCtx({
+			confirm: () => Promise.resolve(false),
+		});
+
+		let ceremonyDispatched = false;
+		const streamFnFactory: StreamFnFactory = (sfctx) => {
+			if (sfctx.kind === "ceremony") ceremonyDispatched = true;
+			return scriptTaskPipelinePhase();
+		};
+
+		const pi = makePi();
+		registerRunSprint(pi as never, {
+			cwd: fixture.projDir,
+			streamFnFactory,
+		});
+
+		await invokeRunSprint(pi, ctx, fixture.sprintId);
+
+		expect(ceremonyDispatched, "ceremony should NOT be dispatched on pre-flight decline").toBe(false);
+		const events = fixture.readEmittedEvents();
+		expect(events, "no events should be emitted on pre-flight decline").toEqual([]);
 	});
 });
