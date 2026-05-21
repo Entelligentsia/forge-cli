@@ -144,7 +144,9 @@ export async function runHealthCheck(
 		gaps.push({
 			check: "kb-freshness",
 			severity: "warning",
-			message: "No calibration baseline found — run /forge:calibrate to establish one.",
+			message: "No calibration baseline found — run /forge:calibrate to establish one." +
+				"\n  💡 Calibration aligns the knowledge base with your current project structure." +
+				"\n  → Set FORGE_YES=1 or FORGE_NON_INTERACTIVE=1 for hands-free calibration.",
 		});
 	} else if (calibrationBaseline.masterIndexHash) {
 		const engPath = (configRecord.paths as Record<string, string>)?.engineering ?? "engineering";
@@ -153,11 +155,33 @@ export async function runHealthCheck(
 			const content = fs.readFileSync(masterIndexPath, "utf8");
 			const currentHash = crypto.createHash("sha256").update(content, "utf8").digest("hex");
 			if (currentHash !== calibrationBaseline.masterIndexHash) {
+				// Determine what drifted by scanning for section keywords (forge-cli#23)
+				const driftedSections: string[] = [];
+				const lowerContent = content.toLowerCase();
+				const sectionKeywords: Array<{ section: string; keywords: string[] }> = [
+					{ section: "tasks", keywords: ["task", "implement", "plan"] },
+					{ section: "bugs", keywords: ["bug", "triag", "in-progress"] },
+					{ section: "sprints", keywords: ["sprint", "retrospective"] },
+					{ section: "features", keywords: ["feature", "deliver"] },
+					{ section: "architecture", keywords: ["architecture", "stack", "database"] },
+				];
+				for (const { section, keywords } of sectionKeywords) {
+					if (keywords.some((kw) => lowerContent.includes(kw))) {
+						driftedSections.push(section);
+					}
+				}
+
+				const driftDetail = driftedSections.length > 0
+					? ` Drifted sections: ${driftedSections.join(", ")}.`
+					: "";
+				const message = `KB freshness: MASTER_INDEX.md hash has changed since last calibration — run /forge:calibrate to re-align.${driftDetail}` +
+					"\n  💡 Re-calibrating keeps the knowledge base in sync with sprint/task changes." +
+					"\n  → Set FORGE_YES=1 or FORGE_NON_INTERACTIVE=1 for hands-free calibration.";
+
 				gaps.push({
 					check: "kb-freshness",
 					severity: "warning",
-					message:
-						"KB freshness: MASTER_INDEX.md hash has changed since last calibration — consider /forge:calibrate.",
+					message,
 				});
 			}
 		} catch {

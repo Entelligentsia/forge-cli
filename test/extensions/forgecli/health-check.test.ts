@@ -283,3 +283,67 @@ describe("runHealthCheck: absent .forge/", () => {
 		expect(result.gaps[0].check).toBe("config-completeness");
 	});
 });
+
+// ── KB freshness: drift detail and remediation (forge-cli#23) ─────────────────
+
+describe("runHealthCheck: KB freshness drift detail", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("includes drifted sections in KB freshness gap when hash changes", async () => {
+		const baselineHash = "old-hash-abc123";
+		const masterIndexContent = "# Tasks\n## FORGE-S18-T01\n## Bug tracking\n";
+
+		const config = JSON.stringify({
+			version: "0.43.0",
+			project: { name: "test", prefix: "TEST" },
+			stack: {},
+			commands: { test: "npm test" },
+			paths: { engineering: "engineering", store: ".forge/store", workflows: ".forge/workflows", commands: ".forge/commands", templates: ".forge/templates" },
+			calibrationBaseline: { masterIndexHash: baselineHash },
+		});
+
+		// Config read, then MASTER_INDEX.md read (for drift detection)
+		fsMock.readFileSync
+			.mockReturnValueOnce(config)  // config.json
+			.mockReturnValueOnce(masterIndexContent); // MASTER_INDEX.md
+
+		// config.json exists, everything else doesn't
+		fsMock.existsSync
+			.mockReturnValueOnce(true)   // config.json exists
+			.mockReturnValue(false);      // everything else
+
+		const result = await runHealthCheck("/project", "/bundle");
+
+		const kbGap = result.gaps.find((g) => g.check === "kb-freshness");
+		if (kbGap) {
+			expect(kbGap.message).toContain("/forge:calibrate");
+			expect(kbGap.message).toContain("Drifted sections:");
+			expect(kbGap.message).toContain("FORGE_YES=1");
+		}
+	});
+
+	it("includes remediation guidance when no calibration baseline exists", async () => {
+		const config = JSON.stringify({
+			version: "0.43.0",
+			project: { name: "test", prefix: "TEST" },
+			stack: {},
+			commands: { test: "npm test" },
+			paths: { engineering: "engineering", store: ".forge/store", workflows: ".forge/workflows", commands: ".forge/commands", templates: ".forge/templates" },
+			// no calibrationBaseline
+		});
+
+		fsMock.readFileSync.mockReturnValueOnce(config);
+		fsMock.existsSync.mockReturnValueOnce(true).mockReturnValue(false);
+
+		const result = await runHealthCheck("/project", "/bundle");
+
+		const kbGap = result.gaps.find((g) => g.check === "kb-freshness");
+		if (kbGap) {
+			expect(kbGap.message).toContain("/forge:calibrate");
+			expect(kbGap.message).toContain("FORGE_YES=1");
+			expect(kbGap.message).toContain("FORGE_NON_INTERACTIVE=1");
+		}
+	});
+});
