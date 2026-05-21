@@ -13,12 +13,64 @@
 //
 // See forge-cli companion to forge#83 / #85.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { getBundledPayloadRoot, getBundledToolsRoot } from "./forge-init.js";
+
+// ── Pre-write modification guard (forge-cli#26 / forge#106 / FORGE-BUG-037) ──
+//
+// `substitute-placeholders.cjs` blanket-overwrites every file in the four
+// structural-element categories. Before invoking it, enumerate each .forge/<cat>/
+// file and run `generation-manifest.cjs check`. Any file whose recorded hash
+// no longer matches its on-disk content is a manual modification — typically
+// applied by /forge:enhance Phase 2 — and would be silently destroyed.
+// Surface the list to the user and require explicit confirmation.
+
+const STRUCTURAL_CATEGORIES = ["personas", "skills", "workflows", "templates"] as const;
+
+export interface ModifiedFile {
+	category: string;
+	relativePath: string; // e.g. ".forge/skills/engineer-skills.md"
+}
+
+/**
+ * Enumerate files in .forge/{personas,skills,workflows,templates}/ and return
+ * those whose generation-manifest hash no longer matches on-disk content.
+ *
+ * Pure function (no I/O beyond fs reads + manifest tool spawns). Synchronous;
+ * the manifest tool is fast (sha256 of a small file).
+ */
+export function findModifiedStructuralFiles(cwd: string, toolsRoot: string): ModifiedFile[] {
+	const manifestTool = path.join(toolsRoot, "generation-manifest.cjs");
+	if (!fs.existsSync(manifestTool)) return [];
+
+	const modified: ModifiedFile[] = [];
+
+	for (const category of STRUCTURAL_CATEGORIES) {
+		const dir = path.join(cwd, ".forge", category);
+		if (!fs.existsSync(dir)) continue;
+
+		const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+		for (const f of files) {
+			const relPath = path.posix.join(".forge", category, f);
+			const result = spawnSync("node", [manifestTool, "check", relPath], {
+				cwd,
+				encoding: "utf8",
+				timeout: 5_000,
+			});
+			// generation-manifest check exit codes:
+			//   0 = pristine, 1 = modified, 2 = untracked, 3 = file missing
+			if (result.status === 1) {
+				modified.push({ category, relativePath: relPath });
+			}
+		}
+	}
+
+	return modified;
+}
 
 async function runTool(
 	toolPath: string,
@@ -67,7 +119,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 		description:
 			"Re-materialize .forge/ and .claude/commands/ from the bundled forge-payload " +
 			"(deterministic subset of the plugin's /forge:regenerate — runs substitute-placeholders.cjs).",
-		async handler(_args, ctx) {
+		async handler(args, ctx) {
 			const cwd = process.cwd();
 			const configPath = path.join(cwd, ".forge", "config.json");
 			if (!fs.existsSync(configPath)) {
@@ -94,6 +146,38 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			if (!fs.existsSync(basePackDir)) {
 				ctx.ui.notify(`× forge:regenerate — base-pack missing at ${basePackDir}`, "error");
 				return;
+			}
+
+			// Pre-write modification guard (forge-cli#26 / forge#106 / FORGE-BUG-037).
+			// Skip with --force (e.g. CI / dogfood reset). Otherwise, surface any
+			// manual modifications (typically applied by /forge:enhance Phase 2)
+			// and require explicit confirmation before overwriting them.
+			const force = (args ?? []).includes("--force");
+			if (!force) {
+				const modified = findModifiedStructuralFiles(cwd, toolsRoot);
+				if (modified.length > 0) {
+					const summary = [
+						`${modified.length} file(s) in .forge/ have been manually modified ` +
+							`(typically by /forge:enhance Phase 2). Re-materialization will overwrite them.`,
+						"",
+						"Modified files:",
+						...modified.map((m) => `  △ ${m.relativePath}`),
+						"",
+						"To preserve these edits, answer 'no' and run /forge:regenerate <category>",
+						"per-category (or use --force to overwrite without prompting).",
+					].join("\n");
+					const proceed = await ctx.ui.confirm(
+						`Overwrite ${modified.length} manual modification(s)?`,
+						summary,
+					);
+					if (!proceed) {
+						ctx.ui.notify(
+							`〇 forge:regenerate cancelled — ${modified.length} manual modification(s) preserved.`,
+							"info",
+						);
+						return;
+					}
+				}
 			}
 
 			ctx.ui.setStatus?.("forge:regenerate", "rebuilding init-context…");

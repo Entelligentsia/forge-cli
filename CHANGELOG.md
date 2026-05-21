@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.4] — 2026-05-21
+
+### Fixed
+
+- **`regenerate.ts` — pre-write modification guard for `/forge:regenerate`.** Companion to [forge#106](https://github.com/Entelligentsia/forge/issues/106) (FORGE-BUG-037) and the forge plugin v0.44.9 markdown fix. Before invoking `substitute-placeholders.cjs`, the handler now enumerates files in `.forge/{personas,skills,workflows,templates}/` and runs `generation-manifest.cjs check` on each. Any file whose hash no longer matches the recorded manifest — typically applied by `/forge:enhance` Phase 2 — triggers a `ctx.ui.confirm` prompt listing the modifications. On decline, regenerate is cancelled and the edits are preserved. New `--force` flag bypasses the prompt for CI / dogfood reset.
+
+  The plugin-level markdown fix (forge v0.44.9) covered the Claude Code plugin flow which executes the command markdown body. forge-cli has a self-contained TypeScript handler that bypasses the markdown body entirely; this commit closes that vector. See [forge-cli#26](https://github.com/Entelligentsia/forge-cli/issues/26).
+
+- Bundled forge-plugin advanced to **0.44.9** (was 0.44.6 / 0.44.8 in 0.11.3 builds depending on rebuild timing).
+
+---
+
 ## [0.11.3] — 2026-05-21
 
 ### Fixed
