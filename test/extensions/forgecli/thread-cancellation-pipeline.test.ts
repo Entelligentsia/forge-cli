@@ -44,6 +44,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 // Mock child_process for preflight gate / store-cli
 vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn(() => ({ status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") })),
+	execFile: vi.fn(),
 }));
 
 import { runTaskPipeline, type RunTaskPipelineResult } from "../../../src/extensions/forgecli/run-task.js";

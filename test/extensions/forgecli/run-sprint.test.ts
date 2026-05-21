@@ -58,6 +58,13 @@ vi.mock("node:child_process", () => ({
 	execFile: vi.fn(),
 }));
 
+// Mock store-resolver so resolveToCanonicalId passes through canonical IDs unchanged
+// (tests use canonical sprint IDs like "FORGE-S22" which don't need resolution).
+vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+	resolveToCanonicalId: vi.fn(async (arg: string) => arg),
+	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
+}));
+
 // Mock runTaskPipeline to return controlled results for sprint coordination tests
 vi.mock("../../../src/extensions/forgecli/run-task.js", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();

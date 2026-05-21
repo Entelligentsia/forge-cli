@@ -1,7 +1,11 @@
 import * as fs from "node:fs";
-import { Ajv } from "ajv";
+import AjvModule from "ajv";
 import { getGlobalConfigPath, getProjectConfigPath } from "./paths/paths.js";
 import schema from "./forge-cli-schema.json" with { type: "json" };
+
+// Ajv v8 ESM interop: default export is a namespace holder;
+// the actual constructor lives at .Ajv or .default.Ajv.
+const Ajv = (AjvModule as any).default?.Ajv ?? (AjvModule as any).Ajv ?? AjvModule;
 
 export interface PersonaModel {
   provider: string;
@@ -59,7 +63,7 @@ function validateConfig(
   const ok = validate(raw);
   if (!ok) {
     const messages =
-      validate.errors?.map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ") ?? "unknown";
+      validate.errors?.map((e: {instancePath?: string; message?: string}) => `${e.instancePath || "/"} ${e.message}`).join("; ") ?? "unknown";
     return { valid: false, error: `forge-cli ${label} config schema error: ${messages}` };
   }
   return { valid: true, data: raw as GlobalConfig & ProjectConfig };

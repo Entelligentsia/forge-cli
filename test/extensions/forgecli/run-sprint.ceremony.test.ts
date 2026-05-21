@@ -21,6 +21,13 @@ import { createRequire } from "node:module";
 
 import { registerRunSprint } from "../../../src/extensions/forgecli/run-sprint.js";
 import { buildSprintFixture, realForgeRoot, type SprintFixture } from "../../fixtures/sprint-fixture.js";
+
+// Mock store-resolver so resolveToCanonicalId passes through canonical sprint IDs unchanged.
+// The ceremony tests use real canonical IDs (e.g. "FORGE-S22") that don't need resolution.
+vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+	resolveToCanonicalId: vi.fn(async (arg: string) => arg),
+	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
+}));
 import {
 	scriptArchitectCeremony,
 	scriptHalt,
