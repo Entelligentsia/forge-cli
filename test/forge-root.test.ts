@@ -1,19 +1,23 @@
-// Unit tests for `discoverForgeRoot` (FORGE-S15-T03).
+// Unit tests for `discoverForgeConfig` (FORGE-S25-T05 — retargeted from the
+// deleted `discoverForgeRoot` wrapper to the live implementation).
 //
-// Branches covered:
-//   1. cwd contains `.forge/config.json` directly                → absolute path
+// Branches covered (1:1 mapping from the prior `discoverForgeRoot` suite —
+// the shape changes from `string | null` to `{ forgeRoot, configPath } | null`,
+// semantics are preserved):
+//   1. cwd contains `.forge/config.json` directly                → result.forgeRoot is absolute
 //   2. ancestor contains `.forge/config.json`, relative forgeRoot → resolved
-//      against the config dir (NOT cwd)
+//      against the config dir (NOT cwd); configPath ends with `.forge/config.json`
 //   3. no config anywhere up to filesystem root                  → null
 //   4. malformed JSON in config                                  → null
 //   5. config missing paths.forgeRoot                            → null
+//   6. config with an absolute forgeRoot                         → preserved as-is
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { discoverForgeRoot } from "../src/extensions/forgecli/forge-root.js";
+import { discoverForgeConfig } from "../src/extensions/forgecli/forge-root.js";
 
 let tmpRoot: string;
 
@@ -31,7 +35,7 @@ function writeConfig(dir: string, body: string): void {
 	fs.writeFileSync(path.join(forgeDir, "config.json"), body, "utf8");
 }
 
-describe("discoverForgeRoot", () => {
+describe("discoverForgeConfig", () => {
 	it("returns absolute forgeRoot when cwd has .forge/config.json", () => {
 		const project = path.join(tmpRoot, "proj");
 		fs.mkdirSync(project, { recursive: true });
@@ -39,8 +43,9 @@ describe("discoverForgeRoot", () => {
 		fs.mkdirSync(forgePluginDir, { recursive: true });
 		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "./forge/forge" } }));
 
-		const result = discoverForgeRoot(project);
-		expect(result).toBe(path.resolve(project, "forge", "forge"));
+		const result = discoverForgeConfig(project);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(path.resolve(project, "forge", "forge"));
 	});
 
 	it("walks up from a deep cwd and resolves relative forgeRoot against config dir", () => {
@@ -49,15 +54,17 @@ describe("discoverForgeRoot", () => {
 		fs.mkdirSync(deep, { recursive: true });
 		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "./forge/forge" } }));
 
-		const result = discoverForgeRoot(deep);
-		expect(result).toBe(path.resolve(project, "forge", "forge"));
+		const result = discoverForgeConfig(deep);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(path.resolve(project, "forge", "forge"));
+		expect(result?.configPath.endsWith(path.join(".forge", "config.json"))).toBe(true);
 	});
 
 	it("returns null when no .forge/config.json exists up to filesystem root", () => {
 		const orphan = path.join(tmpRoot, "no-forge-here");
 		fs.mkdirSync(orphan, { recursive: true });
 		// tmpRoot has no .forge config; walk-up will hit FS root harmlessly.
-		const result = discoverForgeRoot(orphan);
+		const result = discoverForgeConfig(orphan);
 		expect(result).toBeNull();
 	});
 
@@ -66,7 +73,7 @@ describe("discoverForgeRoot", () => {
 		fs.mkdirSync(project, { recursive: true });
 		writeConfig(project, "{ this is not valid json");
 
-		const result = discoverForgeRoot(project);
+		const result = discoverForgeConfig(project);
 		expect(result).toBeNull();
 	});
 
@@ -75,7 +82,7 @@ describe("discoverForgeRoot", () => {
 		fs.mkdirSync(project, { recursive: true });
 		writeConfig(project, JSON.stringify({ paths: {} }));
 
-		const result = discoverForgeRoot(project);
+		const result = discoverForgeConfig(project);
 		expect(result).toBeNull();
 	});
 
@@ -85,7 +92,8 @@ describe("discoverForgeRoot", () => {
 		const absForgeRoot = path.join(tmpRoot, "elsewhere", "forge");
 		writeConfig(project, JSON.stringify({ paths: { forgeRoot: absForgeRoot } }));
 
-		const result = discoverForgeRoot(project);
-		expect(result).toBe(absForgeRoot);
+		const result = discoverForgeConfig(project);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(absForgeRoot);
 	});
 });

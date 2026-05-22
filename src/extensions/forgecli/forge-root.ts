@@ -77,7 +77,3 @@ export function discoverForgeConfig(cwd: string = process.cwd()): ForgeConfig | 
 
 	return { forgeRoot: resolved, configPath };
 }
-
-export function discoverForgeRoot(cwd: string = process.cwd()): string | null {
-	return discoverForgeConfig(cwd)?.forgeRoot ?? null;
-}

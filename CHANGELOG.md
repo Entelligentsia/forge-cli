@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-05-22
+
+### Removed
+
+Eight dead-code modules retired after the round-2 organization scan
+(FORGE-S25-T05). Each removal carries paste-ready grep evidence in its
+commit; no production caller existed for any of them. The two
+`build-payload.cjs` directory copies for `prompts/` and `schemas/` now
+exercise their fail-soft `existsSync` branches and emit a
+`"… not found — skipping"` line at build time — expected, not a defect.
+
+- **B-3** — `src/bin/forgecli.ts` stub (no `bin` map entry pointed at it;
+  all three aliases resolve to `dist/bin/forge.js`).
+- **S-5** — `src/extensions/forgecli/schemas/task-list.schema.json` plus
+  the now-empty `schemas/` directory.
+- **S-6** — `src/extensions/forgecli/prompts/sprint-plan-prompt.md` plus
+  the now-empty extension-internal `prompts/` directory. The clone-root
+  `forge-cli/prompts/tomoshibi.md` is unaffected.
+- **S-8 / Pass-3** — `src/extensions/forgecli/loaders/template-render.ts`
+  and its sole test `test/extensions/forgecli/loaders/template-render.test.ts`.
+- **C-10** — `discoverForgeRoot` wrapper export from
+  `src/extensions/forgecli/forge-root.ts`. The live `discoverForgeConfig`
+  function stays; `test/forge-root.test.ts` was rewritten case-for-case to
+  exercise `discoverForgeConfig` and assert against its `.forgeRoot` field.
+- **ST-8** — `test/poc/subagent-imports.ts` (vestigial spike type-check
+  probe; `test/poc/**` is already excluded by vitest).
+- **ST-5** — `tsconfig.spike.json` (no script, workflow, or tool invokes
+  it; spike-r3..r6 directories remain in place, flagged for a future
+  archive sweep).
+- **N-S-A** — `src/extensions/forgecli/config-tui/index.ts` barrel
+  (all consumers import directly from internal modules).
+
 ## [0.15.0] — 2026-05-22
 
 > **The SkillOS release.** Forge now treats its own skill library as a
