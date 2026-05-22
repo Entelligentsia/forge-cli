@@ -352,14 +352,31 @@ fs.mkdirSync(schemasDest, { recursive: true });
 // Default: only `*.schema.json` (real JSON-Schemas, copied verbatim into
 // the user's `.forge/schemas/` by forge-init.ts:799-808 and consumed by
 // validate-store.cjs / store-cli PreToolUse hook).
+//
+// Recursive walk (FORGE-S25-T12) so subdirectory shared definitions
+// (e.g. _defs/phaseSummary.schema.json, $ref'd from task + bug schemas)
+// ship in the bundle preserving their relative path.
 if (fs.existsSync(schemasSrc)) {
-	const schemaFiles = fs
-		.readdirSync(schemasSrc)
-		.filter((f) => f.endsWith(".schema.json") || (includeFull && f.endsWith(".json")));
-	for (const file of schemaFiles) {
-		copyFile(path.join(schemasSrc, file), path.join(schemasDest, file));
-	}
-	console.log(`build-payload: .schemas/ — ${schemaFiles.length} files copied`);
+	let schemaFileCount = 0;
+	const walkSchemas = (dir, relDir) => {
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			const fullSrc = path.join(dir, entry.name);
+			const relPath = relDir ? path.join(relDir, entry.name) : entry.name;
+			if (entry.isDirectory()) {
+				walkSchemas(fullSrc, relPath);
+			} else if (
+				entry.isFile() &&
+				(entry.name.endsWith(".schema.json") || (includeFull && entry.name.endsWith(".json")))
+			) {
+				const destPath = path.join(schemasDest, relPath);
+				fs.mkdirSync(path.dirname(destPath), { recursive: true });
+				copyFile(fullSrc, destPath);
+				schemaFileCount++;
+			}
+		}
+	};
+	walkSchemas(schemasSrc, "");
+	console.log(`build-payload: .schemas/ — ${schemaFileCount} files copied`);
 } else {
 	console.warn("build-payload: forge/forge/schemas/ not found — skipping");
 }

@@ -178,18 +178,31 @@ export function resolveCategory(
 	// ── Schema categories ───────────────────────────────────────────────────
 
 	if (category === "schemas") {
-		// Bare schemas — copy all *.schema.json from bundle/.schemas/
-		try {
-			const files = fs.readdirSync(schemas).filter((f) => f.endsWith(".schema.json"));
-			for (const f of files) {
-				writes.push({
-					src: path.join(schemas, f),
-					dest: safeDest(path.join("schemas", f)),
-				});
+		// Bare schemas — copy all *.schema.json from bundle/.schemas/ recursively,
+		// preserving subdirectory structure under the destination .forge/schemas/.
+		// (FORGE-S25-T12: enables _defs/ subtree shipping for $ref'd shared schemas.)
+		function walk(dir: string): void {
+			let entries: fs.Dirent[];
+			try {
+				entries = fs.readdirSync(dir, { withFileTypes: true });
+			} catch (err: unknown) {
+				if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+				throw err;
 			}
-		} catch (err: unknown) {
-			if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+			for (const entry of entries) {
+				const fullSrc = path.join(dir, entry.name);
+				if (entry.isDirectory()) {
+					walk(fullSrc);
+				} else if (entry.isFile() && entry.name.endsWith(".schema.json")) {
+					const rel = path.relative(schemas, fullSrc);
+					writes.push({
+						src: fullSrc,
+						dest: safeDest(path.join("schemas", rel)),
+					});
+				}
+			}
 		}
+		walk(schemas);
 		return;
 	}
 
