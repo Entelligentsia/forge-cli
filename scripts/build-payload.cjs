@@ -240,10 +240,12 @@ for (const toolName of TOOLS_TO_COPY) {
 //   which is not in TOOLS_TO_COPY).
 const LIB_ALLOWLIST = new Set([
 	"forge-root.cjs",
+	"json-io.cjs",
 	"paths.cjs",
 	"pricing.cjs",
 	"project-root.cjs",
 	"result.js",
+	"schema-loader.cjs",
 	"suggest.cjs",
 	"validate.js",
 	"store-facade.cjs",
