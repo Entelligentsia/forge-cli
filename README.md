@@ -8,7 +8,7 @@
 [![npm](https://img.shields.io/npm/v/@entelligentsia/forgecli?style=flat-square&color=000&label=npm)](https://www.npmjs.com/package/@entelligentsia/forgecli)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-000?style=flat-square)](#)
 [![license](https://img.shields.io/badge/license-MIT-000?style=flat-square)](#)
-[![forge plugin](https://img.shields.io/badge/forge--plugin-v0.44.5-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
+[![forge plugin](https://img.shields.io/badge/forge--plugin-v0.46.1-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
 [![pi runtime](https://img.shields.io/badge/runtime-pi--coding--agent-000?style=flat-square)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
 
 </div>
@@ -22,6 +22,7 @@ forge-cli generates a project-specific engineering knowledge base, sprint workfl
 
 - **Structured SDLC, in any terminal.** Plan → implement → review → validate → commit chains, gated by your own personas and audience rules.
 - **Project memory that compounds.** Every sprint sharpens the knowledge base; the next one starts smarter.
+- **Skills that stay relevant.** Forge ships a SkillOS-style curation loop (FORGE-S24). Five friction subkinds — `skill_unused`, `skill_failed`, `skill_missing`, `skill_stale`, `skill_redundant` — surface what the model actually reached for, what worked, and what didn't. Phase 2 enhancement classifies proposals as `insert_skill` / `update_skill` / `delete_skill`, scores them through an LLM-judge rubric, gates oversize edits behind a compression check, and drains a per-task curator queue into one batched review at sprint close. The result: your skill library tracks your codebase as it evolves, instead of calcifying.
 - **Bring your own model.** Anthropic, OpenAI, ollama, openrouter — anything pi resolves.
 
 ## Install

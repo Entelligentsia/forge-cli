@@ -7,6 +7,206 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-05-22
+
+> **The SkillOS release.** Forge now treats its own skill library as a
+> living, signal-driven asset. The model's actual frictions — what it
+> reached for, what worked, what didn't — feed back into the project
+> through a five-subkind taxonomy, an LLM-judge rubric, a compression
+> gate, and a per-task curator queue drained as one batched review at
+> sprint close. The result: your `.forge/skills/` tracks the codebase as
+> it evolves, instead of calcifying into a directory of well-intentioned
+> instructions nobody opens.
+>
+> This release also closes the packaging gaps that were silently
+> shipping every Forge install: missing structural checks, missing
+> SkillOS tools in the payload, a `/forge:update` that upgraded the
+> CLI but skipped project migrations, a version banner that lied about
+> the bundled plugin. The deterministic-check infrastructure
+> (`check-structure.cjs`, `verify-integrity.cjs`) is finally live
+> end-to-end and would now flag a missing skill file the moment it
+> happens. The plugin payload is now coherent enough to drive its own
+> auditing.
+
+### Added — SkillOS curation pipeline (FORGE-S24)
+
+- **`skill-retriever.ts`** (T08, ac90659). New BM25 retriever using
+  `lunr.js` (pinned exact) over skill frontmatter + description fields.
+  Returns deterministic top-k for a known corpus and emits a
+  `skill_usage` event with `retrieved: true` and a populated
+  `retrieval_score` for every hit. The signal that tells Phase 2 which
+  skills the model actually saw.
+- **`skill-usage-tracker.ts`** (T09, 394125c). Diffs tool-call trajectories
+  against retrieved skills; emits `skill_usage` events with `used: true`
+  and `tool_call_success_rate` populated. Three discriminator cases
+  (overlap → used, no-overlap → unused, reasoning-only → used) covered
+  by failing-first tests. Telemetry-actor split: the orchestrator owns
+  emission; subagents never call this module directly.
+- **`skill-curator-subagent.ts`** (T10, ea29079). Per-task curator —
+  takes retrieval + usage signals, dispatches a `runForgeSubagent` with
+  the composed task body, parses proposals out, and writes them to the
+  append-only queue at
+  `.forge/enhancement-proposals/queue/<sprint>/<task>-<ts>.json`. One
+  curator run per task; Phase 2 collects them at sprint close.
+- **`friction-emit.ts`** (T11, b4d3526). Auto-emits friction events with
+  five skill subkinds — `skill_unused` (retrieved but not used on success),
+  `skill_failed` (used on failure), `skill_missing` (not retrieved on
+  success with ≥2 tool errors), `skill_stale` (unused 3 consecutive
+  sprints), `skill_redundant` (>0.8 overlap pair). The diagnostic
+  vocabulary that lets a project tell you which of its skills are
+  carrying weight and which aren't.
+- **`forgeCli.skillCuration.enabled` flag** (T12, 7904c4b). Gated rollout
+  — default OFF. Layered resolution: env override
+  `FORGE_CLI_SKILL_CURATION_ENABLED` → project
+  `<cwd>/.pi/forge-cli/config.json` → global
+  `~/.pi/forge-cli/config.json` → `false`. All four emission modules
+  no-op silently when the flag is off, so a flag-off install is
+  byte-identical to pre-FORGE-S24 behaviour. The pure classifier helpers
+  (`computeFrictionSignals`, `classifySkillUsage`, `buildSkillIndex`,
+  `retrieveTopK`, `composeCuratorTask`, `parseProposalsFromOutput`) are
+  **not** gated — they have no side effects and remain callable for
+  downstream consumers.
+
+### Added — bundled forge-plugin pipeline (paired with v0.46.1)
+
+Forge-cli now bundles `forge-plugin@0.46.1` with the full FORGE-S24
+machinery, regenerated into the installable base-pack:
+
+- **`queue-drain.cjs`** (T07). Append-only queue under
+  `.forge/enhancement-proposals/queue/<sprint>/`; dedupe key is
+  `{op, target_path, sha256(diff_body)}`; drain at sprint close produces
+  a single batched review prompt instead of one prompt per task — the
+  SkillOS §3.2.1 grouped-reward pattern.
+- **`compression-gate.cjs`** (T06). Rejects `update_skill` proposals that
+  grow a target skill by >20% unless backed by ≥3 supporting friction
+  events. Closes the unbounded-growth failure mode where every friction
+  pastes another paragraph of trajectory copy into a skill file. Strict
+  byte-wise (UTF-8) growth check; insert/delete pass through;
+  recurrence-supported growth is allowed.
+- **`judge-proposal.cjs`** (T03). Sonnet-class LLM-judge rubric applied
+  to every surviving proposal; drops `<3/5`. Rejections persist to
+  `.forge/enhancement-proposals/queue/<sprint>/phase2-<ts>-rejections.json`
+  so every drop stays traceable.
+- **`delete-candidate-detector.cjs`** (T05). Scans trailing 3 sprints
+  of `skill_usage` events. Any skill with zero retrieval AND zero
+  invocation across the window emits a `delete_skill` proposal at
+  Phase 2 entry. The only mechanism by which the skill repo shrinks.
+- **`replay-scoring.cjs`** (T04). Cross-task recurrence — same
+  `{subkind, skillId}` across tasks t..N gets a `recurrence_count` boost
+  that the judge consumes as a specificity score. "This friction
+  happened three times" beats "this friction happened once."
+- **Proposal schema with op classification** (T02). `proposal.schema.json`
+  enforces `op ∈ {insert_skill, update_skill, delete_skill}` with
+  required `target_path` and `diff_body`. Legacy inserts back-compat
+  via `proposal-normalize.cjs`. Strict `additionalProperties: false`.
+- **`skill_usage` event variant** (T01). `event.schema.json` gained a
+  conditional `allOf` branch for `type: "skill_usage"` requiring
+  `{eventId, sprintId, taskId, skillId, retrieved, used,
+  tool_call_success_rate, retrieval_score}`. Strict.
+
+### Fixed — packaging gaps that broke deterministic checks
+
+- **`/forge:update` skipped the migration step entirely** (fc40f4a,
+  closes forge-cli#32). The handler implemented the full 5-step guided
+  upgrade — detect install → fetch changelog → confirm → npm install →
+  apply migrations — but the registration in `index.ts` omitted the
+  migration-side options, so the handler returned early before reaching
+  the migration block. Projects upgrading the CLI never received
+  schema/workflow/template migrations. Fixed by wiring
+  `currentBundledForgeVersion` + `migrationProjectRoot` at registration.
+- **`/forge:update` migration block unreachable when CLI was already at
+  latest** (31796d5, follow-up on #32). The "already at latest" branch
+  early-returned BEFORE the migration check at line 373. Decoupled the
+  two orthogonal gates — npm-upgrade and project-migration — so a
+  locally-built CLI ahead of npm's published version (or a fresh clone
+  with a stale drift cache) still fires the migration prompt when
+  `fromVersion !== toVersion`.
+- **`structure-manifest.json` + `integrity.json` not bundled** (cd732d2).
+  Both files exist in plugin source (`forge/forge/schemas/`,
+  `forge/forge/integrity.json`) and the consuming tools
+  (`check-structure.cjs`, `verify-integrity.cjs`) shipped in
+  `TOOLS_TO_COPY`, but `build-payload.cjs` never copied the artifacts.
+  Result: `/forge:health`'s structural-check and integrity-verify
+  gates silently passed on every install ("× not found" → exit 0).
+  Bundle now ships `dist/forge-payload/schemas/structure-manifest.json`
+  (non-dot path matching what `check-structure.cjs` resolves) and
+  `dist/forge-payload/integrity.json` at bundle root. After install,
+  `verify-integrity.cjs` correctly reports `〇 Plugin integrity — all
+  25 files unmodified`, and `check-structure.cjs` flags any missing
+  expected file in the user's `.forge/` tree.
+- **`hooks/` and `agents/` not bundled** (625fbb1, continuation of
+  cd732d2). `integrity.json` tracks 25 files including 4 hooks
+  (`check-update.js`, `forge-permissions.js`, `triage-error.js`,
+  `validate-write.js`) and 2 agents (`tomoshibi.md`,
+  `store-query-validator.md`). None were copied. The TS ports
+  (`hook-dispatcher.ts`, `hooks/*.ts`) are the actual runtime path —
+  the `.js`/`.cjs` files are integrity ballast that satisfy plugin
+  tampering detection. Bundled to satisfy
+  `verify-integrity.cjs`. Hooks intentionally bundle only top-level
+  `*.js` (4 files); `lib/`, `__tests__/`, and `*.cjs` (post-init,
+  post-sprint) are excluded — none are integrity-tracked and the TS
+  ports own the runtime channel.
+- **5 FORGE-S24 plugin tools missing from `TOOLS_TO_COPY`** (commit
+  in the build-payload cluster). `queue-drain.cjs`,
+  `compression-gate.cjs`, `judge-proposal.cjs`,
+  `delete-candidate-detector.cjs`, `replay-scoring.cjs` — the new Phase 2
+  workflow `require()`s them from `$FORGE_ROOT/tools/`. Without them
+  bundled, `/forge:enhance` would fail with
+  `Cannot find module './forge/tools/queue-drain.cjs'` (and four more).
+  Added to the allowlist with a comment block flagging the dependency.
+- **Version banner reported stale `bundledVersion`** (ae520f8). Both
+  readers (`src/bin/forge.ts printVersion`, `src/extensions/forgecli/
+  index.ts readPkgVersions`) sourced the value from `package.json`
+  `forge.bundledVersion` — a hand-maintained mirror that nobody
+  updated when the plugin moved 0.45.0 → 0.46.0 → 0.46.1. Both readers
+  now prefer `dist/forge-payload/.claude-plugin/plugin.json` as the
+  single source of truth. After fix:
+  `@entelligentsia/forgecli@0.15.0 (forge-plugin@0.46.1, pi@…)` reads
+  the truth. The mirror in package.json is now informational only.
+
+### Changed
+
+- **Bundled forge-plugin: v0.44.5 → v0.46.1.** Two minor bumps. v0.45.x
+  shipped the FORGE-S24 SKILL-CURATION machinery (event variant,
+  proposal schema, queue drain, compression gate, judge, recurrence,
+  delete-candidate); v0.46.0 was the sprint-completion marker; v0.46.1
+  is the build fix that regenerated `init/base-pack/workflows/
+  enhance.md` from the meta source so projects migrating to 0.46.x
+  actually receive the new Phase 2 algorithm.
+- **`forge_verify_apply` MCP tool ships in the bundle** (b971596,
+  closes forge-cli#31). Detects hallucinated `Edit` calls — when an
+  assistant proposes an edit that doesn't match any file on disk, the
+  tool flags it at apply time instead of silently no-op'ing.
+
+### Documented
+
+- **`hook-dispatcher.ts` scope clarification** (7d513ca). New header
+  comment block stating the write-guard is a soft fence for honest
+  mistakes, not a security boundary against adversarial bash escape.
+  See `doc/analysis/write-guard-scope-and-model-behavior.md` in the
+  forge-engineering repo for the testbench evidence (two pi-session
+  recordings of the same rogue-write prompt — one model surrendered on
+  the first block, another escalated three times until succeeding via
+  `echo > file`).
+
+### Migration notes
+
+After upgrading via `npm i -g @entelligentsia/forgecli@0.15.0`:
+
+1. `4ge` from your project root.
+2. `/forge:update` will now actually apply project migrations (the
+   wire-up + decoupling fixes above). Accept the migration prompt.
+3. To enable SkillOS curation, set
+   `forgeCli.skillCuration.enabled: true` in
+   `<cwd>/.pi/forge-cli/config.json` (or
+   `FORGE_CLI_SKILL_CURATION_ENABLED=1` for one-shot use). Until you
+   enable it, the four emission modules no-op — the install is
+   byte-identical to pre-FORGE-S24 behaviour.
+4. `/forge:health` now reports through the bundled
+   `verify-integrity.cjs` and `check-structure.cjs` — expect cleaner
+   output than prior releases, and real signal if your `.forge/` tree
+   diverges from the manifest's expectations.
+
 ## [0.14.0] — 2026-05-22
 
 ### Added
