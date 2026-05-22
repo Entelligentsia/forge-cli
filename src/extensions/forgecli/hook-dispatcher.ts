@@ -25,6 +25,26 @@
 // Write-guard bypass:
 //   FORGE_SKIP_WRITE_VALIDATION=1 bypasses checkWriteGuard for one turn.
 //   The write-guard itself handles this env var; hook-dispatcher defers to it.
+//
+// ── SCOPE: soft fence, not a security boundary ─────────────────────────────
+// This dispatcher catches schema-violating writes through three structured
+// channels: Write tool, Edit tool, and `node store-cli.cjs write|update-status`
+// bash invocations. It does NOT intercept arbitrary shell writes targeting
+// `.forge/store/**` — `echo '{...}' > file`, `tee file`, `sed -i`, `cat <<EOF`,
+// `node -e 'fs.writeFileSync(...)'`, and similar all route around the guard.
+//
+// The intent is to catch honest mistakes (the agent meant to write a planned
+// task but fat-fingered the status enum), not adversarial tool-call sequences.
+// Bash is endlessly expressive; pattern-matching every shell escape is
+// whack-a-mole. The right hard boundary for adversarial scenarios lives
+// upstream in pi's tool permission system (require operator confirmation for
+// Bash commands touching `.forge/store/**`).
+//
+// Empirical evidence: see doc/analysis/write-guard-scope-and-model-behavior.md
+// in the forge-engineering repo for two pi-session recordings where one model
+// (glm-5.1) surrendered the control loop on the first block, while another
+// (gemini-3-flash-preview) escalated through three escape attempts including
+// a raw `echo > file` redirect that bypassed the guard entirely.
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import * as path from "node:path";
