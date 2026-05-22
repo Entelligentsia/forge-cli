@@ -544,10 +544,12 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// ── /forge:update guided upgrade (FORGE-S16-T15) ─────────────────────────
 	// Registered unconditionally — useful even outside a Forge project (the
 	// command upgrades the globally-installed forgecli, not the project).
-	if (PKG_VERSIONS.cliVersion) {
+	if (PKG_VERSIONS.cliVersion && PKG_VERSIONS.bundledForgeVersion) {
 		registerForgeUpdateCommand(pi, {
 			pkgRoot: PKG_ROOT,
 			currentCliVersion: PKG_VERSIONS.cliVersion,
+			currentBundledForgeVersion: PKG_VERSIONS.bundledForgeVersion,
+			migrationProjectRoot: process.cwd(),
 		});
 	}
 
