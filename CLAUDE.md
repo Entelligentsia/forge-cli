@@ -94,8 +94,39 @@ Two GitHub Actions workflows. Sibling, independent, both gate PRs to `main`:
 | Workflow | Owns | Steps |
 |----------|------|-------|
 | `.github/workflows/smoke.yml` (FORGE-S16-T11) | full build + e2e | `npm ci` → sibling-forge clone → `npm run build` → `./test/e2e/smoke.sh` |
+| `.github/workflows/smoke.yml :: tmp-smoke` (FORGE-S25-T03) | fresh tmp project gate | same install + `./test/e2e/tmp-smoke.sh` after `smoke` |
 | `.github/workflows/tests.yml` (FORGE-S25-T02) | fast gates | `npm ci` → `npm run typecheck` → `npm run lint:no-skip` → `npm test` |
 
 The `tests.yml` workflow does **not** invoke `npm run build` or
 `./test/e2e/smoke.sh` — those remain owned by `smoke.yml`. Workflow
 consolidation is out of scope (deferred to FORGE-S25-T28).
+
+## Tmp-smoke gate
+
+`test/e2e/tmp-smoke.sh` (FORGE-S25-T03) is the canonical AC #5 working-product
+gate referenced by every Phase 1+ task in FORGE-S25. Sibling of `smoke.sh`
+but with a different scope: where `smoke.sh` exercises pack/install/CLI
+surface against the bundled payload, `tmp-smoke.sh` provisions a fresh
+OS-tmpdir project from scratch and exercises three golden-path Forge surfaces:
+
+1. `/forge:init --fast` — auth-free structural assertions against the
+   Fast-mode invariants in `forge/forge/init/smoke-test.md`.
+2. `/forge:plan SMOKE-TMP-S01-T01` against a seeded fixture sprint —
+   auth-required; skips cleanly without `ANTHROPIC_API_KEY` (per the
+   `SKIP_REASON=env:<VAR>` convention surfaced in SUMMARY.md).
+3. `/forge:health` (auth-free subset) via `validate-store --dry-run` +
+   `generation-manifest check`.
+
+Local invocation: `npm run smoke:tmp` (or `bash test/e2e/tmp-smoke.sh`).
+Idempotent: every run rebuilds the install prefix and creates a fresh
+`mktemp -d` project, deleted on EXIT trap unless `FORGE_TMP_SMOKE_KEEP=1`.
+
+Plugin-source override: set `FORGE_TMP_SMOKE_PLUGIN_SRC=/path/to/forge/source`
+to rsync an in-tree plugin checkout over the installed payload before init.
+This is how the plugin-side `plugin-ci.yml` `tmp-smoke` job gates plugin PRs
+against the latest forge-cli driver.
+
+CI: `smoke.yml :: tmp-smoke` runs in the forge-cli repo after the `smoke`
+job. `plugin-ci.yml :: tmp-smoke` runs in the plugin repo after
+`tests-and-skip-gate`, clones forge-cli at `main`, and points the override
+at the in-tree plugin source.

@@ -67,3 +67,52 @@ jobs:
             .smoke-out/*.out
           if-no-files-found: warn
           retention-days: 7
+
+  tmp-smoke:
+    # FORGE-S25-T03 — fresh-tmp-project working-product gate. Runs after smoke
+    # so pack+install failures fail fast before we pay for a fresh-init run.
+    name: tmp-smoke (fresh tmp project, linux, node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: smoke
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync forge plugin source
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').forge.bundledVersion")
+          echo "Cloning Entelligentsia/forge@v${VERSION} into ../forge"
+          git clone --depth 1 --branch "v${VERSION}" https://github.com/Entelligentsia/forge.git ../forge
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tmp-smoke gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: ./test/e2e/tmp-smoke.sh
+
+      - name: Upload tmp-smoke SUMMARY artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmp-smoke-summary
+          path: |
+            .tmp-smoke-out/SUMMARY.md
+            .tmp-smoke-out/*.out
+            .tmp-smoke-out/*.log
+          if-no-files-found: warn
+          retention-days: 7
