@@ -90,10 +90,30 @@ function readPkgVersions(): { cliVersion: string; bundledForgeVersion: string } 
 	try {
 		const raw = readFileSync(path.join(PKG_ROOT, "package.json"), "utf8");
 		const pkg = JSON.parse(raw) as { version?: unknown; forge?: { bundledVersion?: unknown } };
-		return {
-			cliVersion: typeof pkg.version === "string" ? pkg.version : "",
-			bundledForgeVersion: typeof pkg.forge?.bundledVersion === "string" ? pkg.forge.bundledVersion : "",
-		};
+		const cliVersion = typeof pkg.version === "string" ? pkg.version : "";
+
+		// Bundled forge-plugin version comes from the actual bundled payload's
+		// plugin.json — single source of truth, regenerated on every build.
+		// Falls back to package.json's forge.bundledVersion mirror only when
+		// the payload hasn't been built yet (dev mode pre-build).
+		let bundledForgeVersion = "";
+		try {
+			const pluginJsonPath = path.join(
+				PKG_ROOT,
+				"dist",
+				"forge-payload",
+				".claude-plugin",
+				"plugin.json",
+			);
+			const pluginPkg = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as { version?: unknown };
+			bundledForgeVersion = typeof pluginPkg.version === "string" ? pluginPkg.version : "";
+		} catch {
+			// Payload not built — fall back to the hand-maintained mirror.
+			bundledForgeVersion =
+				typeof pkg.forge?.bundledVersion === "string" ? pkg.forge.bundledVersion : "";
+		}
+
+		return { cliVersion, bundledForgeVersion };
 	} catch {
 		return { cliVersion: "", bundledForgeVersion: "" };
 	}
