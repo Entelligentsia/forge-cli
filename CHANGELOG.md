@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3] — 2026-05-22
+
+### Added
+
+- **`skill-curator-subagent.ts` — per-task curator dispatch (FORGE-S24-T10).** New module under `src/extensions/forgecli/` that, at task close, hands the task trajectory summary, the retrieved-skill bodies (from T08), and the task outcome verdict to a curator subagent, then writes the curator's enhancement proposals to the project-local enhancement-proposals queue at `.forge/enhancement-proposals/queue/<sprintId>/<taskId>-<ts>.json` (T07 layout — the sprint-close queue-drain consumes this path). Public surface: `runSkillCurator(input)` → typed `CuratorResult` (`exitCode`, `written`, `queueFile?`, `errorMessage?`); `parseProposalsFromOutput(text)` → `Proposal[]` (preferred: fenced ```json``` block, fallback: bare JSON array, items that fail TypeBox validation are dropped); `composeCuratorTask(input)` → first-user-message string carrying sprint/task header, trajectory summary, retrieved-skill bodies, task outcome, and the proposal schema. Dispatch goes through `runForgeSubagent({persona: defaultCuratorPersona(), task, cwd, exportTag})` — fresh in-process pi session, isolated context (Iron Law 10). The curator persona is **inline** (no new file under `forge/forge/meta/personas/` — Iron Law 1 forge-cli boundary respected, no plugin version bump, no security-scan trigger). Proposals are deduped by `{op, target_path, sha256(diff_body)}` (mirrors T07's `dedupeKey`) before write; the empty-array case writes NO file (zero-noise invariant); if the canonical path already exists, the curator retries with a `-N` suffix on the ts (append-only invariant — T07's queue-drain is read-only and never deletes). The subagent NEVER calls `store-cli emit`, writes to `forge/forge/meta/skills/`, or invokes write-mutating tools — these are forbidden in the persona system prompt and enforced by Slice 2 contract (orchestrator emits the canonical phase event AFTER `runSkillCurator` returns, using its own runtime telemetry). Failures (subagent `exitCode !== 0`, parse errors) surface as a typed result with `written: 0` and a non-empty `errorMessage` — no throw, no silent continuation (IL7). Wiring into `run-task.ts` / `fix-bug.ts` is gated on FORGE-S24-T12 feature flag.
+
+---
+
 ## [0.13.2] — 2026-05-22
 
 ### Added
