@@ -194,6 +194,15 @@ const TOOLS_TO_COPY = [
 	"check-structure.cjs",
 	"list-skills.js",
 	"verify-integrity.cjs",
+	// FORGE-S24 SKILL-CURATION Phase 2 pipeline tools — required by the new
+	// meta-enhance workflow shipped in forge-plugin 0.45.1–0.46.x. Missing any
+	// of these breaks /forge:enhance with `Cannot find module './forge/tools/<X>.cjs'`
+	// because the workflow `require()`s them from $FORGE_ROOT/tools/.
+	"queue-drain.cjs",
+	"compression-gate.cjs",
+	"judge-proposal.cjs",
+	"delete-candidate-detector.cjs",
+	"replay-scoring.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
@@ -342,9 +351,7 @@ fs.mkdirSync(schemasDest, { recursive: true });
 
 // Default: only `*.schema.json` (real JSON-Schemas, copied verbatim into
 // the user's `.forge/schemas/` by forge-init.ts:799-808 and consumed by
-// validate-store.cjs / store-cli PreToolUse hook). `structure-manifest.json`
-// is not a schema and no bundled tool reads it — restored only with
-// --include-full.
+// validate-store.cjs / store-cli PreToolUse hook).
 if (fs.existsSync(schemasSrc)) {
 	const schemaFiles = fs
 		.readdirSync(schemasSrc)
@@ -355,6 +362,40 @@ if (fs.existsSync(schemasSrc)) {
 	console.log(`build-payload: .schemas/ — ${schemaFiles.length} files copied`);
 } else {
 	console.warn("build-payload: forge/forge/schemas/ not found — skipping");
+}
+
+// 2e0: schemas/structure-manifest.json (non-dot path) — bundled at the
+// location check-structure.cjs looks under. The tool resolves manifestPath
+// as <forgeRoot>/schemas/structure-manifest.json (no --forge-root) or via
+// __dirname/../schemas/structure-manifest.json when invoked directly.
+// Without this, /forge:health's checkStructure() silently passes (exit 0
+// with "structure-manifest.json not found") and the per-namespace file
+// expectation list (skills.files, personas.files, …) never validates against
+// the user's `.forge/` tree. Distinct from `.schemas/` (real JSON-Schemas
+// that migrate into the project) — structure-manifest.json is a plugin-side
+// expectation list, never copied into the user project.
+const structManifestSrc = path.join(forgeRoot, "schemas", "structure-manifest.json");
+const nonDotSchemasDest = path.join(outDir, "schemas");
+const structManifestDest = path.join(nonDotSchemasDest, "structure-manifest.json");
+if (fs.existsSync(structManifestSrc)) {
+	fs.mkdirSync(nonDotSchemasDest, { recursive: true });
+	copyFile(structManifestSrc, structManifestDest);
+	console.log("build-payload: schemas/structure-manifest.json copied (for check-structure.cjs)");
+} else {
+	console.warn("build-payload: forge/forge/schemas/structure-manifest.json not found — skipping");
+}
+
+// 2e0b: integrity.json — bundled at <forgeRoot>/integrity.json, the exact
+// path verify-integrity.cjs resolves. Without it, /forge:health's
+// checkVerifyIntegrity() silently passes with "integrity.json not found"
+// and plugin-tampering detection is dead.
+const integritySrc = path.join(forgeRoot, "integrity.json");
+const integrityDest = path.join(outDir, "integrity.json");
+if (fs.existsSync(integritySrc)) {
+	copyFile(integritySrc, integrityDest);
+	console.log("build-payload: integrity.json copied");
+} else {
+	console.warn("build-payload: forge/forge/integrity.json not found — skipping");
 }
 
 // 2e1: migrations.json — forge/forge/migrations.json
