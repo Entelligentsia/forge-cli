@@ -519,6 +519,44 @@ describe("Migration integration — registerForgeUpdateCommand", () => {
 		expect(notifyMessages.some((m) => m.includes("migrations skipped"))).toBe(true);
 	});
 
+	it("runs migration prompt even when CLI is already at npm latest (#32 follow-up)", async () => {
+		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration();
+
+		await __test__.writeDriftCache(dir, {
+			lastSeenBundledForgeVersion: lastSeen,
+			promptedForVersions: [],
+		});
+
+		// current === latest: no CLI upgrade needed, but bundle has drifted
+		const upgradeRunner = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
+		registerForgeUpdateCommand(pi, {
+			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
+			currentCliVersion: "1.0.0",
+			fetchImpl: vi.fn()
+				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
+				.mockResolvedValueOnce(jsonRes({ body: "" })) as unknown as typeof fetch,
+			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
+			upgradeRunner,
+			migrationRunner,
+			currentBundledForgeVersion: "0.44.4",
+			migrationProjectRoot: dir,
+			driftCacheDir: dir,
+		});
+
+		const cmd = commands.get("forge:update")!;
+		await cmd.handler("", ctx);
+
+		// "already at the latest" notify fires...
+		const notifyMessages = ctx.ui.notify.mock.calls.map((c) => c[0] as string);
+		expect(notifyMessages.some((m) => m.includes("already at the latest"))).toBe(true);
+		// ...npm upgrade is NOT run...
+		expect(upgradeRunner).not.toHaveBeenCalled();
+		// ...but the migration branch still fires for the bundle drift.
+		expect(migrationRunner).toHaveBeenCalledWith(
+			expect.objectContaining({ fromVersion: lastSeen, toVersion: "0.44.4" }),
+		);
+	});
+
 	it("drift notification message contains 'Run /forge:update' and 'migrations' (§2C)", async () => {
 		const notify = vi.fn();
 		const cacheDir = tmpCacheDir();

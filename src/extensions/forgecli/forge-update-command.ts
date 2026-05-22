@@ -302,41 +302,45 @@ export function registerForgeUpdateCommand(pi: ExtensionAPI, opts: RegisterUpdat
 				return;
 			}
 
+			// CLI npm-package upgrade and project↔bundle migration are orthogonal:
+			// the bundle can drift even when the CLI is already at npm's latest
+			// (locally-built CLI ahead of npm, fresh machine, cleared drift cache).
+			// Run each gate independently — both fall through to the migration
+			// block, only confirm-decline / npm-failure short-circuit. (#32 follow-up)
 			const current = opts.currentCliVersion;
 			if (!isUpgrade(current, release.version)) {
 				ctx.ui.notify(
 					`forge:update — already at the latest version (${current}; latest published: ${release.version}).`,
 					"info",
 				);
-				return;
-			}
+			} else {
+				// 3. Show changelog + confirm (AC#3)
+				const summary = composeChangelogSummary(current, release.version, release.body);
+				const proceed = await ctx.ui.confirm(`Upgrade forgecli ${current} → ${release.version}?`, summary);
+				if (!proceed) {
+					ctx.ui.notify("forge:update — cancelled.", "info");
+					return;
+				}
 
-			// 3. Show changelog + confirm (AC#3)
-			const summary = composeChangelogSummary(current, release.version, release.body);
-			const proceed = await ctx.ui.confirm(`Upgrade forgecli ${current} → ${release.version}?`, summary);
-			if (!proceed) {
-				ctx.ui.notify("forge:update — cancelled.", "info");
-				return;
-			}
+				// 4. Spawn npm i -g (AC#4 — execFile, no shell)
+				ctx.ui.setStatus("forge:update", `Upgrading to ${release.version}…`);
+				const result = await upgrade(`${PKG_NAME}@${release.version}`);
+				ctx.ui.setStatus("forge:update", undefined);
+				if (!result.ok) {
+					ctx.ui.notify(
+						`forge:update — npm i -g failed: ${truncate(result.stderr, 400)}. ` +
+							"Check the error above; you may need elevated permissions to install globally.",
+						"error",
+					);
+					return;
+				}
 
-			// 4. Spawn npm i -g (AC#4 — execFile, no shell)
-			ctx.ui.setStatus("forge:update", `Upgrading to ${release.version}…`);
-			const result = await upgrade(`${PKG_NAME}@${release.version}`);
-			ctx.ui.setStatus("forge:update", undefined);
-			if (!result.ok) {
 				ctx.ui.notify(
-					`forge:update — npm i -g failed: ${truncate(result.stderr, 400)}. ` +
-						"Check the error above; you may need elevated permissions to install globally.",
-					"error",
+					`forge:update — installed ${PKG_NAME}@${release.version}. ` +
+						"Restart your forge session for the new version to take effect.",
+					"info",
 				);
-				return;
 			}
-
-			ctx.ui.notify(
-				`forge:update — installed ${PKG_NAME}@${release.version}. ` +
-					"Restart your forge session for the new version to take effect.",
-				"info",
-			);
 
 			// 5. Migration prompt — offer to apply project migrations (§2A, §2D)
 			// Only runs when the caller has opted into migration support by providing
