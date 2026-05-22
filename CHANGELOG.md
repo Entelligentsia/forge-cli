@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.4] — 2026-05-22
+
+### Added
+
+- **`friction-emit.ts` — auto-emit friction events with 5 skill subkinds (FORGE-S24-T11).** New module under `src/extensions/forgecli/` that, at task close, classifies the orchestrator's per-task signals (retrieved skills with T08 retrieval verdicts + T09 usage verdicts, task success outcome, observed tool-error count, per-skill historical "consecutive unused sprints" counter, optional pairwise retrieval-overlap measurements) and emits one `friction` event per matching gate via `node <storeCli> emit <sprintId> <json>` (argv-array, Iron Law 6). Public surface: `computeFrictionSignals(inputs)` → pure `FrictionSignal[]` (no IO, no subprocess); `emitFrictionEvents(signals, runtime)` → `FrictionEmitResult` (`emitted`, `failed`, `stderrs`). Five gating rules per FORGE-S24-T11 acceptance criteria: `skill_unused` (retrieved && !used && task.success), `skill_failed` (retrieved && used && !task.success), `skill_missing` (!retrieved && task.success && tool_errors ≥ 2 — one signal per task, no skillId attribution), `skill_stale` (retrieved && !used across ≥ 3 consecutive sprints, per-skill history supplied by caller), `skill_redundant` (pairwise retrieval overlap strictly > 0.8, attributed to skillA, paired-with skillB recorded in evidence). Each emitted event carries the schema's required `{type: "friction", workflow, persona, issue}` trio plus `subkind`, `skillId` (when applicable), and an `evidence` blob (retrievalScore, toolErrorCount, consecutiveUnusedSprints, or `{pairedWith, overlap}` as appropriate per subkind). Telemetry-actor split (IL10) honoured — runtime attribution (`model`, `provider`, `startTimestamp`, `endTimestamp`, `durationMinutes`) is caller-supplied, never fabricated inside the module; subagents never invoke this emitter directly. Non-zero `store-cli emit` exits increment `failed` and capture stderr without throwing (IL7). Subkind enum matches the plugin event schema (forge v0.45.0+) — no plugin schema change required for this task. Wiring into `run-task.ts` / `fix-bug.ts` is gated on FORGE-S24-T12 feature flag.
+
+---
+
 ## [0.13.3] — 2026-05-22
 
 ### Added
