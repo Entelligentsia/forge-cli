@@ -734,4 +734,74 @@ describe("resolveCategory", () => {
 		expect(writes).toHaveLength(1);
 		expect(writes[0]!.src).toContain("forge-root.cjs");
 	});
+
+	// FORGE-S25-T09: empty-fragment round-trip pinning.
+	//
+	// The TASK_PROMPT planner-callout requires "an empty-file test fixture
+	// that proves the wiring". A zero-byte fragment must:
+	//   1. Be enumerated by the workflows:_fragments walker (isFile() === true).
+	//   2. Round-trip through the writes-array → actual fs copy with byte
+	//      length preserved (zero in, zero out — no accidental padding,
+	//      no skipping by empty-content heuristic).
+	//
+	// Fixture source: forge-cli/test/fixtures/_fragments/EMPTY_FIXTURE.md.
+	// Lives under test/fixtures/ (vitest-excluded per vitest.config.ts) and
+	// is consumed only by this test via path.join. Placing the fixture
+	// outside forge/forge/meta/workflows/_fragments/ keeps the real plugin
+	// bundle uncontaminated (per PLAN Files-to-Modify rationale).
+	it("FORGE-S25-T09: zero-byte fragment fixture round-trips workflows:_fragments unchanged", () => {
+		// Stage the empty fixture into the fake bundle's _fragments/ dir.
+		const fixtureSrc = path.resolve(
+			__dirname,
+			"..",
+			"..",
+			"fixtures",
+			"_fragments",
+			"EMPTY_FIXTURE.md",
+		);
+		expect(
+			fs.existsSync(fixtureSrc),
+			`fixture missing at ${fixtureSrc} — required by FORGE-S25-T09`,
+		).toBe(true);
+		expect(
+			fs.statSync(fixtureSrc).size,
+			"EMPTY_FIXTURE.md must be exactly 0 bytes for this pinning test",
+		).toBe(0);
+
+		const stagedSrc = path.join(
+			bundleRoot,
+			".base-pack",
+			"workflows",
+			"_fragments",
+			"EMPTY_FIXTURE.md",
+		);
+		fs.copyFileSync(fixtureSrc, stagedSrc);
+		expect(fs.statSync(stagedSrc).size).toBe(0);
+
+		const writes: Array<{ dest: string; src: string }> = [];
+		resolveCategory("workflows:_fragments", bundleRoot, projectRoot, writes);
+
+		// (1) Walker enumerated the zero-byte file.
+		const emptyWrite = writes.find((w) => w.src.endsWith("EMPTY_FIXTURE.md"));
+		expect(
+			emptyWrite,
+			"workflows:_fragments walker dropped the zero-byte EMPTY_FIXTURE.md — " +
+				"isFile() must accept zero-byte entries",
+		).toBeDefined();
+
+		// (2) Round-trip: perform the copy the migration engine would perform
+		// and assert byte length is preserved (zero in → zero out).
+		fs.mkdirSync(path.dirname(emptyWrite!.dest), { recursive: true });
+		fs.copyFileSync(emptyWrite!.src, emptyWrite!.dest);
+		expect(
+			fs.statSync(emptyWrite!.dest).size,
+			"zero-byte fragment grew bytes through the copy — no padding allowed",
+		).toBe(0);
+
+		// (3) Destination lives under the project's .forge/workflows/_fragments/
+		// — same location the materialized payload would land.
+		expect(emptyWrite!.dest).toContain(
+			path.join(".forge", "workflows", "_fragments", "EMPTY_FIXTURE.md"),
+		);
+	});
 });

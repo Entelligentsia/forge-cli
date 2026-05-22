@@ -179,6 +179,12 @@ if [[ "$INIT_RAN" -eq 0 ]]; then
 		record SKIP "E2E-T03-INIT-$n: structural invariant" "SKIP_REASON=skip:init did not run"
 	done
 	record SKIP "E2E-T03-INIT-FORGE-ROOT" "SKIP_REASON=skip:init did not run"
+	# FORGE-S25-T09: paired bundled-materialization gate for the _fragments/
+	# surface. Skipped here in lockstep with the other invariants when init
+	# did not run; the loud-on-regression assertion lives in the INIT_RAN=1
+	# block below.
+	record SKIP "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ materialized" \
+		"SKIP_REASON=skip:init did not run"
 fi
 
 if [[ "$INIT_RAN" -eq 1 ]]; then
@@ -280,6 +286,32 @@ if [[ -f .forge/generation-manifest.json ]]; then
 	fi
 else
 	record WARN "E2E-T03-INIT-7: .forge/generation-manifest.json missing" "init may not have stamped manifest"
+fi
+
+# FORGE-S25-T09: paired bundled-materialization gate for the _fragments/
+# surface. AC #5 (smoke passes) + AC #6 (shared-surface paired bundled smoke)
+# for `meta/workflows/_fragments/`. Defends the implicit recursive-copy
+# allowlist in forge-cli/scripts/build-payload.cjs: any future refactor that
+# silently drops _fragments/ from the bundled payload — or any plugin-side
+# regression in build-base-pack.cjs's fragment mirroring — fails this gate
+# loudly. See doc/decisions/meta-fragment-includes.md for the design contract.
+#
+# Plugin-side plugin-ci.yml :: tmp-smoke job picks this up automatically since
+# it clones forge-cli at main and runs the same script (no plugin CI wiring
+# change needed).
+FRAGMENTS_DIR=".forge/workflows/_fragments"
+if [[ -d "$FRAGMENTS_DIR" ]]; then
+	FRAG_COUNT=$(find "$FRAGMENTS_DIR" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
+	if [[ "$FRAG_COUNT" -ge 1 ]]; then
+		record PASS "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ materialized" \
+			"count=$FRAG_COUNT"
+	else
+		record FAIL "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ has no .md files" \
+			"dir exists but is empty (ls $FRAGMENTS_DIR: $(ls "$FRAGMENTS_DIR" 2>&1))"
+	fi
+else
+	record FAIL "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ missing" \
+		"expected dir at $FRAGMENTS_DIR; check build-payload.cjs + migration-engine workflows:_fragments resolver"
 fi
 
 fi  # end if INIT_RAN -eq 1
