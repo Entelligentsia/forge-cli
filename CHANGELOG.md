@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-05-22
+
+### Added
+
+- **`skill-retriever.ts` — BM25 skill retrieval (FORGE-S24-T08).** New module under `src/extensions/forgecli/` that ranks the project skill corpus by relevance to a task description using `lunr.js` Okapi-BM25 scoring. Public surface: `buildSkillIndex(corpus)` → opaque `SkillIndex` handle; `retrieveTopK(index, query, k)` → deterministic `RetrievalHit[]`; `emitSkillUsageEvents(hits, runtime)` writes one `skill_usage` event per hit via `node <storeCli> emit <sprintId> <json>` (argv-array, Iron Law 6). Indexed fields: skill `name` (boost 4), `description` (boost 2), and selected frontmatter (`name`, `tags`, `aliases`, boost 1). Raw BM25 scores are squashed via `s / (1 + s)` before being written to `retrieval_score` (schema constraint `[0,1]`). Emitted events conform to the `skill_usage` variant landed in forge plugin v0.45.0 (FORGE-S24-T01): required `eventId, sprintId, taskId, skillId, retrieved=true, used=false, tool_call_success_rate=0, retrieval_score`, plus the canonical attribution fields supplied by the orchestrator (`role, action, startTimestamp, endTimestamp, durationMinutes, model, provider`). Module owns ranking + emission only — corpus construction (parsing `SKILL.md` frontmatter) remains the caller's responsibility and is delegated to `loaders/persona-skill-loader.ts`. Behaviour is gated downstream by `forgeCli.skillCuration.enabled` (FORGE-S24-T12).
+
+### Dependencies
+
+- **`lunr@2.3.9`** added as a runtime dependency, pinned exact (no `^`/`~`) per Iron Law 3 dependency discipline. Pure-JS, MIT-licensed, zero runtime dependencies — SBOM impact is a single direct entry. `@types/lunr@2.3.7` added as dev dependency.
+
+---
+
 ## [0.13.0] — 2026-05-21
 
 ### Added
