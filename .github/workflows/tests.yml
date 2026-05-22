@@ -1,0 +1,61 @@
+name: tests
+
+# Fast pre-merge gates for forge-cli (FORGE-S25-T02).
+#
+# Sibling of smoke.yml (FORGE-S16-T11). This workflow runs the cheap checks
+# that do NOT need the sibling Forge plugin clone, the full `npm run build`,
+# or the .smoke-out artefact pipeline:
+#
+#   - typecheck (tsc --noEmit)
+#   - lint:no-skip (tools/check-no-skipped-tests.cjs)
+#   - npm test (vitest, post-FORGE-S25-T02 explicit include/exclude)
+#
+# smoke.yml continues to own:
+#   - the sibling-forge clone
+#   - `npm run build`
+#   - `./test/e2e/smoke.sh`
+#
+# Sibling-workflow rationale (see PLAN §2.7):
+#   - Typecheck/lint/vitest give faster signal on the typical edit than the
+#     full smoke pipeline.
+#   - Independent green/red status on the GH Actions UI per gate.
+#   - `cache: npm` makes the duplicated `npm ci` essentially a tarball read.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests-and-skip-gate:
+    name: tests + skip gate (linux, node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: No skipped or focused tests
+        run: npm run lint:no-skip
+
+      - name: Vitest
+        run: npm test

@@ -587,7 +587,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 
 	// ── Spike R1 (env-gated) ──────────────────────────────────────────────────
 	if (process.env.FORGE_SPIKE_R1 === "1") {
-		const spikePath = "../../../test/poc/spike-r1/spike.js";
+		const spikePath = "../../../test/.archive/spikes/spike-r1/spike.js";
 		const mod = (await import(spikePath)) as {
 			registerPocRunTask: (pi: ExtensionAPI) => void;
 		};

@@ -59,7 +59,9 @@
     "build:tsc-only": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "bash test/e2e/smoke.sh",
     "lint": "biome check src test",
+    "lint:no-skip": "node tools/check-no-skipped-tests.cjs",
     "sync-forge": "node scripts/sync-forge.cjs"
   },
   "bundledDependencies": [
