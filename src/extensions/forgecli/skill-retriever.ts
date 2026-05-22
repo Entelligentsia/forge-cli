@@ -31,6 +31,7 @@ import { spawnSync } from "node:child_process";
 import lunr from "lunr";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ───────────────────────────────────────────────────────
 
@@ -227,6 +228,12 @@ export function emitSkillUsageEvents(
 	hits: readonly RetrievalHit[],
 	runtime: EmitRuntime,
 ): EmitResult {
+	// FORGE-S24-T12 — gated rollout. Default off ⇒ zero events, zero
+	// subprocess calls, byte-identical to pre-FORGE-S24 behaviour.
+	if (!isSkillCurationEnabled(runtime.cwd)) {
+		return { emitted: 0, failed: 0, stderrs: [] };
+	}
+
 	Value.Parse(EmitRuntimeSchema, runtime);
 
 	let emitted = 0;

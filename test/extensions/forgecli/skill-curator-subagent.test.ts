@@ -64,11 +64,14 @@ beforeEach(() => {
 	fs.mkdirSync(path.join(tmpRoot, ".forge"), { recursive: true });
 	mockRunForgeSubagent.mockReset();
 	mockGetFinalOutput.mockReset();
+	// FORGE-S24-T12 — flag-on path. See skill-curation-flag.test.ts for default-off coverage.
+	process.env.FORGE_CLI_SKILL_CURATION_ENABLED = "1";
 });
 
 afterEach(() => {
 	fs.rmSync(tmpRoot, { recursive: true, force: true });
 	vi.clearAllMocks();
+	delete process.env.FORGE_CLI_SKILL_CURATION_ENABLED;
 });
 
 // ── Fixtures ──────────────────────────────────────────────────────────────

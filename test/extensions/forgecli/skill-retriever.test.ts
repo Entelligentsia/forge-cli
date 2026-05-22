@@ -71,10 +71,15 @@ const CORPUS: RetrievableSkill[] = [
 
 beforeEach(() => {
 	mockSpawnSync.mockReset();
+	// FORGE-S24-T12 — this suite tests the flag-on path. The dedicated
+	// gate test (skill-curation-flag.test.ts) covers the default-off
+	// no-op contract.
+	process.env.FORGE_CLI_SKILL_CURATION_ENABLED = "1";
 });
 
 afterEach(() => {
 	vi.clearAllMocks();
+	delete process.env.FORGE_CLI_SKILL_CURATION_ENABLED;
 });
 
 describe("skill-retriever / buildSkillIndex", () => {

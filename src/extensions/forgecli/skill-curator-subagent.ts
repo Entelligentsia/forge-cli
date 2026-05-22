@@ -51,6 +51,7 @@ import {
 	type ForgePersona,
 	type SubagentResult,
 } from "./forge-subagent.js";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ────────────────────────────────────────────────────────
 
@@ -356,6 +357,14 @@ export function defaultCuratorPersona(): ForgePersona {
  *     using its own captured runtime telemetry (Slice 2 contract).
  */
 export async function runSkillCurator(input: CuratorInput): Promise<CuratorResult> {
+	// FORGE-S24-T12 — gated rollout. Default off ⇒ no subagent dispatch,
+	// no queue file write. Returns success with `written: 0` so the
+	// orchestrator's caller sees the same "no proposals" outcome as a
+	// flag-on run that produced an empty proposal list.
+	if (!isSkillCurationEnabled(input.cwd)) {
+		return { exitCode: 0, written: 0 };
+	}
+
 	Value.Parse(CuratorInputSchema, input);
 
 	const persona = defaultCuratorPersona();

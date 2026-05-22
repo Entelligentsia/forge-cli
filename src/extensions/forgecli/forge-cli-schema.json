@@ -22,6 +22,25 @@
   },
   "properties": {
     "persona-models": { "$ref": "#/definitions/personaModelsMap" },
+    "forgeCli": {
+      "type": "object",
+      "description": "Feature flags and rollout gates for forge-cli runtime behaviour.",
+      "additionalProperties": false,
+      "properties": {
+        "skillCuration": {
+          "type": "object",
+          "description": "FORGE-S24 SKILL-CURATION pipeline (T08 retriever, T09 usage tracker, T10 curator subagent, T11 friction emitter). Default OFF — gated rollout per FORGE-S24-T12.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "When false (default), every SKILL-CURATION module no-ops at entry and emits zero events / writes zero queue files. Promote to true on a per-project basis once the signal quality is observed in real-world runs."
+            }
+          }
+        }
+      }
+    },
     "pipelines": {
       "type": "object",
       "description": "Per-pipeline overrides. Pipeline names match the Forge plugin's pipeline catalogue.",

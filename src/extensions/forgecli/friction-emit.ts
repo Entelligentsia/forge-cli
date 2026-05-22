@@ -38,6 +38,7 @@
 // shaped inputs in.
 
 import { spawnSync } from "node:child_process";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
@@ -239,6 +240,16 @@ export function emitFrictionEvents(
 	signals: readonly FrictionSignal[],
 	runtime: FrictionEmitRuntime,
 ): FrictionEmitResult {
+	// FORGE-S24-T12 — gated rollout. Default off ⇒ no friction events
+	// for the five SKILL-CURATION subkinds (skill_unused, skill_failed,
+	// skill_missing, skill_stale, skill_redundant). Note: this gate
+	// applies to the auto-emit module landed in FORGE-S24-T11. The
+	// existing orchestrator friction channel (non-skill subkinds) goes
+	// through `forge/tools/friction-emit.cjs` and is not gated here.
+	if (!isSkillCurationEnabled(runtime.cwd)) {
+		return { emitted: 0, failed: 0, stderrs: [] };
+	}
+
 	Value.Parse(FrictionEmitRuntimeSchema, runtime);
 
 	let emitted = 0;

@@ -37,10 +37,13 @@ const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 
 beforeEach(() => {
 	mockSpawnSync.mockReset();
+	// FORGE-S24-T12 — flag-on path. See skill-curation-flag.test.ts for default-off coverage.
+	process.env.FORGE_CLI_SKILL_CURATION_ENABLED = "1";
 });
 
 afterEach(() => {
 	vi.clearAllMocks();
+	delete process.env.FORGE_CLI_SKILL_CURATION_ENABLED;
 });
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@
 import { spawnSync } from "node:child_process";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ───────────────────────────────────────────────────────
 
@@ -213,6 +214,12 @@ export function emitSkillUsageTrackingEvents(
 	trajectory: TaskTrajectory,
 	runtime: EmitRuntime,
 ): EmitResult {
+	// FORGE-S24-T12 — gated rollout. Default off ⇒ no classification, no
+	// events, no subprocess.
+	if (!isSkillCurationEnabled(runtime.cwd)) {
+		return { emitted: 0, failed: 0, stderrs: [] };
+	}
+
 	Value.Parse(EmitRuntimeSchema, runtime);
 	Value.Parse(TaskTrajectorySchema, trajectory);
 	for (const s of retrieved) Value.Parse(RetrievedSkillForTrackingSchema, s);

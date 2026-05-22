@@ -25,12 +25,29 @@ export interface PipelineConfig {
   phases?: Record<string, PhaseConfig>;
 }
 
+export interface SkillCurationConfig {
+  /**
+   * FORGE-S24 SKILL-CURATION pipeline rollout flag. Default false.
+   * When false, the four T08–T11 modules (skill-retriever, skill-usage-tracker,
+   * skill-curator-subagent, friction-emit) no-op at entry. Wired into the
+   * orchestrator handlers (run-task / fix-bug) so a flag-off run is
+   * byte-identical to pre-FORGE-S24 behaviour.
+   */
+  enabled?: boolean;
+}
+
+export interface ForgeCliFeatureFlags {
+  skillCuration?: SkillCurationConfig;
+}
+
 export interface GlobalConfig {
   "persona-models"?: PersonaModelsMap;
+  forgeCli?: ForgeCliFeatureFlags;
 }
 
 export interface ProjectConfig {
   "persona-models"?: PersonaModelsMap;
+  forgeCli?: ForgeCliFeatureFlags;
   pipelines?: Record<string, PipelineConfig>;
 }
 
