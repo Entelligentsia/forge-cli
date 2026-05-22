@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-05-22
+
+### Added
+
+- **`skill-usage-tracker.ts` — post-task usage classification + emission (FORGE-S24-T09).** New module under `src/extensions/forgecli/` that, after a task closes, diffs the observed tool-call trajectory against each retrieved skill's declared workflow steps and emits a follow-up `skill_usage` event per skill with `used: true | false` and a populated `tool_call_success_rate`. Public surface: `classifySkillUsage(skill, trajectory)` → pure `UsageVerdict` (`used`, `signal: "overlap" | "reasoning" | "none"`, `tool_call_success_rate ∈ [0,1]`); `emitSkillUsageTrackingEvents(retrieved, trajectory, runtime)` writes one event per retrieved skill via `node <storeCli> emit <sprintId> <json>` (argv-array, Iron Law 6). Heuristic per FORGE-S24-T09 acceptance criteria: skill name appears in agent reasoning → `used: true` (signal `reasoning`); ≥2 distinct workflow steps overlap with executed tool calls → `used: true` (signal `overlap`); otherwise → `used: false`. `tool_call_success_rate` is the fraction of declared steps observed in the trajectory (distinct overlaps / total steps), clamped to `[0,1]`. Step matching is case-insensitive substring against tool call names to tolerate qualified MCP-style names (e.g. `mcp__store__store-cli-query` matches workflow step `"store-cli query"`). Emitted events conform to the `skill_usage` schema variant landed in forge plugin v0.45.0 (FORGE-S24-T01) with `retrieval_score: 0` — the populated retrieval score was already emitted at retrieval time by T08; this is a tracking-time follow-up. Runs in **orchestrator context** (telemetry-actor split honoured — subagent never invokes the tracker; runtime attribution `model/provider/timestamps/durationMinutes` is caller-supplied, never fabricated). Module owns classification + emission only — assembling the retrieved-skill list, trajectory, and runtime attribution is the orchestrator handler's responsibility (wiring into `run-task.ts`/`fix-bug.ts` is gated on FORGE-S24-T12 feature flag).
+
+---
+
 ## [0.13.1] — 2026-05-22
 
 ### Added
