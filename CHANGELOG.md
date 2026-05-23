@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-05-23
+
+### Added
+
+Guardrails CI consolidation (FORGE-S25-T28):
+
+- **knip dead-code gate** — `knip.config.ts` added; `npm run dead-code` script
+  and `Dead-code gate (knip)` step in `.github/workflows/tests.yml`. Catches
+  unused exports and dead files in `src/` on every PR. Known false-positives
+  (pi-framework dynamic dispatch, public API types) suppressed in
+  `knip.config.ts` with inline justification comments.
+- **Two-layer guard test** — `test/extensions/forgecli/two-layer-guard.test.ts`
+  statically scans `scripts/build-payload.cjs` source text to verify no
+  copy expression references hardcoded `engineering/` or `.forge/` paths that
+  would accidentally bundle private sprint data into the npm package payload.
+- **CI Gates documentation** — `CLAUDE.md` extended with `## CI Gates` section
+  summarising the four gates in `tests.yml` and knip fix instructions.
+
 ## [0.15.1] — 2026-05-22
 
 ### Removed

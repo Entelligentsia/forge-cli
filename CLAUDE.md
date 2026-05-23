@@ -130,3 +130,28 @@ CI: `smoke.yml :: tmp-smoke` runs in the forge-cli repo after the `smoke`
 job. `plugin-ci.yml :: tmp-smoke` runs in the plugin repo after
 `tests-and-skip-gate`, clones forge-cli at `main`, and points the override
 at the in-tree plugin source.
+
+## CI Gates
+
+Four gates run on every push/PR to `main` via
+`.github/workflows/tests.yml` (`tests-and-skip-gate` job):
+
+| Gate | Command | What it checks |
+|------|---------|----------------|
+| Typecheck | `npm run typecheck` | `tsc --noEmit` — no TypeScript errors |
+| No skipped or focused tests | `npm run lint:no-skip` | No `it.skip`, `test.skip`, `describe.skip`, `it.only`, `describe.only`, `test.only`, `xit`, `xdescribe` in committed tests |
+| Vitest | `npm test` | All unit tests under `test/*.test.ts`, `test/bin/**/*.test.ts`, `test/extensions/forgecli/**/*.test.ts` pass |
+| Dead-code gate (knip) | `npm run dead-code` | No unused exports or dead files in `src/`; configuration in `knip.config.ts` |
+
+### Fixing knip failures locally
+
+```bash
+npm run dead-code          # show findings
+npm run dead-code -- --fix # auto-remove unused exports where safe
+```
+
+If a finding is a legitimate false-positive (e.g. a dynamic-dispatch entry
+consumed by the pi framework), add a justified suppression to `knip.config.ts`
+under `ignoreIssues` with an inline comment explaining why.
+
+See `knip.config.ts` for the current suppression list and rationale.

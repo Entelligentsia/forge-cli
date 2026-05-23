@@ -1,6 +1,6 @@
 name: tests
 
-# Fast pre-merge gates for forge-cli (FORGE-S25-T02).
+# Fast pre-merge gates for forge-cli (FORGE-S25-T02, FORGE-S25-T28).
 #
 # Sibling of smoke.yml (FORGE-S16-T11). This workflow runs the cheap checks
 # that do NOT need the sibling Forge plugin clone, the full `npm run build`,
@@ -9,6 +9,7 @@ name: tests
 #   - typecheck (tsc --noEmit)
 #   - lint:no-skip (tools/check-no-skipped-tests.cjs)
 #   - npm test (vitest, post-FORGE-S25-T02 explicit include/exclude)
+#   - dead-code gate (knip, FORGE-S25-T28): exits 1 on unused exports/files
 #
 # smoke.yml continues to own:
 #   - the sibling-forge clone
@@ -59,3 +60,9 @@ jobs:
 
       - name: Vitest
         run: npm test
+
+      - name: Dead-code gate (knip)
+        # FORGE-S25-T28: exits 1 on unused exports or dead files in src/.
+        # Fix locally: npm run dead-code -- --fix (auto-removes safe unused exports)
+        # or suppress in knip.config.ts with ignoreIssues (with justification comment).
+        run: npm run dead-code
