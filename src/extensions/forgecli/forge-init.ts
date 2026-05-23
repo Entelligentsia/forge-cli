@@ -8,6 +8,19 @@
 //
 // Per INIT_PARITY_SPEC.md and PLAN.md (rev 2) phases A–G.
 //
+// ── Descriptor model (FORGE-S25-T24, B-5) ────────────────────────────────
+//
+// Phases 1–3 are driven by LlmPhaseDescriptor records (forge-init/phase-descriptors.ts).
+// The generic runLlmPhase() runner executes the shared skeleton:
+//   banner → [LLM dispatch + waitForIdle (Phases 1–2)] | [tool calls (Phase 3)]
+//         → verify → [retry steer (Phases 1–2)] → [user confirm] → postVerify → progress
+//
+// Phase 4 (11 deterministic steps) is too heterogeneous for the generic runner and is
+// extracted into forge-init/phase4-register.ts → runPhase4().
+//
+// This file is the orchestrator: flag parsing, resume detection, configCache population
+// (between Phase 1 and Phase 2), phase loop, post-init report.
+//
 // Iron Laws:
 //   - Iron Law 1: no edits to forge/ or pi-mono/
 //   - Iron Law 6: execFile with argv arrays — no shell-string interpolation
@@ -52,19 +65,13 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { runHealthCheck } from "./health-check.js";
-import {
-	buildProjectContext,
-	computeCalibrationBaseline,
-	discoverProjectName,
-	validateProjectContext,
-	writeProjectContext,
-} from "./init-context.js";
-import { deleteInitProgress, readInitProgress, writeInitProgress } from "./init-progress.js";
-import { getRefreshKbLinksHandler } from "./refresh-kb-links.js";
+import { discoverProjectName } from "./init-context.js";
+import { deleteInitProgress, readInitProgress } from "./init-progress.js";
 import { emitSyntheticEvent } from "./hook-dispatcher.js";
-import { execFileAsync, runTool, runToolAdvisory } from "./lib/exec-helpers.js";
-import { verifyPhase1, verifyPhase2, verifyPhase3 } from "./forge-init/verifiers.js";
-import { buildPhase1PromptText, buildPhase2PromptText } from "./forge-init/prompts.js";
+import { execFileAsync, runTool } from "./lib/exec-helpers.js";
+import { runLlmPhase, PHASE_1, PHASE_2, PHASE_3 } from "./forge-init/phase-descriptors.js";
+import { runPhase4 } from "./forge-init/phase4-register.js";
+import { verifyPhase1, verifyPhase3 } from "./forge-init/verifiers.js";
 
 // ── Bundle path resolution ─────────────────────────────────────────────────
 
@@ -194,115 +201,6 @@ function parseInitFlags(args: string): ParsedFlags {
 }
 
 
-// ── Phase 4 helper — .gitignore update ────────────────────────────────────
-
-function updateGitignore(cwd: string, ctx: ExtensionCommandContext): void {
-	const gitignorePath = path.join(cwd, ".gitignore");
-	if (!fs.existsSync(gitignorePath)) {
-		// No gitignore — skip
-		return;
-	}
-
-	let content: string;
-	try {
-		content = fs.readFileSync(gitignorePath, "utf8");
-	} catch {
-		return;
-	}
-
-	const IGNORE_PATTERNS = [".forge/store/events/", ".forge/store/events", ".forge/store/", ".forge/"];
-	const lines = content.split("\n");
-	const alreadyIgnored = lines.some((line) => {
-		const trimmed = line.trim();
-		if (!trimmed || trimmed.startsWith("#")) return false;
-		return IGNORE_PATTERNS.some((pat) => trimmed.includes(pat));
-	});
-
-	if (alreadyIgnored) {
-		ctx.ui.notify("〇 .forge/store/events/ already gitignored — skipped.", "info");
-		return;
-	}
-
-	const toAppend =
-		"\n# Forge — transient agent event logs (one file per phase, do not commit)\n.forge/store/events/\n";
-	try {
-		fs.appendFileSync(gitignorePath, toAppend, "utf8");
-		ctx.ui.notify("〇 Appended .forge/store/events/ to .gitignore.", "info");
-	} catch {
-		ctx.ui.notify("△ Could not update .gitignore — update manually.", "warning");
-	}
-}
-
-// ── Phase 4 helper — agent instruction file linking ────────────────────────
-
-async function linkAgentInstructionFile(
-	cwd: string,
-	kbPath: string,
-	projectName: string,
-	ctx: ExtensionCommandContext,
-): Promise<void> {
-	const INSTRUCTION_FILES = ["CLAUDE.md", "AGENTS.md", "CLAUDE.local.md", ".cursorrules"];
-	const existing = INSTRUCTION_FILES.filter((f) => fs.existsSync(path.join(cwd, f)));
-
-	if (existing.length > 0) {
-		// Already exists — do NOT modify (per spec step 4-11: avoid KB-link bloat)
-		return;
-	}
-
-	// None exist — prompt to create minimal CLAUDE.md (G4: bypassed in non-interactive mode)
-	const ok = isNonInteractive()
-		? true
-		: await ctx.ui.confirm(
-				"Create CLAUDE.md?",
-				`No agent instruction file found at project root.\nCreate a minimal CLAUDE.md with links to the Forge knowledge base? [Y/n]`,
-			);
-
-	if (!ok) {
-		ctx.ui.notify("〇 KB not linked — run /forge:refresh-kb-links after creating CLAUDE.md.", "info");
-		return;
-	}
-
-	const claudeMdPath = path.join(cwd, "CLAUDE.md");
-	const content = [
-		`# ${projectName}`,
-		``,
-		`## Forge Knowledge Base`,
-		``,
-		`| Index | Contents |`,
-		`|-------|----------|`,
-		`| [MASTER_INDEX](${kbPath}/MASTER_INDEX.md) | All sprints, tasks, bugs, and features |`,
-		`| [Architecture](${kbPath}/architecture/INDEX.md) | Stack, processes, database, routing, deployment |`,
-		`| [Business Domain](${kbPath}/business-domain/INDEX.md) | Entity model and domain concepts |`,
-		``,
-		`## Forge Workflows`,
-		``,
-		`| Workflow | Purpose |`,
-		`|----------|---------|`,
-		`| /forge:plan | Research codebase, produce implementation plan |`,
-		`| /forge:implement | Execute approved plan, make code changes |`,
-		`| /forge:validate | Validate task implementation against acceptance criteria |`,
-		`| /forge:approve | Final architect approval gate |`,
-		`| /forge:commit | Stage and commit completed task artifacts |`,
-		`| /forge:fix-bug | Triage, diagnose, and fix a bug |`,
-		`| /forge:run-task | Full plan-implement-review-commit pipeline |`,
-		`| /forge:run-sprint | Execute all tasks in a sprint |`,
-		`| /forge:sprint-plan | Decompose sprint requirements into tasks |`,
-		`| /forge:sprint-intake | Elicit and structure requirements for a new sprint |`,
-		``,
-		`---`,
-		`_Generated by /forge:init. Run /forge:refresh-kb-links to update._`,
-		``,
-	].join("\n");
-
-	try {
-		fs.writeFileSync(claudeMdPath, content, "utf8");
-		ctx.ui.notify("〇 Created CLAUDE.md with KB links.", "info");
-	} catch (err: unknown) {
-		const e = err as { message?: string };
-		ctx.ui.notify(`△ Could not create CLAUDE.md: ${e.message ?? "unknown"}`, "warning");
-	}
-}
-
 // ── Main command registration ──────────────────────────────────────────────
 
 export function registerForgeInit(pi: ExtensionAPI): void {
@@ -426,624 +324,83 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				}
 			}
 
-			// ── Phase 1 — Collect ─────────────────────────────────────────────
-			if (startPhase <= 1) {
-				ctx.ui.setStatus?.("forge:init", "Phase 1/4: Collect");
-				const bannersTool = path.join(toolsRoot, "banners.cjs");
-				if (fs.existsSync(bannersTool)) {
-					await execFileAsync("node", [bannersTool, "--phase", "1", "4", "Collect", "north"], {
-						cwd,
-						timeout: 5000,
-					}).catch(() => {
-						/* non-fatal */
-					});
-				}
-
-				ctx.ui.notify("Running 5 discovery scans in parallel...", "info");
-
-				// Dispatch 5 discovery subagents via sendUserMessage instruction.
-				// If the agent doesn't have a `subagent` tool, it must fall back to
-				// running the 5 scans inline — Phase 1's deliverable is non-negotiable.
-				const phase1Prompt = buildPhase1PromptText(bundleRoot, projectName);
-				sendToAgent(phase1Prompt);
-				await ctx.waitForIdle();
-
-				// Verify deliverable. If missing, retry once with a corrective steer;
-				// if still missing, prompt the user to abort or continue with partial.
-				let phase1 = verifyPhase1(cwd);
-				if (!phase1.ok) {
-					ctx.ui.notify(
-						`△ Phase 1 deliverable missing: ${phase1.missing.join(", ")} — retrying with corrective steer.`,
-						"warning",
-					);
-					sendToAgent(
-						`Phase 1 verification failed. .forge/config.json is missing the following required fields: ${phase1.missing.join(", ")}.\n\n` +
-							`Write a complete .forge/config.json now using the \`write\` tool. Do NOT call subagents — analyze the project codebase yourself if needed. ` +
-							`Use the schema from the original Phase 1 prompt: version, project.{name,prefix}, stack, commands, and paths.{engineering,store,workflows,commands,templates} are all required.`,
-					);
-					await ctx.waitForIdle();
-					phase1 = verifyPhase1(cwd);
-				}
-				if (!phase1.ok) {
-					if (isNonInteractive()) {
-						ctx.ui.notify(
-							`× Phase 1 failed: ${phase1.missing.join(", ")}. Aborting init in non-interactive mode.`,
-							"error",
-						);
-						return;
-					}
-					const proceed = await ctx.ui.confirm(
-						"Phase 1 failed twice — continue with partial init?",
-						`.forge/config.json is still missing: ${phase1.missing.join(", ")}.\n\n` +
-							`Yes = continue (you'll need to /forge:regenerate later).\n` +
-							`No  = abort. Inspect the file manually and re-run /forge:init.`,
-					);
-					if (!proceed) {
-						ctx.ui.notify("× /forge:init aborted at Phase 1 verify.", "error");
-						return;
-					}
-					ctx.ui.notify("△ Continuing with partial Phase 1 — downstream phases may fail.", "warning");
-				}
-
-				// KB folder prompt (spec §7, F2) — G3: skipped in non-interactive mode (default: "engineering")
-				// Phrasing chosen so the default-Yes affirmative ("use engineering/") is the
-				// safe path. Pi's ctx.ui.confirm has no defaultValue option, so the question
-				// has to align with the highlighted default — earlier "does this conflict?"
-				// phrasing made the unsafe answer the default.
-				if (!isNonInteractive()) {
-					const kbDescription =
-						`Forge will create a folder for architecture docs, sprints, bugs, and features.\n\n` +
-						`Use "engineering" as the folder name?  (Pick No only if your project already has an "engineering/" folder you don't want Forge to touch.)`;
-					const useDefault = await ctx.ui.confirm("Engineering folder name?", kbDescription);
-					if (!useDefault) {
-						const customName = await ctx.ui.input(
-							"Engineering folder name? Enter preferred folder name",
-							"e.g. ai-docs, .forge-kb, docs/ai",
-						);
-						if (customName && customName.trim()) {
-							const manageConfigToolEarly = path.join(toolsRoot, "manage-config.cjs");
-							if (fs.existsSync(manageConfigToolEarly)) {
-								await runToolAdvisory(
-									manageConfigToolEarly,
-									["set", "paths.engineering", customName.trim()],
-									cwd,
-									ctx,
-									"manage-config paths.engineering",
-								);
-							}
-						}
-					}
-				}
-
-				// Marketplace skills advisory (sub-decision #1)
-				ctx.ui.notify(
-					"〇 Marketplace skills auto-recommendation is Claude-Code-only. " +
-						"Pi users install extensions manually. Writing installedSkills: []",
-					"info",
-				);
-
-				// Write installedSkills: []
-				const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
-				if (fs.existsSync(manageConfigTool)) {
-					await runToolAdvisory(
-						manageConfigTool,
-						["set", "installedSkills", "[]"],
-						cwd,
-						ctx,
-						"manage-config installedSkills",
-					);
-					// Write mode = "full"
-					await runToolAdvisory(manageConfigTool, ["set", "mode", "full"], cwd, ctx, "manage-config mode");
-				}
-
-				writeInitProgress(cwd, 1);
-				ctx.ui.notify("〇 Phase 1 complete.", "info");
-			}
-
 			// ── Config cache (B-4, N-B-A) ─────────────────────────────────────
-			// Phase 1 wrote .forge/config.json — read it once here and reuse the
-			// parsed object throughout Phase 2, Phase 4, the post-init hook, and
-			// the report section. See file-header comment for the full rationale.
-			// Falls back to {} on any read/parse error so downstream code uses defaults.
+			// Populated unconditionally before the loop so that resume paths
+			// (startPhase > 1) read the config.json that Phase 1 wrote in a prior
+			// session. Falls back to {} when config.json does not exist yet (first-run
+			// Phase 1 will create it). Refreshed after Phase 1 completes in the loop
+			// to pick up values the Phase-1 agent just wrote. See file-header comment
+			// §Config cache boundary for the full rationale.
 			let configCache: Record<string, unknown> = {};
 			try {
 				configCache = JSON.parse(
 					fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
 				) as Record<string, unknown>;
 			} catch {
-				// Use empty object — all downstream reads have their own defaults
+				// File not yet present — Phase 1 will create it
 			}
 
-			// ── Phase 2 — Discover ────────────────────────────────────────────
-			if (startPhase <= 2) {
-				ctx.ui.setStatus?.("forge:init", "Phase 2/4: Discover");
-				const bannersTool = path.join(toolsRoot, "banners.cjs");
-				if (fs.existsSync(bannersTool)) {
-					await execFileAsync("node", [bannersTool, "--phase", "2", "4", "Discover", "oracle"], {
-						cwd,
-						timeout: 5000,
-					}).catch(() => {
-						/* non-fatal */
-					});
+			// ── Phases 1–3: descriptor-driven loop ──────────────────────────────
+			// Each phase is described by an LlmPhaseDescriptor (forge-init/phase-descriptors.ts).
+			// The generic runLlmPhase() runner handles: banner, LLM dispatch / deterministic
+			// tool execution, verify, retry steer, user confirm, postVerify, writeInitProgress.
+			const PHASES = [PHASE_1, PHASE_2, PHASE_3];
+			for (const desc of PHASES) {
+				if (startPhase > desc.phaseNum) {
+					// Resume path: skip phases already completed
+					continue;
 				}
 
-				// Extract KB_PATH from configCache (written by Phase 1)
-				let kbPath = "engineering";
-				{
-					const cachePaths = configCache.paths as Record<string, unknown> | undefined;
-					if (cachePaths && typeof cachePaths.engineering === "string" && cachePaths.engineering) {
-						kbPath = cachePaths.engineering;
-					}
-				}
-
-				// Directory scaffolding
-				const dirs = [
-					path.join(cwd, kbPath),
-					path.join(cwd, kbPath, "architecture"),
-					path.join(cwd, kbPath, "business-domain"),
-					path.join(cwd, kbPath, "sprints"),
-					path.join(cwd, ".forge", "store"),
-					path.join(cwd, ".forge", "cache"),
-				];
-				for (const dir of dirs) {
-					try {
-						fs.mkdirSync(dir, { recursive: true });
-						// Write .gitkeep for empty dirs
-						const keepPath = path.join(dir, ".gitkeep");
-						if (!fs.existsSync(keepPath)) {
-							fs.writeFileSync(keepPath, "", "utf8");
-						}
-					} catch {
-						// Non-fatal
-					}
-				}
-
-				// Dispatch 7 parallel KB doc subagents
-				const phase2Prompt = buildPhase2PromptText(bundleRoot, kbPath, projectName);
-				sendToAgent(phase2Prompt);
-				await ctx.waitForIdle();
-
-				// Verify Phase 2 deliverables.
-				let phase2 = verifyPhase2(cwd, kbPath);
-				if (!phase2.ok) {
-					ctx.ui.notify(
-						`△ Phase 2 deliverable incomplete: ${phase2.missing.length} doc(s) missing — retrying.`,
-						"warning",
-					);
-					sendToAgent(
-						`Phase 2 verification failed. The following architecture docs are missing:\n${phase2.missing.map((m) => `  - ${m}`).join("\n")}\n\n` +
-							`Write the missing files now using the \`write\` tool. Do NOT call subagents — analyze the project codebase yourself. ` +
-							`Use the rulebook at ${path.join(bundleRoot, ".init", "generation", "generate-kb-doc.md")} for the per-doc shape and confidence-header format.`,
-					);
-					await ctx.waitForIdle();
-					phase2 = verifyPhase2(cwd, kbPath);
-				}
-				if (!phase2.ok) {
-					if (isNonInteractive()) {
-						ctx.ui.notify(
-							`× Phase 2 failed: ${phase2.missing.length} doc(s) still missing. Aborting init in non-interactive mode.`,
-							"error",
-						);
-						return;
-					}
-					const proceed = await ctx.ui.confirm(
-						"Phase 2 failed twice — continue with partial init?",
-						`Missing docs:\n${phase2.missing.map((m) => `  - ${m}`).join("\n")}\n\n` +
-							`Yes = continue (you'll need to fill these manually).\n` +
-							`No  = abort. Inspect the project and re-run /forge:init.`,
-					);
-					if (!proceed) {
-						ctx.ui.notify("× /forge:init aborted at Phase 2 verify.", "error");
-						return;
-					}
-					ctx.ui.notify("△ Continuing with partial Phase 2.", "warning");
-				}
-
-				// Construct project-context.json — use configCache (written by Phase 1)
-				let kbPathResolved = kbPath;
-				let prefix = "";
-				{
-					const cacheProj = configCache.project as Record<string, unknown> | undefined;
-					if (cacheProj && typeof cacheProj.prefix === "string") prefix = cacheProj.prefix;
-					const cachePaths2 = configCache.paths as Record<string, unknown> | undefined;
-					if (cachePaths2 && typeof cachePaths2.engineering === "string") kbPathResolved = cachePaths2.engineering;
-				}
-
-				const projectCtx = buildProjectContext(
-					{
-						projectName: ((configCache.project as Record<string, unknown>)?.name as string) ?? projectName,
-						prefix,
-						kbPath: kbPathResolved,
-					},
-					configCache as {
-						project?: { name?: string; prefix?: string };
-						paths?: { engineering?: string; forgeRoot?: string };
-					},
+				const phaseResult = await runLlmPhase(
+					desc,
+					ctx,
+					cwd,
+					bundleRoot,
+					toolsRoot,
+					projectName,
+					configCache,
+					sendToAgent,
+					() => ctx.waitForIdle(),
+					isNonInteractive,
 				);
 
-				try {
-					validateProjectContext(projectCtx);
-					writeProjectContext(cwd, projectCtx);
-					ctx.ui.notify("〇 project-context.json written.", "info");
-				} catch (err: unknown) {
-					const e = err as { message?: string };
-					ctx.ui.notify(
-						`△ project-context.json validation failed: ${e.message ?? "unknown"} — proceeding.`,
-						"warning",
-					);
-				}
-
-				// Calibration baseline
-				const baseline = computeCalibrationBaseline(cwd, kbPathResolved, bundledVersion);
-				const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
-				if (fs.existsSync(manageConfigTool)) {
-					await runToolAdvisory(
-						manageConfigTool,
-						["set", "calibrationBaseline", JSON.stringify(baseline)],
-						cwd,
-						ctx,
-						"manage-config calibrationBaseline",
-					);
-				}
-
-				writeInitProgress(cwd, 2);
-				ctx.ui.notify("〇 Phase 2 complete.", "info");
-			}
-
-			// ── Phase 3 — Materialize ─────────────────────────────────────────
-			if (startPhase <= 3) {
-				ctx.ui.setStatus?.("forge:init", "Phase 3/4: Materialize");
-				const bannersTool = path.join(toolsRoot, "banners.cjs");
-				if (fs.existsSync(bannersTool)) {
-					await execFileAsync("node", [bannersTool, "--phase", "3", "4", "Materialize", "supervisor"], {
-						cwd,
-						timeout: 5000,
-					}).catch(() => {
-						/* non-fatal */
-					});
-				}
-
-				const buildInitContextTool = path.join(toolsRoot, "build-init-context.cjs");
-				const substituteTool = path.join(toolsRoot, "substitute-placeholders.cjs");
-				const buildOverlayTool = path.join(toolsRoot, "build-overlay.cjs");
-				const basePackDir = path.join(bundleRoot, ".base-pack");
-
-				// 3a: build-init-context.cjs first build
-				if (fs.existsSync(buildInitContextTool)) {
-					await runToolAdvisory(
-						buildInitContextTool,
-						[
-							"--config",
-							path.join(cwd, ".forge", "config.json"),
-							"--personas",
-							path.join(cwd, ".forge", "personas"),
-							"--templates",
-							path.join(cwd, ".forge", "templates"),
-							"--kb",
-							cwd,
-							"--out",
-							path.join(cwd, ".forge", "init-context.md"),
-							"--json-out",
-							path.join(cwd, ".forge", "init-context.json"),
-						],
-						cwd,
-						ctx,
-						"build-init-context",
-						30000,
-					);
-				}
-
-				// 3b: substitute-placeholders.cjs — base-pack materialisation
-				if (fs.existsSync(substituteTool) && fs.existsSync(basePackDir)) {
-					await runToolAdvisory(
-						substituteTool,
-						[
-							"--forge-root",
-							bundleRoot,
-							"--base-pack",
-							basePackDir,
-							"--config",
-							path.join(cwd, ".forge", "config.json"),
-							"--context",
-							path.join(cwd, ".forge", "init-context.json"),
-							"--out",
-							cwd,
-						],
-						cwd,
-						ctx,
-						"substitute-placeholders",
-						60000,
-					);
-				}
-
-				// 3c: build-overlay.cjs smoke test (exit 1 is advisory)
-				if (fs.existsSync(buildOverlayTool)) {
-					await runToolAdvisory(
-						buildOverlayTool,
-						["--task", "INIT-SMOKE-TEST", "--format", "json"],
-						cwd,
-						ctx,
-						"build-overlay smoke (advisory)",
-						15000,
-					);
-				}
-
-				// Verify Phase 3 deliverables. substitute-placeholders.cjs is invoked
-				// via runToolAdvisory, so a missing/invalid config produces zero
-				// output and no exception. Hard-fail here.
-				const phase3 = verifyPhase3(cwd);
-				if (!phase3.ok) {
-					ctx.ui.notify(
-						`× Phase 3 failed: ${phase3.missing.join(", ")}. ` +
-							`This usually means substitute-placeholders.cjs ran against an incomplete config. ` +
-							`Fix .forge/config.json and run /forge:regenerate, or restart /forge:init from scratch (delete .forge/init-progress.json).`,
-						"error",
-					);
+				if (phaseResult === "abort") {
 					return;
 				}
 
-				writeInitProgress(cwd, 3);
-				ctx.ui.notify("〇 Phase 3 complete.", "info");
+				// Refresh configCache after Phase 1 writes .forge/config.json so
+				// Phase 2, Phase 4, and the post-init report see the values the
+				// Phase-1 agent just produced.
+				if (desc.phaseNum === 1) {
+					try {
+						configCache = JSON.parse(
+							fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
+						) as Record<string, unknown>;
+					} catch {
+						// Fall back to existing cache — all downstream reads have their own defaults
+					}
+				}
 			}
 
-			// ── Phase 4 — Register ────────────────────────────────────────────
+			// ── Phase 4 — Register (runPhase4) ────────────────────────────────
 			if (startPhase <= 4) {
-				ctx.ui.setStatus?.("forge:init", "Phase 4/4: Register");
-				const bannersTool = path.join(toolsRoot, "banners.cjs");
-				if (fs.existsSync(bannersTool)) {
-					await execFileAsync("node", [bannersTool, "--phase", "4", "4", "Register", "forge"], {
-						cwd,
-						timeout: 5000,
-					}).catch(() => {
-						/* non-fatal */
-					});
+				const phase4Result = await runPhase4({
+					cwd,
+					bundleRoot,
+					toolsRoot,
+					projectName,
+					configCache,
+					ctx,
+					isPiRuntime,
+					getBundledToolsRoot,
+				});
+
+				if (phase4Result === "abort") {
+					return;
 				}
 
-				const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
-				const manageVersionsTool = path.join(toolsRoot, "manage-versions.cjs");
-				const generationManifestTool = path.join(toolsRoot, "generation-manifest.cjs");
-				const buildPersonaPackTool = path.join(toolsRoot, "build-persona-pack.cjs");
-				const buildContextPackTool = path.join(toolsRoot, "build-context-pack.cjs");
-				const buildInitContextTool = path.join(toolsRoot, "build-init-context.cjs");
-				const seedStoreTool = path.join(toolsRoot, "seed-store.cjs");
-
-				// Step 4-1: write paths.forgeRoot + copy schemas
-				// Stamp paths.forgeRoot to the bundle root (dist/forge-payload/) so
-				// that the canonical Forge convention "$FORGE_ROOT/tools/<tool>.cjs"
-				// resolves correctly. The bundled tools live at
-				// dist/forge-payload/tools/ (renamed from .tools/ — the dot prefix
-				// broke the convention and forced consumers/workflows to special-case
-				// the layout).
-				if (fs.existsSync(manageConfigTool)) {
-					// Validate that store-cli.cjs is present in the bundled tools dir
-					// before stamping. Guards against half-built dist trees.
-					let forgeRootToStamp: string;
-					if (isPiRuntime()) {
-						const toolsRoot = getBundledToolsRoot();
-						const storeCli = path.join(toolsRoot, "store-cli.cjs");
-						if (!fs.existsSync(storeCli)) {
-							ctx.ui.notify(
-								`× step 4-1 paths.forgeRoot: store-cli.cjs missing from bundled tools (expected: ${storeCli}). ` +
-									"Run 'npm run build' to populate dist/forge-payload/tools/. Aborting Phase 4.",
-								"error",
-							);
-							return;
-						}
-						forgeRootToStamp = bundleRoot;
-					} else {
-						// Claude Code path (not active today — preserved for future use)
-						forgeRootToStamp = bundleRoot;
-					}
-					await runToolAdvisory(
-						manageConfigTool,
-						["set", "paths.forgeRoot", forgeRootToStamp],
-						cwd,
-						ctx,
-						"step 4-1 paths.forgeRoot",
-					);
-				}
-
-				const schemasSrc = path.join(bundleRoot, ".schemas");
-				const schemasDest = path.join(cwd, ".forge", "schemas");
-				fs.mkdirSync(schemasDest, { recursive: true });
-				if (fs.existsSync(schemasSrc)) {
-					const schemaFiles = fs.readdirSync(schemasSrc).filter((f) => f.endsWith(".json"));
-					for (const f of schemaFiles) {
-						try {
-							fs.copyFileSync(path.join(schemasSrc, f), path.join(schemasDest, f));
-						} catch {
-							// non-fatal
-						}
-					}
-					ctx.ui.notify(`〇 Copied ${schemaFiles.length} schema files to .forge/schemas/.`, "info");
-				}
-
-				// Step 4-1b: enhancement substrate
-				const enhancementsDir = path.join(cwd, ".forge", "enhancements");
-				fs.mkdirSync(enhancementsDir, { recursive: true });
-				const overlaySchemaPath = path.join(schemasSrc, "project-overlay.schema.json");
-				if (fs.existsSync(overlaySchemaPath)) {
-					try {
-						fs.copyFileSync(overlaySchemaPath, path.join(schemasDest, "project-overlay.schema.json"));
-					} catch {
-						// non-fatal
-					}
-				}
-
-				// Step 4-2: manage-versions init
-				if (fs.existsSync(manageVersionsTool)) {
-					await runToolAdvisory(manageVersionsTool, ["init"], cwd, ctx, "step 4-2 manage-versions");
-				}
-
-				// Step 4-3: generation-manifest record-all
-				if (fs.existsSync(generationManifestTool)) {
-					await runToolAdvisory(
-						generationManifestTool,
-						["record-all"],
-						cwd,
-						ctx,
-						"step 4-3 generation-manifest",
-						30000,
-					);
-				}
-
-				// Step 4-4: build-persona-pack
-				if (fs.existsSync(buildPersonaPackTool)) {
-					await runToolAdvisory(
-						buildPersonaPackTool,
-						["--out", path.join(cwd, ".forge", "cache", "persona-pack.json")],
-						cwd,
-						ctx,
-						"step 4-4 build-persona-pack",
-						30000,
-					);
-				}
-
-				// Step 4-5: build-context-pack — use configCache
-				{
-					const p = configCache.paths as Record<string, unknown> | undefined;
-					if (p && typeof p.engineering === "string") kbPathFinal = p.engineering;
-				}
-
-				if (fs.existsSync(buildContextPackTool)) {
-					await runToolAdvisory(
-						buildContextPackTool,
-						[
-							"--arch-dir",
-							path.join(cwd, kbPathFinal, "architecture"),
-							"--out-md",
-							path.join(cwd, ".forge", "cache", "context-pack.md"),
-							"--out-json",
-							path.join(cwd, ".forge", "cache", "context-pack.json"),
-						],
-						cwd,
-						ctx,
-						"step 4-5 build-context-pack",
-						30000,
-					);
-				}
-
-				// Step 4-6: build-init-context final rebuild
-				if (fs.existsSync(buildInitContextTool)) {
-					await runToolAdvisory(
-						buildInitContextTool,
-						[
-							"--config",
-							path.join(cwd, ".forge", "config.json"),
-							"--personas",
-							path.join(cwd, ".forge", "personas"),
-							"--templates",
-							path.join(cwd, ".forge", "templates"),
-							"--kb",
-							cwd,
-							"--out",
-							path.join(cwd, ".forge", "init-context.md"),
-							"--json-out",
-							path.join(cwd, ".forge", "init-context.json"),
-						],
-						cwd,
-						ctx,
-						"step 4-6 build-init-context final",
-						30000,
-					);
-				}
-
-				// Step 4-7: seed-store
-				if (fs.existsSync(seedStoreTool)) {
-					await runToolAdvisory(seedStoreTool, [], cwd, ctx, "step 4-7 seed-store", 30000);
-				}
-
-				// Step 4-8: update-check cache baseline
-				const updateCachePath = path.join(cwd, ".forge", "update-check-cache.json");
-				try {
-					const pluginPath = path.join(bundleRoot, ".claude-plugin", "plugin.json");
-					const pluginRaw = fs.readFileSync(pluginPath, "utf8");
-					const plugin = JSON.parse(pluginRaw) as { version?: string };
-					const cache = {
-						lastChecked: new Date().toISOString(),
-						installedVersion: plugin.version ?? bundledVersion,
-						latestVersion: plugin.version ?? bundledVersion,
-						upToDate: true,
-					};
-					fs.writeFileSync(updateCachePath, JSON.stringify(cache, null, 2) + "\n", "utf8");
-					ctx.ui.notify("〇 Update-check cache baseline written.", "info");
-				} catch {
-					ctx.ui.notify("△ Could not write update-check cache — non-fatal.", "warning");
-				}
-
-				// Step 4-9: Tomoshibi — invoke refresh-kb-links handler directly
-				try {
-					const refreshHandler = getRefreshKbLinksHandler();
-					const refreshResult = await refreshHandler(cwd);
-					for (const msg of refreshResult.messages) {
-						ctx.ui.notify(msg, "info");
-					}
-					if (refreshResult.filesUpdated === 0) {
-						ctx.ui.notify(
-							"△ Run /forge:refresh-kb-links manually after init completes " +
-								"(no agent instruction files found).",
-							"info",
-						);
-					}
-				} catch (err: unknown) {
-					const e = err as { message?: string };
-					ctx.ui.notify(
-						`△ Tomoshibi (refresh-kb-links) failed: ${e.message ?? "unknown"} — ` +
-							"Run /forge:refresh-kb-links manually after init completes.",
-						"warning",
-					);
-				}
-
-				// Step 4-10: .gitignore update
-				updateGitignore(cwd, ctx);
-
-				// Step 4-10b: BUG-025 fix — remove Claude-Code-only .claude/commands/ artifact.
-				// substitute-placeholders.cjs (Phase 3) unconditionally writes command .md files
-				// to .claude/commands/<prefix>/ regardless of runtime. Under pi runtime pi never
-				// scans .claude/commands/ (commands are discovered via programmatic registerCommand
-				// in registerAllForgeCommands). Delete the directory so it does not pollute the
-				// project root. This runs in Phase 4 so it handles both same-session and resumed
-				// inits (where Phase 3 ran in a prior session).
-				if (isPiRuntime()) {
-					// Use configCache — Phase 1 wrote config.json and configCache was populated before Phase 2
-					let commandsPrefix = "forge";
-					{
-						const proj = configCache.project as Record<string, unknown> | undefined;
-						if (proj && typeof proj.prefix === "string" && proj.prefix) {
-							commandsPrefix = proj.prefix.toLowerCase();
-						}
-					}
-					const claudeCommandsDir = path.join(cwd, ".claude", "commands", commandsPrefix);
-					if (fs.existsSync(claudeCommandsDir)) {
-						try {
-							fs.rmSync(claudeCommandsDir, { recursive: true, force: true });
-							// Remove empty ancestor dirs best-effort
-							const parentDir = path.join(cwd, ".claude", "commands");
-							try {
-								if (fs.readdirSync(parentDir).length === 0) {
-									fs.rmdirSync(parentDir);
-									const grandparent = path.join(cwd, ".claude");
-									if (fs.readdirSync(grandparent).length === 0) fs.rmdirSync(grandparent);
-								}
-							} catch {
-								// best-effort
-							}
-						} catch (err: unknown) {
-							const e = err as { message?: string };
-							ctx.ui.notify(
-								`△ Could not remove .claude/commands/${commandsPrefix}/: ${e.message ?? "unknown"} — non-fatal.`,
-								"warning",
-							);
-						}
-					}
-				}
-
-				// Step 4-11: agent instruction file linking
-				await linkAgentInstructionFile(cwd, kbPathFinal, projectName, ctx);
-
-				// Completion — delete init-progress
-				deleteInitProgress(cwd);
-				ctx.ui.notify("〇 Phase 4 complete — /forge:init done.", "info");
+				// phase4Result.kbPathFinal is used in the post-init report below
+				kbPathFinal = phase4Result.kbPathFinal;
 			}
 
 			// ── Post-Phase-4: health check ────────────────────────────────────
