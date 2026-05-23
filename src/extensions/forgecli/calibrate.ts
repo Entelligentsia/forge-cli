@@ -20,6 +20,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { type CalibrationBaseline, computeCalibrationBaseline } from "./init-context.js";
 import { loadForgePersona, runForgeSubagent, getFinalOutput } from "./forge-subagent.js";
+import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
 import { getBundledPayloadRoot } from "./forge-init.js";
 import { isNonInteractive } from "./run-task.js";
 
@@ -377,7 +378,7 @@ function runStructuralReadinessCheck(
 
 // ── Registration ──────────────────────────────────────────────────────────
 
-export function registerCalibrate(pi: ExtensionAPI): void {
+export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: ForgeToolDefs } = {}): void {
 	const sendToAgent = (text: string) => pi.sendUserMessage(text, { deliverAs: "steer" });
 
 	pi.registerCommand("forge:calibrate", {
@@ -479,6 +480,7 @@ export function registerCalibrate(pi: ExtensionAPI): void {
 					cwd: projectRoot,
 					forgeRoot,
 					signal: ctx.signal,
+					customTools: options.forgeToolDefs ? getSubagentTools(options.forgeToolDefs, architectPersona.name) : undefined,
 				});
 
 				if (result.exitCode !== 0) {

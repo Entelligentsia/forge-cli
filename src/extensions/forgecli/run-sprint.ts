@@ -51,6 +51,7 @@ import { loadWorkflow } from "./parsers/workflow-loader.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { lookupPersonaModel } from "./model-resolver.js";
 import { validateModelConfig } from "./model-validator.js";
@@ -168,8 +169,9 @@ async function dispatchSprintCeremony(params: {
 	ctx:                ExtensionCommandContext;
 	registry:           ReturnType<typeof getSessionRegistry>;
 	streamFnFactory?:   SprintStreamFnFactory;
+	forgeToolDefs?:     ForgeToolDefs;
 }): Promise<SprintCeremonyResult> {
-	const { sprintId, mode, completedTaskIds, pausedAfterIndex, cwd, forgeRoot, ctx, registry, streamFnFactory } = params;
+	const { sprintId, mode, completedTaskIds, pausedAfterIndex, cwd, forgeRoot, ctx, registry, streamFnFactory, forgeToolDefs } = params;
 	const startMs = Date.now();
 
 	// Materialized workflow path — already shipped from base pack.
@@ -252,6 +254,7 @@ async function dispatchSprintCeremony(params: {
 			onEvent: observer.onEvent,
 			requestedModel: ceremonyModelLookup.model,
 			modelRegistry: ctx.modelRegistry,
+			customTools: forgeToolDefs ? getSubagentTools(forgeToolDefs, persona.name) : undefined,
 		});
 		model    = result.model;
 		provider = result.provider;
@@ -303,6 +306,7 @@ export interface RegisterRunSprintOptions {
 	 * callers leave this undefined.
 	 */
 	streamFnFactory?: SprintStreamFnFactory;
+	forgeToolDefs?: ForgeToolDefs;
 }
 
 const SPRINT_STATUS_KEY = "forge:run-sprint";
@@ -619,7 +623,8 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					preflightGate,
 					registry,
 					resumeFromState,
-					signal: taskSignal,  // ← wire AbortSignal for cancellation
+					signal: taskSignal,
+					forgeToolDefs: options.forgeToolDefs,
 					streamFnFactory: options.streamFnFactory
 						? (c) => options.streamFnFactory?.({
 							kind: "task-phase",
@@ -736,6 +741,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 								ctx,
 								registry,
 								streamFnFactory: options.streamFnFactory,
+								forgeToolDefs: options.forgeToolDefs,
 							});
 						}
 
@@ -790,6 +796,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				ctx,
 				registry,
 				streamFnFactory: options.streamFnFactory,
+				forgeToolDefs: options.forgeToolDefs,
 			});
 
 			const sprintEvent: Record<string, unknown> = {

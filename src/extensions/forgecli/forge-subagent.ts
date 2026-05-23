@@ -28,10 +28,12 @@ import {
 	SessionManager,
 	type AgentSessionEvent,
 	type ModelRegistry as ModelRegistryType,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { buildProjectOrientation } from "./project-orientation.js";
+import { FORGE_TOOL_DISCIPLINE } from "./forge-tools.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -136,6 +138,16 @@ export interface RunSubagentOptions {
 	 * would silently route a real subagent dispatch through a fake provider.
 	 */
 	streamFn?: StreamFn;
+	/**
+	 * Forge tool definitions to inject into the subagent session via
+	 * `createAgentSession({ customTools })`. When provided, the subagent can
+	 * call `forge_store`, `forge_store_describe`, etc. as named MCP tools
+	 * instead of shelling out to `store-cli.cjs` via bash.
+	 *
+	 * Use `getSubagentTools(forgeToolDefs, persona.name)` from forge-tools.ts
+	 * to build the appropriate subset for each persona.
+	 */
+	customTools?: ToolDefinition[];
 }
 
 // ── Persona discovery ─────────────────────────────────────────────────────
@@ -215,7 +227,10 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	const loader = new DefaultResourceLoader({
 		cwd: cwdAbs,
 		agentDir: getAgentDir(),
-		systemPromptOverride: () => `${orientation}\n${persona.systemPrompt}`,
+		systemPromptOverride: () => {
+			const discipline = opts.customTools?.length ? FORGE_TOOL_DISCIPLINE : "";
+			return `${orientation}\n${persona.systemPrompt}${discipline}`;
+		},
 		// Persona-only — suppress global pi extensions/skills/prompts to keep
 		// subagent context lean and deterministic.
 		noExtensions: true,
@@ -241,6 +256,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		authStorage,
 		modelRegistry,
 		resourceLoader: loader,
+		customTools: opts.customTools,
 		// Persona frontmatter `tools:` is a name allowlist (read/bash/edit/write/...).
 		// Omit field → pi enables default built-ins (read, bash, edit, write).
 		tools: persona.tools,

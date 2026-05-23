@@ -55,6 +55,7 @@ import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir as readPersonaDirBug, readPipelineNames as readPipelineNamesBug } from "./lib/catalog-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { loadWorkflow, type AudienceValue } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
@@ -498,6 +499,7 @@ export interface RunBugPipelineOptions {
 	 * runForgeSubagent so in-flight subagents can be aborted.
 	 */
 	signal?: AbortSignal;
+	forgeToolDefs?: ForgeToolDefs;
 }
 
 const STATUS_KEY = "forge:fix-bug";
@@ -919,7 +921,8 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				onEvent: onSubagentEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
-				signal: opts.signal,  // ← wire AbortSignal for cancellation
+				signal: opts.signal,
+				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -1296,6 +1299,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 export interface RegisterFixBugOptions {
 	cwd?: string;
+	forgeToolDefs?: ForgeToolDefs;
 }
 
 export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions = {}): void {
@@ -1544,7 +1548,8 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 				preflightGate,
 				registry,
 				resumeFromState,
-				signal,  // ← wire AbortSignal for cancellation
+				signal,
+				forgeToolDefs: options.forgeToolDefs,
 			});
 
 			// ── Handle result ────────────────────────────────────────────────

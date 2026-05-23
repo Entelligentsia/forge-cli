@@ -29,6 +29,7 @@ import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
 import { taskStateFilePath, readJsonState, writeJsonState, isStateStale as isJsonStateStale } from "./lib/state-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { resolveModelForPhase } from "./model-resolver.js";
@@ -194,6 +195,7 @@ export interface RunTaskPipelineOptions {
 	 * runForgeSubagent so in-flight subagents can be aborted.
 	 */
 	signal?: AbortSignal;
+	forgeToolDefs?: ForgeToolDefs;
 }
 
 export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed" | "cancelled";
@@ -799,7 +801,8 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				onEvent: wrappedOnEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
-				signal: opts.signal,  // ← wire AbortSignal for cancellation
+				signal: opts.signal,
+				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
 			});
 		} catch (err: unknown) {
 			const e = err as { message?: string };
@@ -1036,6 +1039,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 export interface RegisterRunTaskOptions {
 	cwd?: string;
+	forgeToolDefs?: ForgeToolDefs;
 }
 
 export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOptions = {}): void {
@@ -1186,6 +1190,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				registry,
 				resumeFromState,
 				signal,
+				forgeToolDefs: options.forgeToolDefs,
 			});
 
 			// ── Handle result ────────────────────────────────────────────────

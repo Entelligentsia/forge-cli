@@ -24,7 +24,7 @@ import { registerEnhance } from "./enhance.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { registerForgeInit } from "./forge-init.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { registerForgeTools } from "./forge-tools.js";
+import { registerForgeTools, type ForgeToolDefs } from "./forge-tools.js";
 import { loadSkillsFromDir, type LoadSkillsResult } from "@earendil-works/pi-coding-agent";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
@@ -361,12 +361,13 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	});
 
 	// ── Conditional full forge:* set (AC#5) ──────────────────────────────────
+	let forgeToolDefs: ForgeToolDefs | undefined;
 	if (forgeRoot) {
 		// T03: forge tools — wired (FORGE-S16-T03)
 		// AC4 note: .cjs tools use findProjectRoot() not --forge-root. Equivalent
 		// guarantee: forgeRoot captured at init; projectRoot passed as cwd to execFile.
 		const projectRoot = path.dirname(path.dirname(forgeConfig!.configPath));
-		registerForgeTools(pi, forgeRoot, projectRoot);
+		forgeToolDefs = registerForgeTools(pi, forgeRoot, projectRoot);
 
 		// T04: Load bundled skills from dist/forge-payload/skills/ and validate.
 		// In dev mode (vitest), the payload isn't built yet, so the directory
@@ -443,20 +444,20 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Full TS-driven Orchestrator-archetype handler. Chains 8 phases via
 	// runForgeSubagent (IL10). Registered BEFORE registerAllForgeCommands so
 	// the real handler takes precedence over the auto-stub from the command .md.
-	registerRunTask(pi);
+	registerRunTask(pi, { forgeToolDefs });
 
 	// ── /forge:run-sprint native Orchestrator handler (FORGE-S21-T03) ────────
 	// Sprint-level orchestrator: iterates sprint tasks via runTaskPipeline.
 	// Registered BEFORE registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub from the command .md.
-	registerRunSprint(pi);
+	registerRunSprint(pi, { forgeToolDefs });
 
 	// ── /forge:fix-bug native Orchestrator handler (FORGE-S21-T07) ────
 	// Bug-level orchestrator: chains triage → plan-fix → review-plan →
 	// implement → review-code → approve → commit via runForgeSubagent (IL10).
 	// Registered BEFORE registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub from the command .md.
-	registerFixBug(pi);
+	registerFixBug(pi, { forgeToolDefs });
 
 	// ── Chain sub-workflow Kickoff Shims (FORGE-S21-T10) ─────────────────────
 	// Six native kickoff handlers replacing auto-generated stubs. Each is a
@@ -474,7 +475,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerValidate(pi);
 	registerCollate(pi);
 	registerRetrospective(pi);
-	registerCalibrate(pi); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
+	registerCalibrate(pi, { forgeToolDefs }); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
 	registerMaterialize(pi); // FORGE-S23-T09: Atomic handler — fill missing/stubbed artifacts
 	registerMigrate(pi);    // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
 	registerUpdateTools(pi); // FORGE-S23-T10: Atomic handler — copy bundled schemas to .forge/schemas/
