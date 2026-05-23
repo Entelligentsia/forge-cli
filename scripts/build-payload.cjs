@@ -469,20 +469,20 @@ if (fs.existsSync(pluginAgentsSrc)) {
 	console.warn("build-payload: forge/forge/agents/ not found — skipping");
 }
 
-// 2e4: hooks/ — forge/forge/hooks/*.js (Claude Code plugin hooks tracked
-// by integrity.json: check-update.js, forge-permissions.js, triage-error.js,
-// validate-write.js). Not executed by forge-cli runtime (pi-coding-agent
+// 2e4: hooks/ — forge/forge/hooks/*.cjs (Claude Code plugin hooks tracked
+// by integrity.json: check-update.cjs, forge-permissions.cjs, triage-error.cjs,
+// validate-write.cjs). Not executed by forge-cli runtime (pi-coding-agent
 // doesn't run Claude Code hooks) but bundled to satisfy integrity tracking.
-// Per integrity.json scope: only top-level *.js are tracked — hooks/lib/,
-// hooks/__tests__/, hooks/*.cjs (post-init, post-sprint), and hooks.json
-// are intentionally excluded.
+// Per integrity.json scope: only top-level *.cjs are tracked — hooks/lib/,
+// hooks/__tests__/, and hooks.json are intentionally excluded.
+// Updated .js → .cjs by FORGE-S25-T14 (hooks rename).
 const pluginHooksSrc = path.join(forgeRoot, "hooks");
 const pluginHooksDest = path.join(outDir, "hooks");
 if (fs.existsSync(pluginHooksSrc)) {
 	fs.mkdirSync(pluginHooksDest, { recursive: true });
 	const hookFiles = fs
 		.readdirSync(pluginHooksSrc, { withFileTypes: true })
-		.filter((e) => e.isFile() && e.name.endsWith(".js"))
+		.filter((e) => e.isFile() && e.name.endsWith(".cjs"))
 		.map((e) => e.name);
 	for (const file of hookFiles) {
 		copyFile(path.join(pluginHooksSrc, file), path.join(pluginHooksDest, file));
