@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-05-23
+
+### Changed
+
+- **pi runtime: 0.75.3-forge.1 → 0.75.4-forge.1** — 70 upstream commits:
+  adaptive thinking for Anthropic-compatible aliases, Bedrock support (Smithy
+  HTTP handler, default max tokens), OpenCode session headers, OAuth
+  device-code refactor, git/path-handling fixes, export-HTML attribute escaping.
+  Upstream migrated to `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`;
+  fork preserves `auth-guidance` and `migrations` exports.
+- **Forge plugin: 0.45.0 → 0.51.1** — sprints S25-T15 through T28:
+  hook polish (mtime sentinel, swallowed-error log, `CLAUDE_PLUGIN_ROOT`, timeout),
+  catalog generator + FSM canonicalization, catalog-loader/catalog-types +
+  catalog-driven TRANSITIONS, guardrails CI (manifest-drift + enum-catalog-drift
+  `--check` gates, knip dead-code gate, two-layer guard test).
+
 ## [0.17.1] — 2026-05-23
 
 ### Added
