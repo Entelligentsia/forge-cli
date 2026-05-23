@@ -754,3 +754,17 @@ describe("registerHookDispatcher — S23-T03 triage-error: Bash failure context 
 		expect(notifyCalls).toHaveLength(0);
 	});
 });
+
+// FORGE-S25-T27: regression — SYNTHETIC_EVENT_TYPES re-export from hook-dispatcher
+describe("hook-dispatcher / SYNTHETIC_EVENT_TYPES catalog re-export (T27 regression)", () => {
+	it("SYNTHETIC_EVENT_TYPES re-export is non-empty and contains init-complete", async () => {
+		const { SYNTHETIC_EVENT_TYPES } = await import(
+			"../../../src/extensions/forgecli/hook-dispatcher.js"
+		);
+		expect(Array.isArray(SYNTHETIC_EVENT_TYPES)).toBe(true);
+		expect(SYNTHETIC_EVENT_TYPES.length).toBeGreaterThan(0);
+		expect(SYNTHETIC_EVENT_TYPES).toContain("init-complete");
+		expect(SYNTHETIC_EVENT_TYPES).toContain("sprint-collate-complete");
+		expect(SYNTHETIC_EVENT_TYPES).toContain("migration-applied");
+	});
+});

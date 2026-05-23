@@ -80,14 +80,12 @@ export const FrictionInputsSchema = Type.Object({
 });
 export type FrictionInputs = Static<typeof FrictionInputsSchema>;
 
-export const FRICTION_SUBKINDS = [
-	"skill_unused",
-	"skill_failed",
-	"skill_missing",
-	"skill_stale",
-	"skill_redundant",
-] as const;
-export type FrictionSubkind = (typeof FRICTION_SUBKINDS)[number];
+// FORGE-S25-T27: FRICTION_SUBKINDS and FrictionSubkind are now canonical in
+// lib/catalog-types.ts (single source of truth). Re-exported here for backward
+// compatibility — all existing imports of FRICTION_SUBKINDS from this module continue to work.
+// Source of truth: event.schema.json subkind pattern (skill_unused|skill_failed|…).
+import { FRICTION_SUBKINDS, type FrictionSubkind } from "./lib/catalog-types.js";
+export { FRICTION_SUBKINDS, type FrictionSubkind };
 
 /**
  * One classifier output. `skillId` is `undefined` for `skill_missing`
@@ -105,7 +103,9 @@ export const FrictionEmitRuntimeSchema = Type.Object({
 	cwd: Type.String({ minLength: 1 }),
 	sprintId: Type.String({ minLength: 1 }),
 	taskId: Type.String({ minLength: 1 }),
+	/** Orchestrator phase role. @see RoleKind from lib/catalog-types.ts */
 	role: Type.String({ minLength: 1 }),
+	/** Orchestrator phase action. @see ActionKind from lib/catalog-types.ts */
 	action: Type.String({ minLength: 1 }),
 	workflow: Type.String({ minLength: 1 }),
 	persona: Type.String({ minLength: 1 }),

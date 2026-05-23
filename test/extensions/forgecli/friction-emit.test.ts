@@ -31,6 +31,7 @@ vi.mock("node:child_process", () => ({
 import {
 	computeFrictionSignals,
 	emitFrictionEvents,
+	FRICTION_SUBKINDS,
 	type FrictionInputs,
 	type FrictionEmitRuntime,
 	type FrictionSignal,
@@ -333,5 +334,29 @@ describe("friction-emit / emitFrictionEvents", () => {
 		expect(result.emitted).toBe(0);
 		expect(result.failed).toBe(1);
 		expect(result.stderrs[0]).toContain("schema error");
+	});
+});
+
+// FORGE-S25-T27: regression — computeFrictionSignals output subkinds are all in FRICTION_SUBKINDS
+describe("friction-emit / FRICTION_SUBKINDS catalog re-export (T27 regression)", () => {
+	it("all computeFrictionSignals output subkinds are in FRICTION_SUBKINDS", () => {
+		// FRICTION_SUBKINDS is imported at module level (re-exported from lib/catalog-types.ts)
+		// Exercise all five gating rules
+		const inputs: FrictionInputs = {
+			retrievedSkills: [
+				{ skillId: "s-a", retrieved: true, used: false, retrievalScore: 0.8 },
+				{ skillId: "s-b", retrieved: true, used: true, retrievalScore: 0.9 },
+			],
+			taskSuccess: false,
+			toolErrorCount: 3,
+			history: { "s-a": { consecutiveUnusedSprints: 3 } },
+			pairwiseRetrievalOverlap: [{ skillA: "s-a", skillB: "s-b", overlap: 0.85 }],
+		};
+		const signals = computeFrictionSignals(inputs);
+		expect(signals.length).toBeGreaterThan(0);
+
+		for (const signal of signals) {
+			expect(FRICTION_SUBKINDS).toContain(signal.subkind);
+		}
 	});
 });

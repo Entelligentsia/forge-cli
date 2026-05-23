@@ -1,7 +1,6 @@
 // Status-transition guard — FORGE-S18-T03
 //
-// Encodes the legal status-transition table for each entity (task, sprint, bug)
-// and checks whether a proposed transition is allowed.
+// Checks whether a proposed status transition is legal for a given entity.
 //
 // The guard reads the current status from disk via `store-cli read` (spawnSync).
 // Fail-open: if the current-status lookup fails for any reason, the guard returns
@@ -10,9 +9,16 @@
 // operation — a lookup failure must not block a valid operation.
 //
 // FORGE-S25-T17: spawnSync replaced with spawnStoreCliRead from lib/spawn-store-cli.ts.
+// FORGE-S25-T27: inline TASK/SPRINT/BUG_TRANSITIONS tables replaced with catalog-loader
+//   constants derived from T26 enum-catalog.json + transitions/*.json. Tables now match
+//   the T25 ADR-canonical FSM (doc/decisions/state-machine-reconciliation.md):
+//     - terminal states (committed, blocked, escalated, abandoned) are truly terminal (Set [])
+//     - plan-revision-required and code-revision-required reachable from more states
+//   Closes finding N-E-2 (forge-cli side), round-2-validation.md findings 36, 40.
 
 import * as path from "node:path";
 import { spawnStoreCliRead } from "./lib/spawn-store-cli.js";
+import { TASK_TRANSITIONS, SPRINT_TRANSITIONS, BUG_TRANSITIONS } from "./lib/catalog-loader.js";
 
 export interface TransitionGuardResult {
 	allowed: boolean;
@@ -21,49 +27,9 @@ export interface TransitionGuardResult {
 
 // ── Legal transition tables ───────────────────────────────────────────────────
 //
-// Derived from task.schema.json, sprint.schema.json, bug.schema.json status enums.
-// Each entry: fromStatus → Set<toStatus>
-
-const TASK_TRANSITIONS: Record<string, Set<string>> = {
-	draft: new Set(["planned", "blocked", "escalated", "abandoned"]),
-	planned: new Set(["plan-approved", "plan-revision-required", "blocked", "escalated", "abandoned"]),
-	"plan-approved": new Set(["implementing", "blocked", "escalated", "abandoned"]),
-	implementing: new Set(["implemented", "code-revision-required", "blocked", "escalated", "abandoned"]),
-	implemented: new Set(["review-approved", "blocked", "escalated", "abandoned"]),
-	"review-approved": new Set(["approved", "blocked", "escalated", "abandoned"]),
-	approved: new Set(["committed", "blocked", "escalated", "abandoned"]),
-	"plan-revision-required": new Set(["planned", "blocked", "escalated", "abandoned"]),
-	"code-revision-required": new Set(["implementing", "blocked", "escalated", "abandoned"]),
-	// Terminal / sink states — can only be re-opened by --force.
-	blocked: new Set(["blocked", "escalated", "abandoned"]),
-	escalated: new Set(["blocked", "escalated", "abandoned"]),
-	abandoned: new Set(["blocked", "escalated", "abandoned"]),
-	committed: new Set(["blocked", "escalated", "abandoned"]),
-};
-
-const SPRINT_TRANSITIONS: Record<string, Set<string>> = {
-	planning: new Set(["active", "abandoned"]),
-	active: new Set(["completed", "partially-completed", "blocked", "abandoned"]),
-	completed: new Set(["retrospective-done"]),
-	"partially-completed": new Set(["retrospective-done"]),
-	"retrospective-done": new Set([]),
-	blocked: new Set(["active", "abandoned"]),
-	abandoned: new Set([]),
-};
-
-// Mirror of store-cli.cjs BUG_TRANSITIONS (forge v0.44.0+).
-// Terminal: `fixed`. `approved` and `verified` enum values were dropped
-// in v0.44.0 — they were vestigial in the workflow and produced the
-// FORGE-BUG-002 LLM-translation trap. The architect-approve verdict
-// signal travels through `bug.summaries.approve.verdict` (read by
-// read-verdict.cjs § BUG_PHASE_VERDICT_SOURCE), not `bug.status`.
-const BUG_TRANSITIONS: Record<string, Set<string>> = {
-	reported: new Set(["triaged", "abandoned"]),
-	triaged: new Set(["in-progress", "abandoned"]),
-	"in-progress": new Set(["fixed", "abandoned"]),
-	fixed: new Set([]),  // terminal
-	abandoned: new Set([]),
-};
+// Loaded from enum-catalog.json / transitions/*.json (T25 ADR-canonical).
+// Source: build-enum-catalog.cjs (FORGE-S25-T26) → bundled by build-payload.cjs (FORGE-S25-T27).
+// Do NOT inline transition tables here — edit forge/forge/tools/build-enum-catalog.cjs instead.
 
 const ENTITY_TABLES: Record<string, Record<string, Set<string>>> = {
 	task: TASK_TRANSITIONS,

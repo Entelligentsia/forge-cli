@@ -433,6 +433,32 @@ if (fs.existsSync(migrationsSrc)) {
 	console.warn("build-payload: migrations.json not found — skipping");
 }
 
+// 2e1b: enum-catalog.json + transitions/*.json — FORGE-S25-T26/T27.
+// These non-schema JSON files are not captured by the *.schema.json walk above.
+// Copied to .schemas/ so catalog-loader.ts can find them alongside the schema files.
+// Required by transition-guard.ts (runtime FSM lookup) and catalog-loader.ts.
+const enumCatalogSrc = path.join(forgeRoot, "schemas", "enum-catalog.json");
+const enumCatalogDest = path.join(schemasDest, "enum-catalog.json");
+if (fs.existsSync(enumCatalogSrc)) {
+	copyFile(enumCatalogSrc, enumCatalogDest);
+	console.log("build-payload: .schemas/enum-catalog.json copied");
+} else {
+	console.warn("build-payload: forge/forge/schemas/enum-catalog.json not found — skipping");
+}
+
+const transitionsSrc = path.join(forgeRoot, "schemas", "transitions");
+const transitionsDest = path.join(schemasDest, "transitions");
+if (fs.existsSync(transitionsSrc)) {
+	fs.mkdirSync(transitionsDest, { recursive: true });
+	const transitionFiles = fs.readdirSync(transitionsSrc).filter((f) => f.endsWith(".json"));
+	for (const file of transitionFiles) {
+		copyFile(path.join(transitionsSrc, file), path.join(transitionsDest, file));
+	}
+	console.log(`build-payload: .schemas/transitions/ — ${transitionFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/schemas/transitions/ not found — skipping");
+}
+
 // 2e2: commands/ — forge/forge/commands/*.md (plugin slash-command markdowns
 // like health.md, config.md, status.md). delegateMarkdownCommand reads them
 // from <forgeRoot>/commands/<name>.md at runtime. Distinct from
