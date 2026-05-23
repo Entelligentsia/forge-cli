@@ -74,6 +74,20 @@ function updateGitignore(cwd: string, ctx: ExtensionCommandContext): void {
 	}
 }
 
+function collectMdFiles(dir: string): string[] {
+	if (!fs.existsSync(dir)) return [];
+	const results: string[] = [];
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const full = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			results.push(...collectMdFiles(full));
+		} else if (entry.isFile() && entry.name.endsWith(".md")) {
+			results.push(full);
+		}
+	}
+	return results;
+}
+
 function isNonInteractiveLocal(): boolean {
 	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
 }
@@ -254,14 +268,34 @@ export async function runPhase4(ctx4: Phase4Context): Promise<Phase4Result | "ab
 		await runToolAdvisory(manageVersionsTool, ["init"], cwd, ctx, "step 4-2 manage-versions");
 	}
 
-	// ── Step 4-3: generation-manifest record-all ─────────────────────────────
+	// ── Step 4-3: generation-manifest seed + record-all ─────────────────────
+	// record-all re-hashes already-tracked files but is a no-op on an empty
+	// manifest. When Phase 2 ran inline (no subagent dispatch), the model skips
+	// the per-file self-check step that calls `record <path>`, leaving the
+	// manifest empty. Seed first by recording every .md in the KB directory so
+	// record-all has something to work with regardless of which Phase 2 path ran.
 	if (fs.existsSync(generationManifestTool)) {
+		const engPath = (() => {
+			const p = configCache.paths as Record<string, unknown> | undefined;
+			return p && typeof p.engineering === "string" ? p.engineering : "engineering";
+		})();
+		const kbDir = path.join(cwd, engPath);
+		for (const mdFile of collectMdFiles(kbDir)) {
+			await runToolAdvisory(
+				generationManifestTool,
+				["record", mdFile],
+				cwd,
+				ctx,
+				`step 4-3 generation-manifest seed: ${path.relative(cwd, mdFile)}`,
+				10000,
+			);
+		}
 		await runToolAdvisory(
 			generationManifestTool,
 			["record-all"],
 			cwd,
 			ctx,
-			"step 4-3 generation-manifest",
+			"step 4-3 generation-manifest record-all",
 			30000,
 		);
 	}
