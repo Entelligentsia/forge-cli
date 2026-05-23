@@ -29,7 +29,8 @@ import { validateModelConfig } from "./model-validator.js";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { checkMaterialization } from "./plan.js";
+import { checkMaterialization } from "./lib/manifest-checker.js";
+import { readPersonaDir as readPersonaDirBug, readPipelineNames as readPipelineNamesBug } from "./lib/catalog-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
@@ -58,30 +59,8 @@ import {
 // triage / plan-fix / implement all read the same fix_bug.md body — the
 // workflow handles all three phases through prose.
 
-function readPersonaDirBug(dir: string): string[] {
-	try {
-		return fs.readdirSync(dir)
-			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
-			.map((f) => f.replace(/\.md$/, ""));
-	} catch {
-		return [];
-	}
-}
-
-function readPipelineNamesBug(forgeCfgPath: string): string[] | null {
-	try {
-		const raw = fs.readFileSync(forgeCfgPath, "utf-8");
-		const cfg = JSON.parse(raw) as unknown;
-		if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
-			const pipelines = (cfg as { pipelines?: unknown }).pipelines;
-			if (pipelines && typeof pipelines === "object") return Object.keys(pipelines);
-			return [];
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
+// FORGE-S25-T16: readPersonaDirBug / readPipelineNamesBug extracted to
+// lib/catalog-helpers.ts and imported above with aliases (H-4, N-H-G).
 
 export const BUG_PHASES: PhaseDescriptor[] = [
 	{ role: "triage",      workflowFile: "fix_bug",          personaNoun: "bug-fixer",  isReview: false, maxIterations: 1 },

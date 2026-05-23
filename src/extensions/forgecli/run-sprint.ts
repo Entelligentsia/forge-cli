@@ -33,7 +33,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { assertAudience } from "./audience-gate.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { checkMaterialization } from "./plan.js";
+import { checkMaterialization } from "./lib/manifest-checker.js";
+import { readPersonaDir as readPersonaDirSprint, readPipelineNames as readPipelineNamesSprint } from "./lib/catalog-helpers.js";
+import { sprintStateFilePath, readJsonState, writeJsonState } from "./lib/state-helpers.js";
 import { loadWorkflow } from "./loaders/workflow-loader.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { getSessionRegistry } from "./session-registry.js";
@@ -68,33 +70,6 @@ import {
 	type RunTaskPipelineResult,
 } from "./run-task.js";
 
-// ── Model-routing preflight helpers (Plan 16 Slice 3) ────────────────────────
-
-function readPersonaDirSprint(dir: string): string[] {
-	try {
-		return fs.readdirSync(dir)
-			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
-			.map((f) => f.replace(/\.md$/, ""));
-	} catch {
-		return [];
-	}
-}
-
-function readPipelineNamesSprint(forgeCfgPath: string): string[] | null {
-	try {
-		const raw = fs.readFileSync(forgeCfgPath, "utf-8");
-		const cfg = JSON.parse(raw) as unknown;
-		if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
-			const pipelines = (cfg as { pipelines?: unknown }).pipelines;
-			if (pipelines && typeof pipelines === "object") return Object.keys(pipelines);
-			return [];
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
-
 // ── Sprint-level state persistence ────────────────────────────────────────
 
 interface RunSprintState {
@@ -106,33 +81,25 @@ interface RunSprintState {
 	savedAt: string;
 }
 
-function sprintStateFilePath(cwd: string, sprintId: string): string {
+// FORGE-S25-T16 (N-H-B): sprint state helpers delegate to lib/state-helpers.ts.
+
+function getSprintStatePath(cwd: string, sprintId: string): string {
 	if (!validateId(sprintId)) {
 		throw new Error(`Invalid sprintId for state file path: ${sprintId}`);
 	}
-	return path.join(cwd, ".forge", "cache", `run-sprint-state-${sprintId}.json`);
+	return sprintStateFilePath(cwd, sprintId);
 }
 
 function readSprintState(cwd: string, sprintId: string): RunSprintState | null {
-	const fp = sprintStateFilePath(cwd, sprintId);
-	try {
-		if (!fs.existsSync(fp)) return null;
-		const raw = fs.readFileSync(fp, "utf8");
-		return JSON.parse(raw) as RunSprintState;
-	} catch {
-		return null;
-	}
+	return readJsonState<RunSprintState>(getSprintStatePath(cwd, sprintId));
 }
 
 function writeSprintState(cwd: string, state: RunSprintState): void {
-	const fp = sprintStateFilePath(cwd, state.sprintId);
-	const dir = path.dirname(fp);
-	fs.mkdirSync(dir, { recursive: true });
-	fs.writeFileSync(fp, JSON.stringify(state, null, 2), "utf8");
+	writeJsonState(getSprintStatePath(cwd, state.sprintId), state);
 }
 
 function deleteSprintState(cwd: string, sprintId: string): void {
-	const fp = sprintStateFilePath(cwd, sprintId);
+	const fp = getSprintStatePath(cwd, sprintId);
 	try {
 		if (fs.existsSync(fp)) fs.unlinkSync(fp);
 	} catch {

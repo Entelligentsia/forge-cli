@@ -25,7 +25,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { checkMaterialization } from "./plan.js";
+import { checkMaterialization } from "./lib/manifest-checker.js";
+import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
+import { taskStateFilePath, readJsonState, writeJsonState, isStateStale as isJsonStateStale } from "./lib/state-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadLayeredConfig } from "./config-layer.js";
@@ -40,33 +42,6 @@ import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";
 
 export function isNonInteractive(): boolean {
 	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
-}
-
-// ── Model-routing preflight helpers (Plan 16 Slice 3) ────────────────────────
-
-function readPersonaDir(dir: string): string[] {
-	try {
-		return fs.readdirSync(dir)
-			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
-			.map((f) => f.replace(/\.md$/, ""));
-	} catch {
-		return [];
-	}
-}
-
-function readPipelineNames(forgeCfgPath: string): string[] | null {
-	try {
-		const raw = fs.readFileSync(forgeCfgPath, "utf-8");
-		const cfg = JSON.parse(raw) as unknown;
-		if (cfg && typeof cfg === "object" && "pipelines" in cfg) {
-			const pipelines = (cfg as { pipelines?: unknown }).pipelines;
-			if (pipelines && typeof pipelines === "object") return Object.keys(pipelines);
-			return [];
-		}
-		return null;
-	} catch {
-		return null;
-	}
 }
 
 // ── Phase descriptor table ─────────────────────────────────────────────────
@@ -130,29 +105,23 @@ export function validateId(id: string): boolean {
 	return /^[A-Za-z0-9_-]+$/.test(id) && !id.includes("..");
 }
 
+// FORGE-S25-T16 (N-H-B): state helpers delegate to lib/state-helpers.ts.
+// Public API (readState, writeState, deleteState, isStateStale) is preserved —
+// run-sprint.ts imports readState as readTaskState from this file.
+
 function stateFilePath(cwd: string, taskId: string): string {
 	if (!validateId(taskId)) {
 		throw new Error(`Invalid taskId for state file path: ${taskId}`);
 	}
-	return path.join(cwd, ".forge", "cache", `run-task-state-${taskId}.json`);
+	return taskStateFilePath(cwd, taskId);
 }
 
 export function readState(cwd: string, taskId: string): RunTaskState | null {
-	const fp = stateFilePath(cwd, taskId);
-	try {
-		if (!fs.existsSync(fp)) return null;
-		const raw = fs.readFileSync(fp, "utf8");
-		return JSON.parse(raw) as RunTaskState;
-	} catch {
-		return null;
-	}
+	return readJsonState<RunTaskState>(stateFilePath(cwd, taskId));
 }
 
 export function writeState(cwd: string, state: RunTaskState): void {
-	const fp = stateFilePath(cwd, state.taskId);
-	const dir = path.dirname(fp);
-	fs.mkdirSync(dir, { recursive: true });
-	fs.writeFileSync(fp, JSON.stringify(state, null, 2), "utf8");
+	writeJsonState(stateFilePath(cwd, state.taskId), state);
 }
 
 export function deleteState(cwd: string, taskId: string): void {
@@ -165,10 +134,7 @@ export function deleteState(cwd: string, taskId: string): void {
 }
 
 export function isStateStale(state: RunTaskState): boolean {
-	const savedAt = new Date(state.savedAt).getTime();
-	const ageMs = Date.now() - savedAt;
-	const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-	return ageMs > sevenDaysMs;
+	return isJsonStateStale(state.savedAt);
 }
 
 /**

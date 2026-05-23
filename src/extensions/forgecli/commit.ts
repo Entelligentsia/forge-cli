@@ -26,6 +26,13 @@ import { sendKickoff } from "./kickoff.js";
 import { loadPersona, PersonaSkillLoaderError } from "./loaders/persona-skill-loader.js";
 import { loadWorkflow, WorkflowLoaderError } from "./loaders/workflow-loader.js";
 
+// FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
+// backward compatibility with existing test and consumer imports.
+import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+export { extractPersonaNames };
+import { type MaterializationCheck, checkMaterialization } from "./lib/manifest-checker.js";
+export { type MaterializationCheck, checkMaterialization };
+
 // Argv parsing -------------------------------------------------------------
 
 export type ArgMode = "empty" | "file" | "text";
@@ -48,85 +55,6 @@ export function parseCommitArgs(rawArgs: string, cwd: string): ParsedArgs {
 		return { mode: "file", taskRef: seed, sourceLabel: `(seed from file: ${ref})` };
 	}
 	return { mode: "text", taskRef: trimmed, sourceLabel: "(seed from inline text)" };
-}
-
-// Frontmatter persona extraction (permissive) ------------------------------
-
-export function extractPersonaNames(workflowMd: string): string[] {
-	const lines = workflowMd.split(/\r?\n/);
-	if (lines.length === 0 || lines[0] !== "---") return [];
-	let inside = false;
-	let depsBlock = false;
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		if (i === 0 && line === "---") {
-			inside = true;
-			continue;
-		}
-		if (!inside) break;
-		if (line === "---") break;
-		if (/^deps\s*:\s*$/.test(line)) {
-			depsBlock = true;
-			continue;
-		}
-		const m = /^\s*personas\s*:\s*\[([^\]]*)\]\s*$/.exec(line);
-		if (m && (depsBlock || /^\s/.test(line))) {
-			return m[1]
-				.split(",")
-				.map((s) => s.trim().replace(/^["']|["']$/g, ""))
-				.filter((s) => s.length > 0);
-		}
-		if (depsBlock && /^[A-Za-z0-9_-]+\s*:/.test(line) && !/^\s/.test(line)) {
-			depsBlock = false;
-		}
-	}
-	return [];
-}
-
-// Materialization-marker check (Pack-06) -----------------------------------
-
-export interface MaterializationCheck {
-	ok: boolean;
-	missing: string[];
-}
-
-export function checkMaterialization(workflowPath: string, workflowMd: string): MaterializationCheck {
-	const missing: string[] = [];
-
-	if (!workflowMd.includes("Store-Write Verification")) {
-		missing.push("Store-Write Verification");
-	}
-	if (!workflowMd.includes("Iron Laws")) {
-		missing.push("Iron Laws");
-	}
-	if (!workflowMd.includes("forge_store")) {
-		missing.push("forge_store");
-	}
-
-	const personas = extractPersonaNames(workflowMd);
-	if (personas.length === 0) {
-		missing.push("deps.personas: declaration");
-	} else {
-		const bodyStart = (() => {
-			if (!workflowMd.startsWith("---\n") && !workflowMd.startsWith("---\r\n")) return 0;
-			const re = /\r?\n---\r?\n/;
-			const m = re.exec(workflowMd);
-			return m ? m.index + m[0].length : 0;
-		})();
-		const body = workflowMd.slice(bodyStart);
-
-		const anyHit = personas.some((name) => {
-			if (!name) return false;
-			const tokenRegex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
-			return body.includes(`${name}.md`) || tokenRegex.test(body);
-		});
-		if (!anyHit) {
-			missing.push(`persona file path (${personas.join(", ")})`);
-		}
-	}
-
-	void workflowPath;
-	return { ok: missing.length === 0, missing };
 }
 
 // Kickoff composition ------------------------------------------------------
