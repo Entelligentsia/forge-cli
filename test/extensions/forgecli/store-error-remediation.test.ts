@@ -1,4 +1,6 @@
-// Tests for lib/store-error-remediation.ts — forge-cli#24
+// Tests for store-error-remediation.ts — forge-cli#24
+// FORGE-S25-T22 (S-7): file moved from lib/store-error-remediation.ts to root.
+// Import path updated accordingly — this file serves as the regression guard for the move.
 //
 // Validates parseValidationError, remediateError, remediateValidationOutput,
 // and enhanceBlockMessage — the shared remediation surface for store validation
@@ -11,7 +13,7 @@ import {
 	remediateError,
 	remediateValidationOutput,
 	enhanceBlockMessage,
-} from "../../../src/extensions/forgecli/lib/store-error-remediation.js";
+} from "../../../src/extensions/forgecli/store-error-remediation.js";
 import { expect } from "vitest";
 
 // ── parseValidationError ────────────────────────────────────────────────────────

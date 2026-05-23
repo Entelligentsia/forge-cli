@@ -19,21 +19,9 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { execFileAsync } from "./lib/exec-helpers.js";
-import { isDirectory } from "./lib/shared-fs-utils.js";
-
-/**
- * Resolve the directory holding the .cjs tools.
- *
- * Two layouts are supported (FORGE-BUG-029):
- *  1. Claude-plugin layout: forgeRoot = <plugin>/forge/forge/, tools at <forgeRoot>/tools/<x>.cjs
- *  2. forge-cli flat layout: forgeRoot = <pkg>/dist/forge-payload/.tools, tools at <forgeRoot>/<x>.cjs
- *
- * Probe once: if <forgeRoot>/tools/ exists as a directory, use nested; else flat.
- */
-function resolveToolDir(forgeRoot: string): string {
-	const nested = path.join(forgeRoot, "tools");
-	return isDirectory(nested) ? nested : forgeRoot;
-}
+// FORGE-S25-T22 (N-C-D): adopt shared resolveToolDir from store-resolver instead of duplicating.
+// The private copy was identical to store-resolver.resolveToolDir; deleted per R2 Pass-3 scope-corrected.
+import { resolveToolDir } from "./store-resolver.js";
 
 // ── Shared helper ────────────────────────────────────────────────────────────
 

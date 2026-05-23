@@ -1,4 +1,5 @@
 // Store-error remediation — forge-cli#24
+// Moved from lib/store-error-remediation.ts to root by FORGE-S25-T22 (S-7: single-file lib/ dir).
 //
 // Shared remediation-hint surface for store validation errors.
 // Consumed by:

@@ -3,7 +3,9 @@
 This document describes the shared utility modules under
 `src/extensions/forgecli/lib/`. These modules were extracted in FORGE-S25
 sprints T16–T18 to eliminate code duplication, centralise shared logic, and
-improve testability.
+improve testability. FORGE-S25-T22 also closed two root-level consolidations:
+`store-error-remediation.ts` moved from `lib/` to root (S-7), and
+`forge-tools.ts` adopted `resolveToolDir` from `store-resolver.ts` (N-C-D).
 
 ---
 
@@ -23,11 +25,22 @@ under `test/extensions/forgecli/lib/`.
 | `spawn-store-cli.ts` | T17 | — |
 | `state-helpers.ts` | T17 | — |
 | `store-cli-timeouts.ts` | T17 | — |
-| `store-error-remediation.ts` | T17 | — |
 | `shared-fs-utils.ts` | T18 | C-16, S-3 |
 | `forge-config.ts` | T18 | C-3, S-13 |
 | `exec-helpers.ts` | T18 | N-C-E |
 | `versions.ts` | T18 | B-1 |
+
+**Root-level module (not in `lib/`):**
+
+| Module | Landing task | Findings closed | Notes |
+|--------|-------------|-----------------|-------|
+| `store-error-remediation.ts` | T22 | S-7 | Moved from `lib/` — single-file dir not justified |
+
+**Consolidation (T22):**
+
+| Change | Finding | Notes |
+|--------|---------|-------|
+| `forge-tools.ts` imports `resolveToolDir` from `store-resolver.ts` | N-C-D | Private duplicate deleted; `runCjs` kept separate (incompatible signature) |
 
 ---
 

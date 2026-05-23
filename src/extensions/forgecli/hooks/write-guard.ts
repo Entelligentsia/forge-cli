@@ -22,7 +22,7 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { enhanceBlockMessage } from "../lib/store-error-remediation.js";
+import { enhanceBlockMessage } from "../store-error-remediation.js";
 
 // ── Path → schema registry ────────────────────────────────────────────────────
 //

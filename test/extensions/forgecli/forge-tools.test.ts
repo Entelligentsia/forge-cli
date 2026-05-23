@@ -285,6 +285,10 @@ describe("forge_config", () => {
 });
 
 // ── Layout detection (FORGE-BUG-029 regression) ──────────────────────────────
+// FORGE-S25-T22 (N-C-D regression): forge-tools.ts now imports resolveToolDir
+// from store-resolver.ts instead of defining a private copy. Tests 11 and 12
+// below exercise the nested/flat probe through registerForgeTools, verifying
+// behavioral parity with the deleted private implementation.
 
 describe("layout detection", () => {
 	it("test 11 — flat layout (no tools/ subdir): toolPath = forgeRoot/<x>.cjs", async () => {
@@ -336,6 +340,40 @@ describe("layout detection", () => {
 				{},
 			);
 			expect(capturedArgs[0]).toBe(pathMod.join(toolsDir, "store-cli.cjs"));
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	// FORGE-S25-T22 regression (N-C-D): resolveToolDir was a private duplicate in forge-tools.ts.
+	// It is now imported from store-resolver.ts. Verify that store-resolver's resolveToolDir
+	// is consistent with the layout behavior already tested in tests 11 and 12 above.
+	it("test 13 — N-C-D: resolveToolDir imported from store-resolver behaves identically for nested layout", async () => {
+		const fs = require("node:fs") as typeof import("node:fs");
+		const os = require("node:os") as typeof import("node:os");
+		const pathMod = require("node:path") as typeof import("node:path");
+
+		// Import store-resolver's resolveToolDir directly to verify parity.
+		// We re-mock store-resolver.ts to get its REAL implementation (not the hoisted mock in
+		// store-resolver.test.ts — this is a separate test module so no mock is active here).
+		const { resolveToolDir: storeResolverResolveToolDir } = await import(
+			"../../../src/extensions/forgecli/store-resolver.js"
+		);
+
+		const tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), "forge-ncd-"));
+		try {
+			// Nested layout: tools/ subdir exists
+			const toolsDir = pathMod.join(tmp, "tools");
+			fs.mkdirSync(toolsDir);
+			expect(storeResolverResolveToolDir(tmp)).toBe(toolsDir);
+
+			// Flat layout: no tools/ subdir
+			const tmpFlat = fs.mkdtempSync(pathMod.join(os.tmpdir(), "forge-ncd-flat-"));
+			try {
+				expect(storeResolverResolveToolDir(tmpFlat)).toBe(tmpFlat);
+			} finally {
+				fs.rmSync(tmpFlat, { recursive: true, force: true });
+			}
 		} finally {
 			fs.rmSync(tmp, { recursive: true, force: true });
 		}

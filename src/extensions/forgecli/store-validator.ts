@@ -11,7 +11,7 @@
 // FORGE-S25-T17: spawnSync replaced with spawnStoreCliValidate from lib/spawn-store-cli.ts.
 
 import * as path from "node:path";
-import { enhanceBlockMessage } from "./lib/store-error-remediation.js";
+import { enhanceBlockMessage } from "./store-error-remediation.js";
 import { spawnStoreCliValidate } from "./lib/spawn-store-cli.js";
 
 export interface StoreValidatorResult {
