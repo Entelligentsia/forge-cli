@@ -112,6 +112,13 @@ describe("parseConfigArgs", () => {
     const r = parseConfigArgs(["unknown"]);
     expect("error" in r).toBe(true);
   });
+
+  it("7. show unknown option → error with 'unknown option' (N-B-D)", () => {
+    const r = parseConfigArgs(["show", "--whatisthis"]);
+    expect("error" in r).toBe(true);
+    // N-B-D: error message must use "unknown option" (not "unknown flag")
+    expect((r as { error: string }).error).toMatch(/unknown option/);
+  });
 });
 
 // ── runConfigShow ────────────────────────────────────────────────────────────

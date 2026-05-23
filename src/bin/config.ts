@@ -51,6 +51,11 @@ export interface ConfigArgsError {
 
 export type ParseConfigResult = ConfigArgs | ConfigArgsError;
 
+/**
+ * Parse forge config subcommand arguments.
+ *
+ * @implements {import("./shared-parser.js").SubcommandArgsParser<ConfigArgs>}
+ */
 export function parseConfigArgs(args: string[]): ParseConfigResult {
   if (args.length === 0) {
     return { subcommand: "usage", resolved: false, json: false };
@@ -64,7 +69,7 @@ export function parseConfigArgs(args: string[]): ParseConfigResult {
     for (const flag of rest) {
       if (flag === "--resolved") { resolved = true; continue; }
       if (flag === "--json") { json = true; continue; }
-      return { error: `forge config show: unknown flag "${flag}"` };
+      return { error: `forge config show: unknown option ${flag}` };
     }
     return { subcommand: "show", resolved, json };
   }
@@ -75,7 +80,7 @@ export function parseConfigArgs(args: string[]): ParseConfigResult {
     for (const flag of rest) {
       if (flag === "--json") { json = true; continue; }
       if (flag.startsWith("--pipeline=")) { pipeline = flag.slice("--pipeline=".length); continue; }
-      return { error: `forge config dispatch: unknown flag "${flag}"` };
+      return { error: `forge config dispatch: unknown option ${flag}` };
     }
     return { subcommand: "dispatch", resolved: false, json, pipeline };
   }

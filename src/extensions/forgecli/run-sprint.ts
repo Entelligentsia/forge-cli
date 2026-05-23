@@ -21,6 +21,17 @@
 //
 // sendKickoff is NEVER called from this file.
 // Audit-grep: grep -n "sendKickoff(" run-sprint.ts must return empty.
+//
+// N-H-D — Ceremony vs per-task model routing:
+//   The sprint ceremony phase (architect summary / sprint-complete event) uses
+//   loadLayeredConfig + lookupPersonaModel directly (~lines 216, 227) without
+//   calling validateModelConfig. This is intentional: the ceremony is a single
+//   LLM call with a known model and the overhead of full preflight validation
+//   is not warranted here.
+//   Per-task dispatch is entirely delegated to runTaskPipeline, which calls
+//   runOrchestratorPreflight (persona/model config validation) at entry before
+//   any LLM dispatch. The two paths are deliberately separate.
+//   Reference: lib/orchestrator-preflight.ts (N-H-D, FORGE-S25-T17).
 
 import * as fs from "node:fs";
 import * as path from "node:path";

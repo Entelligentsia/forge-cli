@@ -47,6 +47,11 @@ interface ParsedArgs {
 	bad: string | null;
 }
 
+/**
+ * Parse forge update subcommand arguments.
+ *
+ * @implements {import("./shared-parser.js").SubcommandArgsParser<ParsedArgs>}
+ */
 function parseArgs(args: string[]): ParsedArgs {
 	let check = false;
 	let yes = false;

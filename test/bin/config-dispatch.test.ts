@@ -82,9 +82,11 @@ describe("parseConfigArgs — dispatch subcommand", () => {
     });
   });
 
-  it("rejects unknown flag", () => {
+  it("rejects unknown option", () => {
     const result = parseConfigArgs(["dispatch", "--what"]);
     expect(result).toHaveProperty("error");
+    // N-B-D: error message must use "unknown option" (not "unknown flag")
+    expect((result as { error: string }).error).toMatch(/unknown option/);
   });
 });
 

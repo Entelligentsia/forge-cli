@@ -452,6 +452,15 @@ export function registerForgeUpdateCommand(pi: ExtensionAPI, opts: RegisterUpdat
 								"warning",
 							);
 						}
+
+						// C-19: surface partial failures so the user knows some ops were skipped
+						if (migResult.failedCategories.length > 0) {
+							ctx.ui.notify(
+								`forge:update — ${migResult.failedCategories.length} category(ies) could not be applied (source absent in bundle). ` +
+									`Check .forge/ state manually or re-run after upgrade.`,
+								"warning",
+							);
+						}
 					} catch (err: unknown) {
 						ctx.ui.setStatus("forge:update", undefined);
 						const msg = err instanceof Error ? err.message : String(err);

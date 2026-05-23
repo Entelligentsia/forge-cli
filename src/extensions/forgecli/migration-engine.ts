@@ -38,6 +38,15 @@ export interface MigrationsJson {
 	[key: string]: MigrationEntry;
 }
 
+// C-19: FailedCategory records a migration operation that could not be applied.
+// Accumulated in MigrationResult.failedCategories and surfaced to the caller
+// (forge-update-command.ts) which emits a "warning" notification.
+export interface FailedCategory {
+	version: string;
+	category: string;
+	reason: string;
+}
+
 export interface MigrationResult {
 	applied: Array<{ fromVersion: string; toVersion: string; categories: string[] }>;
 	skippedBreaking: Array<{ fromVersion: string; toVersion: string; reason: string }>;
@@ -45,6 +54,9 @@ export interface MigrationResult {
 	dryRun: boolean;
 	schemasRefreshed: string[];
 	forgeRootUpdated: boolean;
+	// C-19: categories that failed to apply due to ENOENT or other non-fatal errors.
+	// Empty array means all operations succeeded (or dryRun — no writes attempted).
+	failedCategories: FailedCategory[];
 }
 
 export interface RunMigrationsOptions {
@@ -390,14 +402,22 @@ export function resolveCategory(
 
 // ── executeFileOps ─────────────────────────────────────────────────────────────
 
+// C-19: Return type for executeFileOps — tracks both applied and failed operations.
+interface FileOpsResult {
+	categories: string[];
+	failed: Array<{ category: string; reason: string }>;
+}
+
 function executeFileOps(
 	fileOps: FileOp[],
 	projectRoot: string,
 	dryRun: boolean,
-): string[] {
+): FileOpsResult {
 	const forgeDir = path.join(projectRoot, ".forge");
 	const safePrefix = forgeDir + path.sep;
 	const categories: string[] = [];
+	// C-19: accumulate ENOENT failures for copy/substitute-placeholder ops
+	const failed: Array<{ category: string; reason: string }> = [];
 
 	for (const op of fileOps) {
 		const dest = path.resolve(projectRoot, op.path);
@@ -405,7 +425,8 @@ function executeFileOps(
 			throw new Error(`Path traversal attempt in fileOps: '${op.path}'`);
 		}
 
-		categories.push(`fileOps:${op.op}`);
+		const categoryLabel = `fileOps:${op.op}`;
+		categories.push(categoryLabel);
 
 		if (dryRun) continue;
 
@@ -420,6 +441,8 @@ function executeFileOps(
 						fs.copyFileSync(op.src, dest);
 					} catch (err: unknown) {
 						if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+						// C-19: src absent — record failure so caller can surface it
+						failed.push({ category: categoryLabel, reason: `ENOENT: ${op.src}` });
 					}
 				}
 				break;
@@ -438,13 +461,15 @@ function executeFileOps(
 						fs.copyFileSync(op.src, dest);
 					} catch (err: unknown) {
 						if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+						// C-19: src absent — record failure so caller can surface it
+						failed.push({ category: categoryLabel, reason: `ENOENT: ${op.src}` });
 					}
 				}
 				break;
 		}
 	}
 
-	return categories;
+	return { categories, failed };
 }
 
 // ── Ledger helpers ────────────────────────────────────────────────────────────
@@ -490,6 +515,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Migrati
 		dryRun,
 		schemasRefreshed: [],
 		forgeRootUpdated: false,
+		failedCategories: [], // C-19: populated when ops fail with ENOENT
 	};
 
 	// Read migrations.json from bundle
@@ -577,7 +603,12 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Migrati
 		// NOTE: 0 of 158 current entries use fileOps (dead code on day 1).
 		// When a real fileOps entry lands, add an integration test against it.
 		if (entry.fileOps && entry.fileOps.length > 0) {
-			appliedCategories = executeFileOps(entry.fileOps, projectRoot, dryRun);
+			// C-19: consume FileOpsResult to capture ENOENT failures
+			const fileOpsResult = executeFileOps(entry.fileOps, projectRoot, dryRun);
+			appliedCategories = fileOpsResult.categories;
+			for (const f of fileOpsResult.failed) {
+				result.failedCategories.push({ version: key, category: f.category, reason: f.reason });
+			}
 		} else if (entry.regenerate && entry.regenerate.length > 0) {
 			// Resolve categories to write descriptors
 			const writes: WriteDescriptor[] = [];
@@ -605,7 +636,13 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<Migrati
 						}
 					} catch (err: unknown) {
 						if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-						// ENOENT on source — skip silently (source may be absent in this build)
+						// C-19: ENOENT on src — skip silently but record the failure so
+						// the caller (forge-update-command.ts) can surface a warning.
+						result.failedCategories.push({
+							version: key,
+							category: src,
+							reason: `ENOENT: ${src}`,
+						});
 					}
 				}
 			}

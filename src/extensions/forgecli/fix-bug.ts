@@ -13,6 +13,29 @@
 //
 // sendKickoff is NEVER called from this file.
 // Audit-grep: grep -n "sendKickoff(" fix-bug.ts must return empty.
+//
+// N-H-C — bugId dual-assignment lifecycle:
+//   Phase 1 (handler entry, ~line 1372): bugId = `PENDING-${Date.now()}`, isNewBug = true.
+//     A temporary placeholder; the timestamp is later used to find the real bug record.
+//   Phase 2 (pre-init, ~line 1495–1500): preCreateBug() writes a minimal bug record with a
+//     real FORGE-BUG-NNN ID so the triage subagent has a stable ID to reference.
+//     If preCreateBug fails, the PENDING- placeholder is kept for fallback capture.
+//   Phase 3 (post-triage, ~line 962–989): capture real ID from BugCreated events emitted by
+//     the triage subagent; fall back to listing the most-recent bug after pipelineStart if
+//     event capture fails. The PENDING- prefix is used throughout as a guard for
+//     state-write paths (see ~line 176 and CallerContextStore guards).
+//   Reference: PENDING- prefix semantics defined in CallerContextStore guards.
+//
+// N-H-H — Preflight gate design (closed by FORGE-S25-T17):
+//   Entry-level: runOrchestratorPreflight is called at runBugPipeline entry (~line 523).
+//     Validates persona/model config before any LLM dispatch (mirrors run-task.ts design).
+//   Per-phase: runPreflightGate (store-cli gate) is called per phase (~line 667).
+//     Evaluates declarative gate conditions from the workflow's gate block.
+//   This two-level design ensures both structural validity (model/persona config) and
+//   store-state validity (predecessor verdicts, status guards) are checked.
+//   Reference: lib/orchestrator-preflight.ts (N-H-H, FORGE-S25-T17).
+//
+// N-H-E tag: see inline comment at the materialization skip (~line 707 / checkMaterialization).
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -698,7 +721,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		}
 
 		// ── 6. Materialization-marker check ───────────────────────────
-		// Skip for the monolithic fix_bug.md — it is the orchestrator prose
+		// N-H-E: Skip for the monolithic fix_bug.md — it is the orchestrator prose
 		// algorithm, not a sub-workflow that subagents run tool calls against.
 		// Triage/plan-fix/implement phases reference fix_bug.md for their
 		// prose body but the actual tool-use discipline (Store-Write Verification,

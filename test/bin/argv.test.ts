@@ -6,7 +6,7 @@
 //   3. --no-update-check → env.FORGE_NO_UPDATE_CHECK = "1"
 //   4. --registry /path → env.FORGE_MODEL_REGISTRY = "/path"
 //   5. -p "run task" → forwarded to piArgv
-//   6. Unknown flag --foo → ParseError with "unknown flag"
+//   6. Unknown flag --foo → ParseError with "unknown option"
 //   7. Pi flag --cwd /tmp → forwarded verbatim
 //   8. Mixed --version --cwd /tmp → version wins, piArgv empty (forge flags consumed first)
 //   9. --registry without value → ParseError
@@ -73,11 +73,11 @@ describe("parseForgeArgv", () => {
 		expect(result.piArgv).toEqual(["-p", "run task"]);
 	});
 
-	it("unknown flag --foo → ParseError with 'unknown flag'", () => {
+	it("unknown flag --foo → ParseError with 'unknown option'", () => {
 		const result = parseForgeArgv(["--foo"]);
 		expect(isParseError(result)).toBe(true);
 		if (!isParseError(result)) return;
-		expect(result.error).toMatch(/unknown flag --foo/);
+		expect(result.error).toMatch(/unknown option --foo/);
 	});
 
 	it("unknown --forge-* flag rejected", () => {

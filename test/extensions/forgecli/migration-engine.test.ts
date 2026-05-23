@@ -1,6 +1,6 @@
 // migration-engine.test.ts — Unit tests for migration-engine.ts (FORGE-S23-T01)
 //
-// Coverage (26 cases as specified in PLAN.md):
+// Coverage (27 cases):
 //  1.  Migration-entry parser — reads migrations.json, validates structure
 //  2.  Semver range traversal — correct filtering across 0.9.x / 0.10.x boundary
 //  3.  Range boundary [from, to) — inclusive lower, exclusive upper
@@ -28,6 +28,7 @@
 //  24. Schema refresh — unconditional post-pass copies *.schema.json
 //  25. First-run empty ledger — same [from, to) filter, returns 5 entries for 0.43.19→0.44.4
 //  26. semverCompare v-prefix handling
+//  27. (C-19) fileOps copy with absent src → failedCategories accumulates failure
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -450,6 +451,48 @@ describe("runMigrations", () => {
 			// supervisor.md should NOT have been regenerated (fileOps took priority)
 		} finally {
 			fs.rmSync(fdir, { recursive: true, force: true });
+		}
+	});
+
+	it("case 27 (C-19): fileOps copy with absent src → failedCategories accumulates failure", async () => {
+		// Regression test: without the failedCategories field, ENOENT on copy was silent.
+		// This test verifies runMigrations surfaces the failure in result.failedCategories.
+		const absentSrc = "/nonexistent/path/to/source.md";
+		const c19Migrations = {
+			"0.9.5": {
+				version: "0.9.6",
+				date: "2024-01-01",
+				notes: "C-19 regression: copy with absent src",
+				fileOps: [
+					{ op: "copy", path: ".forge/schemas/absent-file.md", src: absentSrc },
+				],
+				breaking: false,
+				manual: [],
+			},
+		};
+		const c19dir = tmpDir();
+		const c19ProjectRoot = makeProjectRoot(c19dir);
+		const c19BundleRoot = makeBundleRoot(c19dir, {
+			schemas: { "event.schema.json": "{}" },
+			migrationsJson: c19Migrations,
+		});
+
+		try {
+			const result = await runMigrations({
+				bundleRoot: c19BundleRoot,
+				projectRoot: c19ProjectRoot,
+				fromVersion: "0.9.5",
+				toVersion: "0.9.6",
+			});
+
+			// Applied entry is still recorded (the op ran, it just couldn't copy the src)
+			expect(result.applied).toHaveLength(1);
+			// C-19: failure is surfaced in failedCategories (not swallowed silently)
+			expect(result.failedCategories).toHaveLength(1);
+			expect(result.failedCategories[0]!.version).toBe("0.9.5");
+			expect(result.failedCategories[0]!.reason).toContain("ENOENT");
+		} finally {
+			fs.rmSync(c19dir, { recursive: true, force: true });
 		}
 	});
 

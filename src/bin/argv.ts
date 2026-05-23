@@ -86,6 +86,8 @@ const PI_FLAGS_WITH_VALUE = new Set([
  * pi-bound argv, and env overrides.
  *
  * Never calls process.exit — caller is responsible.
+ *
+ * @implements {import("./shared-parser.js").SubcommandArgsParser<ParseResult>}
  */
 export function parseForgeArgv(argv: string[]): ParseResultOrError {
 	const piArgv: string[] = [];
@@ -216,7 +218,7 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 		// ── Short flags not covered above — reject unknown ───────────────────
 		// Unknown --<flag>: reject
 		return {
-			error: `forge: unknown flag ${token}. Run \`forge --help\` for usage.`,
+			error: `forge: unknown option ${token}. Run \`forge --help\` for usage.`,
 		};
 	}
 
