@@ -14,7 +14,7 @@
 //
 // Iron Law 6 compliance: execFile with argv arrays only. No shell strings.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -22,6 +22,7 @@ import { execFileAsync } from "./lib/exec-helpers.js";
 // FORGE-S25-T22 (N-C-D): adopt shared resolveToolDir from store-resolver instead of duplicating.
 // The private copy was identical to store-resolver.resolveToolDir; deleted per R2 Pass-3 scope-corrected.
 import { resolveToolDir } from "./store-resolver.js";
+import { buildForgeArtifact } from "./forge-artifact-tool.js";
 
 // ── Shared helper ────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ export interface ForgeToolDefs {
 	storeTemplate: ToolDefinition;
 	storeQuery: ToolDefinition;
 	verifyApply: ToolDefinition;
+	artifact: ToolDefinition;
 }
 
 /**
@@ -100,7 +102,7 @@ export interface ForgeToolDefs {
  * Core store tools go to every persona; forge_collate only to the collator.
  */
 export function getSubagentTools(defs: ForgeToolDefs, personaName?: string): ToolDefinition[] {
-	const tools: ToolDefinition[] = [defs.store, defs.storeDescribe, defs.storeTemplate, defs.storeQuery];
+	const tools: ToolDefinition[] = [defs.store, defs.storeDescribe, defs.storeTemplate, defs.storeQuery, defs.artifact];
 	if (personaName === "collator") tools.push(defs.collate);
 	return tools;
 }
@@ -140,6 +142,13 @@ no agent loop. Prefer them over shelling out.
  */
 export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectRoot: string): ForgeToolDefs {
 	const toolDir = resolveToolDir(forgeRoot);
+	// Read engineering path from config; default to "engineering".
+	let engineeringPath = "engineering";
+	try {
+		const configPath = path.join(projectRoot, ".forge", "config.json");
+		const config = JSON.parse(readFileSync(configPath, "utf8")) as { paths?: { engineering?: string } };
+		if (typeof config.paths?.engineering === "string") engineeringPath = config.paths.engineering;
+	} catch { /* default */ }
 	const defs: ForgeToolDefs = {
 		collate: buildForgeCollate(toolDir, projectRoot),
 		store: buildForgeStore(toolDir, projectRoot),
@@ -149,6 +158,7 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 		storeTemplate: buildForgeStoreTemplate(toolDir, projectRoot),
 		storeQuery: buildForgeStoreQuery(toolDir, projectRoot),
 		verifyApply: buildForgeVerifyApply(toolDir, projectRoot),
+		artifact: buildForgeArtifact(projectRoot, engineeringPath),
 	};
 	for (const def of Object.values(defs)) {
 		pi.registerTool(def);
