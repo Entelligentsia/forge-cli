@@ -73,6 +73,13 @@ describe("runDoctorProbe — empty agent dir", () => {
 			"XIAOMI_TOKEN_PLAN_AMS_API_KEY",
 			"XIAOMI_TOKEN_PLAN_SGP_API_KEY",
 			"AZURE_OPENAI_API_KEY",
+			// AWS / Bedrock (added in pi 0.75.4)
+			"AWS_ACCESS_KEY_ID",
+			"AWS_SECRET_ACCESS_KEY",
+			"AWS_SESSION_TOKEN",
+			"AWS_PROFILE",
+			"AWS_REGION",
+			"AWS_DEFAULT_REGION",
 		];
 		prevEnvKeys = providerEnvKeys.map((name) => ({ name, value: process.env[name] }));
 		for (const { name } of prevEnvKeys) delete process.env[name];
