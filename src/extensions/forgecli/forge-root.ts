@@ -9,14 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-
-function isFile(p: string): boolean {
-	try {
-		return fs.statSync(p).isFile();
-	} catch {
-		return false;
-	}
-}
+import { isFile } from "./lib/shared-fs-utils.js";
 
 function findNearestForgeConfig(cwd: string): string | null {
 	let currentDir = cwd;

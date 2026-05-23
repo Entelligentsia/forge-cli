@@ -32,7 +32,7 @@ import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir as readPersonaDirBug, readPipelineNames as readPipelineNamesBug } from "./lib/catalog-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { discoverForgeConfig } from "./forge-root.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { attachViewportObserver } from "./viewport-events.js";
@@ -1285,7 +1285,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			ctx.ui.setStatus?.(STATUS_KEY, `fix-bug: initializing…`);
 
 			// ── Discover forge config ────────────────────────────────────────
-			const forgeConfig = discoverForgeConfig(cwd);
+			const forgeConfig = discoverForgeConfigCached(cwd);
 			if (!forgeConfig) {
 				ctx.ui.notify("× forge:fix-bug — no Forge project found at cwd. Run /forge:init first.", "error");
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);

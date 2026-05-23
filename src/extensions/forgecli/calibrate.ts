@@ -21,6 +21,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { type CalibrationBaseline, computeCalibrationBaseline } from "./init-context.js";
 import { loadForgePersona, runForgeSubagent, getFinalOutput } from "./forge-subagent.js";
 import { getBundledPayloadRoot } from "./forge-init.js";
+import { isNonInteractive } from "./run-task.js";
 
 // ── Bundled forge version ─────────────────────────────────────────────────
 
@@ -38,19 +39,6 @@ function getBundledForgeVersion(): string {
 	} catch {
 		return "0.0.0";
 	}
-}
-
-// ── Non-interactive mode ───────────────────────────────────────────────────
-
-/**
- * Returns true when running in non-interactive / CI mode.
- *
- * Activated by either:
- *   - FORGE_YES=1             — ergonomic shell shorthand
- *   - FORGE_NON_INTERACTIVE=1 — set by forge --non-interactive flag
- */
-function isNonInteractive(): boolean {
-	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
 }
 
 // ── Flag parsing ──────────────────────────────────────────────────────────

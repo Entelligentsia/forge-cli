@@ -11,7 +11,7 @@
 // Spike R1/R2 env-gated blocks are preserved for backward-compat — no-op in
 // production when env flags are absent.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,7 @@ import { readProjectMeta } from "./banner.js";
 import { registerEnhance } from "./enhance.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { registerForgeInit } from "./forge-init.js";
-import { discoverForgeConfig } from "./forge-root.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { registerForgeTools } from "./forge-tools.js";
 import { loadSkillsFromDir, type LoadSkillsResult } from "@earendil-works/pi-coding-agent";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
@@ -76,6 +76,7 @@ import { registerRunWorkflow } from "./wf-engine/register.js";
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
 import { registerPostSprintHook } from "./hooks/post-sprint-hook.js";
 import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
+import { readPkgVersionsSync } from "./lib/versions.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -84,42 +85,10 @@ import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js"
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const PROMPTS_ROOT = path.join(PKG_ROOT, "prompts");
 
-// Read package.json once at module load. Failures here are non-fatal — the
-// update-check module short-circuits if the version strings are empty.
-function readPkgVersions(): { cliVersion: string; bundledForgeVersion: string } {
-	try {
-		const raw = readFileSync(path.join(PKG_ROOT, "package.json"), "utf8");
-		const pkg = JSON.parse(raw) as { version?: unknown; forge?: { bundledVersion?: unknown } };
-		const cliVersion = typeof pkg.version === "string" ? pkg.version : "";
-
-		// Bundled forge-plugin version comes from the actual bundled payload's
-		// plugin.json — single source of truth, regenerated on every build.
-		// Falls back to package.json's forge.bundledVersion mirror only when
-		// the payload hasn't been built yet (dev mode pre-build).
-		let bundledForgeVersion = "";
-		try {
-			const pluginJsonPath = path.join(
-				PKG_ROOT,
-				"dist",
-				"forge-payload",
-				".claude-plugin",
-				"plugin.json",
-			);
-			const pluginPkg = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as { version?: unknown };
-			bundledForgeVersion = typeof pluginPkg.version === "string" ? pluginPkg.version : "";
-		} catch {
-			// Payload not built — fall back to the hand-maintained mirror.
-			bundledForgeVersion =
-				typeof pkg.forge?.bundledVersion === "string" ? pkg.forge.bundledVersion : "";
-		}
-
-		return { cliVersion, bundledForgeVersion };
-	} catch {
-		return { cliVersion: "", bundledForgeVersion: "" };
-	}
-}
-
-const PKG_VERSIONS = readPkgVersions();
+// Read package.json and bundled plugin version once at module load. Failures
+// are non-fatal — the update-check module short-circuits when version strings
+// are empty. Delegated to lib/versions.ts (B-1 consolidation).
+const PKG_VERSIONS = readPkgVersionsSync(PKG_ROOT);
 
 let notified = false;
 
@@ -149,7 +118,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	}
 
 	// ── Forge project discovery ───────────────────────────────────────────────
-	const forgeConfig = discoverForgeConfig();
+	const forgeConfig = discoverForgeConfigCached();
 	const forgeRoot = forgeConfig?.forgeRoot ?? null;
 
 	// ── Project Orientation — main-thread system prompt context ─────────────

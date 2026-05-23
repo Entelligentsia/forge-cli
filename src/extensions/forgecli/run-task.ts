@@ -29,7 +29,7 @@ import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
 import { taskStateFilePath, readJsonState, writeJsonState, isStateStale as isJsonStateStale } from "./lib/state-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { discoverForgeConfig } from "./forge-root.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { resolveModelForPhase } from "./model-resolver.js";
 import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
@@ -1048,7 +1048,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			ctx.ui.setStatus?.(STATUS_KEY, `run-task ${taskId}: initializing…`);
 
 			// ── Discover forge config ────────────────────────────────────────
-			const forgeConfig = discoverForgeConfig(cwd);
+			const forgeConfig = discoverForgeConfigCached(cwd);
 			if (!forgeConfig) {
 				ctx.ui.notify("× forge:run-task — no Forge project found at cwd. Run /forge:init first.", "error");
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);

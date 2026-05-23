@@ -37,7 +37,7 @@ import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir as readPersonaDirSprint, readPipelineNames as readPipelineNamesSprint } from "./lib/catalog-helpers.js";
 import { sprintStateFilePath, readJsonState, writeJsonState } from "./lib/state-helpers.js";
 import { loadWorkflow } from "./loaders/workflow-loader.js";
-import { discoverForgeConfig } from "./forge-root.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { loadLayeredConfig } from "./config-layer.js";
@@ -308,7 +308,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			ctx.ui.setStatus?.(SPRINT_STATUS_KEY, `run-sprint ${sprintId}: initializing…`);
 
 			// ── Discover forge config ────────────────────────────────────────
-			const forgeConfig = discoverForgeConfig(cwd);
+			const forgeConfig = discoverForgeConfigCached(cwd);
 			if (!forgeConfig) {
 				ctx.ui.notify("× forge:run-sprint — no Forge project found at cwd. Run /forge:init first.", "error");
 				ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);

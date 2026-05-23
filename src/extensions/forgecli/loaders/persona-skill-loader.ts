@@ -21,7 +21,7 @@ import * as path from "node:path";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
-import { discoverForgeConfig } from "../forge-root.js";
+import { discoverForgeConfigCached } from "../lib/forge-config.js";
 
 // ── TypeBox schemas ──────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ export interface LoaderOptions {
 function resolveProjectRoot(opts: LoaderOptions | undefined): string {
 	if (opts?.projectRoot) return opts.projectRoot;
 	const cwd = opts?.cwd ?? process.cwd();
-	const cfg = discoverForgeConfig(cwd);
+	const cfg = discoverForgeConfigCached(cwd);
 	if (!cfg) {
 		throw new PersonaSkillLoaderError(
 			"no_project_root",

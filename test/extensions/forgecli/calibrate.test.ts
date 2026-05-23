@@ -364,3 +364,52 @@ describe("registerCalibrate — 4-phase integration (non-interactive, mocked sub
 		}
 	});
 });
+
+
+// ── N-H-A regression: isNonInteractive imported from run-task (FORGE-S25-T18) ──
+
+describe("regression: isNonInteractive from run-task.ts", () => {
+	it("FORGE_YES=1 triggers non-interactive mode via the shared isNonInteractive()", async () => {
+		// Before T18, calibrate.ts defined its own isNonInteractive(). After T18 it
+		// imports the shared one from run-task.ts. This test verifies the shared
+		// function behaves correctly when activated by FORGE_YES=1.
+		const { isNonInteractive } = await import("../../../src/extensions/forgecli/run-task.js");
+
+		const old = process.env.FORGE_YES;
+		try {
+			process.env.FORGE_YES = "1";
+			expect(isNonInteractive()).toBe(true);
+
+			process.env.FORGE_YES = "0";
+			expect(isNonInteractive()).toBe(false);
+
+			delete process.env.FORGE_YES;
+			expect(isNonInteractive()).toBe(false);
+		} finally {
+			if (old === undefined) {
+				delete process.env.FORGE_YES;
+			} else {
+				process.env.FORGE_YES = old;
+			}
+		}
+	});
+
+	it("FORGE_NON_INTERACTIVE=1 triggers non-interactive mode via the shared isNonInteractive()", async () => {
+		const { isNonInteractive } = await import("../../../src/extensions/forgecli/run-task.js");
+
+		const old = process.env.FORGE_NON_INTERACTIVE;
+		try {
+			process.env.FORGE_NON_INTERACTIVE = "1";
+			expect(isNonInteractive()).toBe(true);
+
+			process.env.FORGE_NON_INTERACTIVE = "0";
+			expect(isNonInteractive()).toBe(false);
+		} finally {
+			if (old === undefined) {
+				delete process.env.FORGE_NON_INTERACTIVE;
+			} else {
+				process.env.FORGE_NON_INTERACTIVE = old;
+			}
+		}
+	});
+});

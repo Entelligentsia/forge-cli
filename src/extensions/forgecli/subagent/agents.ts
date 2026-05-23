@@ -16,6 +16,10 @@
  *     centralization refactor that keeps AC #1 honest (no `getAgentDir()`
  *     call sites in forge-cli outside the resolver).
  *   - See `forge-cli/vendor-pi/DIVERGENCE.md` (sync-pi-upstream picks it up).
+ *
+ * Forge-cli divergence (FORGE-S25-T18, must be re-applied on every pi-mono sync):
+ *   - Local `isDirectory()` helper removed; import from `../lib/shared-fs-utils.js`
+ *     instead. Behaviour is identical (returns false on any error). Finding S-3.
  */
 
 /**
@@ -26,6 +30,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { getPiAgentAgentsDir } from "../paths/paths.js";
+import { isDirectory } from "../lib/shared-fs-utils.js";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -93,14 +98,6 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 	}
 
 	return agents;
-}
-
-function isDirectory(p: string): boolean {
-	try {
-		return fs.statSync(p).isDirectory();
-	} catch {
-		return false;
-	}
 }
 
 function findNearestProjectAgentsDir(cwd: string): string | null {

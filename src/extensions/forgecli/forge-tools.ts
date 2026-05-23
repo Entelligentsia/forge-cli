@@ -14,14 +14,12 @@
 //
 // Iron Law 6 compliance: execFile with argv arrays only. No shell strings.
 
-import { execFile } from "node:child_process";
-import * as fs from "node:fs";
+import { existsSync } from "node:fs";
 import * as path from "node:path";
-import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "./lib/exec-helpers.js";
+import { isDirectory } from "./lib/shared-fs-utils.js";
 
 /**
  * Resolve the directory holding the .cjs tools.
@@ -34,12 +32,7 @@ const execFileAsync = promisify(execFile);
  */
 function resolveToolDir(forgeRoot: string): string {
 	const nested = path.join(forgeRoot, "tools");
-	try {
-		if (fs.statSync(nested).isDirectory()) return nested;
-	} catch {
-		/* nested missing — fall through to flat */
-	}
-	return forgeRoot;
+	return isDirectory(nested) ? nested : forgeRoot;
 }
 
 // ── Shared helper ────────────────────────────────────────────────────────────
@@ -529,7 +522,7 @@ function registerForgeVerifyApply(pi: ExtensionAPI, toolDir: string, projectRoot
 		async execute(_toolCallId, params, signal) {
 			void signal;
 			const manifestTool = path.join(toolDir, "generation-manifest.cjs");
-			if (!fs.existsSync(manifestTool)) {
+			if (!existsSync(manifestTool)) {
 				return errResult(`forge_verify_apply failed: generation-manifest.cjs not found at ${manifestTool}`);
 			}
 

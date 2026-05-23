@@ -5,13 +5,10 @@
 // the multi-result picker so future ports do not drift from the canonical
 // cascade.
 
-import * as fsSync from "node:fs";
 import * as path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "./lib/exec-helpers.js";
+import { isDirectory } from "./lib/shared-fs-utils.js";
 
 export const ENTITY_TYPES = new Set(["task", "sprint", "bug", "feature"]);
 
@@ -38,12 +35,7 @@ export function isDebug(): boolean {
 
 export function resolveToolDir(forgeRoot: string): string {
 	const nested = path.join(forgeRoot, "tools");
-	try {
-		if (fsSync.statSync(nested).isDirectory()) return nested;
-	} catch {
-		// nested missing — fall through to flat
-	}
-	return forgeRoot;
+	return isDirectory(nested) ? nested : forgeRoot;
 }
 
 export async function runStoreCli(toolDir: string, argv: string[], cwd: string): Promise<any> {

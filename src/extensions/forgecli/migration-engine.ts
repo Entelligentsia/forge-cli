@@ -14,6 +14,7 @@
 import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isFile } from "./lib/shared-fs-utils.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -164,14 +165,10 @@ export function resolveCategory(
 	}
 
 	function tryAdd(src: string, dest: string): void {
-		try {
-			const stat = fs.statSync(src);
-			if (stat.isFile()) {
-				writes.push({ src, dest });
-			}
-		} catch (err: unknown) {
-			if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-			// ENOENT — skip silently
+		// isFile() returns false on ENOENT and any other stat error — intentional,
+		// since the migration engine must not crash on missing optional sources.
+		if (isFile(src)) {
+			writes.push({ src, dest });
 		}
 	}
 
@@ -312,17 +309,12 @@ export function resolveCategory(
 				// Nesting guard: do NOT recurse into a subdirectory named _fragments/
 				if (entry === "_fragments") continue;
 				const fullSrc = path.join(fragDir, entry);
-				try {
-					const st = fs.statSync(fullSrc);
-					if (st.isFile()) {
-						writes.push({
-							src: fullSrc,
-							dest: safeDest(path.join("workflows", "_fragments", entry)),
-						});
-					}
-					// Skip subdirectories (nesting guard above handles _fragments/)
-				} catch (err: unknown) {
-					if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+				// isFile() returns false for dirs and any stat error — skip silently.
+				if (isFile(fullSrc)) {
+					writes.push({
+						src: fullSrc,
+						dest: safeDest(path.join("workflows", "_fragments", entry)),
+					});
 				}
 			}
 		} catch (err: unknown) {
