@@ -19,12 +19,37 @@
 //   #4: /forge:enhance — sentinel + advisory only; no sendUserMessage dispatch
 //   #5: Tomoshibi — runRefreshKbLinks() native TS port; no shell-out
 //   #9: Health check — runHealthCheck() direct call; NOT via sendUserMessage
+//
+// ── Async/sync contract (N-B-C) ─────────────────────────────────────────────
+//
+// `sendToAgent(text)` is SYNCHRONOUS — it wraps `pi.sendUserMessage(text, { deliverAs: "steer" })`
+// which enqueues the steer message and returns immediately. The agent does NOT start running
+// until the current handler yields (awaits).
+//
+// `await ctx.waitForIdle()` is the SOLE synchronisation primitive. It suspends the handler
+// until the agent has finished processing all pending steer messages and has reached an
+// idle state. All reads of phase deliverables (e.g. `.forge/config.json` for Phase 1,
+// KB docs for Phase 2, `.forge/workflows/` for Phase 3) MUST occur AFTER a `waitForIdle`.
+//
+// Pattern for every phase:
+//   sendToAgent(promptText);       // enqueue — synchronous
+//   await ctx.waitForIdle();       // suspend until agent completes — asynchronous
+//   const result = verifyPhaseN(); // read deliverable — synchronous
+//
+// ── Config cache boundary (B-4, N-B-A) ──────────────────────────────────────
+//
+// `.forge/config.json` is WRITTEN by the Phase-1 agent. Any read before Phase 1's
+// `waitForIdle` returns stale or absent data. `configCache` is populated once,
+// immediately after Phase 1 completes, and reused throughout Phase 2, Phase 4,
+// the post-init hook, and the report section — reducing 8 fs.readFileSync calls to 1.
+//
+// `verifyPhase1` inside `forge-init/verifiers.ts` intentionally reads config.json
+// directly rather than using `configCache` — it validates the Phase-1 deliverable
+// and must see the freshly written file.
 
-import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { runHealthCheck } from "./health-check.js";
 import {
@@ -37,8 +62,9 @@ import {
 import { deleteInitProgress, readInitProgress, writeInitProgress } from "./init-progress.js";
 import { getRefreshKbLinksHandler } from "./refresh-kb-links.js";
 import { emitSyntheticEvent } from "./hook-dispatcher.js";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync, runTool, runToolAdvisory } from "./lib/exec-helpers.js";
+import { verifyPhase1, verifyPhase2, verifyPhase3 } from "./forge-init/verifiers.js";
+import { buildPhase1PromptText, buildPhase2PromptText } from "./forge-init/prompts.js";
 
 // ── Bundle path resolution ─────────────────────────────────────────────────
 
@@ -167,181 +193,6 @@ function parseInitFlags(args: string): ParsedFlags {
 	};
 }
 
-// ── Tool invocation helpers ────────────────────────────────────────────────
-
-async function runTool(toolPath: string, argv: string[], cwd: string, timeout = 30000): Promise<void> {
-	try {
-		await execFileAsync("node", [toolPath, ...argv], {
-			cwd,
-			timeout,
-			encoding: "utf8",
-		});
-	} catch (err: unknown) {
-		const e = err as { stderr?: string; message?: string };
-		throw new Error(`Tool ${path.basename(toolPath)} failed: ${e.stderr?.trim() || e.message || "unknown error"}`);
-	}
-}
-
-async function runToolAdvisory(
-	toolPath: string,
-	argv: string[],
-	cwd: string,
-	ctx: ExtensionCommandContext,
-	label: string,
-	timeout = 30000,
-): Promise<boolean> {
-	try {
-		await runTool(toolPath, argv, cwd, timeout);
-		return true;
-	} catch (err: unknown) {
-		const e = err as { message?: string };
-		ctx.ui.notify(`△ ${label}: ${e.message ?? "failed"} — proceeding.`, "warning");
-		return false;
-	}
-}
-
-// ── Per-phase verification ────────────────────────────────────────────────────
-
-interface VerifyResult {
-	ok: boolean;
-	missing: string[];
-	reason?: string;
-}
-
-function verifyPhase1(cwd: string): VerifyResult {
-	const configPath = path.join(cwd, ".forge", "config.json");
-	if (!fs.existsSync(configPath)) {
-		return { ok: false, missing: [".forge/config.json"], reason: "config file not written" };
-	}
-	let cfg: Record<string, unknown>;
-	try {
-		cfg = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
-	} catch (err: unknown) {
-		const e = err as { message?: string };
-		return { ok: false, missing: [".forge/config.json"], reason: `JSON parse failed: ${e.message ?? "?"}` };
-	}
-	const missing: string[] = [];
-	if (!cfg.version) missing.push("version");
-	const proj = cfg.project as Record<string, unknown> | undefined;
-	if (!proj?.name) missing.push("project.name");
-	if (!proj?.prefix) missing.push("project.prefix");
-	if (!cfg.stack) missing.push("stack");
-	if (!cfg.commands) missing.push("commands");
-	const paths = cfg.paths as Record<string, unknown> | undefined;
-	if (!paths?.engineering) missing.push("paths.engineering");
-	if (!paths?.store) missing.push("paths.store");
-	if (!paths?.workflows) missing.push("paths.workflows");
-	return { ok: missing.length === 0, missing };
-}
-
-function verifyPhase2(cwd: string, kbPath: string): VerifyResult {
-	const archDocs = ["stack", "processes", "database", "routing", "deployment", "entity-model", "stack-checklist"];
-	const missing: string[] = [];
-	for (const d of archDocs) {
-		if (!fs.existsSync(path.join(cwd, kbPath, "architecture", `${d}.md`))) {
-			missing.push(`${kbPath}/architecture/${d}.md`);
-		}
-	}
-	return { ok: missing.length === 0, missing };
-}
-
-function verifyPhase3(cwd: string): VerifyResult {
-	const dirs = ["workflows", "personas", "skills", "templates"];
-	const missing: string[] = [];
-	for (const d of dirs) {
-		const dir = path.join(cwd, ".forge", d);
-		let count = 0;
-		try {
-			count = fs.readdirSync(dir).filter((f) => f.endsWith(".md") || f.endsWith(".json")).length;
-		} catch {
-			count = 0;
-		}
-		if (count === 0) missing.push(`.forge/${d}/ (empty)`);
-	}
-	return { ok: missing.length === 0, missing };
-}
-
-// ── Discovery prompt text ──────────────────────────────────────────────────
-
-function buildPhase1PromptText(bundleRoot: string, projectName: string): string {
-	const discoveryDir = path.join(bundleRoot, ".init", "discovery");
-	const topics = ["stack", "processes", "database", "routing", "testing"];
-	const topicLines = topics.map((t) => `  • ${path.join(discoveryDir, `discover-${t}.md`)}`).join("\n");
-
-	return `## /forge:init Phase 1 — Collect: 5 parallel discovery scans
-
-Project: ${projectName}
-
-Run 5 discovery scans concurrently. In a single response, issue 5 parallel tool
-calls — one per discovery topic — using whatever read/search tools you have
-available (Read, Glob, Grep, Bash). If a \`subagent\` tool is exposed in your
-toolset, you MAY dispatch via it (mode: "parallel"); otherwise execute the
-scans inline. Do NOT preface with "I don't have a subagent tool" — either path
-is acceptable, what matters is concurrency and the resulting deliverable.
-
-For each topic:
-1. Read the discovery prompt file at its assigned path (shown below)
-2. Analyze the current project codebase
-3. Capture structured findings
-
-Discovery prompt files:
-${topicLines}
-
-After all 5 complete, synthesize the findings into a unified config and write .forge/config.json.
-
-Required .forge/config.json structure:
-{
-  "version": "1",
-  "project": { "name": "${projectName}", "prefix": "<UPPERCASE_ABBREV>" },
-  "stack": { "primary": [...], "test": <framework>, "build": <tool>, "lint": <tool> },
-  "commands": { "test": "<test cmd>", "build": "<build cmd>", "lint": "<lint cmd>" },
-  "paths": {
-    "engineering": "engineering",
-    "store": ".forge/store",
-    "workflows": ".forge/workflows",
-    "commands": ".claude/commands/forge",
-    "templates": ".forge/templates"
-  }
-}
-
-Write the config with: node "${path.join(bundleRoot, "tools/manage-config.cjs")}" set <key> <value>
-Or write .forge/config.json directly as valid JSON.`;
-}
-
-function buildPhase2PromptText(bundleRoot: string, kbPath: string, projectName: string): string {
-	const generateKbDocPath = path.join(bundleRoot, ".init", "generation", "generate-kb-doc.md");
-	const docs = ["stack", "processes", "database", "routing", "deployment", "entity-model", "stack-checklist"];
-	const docLines = docs.map((d) => `  • ${kbPath}/architecture/${d}.md`).join("\n");
-
-	return `## /forge:init Phase 2 — Discover: 7 parallel KB doc generation
-
-Project: ${projectName}
-KB path: ${kbPath}/
-Rulebook: ${generateKbDocPath}
-
-Generate 7 knowledge-base documents concurrently. In a single response, issue
-7 parallel tool calls — one per document — using whatever read/search/write
-tools you have available (Read, Glob, Grep, Bash, Write). If a \`subagent\`
-tool is exposed in your toolset, you MAY dispatch via it (mode: "parallel");
-otherwise execute the generation inline. Do NOT preface with "I don't have a
-subagent tool" — either path is acceptable, what matters is concurrency and
-the 7 output files.
-
-For each document:
-1. Read the rulebook at: ${generateKbDocPath}
-2. Analyze the project codebase for its assigned topic
-3. Write the resulting document to its assigned output file
-
-Documents to generate:
-${docLines}
-
-After all complete, check for any that returned "FAILED:" in their output — retry those once.
-
-Also create these index files after generation:
-- ${kbPath}/architecture/INDEX.md
-- ${kbPath}/business-domain/INDEX.md
-- ${kbPath}/MASTER_INDEX.md (scaffold)`;
-}
 
 // ── Phase 4 helper — .gitignore update ────────────────────────────────────
 
@@ -689,6 +540,20 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				ctx.ui.notify("〇 Phase 1 complete.", "info");
 			}
 
+			// ── Config cache (B-4, N-B-A) ─────────────────────────────────────
+			// Phase 1 wrote .forge/config.json — read it once here and reuse the
+			// parsed object throughout Phase 2, Phase 4, the post-init hook, and
+			// the report section. See file-header comment for the full rationale.
+			// Falls back to {} on any read/parse error so downstream code uses defaults.
+			let configCache: Record<string, unknown> = {};
+			try {
+				configCache = JSON.parse(
+					fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
+				) as Record<string, unknown>;
+			} catch {
+				// Use empty object — all downstream reads have their own defaults
+			}
+
 			// ── Phase 2 — Discover ────────────────────────────────────────────
 			if (startPhase <= 2) {
 				ctx.ui.setStatus?.("forge:init", "Phase 2/4: Discover");
@@ -702,17 +567,13 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					});
 				}
 
-				// Read KB_PATH from config
+				// Extract KB_PATH from configCache (written by Phase 1)
 				let kbPath = "engineering";
-				try {
-					const configRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-					const config = JSON.parse(configRaw) as Record<string, unknown>;
-					const paths = config.paths as Record<string, unknown> | undefined;
-					if (paths && typeof paths.engineering === "string" && paths.engineering) {
-						kbPath = paths.engineering;
+				{
+					const cachePaths = configCache.paths as Record<string, unknown> | undefined;
+					if (cachePaths && typeof cachePaths.engineering === "string" && cachePaths.engineering) {
+						kbPath = cachePaths.engineering;
 					}
-				} catch {
-					// Use default
 				}
 
 				// Directory scaffolding
@@ -778,36 +639,23 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					ctx.ui.notify("△ Continuing with partial Phase 2.", "warning");
 				}
 
-				// Construct project-context.json
+				// Construct project-context.json — use configCache (written by Phase 1)
 				let kbPathResolved = kbPath;
 				let prefix = "";
-				try {
-					const configRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-					const config = JSON.parse(configRaw) as Record<string, unknown>;
-					const proj = config.project as Record<string, unknown> | undefined;
-					if (proj && typeof proj.prefix === "string") prefix = proj.prefix;
-					const paths = config.paths as Record<string, unknown> | undefined;
-					if (paths && typeof paths.engineering === "string") kbPathResolved = paths.engineering;
-				} catch {
-					// Use defaults
-				}
-
-				// Read config for full project context construction
-				let configForContext: Record<string, unknown> = {};
-				try {
-					const raw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-					configForContext = JSON.parse(raw) as Record<string, unknown>;
-				} catch {
-					// empty config
+				{
+					const cacheProj = configCache.project as Record<string, unknown> | undefined;
+					if (cacheProj && typeof cacheProj.prefix === "string") prefix = cacheProj.prefix;
+					const cachePaths2 = configCache.paths as Record<string, unknown> | undefined;
+					if (cachePaths2 && typeof cachePaths2.engineering === "string") kbPathResolved = cachePaths2.engineering;
 				}
 
 				const projectCtx = buildProjectContext(
 					{
-						projectName: ((configForContext.project as Record<string, unknown>)?.name as string) ?? projectName,
+						projectName: ((configCache.project as Record<string, unknown>)?.name as string) ?? projectName,
 						prefix,
 						kbPath: kbPathResolved,
 					},
-					configForContext as {
+					configCache as {
 						project?: { name?: string; prefix?: string };
 						paths?: { engineering?: string; forgeRoot?: string };
 					},
@@ -1051,14 +899,10 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					);
 				}
 
-				// Step 4-5: build-context-pack
-				try {
-					const raw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-					const cfg = JSON.parse(raw) as Record<string, unknown>;
-					const p = cfg.paths as Record<string, unknown> | undefined;
+				// Step 4-5: build-context-pack — use configCache
+				{
+					const p = configCache.paths as Record<string, unknown> | undefined;
 					if (p && typeof p.engineering === "string") kbPathFinal = p.engineering;
-				} catch {
-					// use default "engineering"
 				}
 
 				if (fs.existsSync(buildContextPackTool)) {
@@ -1161,16 +1005,13 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				// project root. This runs in Phase 4 so it handles both same-session and resumed
 				// inits (where Phase 3 ran in a prior session).
 				if (isPiRuntime()) {
+					// Use configCache — Phase 1 wrote config.json and configCache was populated before Phase 2
 					let commandsPrefix = "forge";
-					try {
-						const cfgRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-						const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
-						const proj = cfg.project as Record<string, unknown> | undefined;
+					{
+						const proj = configCache.project as Record<string, unknown> | undefined;
 						if (proj && typeof proj.prefix === "string" && proj.prefix) {
 							commandsPrefix = proj.prefix.toLowerCase();
 						}
-					} catch {
-						// fall back to "forge"
 					}
 					const claudeCommandsDir = path.join(cwd, ".claude", "commands", commandsPrefix);
 					if (fs.existsSync(claudeCommandsDir)) {
@@ -1226,33 +1067,28 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			// materialization-marker checks, audience gates, and dispatch.
 			// Errors inside hooks are caught by emitSyntheticEvent — fail-open.
 			{
+				// Use configCache — valid for both full-run and resumed-init paths.
+				// configCache is populated once (after Phase 1 completes or from pre-existing
+				// config.json for resumed inits). Non-fatal if cache is empty (empty prefix
+				// causes hook to write sentinel under post-init-fired-.json).
 				let projectPrefixForHook = "";
-				try {
-					const cfgRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-					const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
-					const proj = cfg.project as Record<string, unknown> | undefined;
-					if (proj && typeof proj.prefix === "string") projectPrefixForHook = proj.prefix;
-				} catch {
-					// Non-fatal: if config read fails, emit with empty prefix
-					// (hook will write sentinel under post-init-fired-.json)
+				const projForHook = configCache.project as Record<string, unknown> | undefined;
+				if (projForHook && typeof projForHook.prefix === "string") {
+					projectPrefixForHook = projForHook.prefix;
 				}
 				await emitSyntheticEvent({ type: "init-complete", projectPrefix: projectPrefixForHook, cwd }, ctx);
 			}
 
 			// ── Report ────────────────────────────────────────────────────────
-			// FIX BUG-020: read kbPathFinal from config.json at report time so
-			// a custom KB folder chosen in Phase 1 is reflected here. kbPathFinal
-			// is only updated inside the Phase-4 block, so if init was resumed
-			// from Phase 1-3 we still get the right value.
-			try {
-				const cfgRaw = fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8");
-				const cfg = JSON.parse(cfgRaw) as Record<string, unknown>;
-				const p = cfg.paths as Record<string, unknown> | undefined;
+			// FIX BUG-020: use configCache here (populated from config.json after Phase 1
+			// or from pre-existing config.json for resumed inits starting at Phase 2+).
+			// kbPathFinal is updated inside the Phase-4 block; for Phase-1-3 resumes
+			// configCache captures the correct value that Phase 4 would have stamped.
+			{
+				const p = configCache.paths as Record<string, unknown> | undefined;
 				if (p && typeof p.engineering === "string" && p.engineering) {
 					kbPathFinal = p.engineering;
 				}
-			} catch {
-				// use default "engineering" already set
 			}
 
 			ctx.ui.setStatus?.("forge:init", undefined);
