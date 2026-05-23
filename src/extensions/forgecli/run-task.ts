@@ -32,7 +32,7 @@ import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfig } from "./forge-root.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { resolveModelForPhase } from "./model-resolver.js";
-import { validateModelConfig } from "./model-validator.js";
+import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
 import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { attachViewportObserver } from "./viewport-events.js";
@@ -502,39 +502,28 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	// Pre-flight model config validation (Plan 16 Slice 3).
 	// Warns on unknown persona names / unavailable models; errors on unresolvable
 	// overrides / unknown pipelines. With FORGE_STRICT_MODELS=1, warnings → errors.
+	// FORGE-S25-T17: delegated to lib/orchestrator-preflight.ts (H-13).
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),
 			"..", "..", "forge-payload", ".base-pack", "personas",
 		);
 		const personaCatalogue = readPersonaDir(personasDir);
-
 		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
 		const pipelineCatalogue = readPipelineNames(forgeCfgPath);
-
 		const availableModels = ctx.modelRegistry?.getAvailable?.() ?? [];
-		const strict = process.env.FORGE_STRICT_MODELS === "1";
 
-		const { errors, warnings } = validateModelConfig(
+		const preflightResult = runOrchestratorPreflight({
+			mode: "task",
+			ctx,
+			notifyPrefix: "forge:run-task",
 			personaCatalogue,
 			pipelineCatalogue,
 			modelRoutingConfig,
-			availableModels.map((m) => ({ provider: m.provider, id: m.id })),
-			strict,
-		);
-		for (const w of warnings) {
-			ctx.ui.notify(`⚠ forge:run-task — model routing: ${w.message}`, "warning");
-		}
-		if (errors.length > 0) {
-			for (const e of errors) {
-				ctx.ui.notify(`× forge:run-task — model routing: ${e.message}`, "error");
-			}
-			return {
-				status: "failed",
-				lastPhaseIndex: 0,
-				iterationCounts: {},
-				lastError: `model config validation failed: ${errors.map((e) => e.code).join(", ")}`,
-			};
+			availableModels: availableModels.map((m) => ({ provider: m.provider, id: m.id })),
+		});
+		if (!preflightResult.proceed) {
+			return preflightResult.result as RunTaskPipelineResult;
 		}
 	}
 

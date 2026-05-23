@@ -165,7 +165,8 @@ describe("skill-retriever / emitSkillUsageEvents", () => {
 		expect(mockSpawnSync).toHaveBeenCalledTimes(2);
 
 		const firstCall = mockSpawnSync.mock.calls[0];
-		expect(firstCall[0]).toBe("node");
+		// FORGE-S25-T17: spawnStoreCliEmit uses process.execPath (not bare "node")
+		expect(firstCall[0]).toBe(process.execPath);
 		const argv = firstCall[1] as string[];
 		expect(Array.isArray(argv)).toBe(true);
 		expect(argv[0]).toBe(runtime.storeCli);

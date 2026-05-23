@@ -7,10 +7,12 @@
 // Why spawnSync?
 //   pi's tool_call handler is synchronous — the event system does not support
 //   async handlers. spawnSync completes before the block result is returned to pi.
+//
+// FORGE-S25-T17: spawnSync replaced with spawnStoreCliValidate from lib/spawn-store-cli.ts.
 
-import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 import { enhanceBlockMessage } from "./lib/store-error-remediation.js";
+import { spawnStoreCliValidate } from "./lib/spawn-store-cli.js";
 
 export interface StoreValidatorResult {
 	ok: boolean;
@@ -31,21 +33,8 @@ export interface StoreValidatorResult {
 export function validateStoreCLIPayload(entity: string, payload: unknown, forgeRoot: string): StoreValidatorResult {
 	const storeCliPath = path.join(forgeRoot, "tools", "store-cli.cjs");
 
-	const payloadStr = typeof payload === "string" ? payload : JSON.stringify(payload);
-
-	const result = spawnSync(
-		process.execPath, // node
-		[storeCliPath, "validate", entity, payloadStr],
-		{ encoding: "utf8", timeout: 10_000 },
-	);
-
-	// Non-zero exit code or error signal → validation failed.
-	if (result.status !== 0 || result.error) {
-		const reason =
-			result.stderr?.trim() ||
-			result.error?.message ||
-			`store-cli validate exited with code ${String(result.status)}` ||
-			"validation failed (no error message)";
+	const { ok, reason } = spawnStoreCliValidate(storeCliPath, entity, payload, forgeRoot);
+	if (!ok) {
 		const remediation = enhanceBlockMessage(reason, entity, "unknown");
 		return { ok: false, reason, remediation };
 	}

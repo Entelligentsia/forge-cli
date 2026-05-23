@@ -273,13 +273,16 @@ describe("friction-emit / emitFrictionEvents", () => {
 		expect(mockSpawnSync).toHaveBeenCalledTimes(2);
 
 		const [bin, argv, opts] = mockSpawnSync.mock.calls[0];
-		expect(bin).toBe("node");
+		// FORGE-S25-T17: spawnStoreCliEmit uses process.execPath (not bare "node")
+		expect(bin).toBe(process.execPath);
 		expect(Array.isArray(argv)).toBe(true);
 		expect(argv?.[0]).toBe(runtime.storeCli);
 		expect(argv?.[1]).toBe("emit");
 		expect(argv?.[2]).toBe(runtime.sprintId);
 		expect(typeof argv?.[3]).toBe("string");
-		expect((opts as { cwd?: string })?.cwd).toBe(runtime.cwd);
+		expect((opts as { cwd?: string; timeout?: number })?.cwd).toBe(runtime.cwd);
+		// N-C-A: emit calls now carry a 10 s timeout
+		expect((opts as { timeout?: number })?.timeout).toBe(10_000);
 	});
 
 	it("includes type=friction, workflow, persona, issue, subkind, skillId, evidence", () => {

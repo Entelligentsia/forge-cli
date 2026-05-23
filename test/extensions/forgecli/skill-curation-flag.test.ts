@@ -303,8 +303,9 @@ describe("skill-curation gate / flag-on passes through to existing emit", () => 
 		expect(result.failed).toBe(0);
 		expect(mockSpawnSync).toHaveBeenCalledTimes(1);
 		const call = mockSpawnSync.mock.calls[0];
-		// IL6: argv-array spawn — first arg is "node", second is the argv array.
-		expect(call[0]).toBe("node");
+		// IL6: argv-array spawn — first arg is process.execPath (not bare "node")
+		// FORGE-S25-T17: spawnStoreCliEmit uses process.execPath.
+		expect(call[0]).toBe(process.execPath);
 		expect(Array.isArray(call[1])).toBe(true);
 		const argv = call[1] as string[];
 		expect(argv[1]).toBe("emit");

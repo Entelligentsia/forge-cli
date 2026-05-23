@@ -25,7 +25,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 // them and produce spurious MODEL_UNAVAILABLE warnings (FORGE-BUG-001).
 import { loadLayeredConfig } from "./config-layer.js";
 import { resolveModelForPhase } from "./model-resolver.js";
-import { validateModelConfig } from "./model-validator.js";
+import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
@@ -501,6 +501,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
 
 	// Pre-flight validation — same shape as run-task / run-sprint.
+	// FORGE-S25-T17: delegated to lib/orchestrator-preflight.ts (H-13).
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),
@@ -510,28 +511,22 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
 		const pipelineCatalogue = readPipelineNamesBug(forgeCfgPath);
 		const availableModels = ctx.modelRegistry?.getAvailable?.() ?? [];
-		const strict = process.env.FORGE_STRICT_MODELS === "1";
 
-		const { errors, warnings } = validateModelConfig(
+		const preflightResult = runOrchestratorPreflight({
+			mode: "task",
+			ctx,
+			notifyPrefix: "forge:fix-bug",
 			personaCatalogue,
 			pipelineCatalogue,
 			modelRoutingConfig,
-			availableModels.map((m) => ({ provider: m.provider, id: m.id })),
-			strict,
-		);
-		for (const w of warnings) {
-			ctx.ui.notify(`⚠ forge:fix-bug — model routing: ${w.message}`, "warning");
-		}
-		if (errors.length > 0) {
-			for (const e of errors) {
-				ctx.ui.notify(`× forge:fix-bug — model routing: ${e.message}`, "error");
-			}
+			availableModels: availableModels.map((m) => ({ provider: m.provider, id: m.id })),
+		});
+		if (!preflightResult.proceed) {
 			return {
-				status: "failed",
+				...preflightResult.result,
 				lastPhaseIndex: currentPhaseIndex,
 				iterationCounts,
-				lastError: `model config validation failed: ${errors.map((e) => e.code).join(", ")}`,
-			};
+			} as RunBugPipelineResult;
 		}
 	}
 

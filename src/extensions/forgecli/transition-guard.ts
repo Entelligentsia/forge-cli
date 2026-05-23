@@ -8,9 +8,11 @@
 // { allowed: true } and sets reason="lookup-failed". The caller (hook-dispatcher)
 // logs this as "lookup-failed" under FORGE_HOOK_AUDIT=1 but never blocks the
 // operation — a lookup failure must not block a valid operation.
+//
+// FORGE-S25-T17: spawnSync replaced with spawnStoreCliRead from lib/spawn-store-cli.ts.
 
-import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import { spawnStoreCliRead } from "./lib/spawn-store-cli.js";
 
 export interface TransitionGuardResult {
 	allowed: boolean;
@@ -84,26 +86,12 @@ function legalNextStates(entity: string, fromStatus: string): string[] {
  */
 function readCurrentStatus(entity: string, entityId: string, forgeRoot: string): string | null {
 	const storeCliPath = path.join(forgeRoot, "tools", "store-cli.cjs");
-
-	try {
-		const result = spawnSync(process.execPath, [storeCliPath, "read", entity, entityId], {
-			encoding: "utf8",
-			timeout: 10_000,
-		});
-
-		if (result.status !== 0 || result.error) return null;
-
-		const stdout = result.stdout?.trim();
-		if (!stdout) return null;
-
-		// store-cli read emits JSON; parse and extract the status field.
-		const record = JSON.parse(stdout) as Record<string, unknown>;
-		const status = record.status;
-		return typeof status === "string" ? status : null;
-	} catch {
-		// Any parse error or subprocess error → fail-open.
-		return null;
-	}
+	// Use the shared wrapper from lib/spawn-store-cli.ts (FORGE-S25-T17).
+	// Fail-open: spawnStoreCliRead returns null on any error — matches prior behaviour.
+	const record = spawnStoreCliRead(storeCliPath, entity, entityId, forgeRoot);
+	if (record === null) return null;
+	const status = record["status"];
+	return typeof status === "string" ? status : null;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

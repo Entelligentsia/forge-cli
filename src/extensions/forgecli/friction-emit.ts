@@ -37,8 +37,8 @@
 // fix-bug.ts, gated by FORGE-S24-T12 flag) does that and passes the
 // shaped inputs in.
 
-import { spawnSync } from "node:child_process";
 import { isSkillCurationEnabled } from "./skill-curation-flag.js";
+import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
@@ -285,17 +285,13 @@ export function emitFrictionEvents(
 		if (runtime.phase !== undefined) event.phase = runtime.phase;
 		if (runtime.iteration !== undefined) event.iteration = runtime.iteration;
 
-		const result = spawnSync(
-			"node",
-			[runtime.storeCli, "emit", runtime.sprintId, JSON.stringify(event)],
-			{ cwd: runtime.cwd, encoding: "utf8" },
-		);
-		if (result.status === 0) {
+		// FORGE-S25-T17: adopt spawnStoreCliEmit; adds missing 10 s timeout (N-C-A).
+		const emitResult = spawnStoreCliEmit(runtime.storeCli, runtime.sprintId, event, runtime.cwd);
+		if (emitResult.ok) {
 			emitted++;
 		} else {
 			failed++;
-			const stderr = typeof result.stderr === "string" ? result.stderr : "";
-			stderrs.push(stderr);
+			stderrs.push(emitResult.stderr);
 		}
 	}
 
