@@ -26,6 +26,7 @@ export function initialState(opts: InitOptions): ConfigTuiState {
     dirty: false,
     scope,
     authError: opts.authError ?? null,
+    configErrors: opts.configErrors && opts.configErrors.length > 0 ? opts.configErrors : null,
     confirmQuit: false,
     shouldExit: false,
     lastSaved: null,

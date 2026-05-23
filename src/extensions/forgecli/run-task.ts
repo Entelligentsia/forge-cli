@@ -497,7 +497,15 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 	// Load per-phase model routing config once at task entry (Plan 16 Slice 2).
 	// Empty / absent config produces inherit for every phase — no behaviour change.
-	const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+	// N-B-E: surface schema errors to caller (Decision 9 — orchestrators fail-fast).
+	// See doc/decisions/layered-config-error-policy.md.
+	const { merged: modelRoutingConfig, errors: layeredConfigErrors } = loadLayeredConfig(cwd);
+	if (layeredConfigErrors.length > 0) {
+		for (const e of layeredConfigErrors) {
+			ctx.ui.notify(`× forge:run-task — forge-cli config schema error: ${e}`, "error");
+		}
+		return { status: "failed", lastPhaseIndex: 0, iterationCounts: {}, lastError: `forge-cli config schema errors: ${layeredConfigErrors.join("; ")}` };
+	}
 
 	// Pre-flight model config validation (Plan 16 Slice 3).
 	// Warns on unknown persona names / unavailable models; errors on unresolvable

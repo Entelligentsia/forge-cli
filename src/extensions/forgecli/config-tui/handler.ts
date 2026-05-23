@@ -215,6 +215,7 @@ async function buildInitOptions(
     availableModels: available,
     authenticatedProviders: authenticated,
     authError: authError ?? undefined,
+    configErrors: layered.errors.length > 0 ? layered.errors : undefined,
   };
 }
 

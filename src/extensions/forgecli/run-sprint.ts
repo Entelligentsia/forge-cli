@@ -211,7 +211,19 @@ async function dispatchSprintCeremony(params: {
 	});
 
 	// Resolve model routing for the ceremony's architect persona (Plan 16 Slice 2).
-	const { merged: ceremonyModelConfig } = loadLayeredConfig(cwd);
+	// N-B-E: surface schema errors to caller (Decision 9 — orchestrators fail-fast).
+	// See doc/decisions/layered-config-error-policy.md.
+	const { merged: ceremonyModelConfig, errors: ceremonyCfgErrors } = loadLayeredConfig(cwd);
+	if (ceremonyCfgErrors.length > 0) {
+		for (const e of ceremonyCfgErrors) {
+			ctx.ui.notify(`× forge:run-sprint ceremony — forge-cli config schema error: ${e}`, "error");
+		}
+		return {
+			verdict: "revision-required",
+			durationMs: Date.now() - startMs,
+			errorMessage: `forge-cli config schema errors: ${ceremonyCfgErrors.join("; ")}`,
+		};
+	}
 	const ceremonyModelLookup = lookupPersonaModel(personaName, "default", ceremonyModelConfig);
 
 	try {
@@ -467,8 +479,17 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 
 			// ── Model routing pre-flight (Plan 16 Slice 3) ──────────────────────
 			// Validate routing config once at sprint start (before any LLM calls).
+			// N-B-E: surface schema errors first (Decision 9 — orchestrators fail-fast).
+			// See doc/decisions/layered-config-error-policy.md.
 			{
-				const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+				const { merged: modelRoutingConfig, errors: schemaErrors } = loadLayeredConfig(cwd);
+				if (schemaErrors.length > 0) {
+					for (const e of schemaErrors) {
+						ctx.ui.notify(`× forge:run-sprint — forge-cli config schema error: ${e}`, "error");
+					}
+					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+					return;
+				}
 				const personasDir = path.resolve(
 					path.dirname(fileURLToPath(import.meta.url)),
 					"..", "..", "forge-payload", ".base-pack", "personas",

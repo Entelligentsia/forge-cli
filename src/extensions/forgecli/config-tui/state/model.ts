@@ -100,6 +100,8 @@ export interface InitOptions {
   authenticatedProviders: string[];
   /** If model discovery failed, surfaces the diagnostic instead of a silent empty list. */
   authError?: string;
+  /** Schema validation errors from loadLayeredConfig (N-B-E). Non-blocking — TUI renders a warning banner. */
+  configErrors?: string[];
 }
 
 export interface ConfigTuiState {
@@ -116,6 +118,8 @@ export interface ConfigTuiState {
   scope: ConfigLayer;
   /** If model/auth discovery failed at init, a diagnostic string. */
   authError: string | null;
+  /** Schema validation errors from loadLayeredConfig (N-B-E). Non-blocking — rendered as a warning banner. */
+  configErrors: string[] | null;
   /** Pending quit confirmation modal. */
   confirmQuit: boolean;
   /** True when the TUI should unmount. */

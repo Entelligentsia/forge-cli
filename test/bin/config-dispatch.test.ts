@@ -209,6 +209,26 @@ describe("runConfigDispatch", () => {
     });
   });
 
+  // N-B-E: prints schema errors before dispatch output and exits 0 (Decision 9).
+  it("prints schema errors before dispatch output when config is schema-invalid", () => {
+    // Write a schema-invalid project config.
+    writePiConfig(tmpCwd, { "persona-models": { engineer: "not-an-object" } });
+
+    const cap = captureLines();
+    const exitCode = runConfigDispatch(
+      { subcommand: "dispatch", resolved: false, json: false },
+      tmpCwd,
+      cap.write,
+    );
+
+    // Exit code must be 0 (informational surface).
+    expect(exitCode).toBe(0);
+
+    // At least one line must mention the schema error.
+    const errorLine = cap.lines.find((l) => l.includes("schema error") || l.includes("Config error"));
+    expect(errorLine).toBeDefined();
+  });
+
   it("bug-fix phases use 'fix-bug' pipeline independently of task pipeline", () => {
     writePiConfig(tmpCwd, {
       "persona-models": {

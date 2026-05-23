@@ -891,3 +891,37 @@ describe("Test 13: Unprefixed task ID resolution (Issue #20)", () => {
 		expect(errorNotify || ctx.notifications.some((n) => n.level === "error")).toBeTruthy();
 	});
 });
+
+// Test 14: N-B-E — fail-fast on schema-invalid forge-cli config (Decision 9).
+// Regression: runTaskPipeline must return status:"failed" and NOT call createAgentSession
+// when loadLayeredConfig returns schema errors.
+describe("Test 14: Fail-fast on schema-invalid forge-cli config (N-B-E)", () => {
+	it("returns status:failed and does not spawn subagent when forge-cli config has schema errors", async () => {
+		const { proj, taskId } = scaffoldProject();
+
+		// Write a schema-invalid project config (persona-models must be an object of objects;
+		// giving a string value triggers an Ajv error in loadLayeredConfig).
+		const piConfigDir = path.join(proj, ".pi", "forge-cli");
+		fs.mkdirSync(piConfigDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(piConfigDir, "config.json"),
+			JSON.stringify({ "persona-models": { engineer: "not-an-object" } }),
+			"utf8",
+		);
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// createAgentSession must NOT have been called (fail-fast before any subagent)
+		expect(vi.mocked(createAgentSession)).not.toHaveBeenCalled();
+
+		// Must have emitted at least one error notification containing the schema error
+		const schemaErrorNotify = ctx.notifications.find(
+			(n) => n.level === "error" && (n.msg.includes("schema error") || n.msg.includes("forge-cli config")),
+		);
+		expect(schemaErrorNotify).toBeDefined();
+	});
+});

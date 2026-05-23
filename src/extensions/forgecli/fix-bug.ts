@@ -498,7 +498,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	// config produces inherit for every phase — no behaviour change. Pipeline
 	// name "fix-bug" lets users configure per-phase overrides distinctly from
 	// task pipelines under pipelines["fix-bug"] in their routing config.
-	const { merged: modelRoutingConfig } = loadLayeredConfig(cwd);
+	// N-B-E: surface schema errors to caller (Decision 9 — orchestrators fail-fast).
+	// See doc/decisions/layered-config-error-policy.md.
+	const { merged: modelRoutingConfig, errors: layeredConfigErrors } = loadLayeredConfig(cwd);
+	if (layeredConfigErrors.length > 0) {
+		for (const e of layeredConfigErrors) {
+			ctx.ui.notify(`× forge:fix-bug — forge-cli config schema error: ${e}`, "error");
+		}
+		return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `forge-cli config schema errors: ${layeredConfigErrors.join("; ")}` };
+	}
 
 	// Pre-flight validation — same shape as run-task / run-sprint.
 	// FORGE-S25-T17: delegated to lib/orchestrator-preflight.ts (H-13).

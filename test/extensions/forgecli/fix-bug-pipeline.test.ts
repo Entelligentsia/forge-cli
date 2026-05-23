@@ -18,9 +18,11 @@ import {
 	readBugState,
 	writeBugState,
 	deleteBugState,
+	runBugPipeline,
 	type BugRecord,
 	type RunBugState,
 } from "../../../src/extensions/forgecli/fix-bug.js";
+import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -384,5 +386,65 @@ describe("preCreateBug", () => {
 	it("should return false when store-cli is unavailable", () => {
 		const ok = preCreateBug("FORGE-BUG-099", "Test bug", "/nonexistent/store-cli", "/nonexistent/cwd");
 		expect(ok).toBe(false);
+	});
+});
+
+// N-B-E regression: runBugPipeline must fail-fast and return status:"failed"
+// when loadLayeredConfig returns schema errors (Decision 9).
+describe("N-B-E: runBugPipeline fails-fast on schema-invalid forge-cli config", () => {
+	let tmpDir: string;
+	const PRIOR_FORGE_CLI_HOME = process.env.FORGE_CLI_HOME;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fix-bug-nbe-"));
+		process.env.FORGE_CLI_HOME = path.join(tmpDir, "forge-cli-user");
+	});
+
+	afterEach(() => {
+		if (PRIOR_FORGE_CLI_HOME === undefined) delete process.env.FORGE_CLI_HOME;
+		else process.env.FORGE_CLI_HOME = PRIOR_FORGE_CLI_HOME;
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("returns status:failed and does not proceed to subagent when config has schema errors", async () => {
+		// Write a schema-invalid project config to trigger loadLayeredConfig errors.
+		const piConfigDir = path.join(tmpDir, ".pi", "forge-cli");
+		fs.mkdirSync(piConfigDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(piConfigDir, "config.json"),
+			JSON.stringify({ "persona-models": { engineer: "not-an-object" } }),
+			"utf8",
+		);
+
+		const notifications: { msg: string; level: string }[] = [];
+		const ctx = {
+			ui: {
+				notify: (msg: string, level: string) => { notifications.push({ msg, level }); },
+				setStatus: vi.fn(),
+				confirm: vi.fn(() => Promise.resolve(false)),
+			},
+			hasUI: true,
+			modelRegistry: undefined,
+		} as unknown as Parameters<typeof runBugPipeline>[0]["ctx"];
+
+		const result = await runBugPipeline({
+			bugId: "FORGE-BUG-001",
+			cwd: tmpDir,
+			ctx,
+			forgeRoot: "/nonexistent/forge-root",
+			storeCli: "/nonexistent/store-cli",
+			preflightGate: "/nonexistent/preflight",
+			registry: getSessionRegistry(),
+		});
+
+		// Must return status:"failed" before spawning any subagent
+		expect(result.status).toBe("failed");
+		expect(result.lastError).toMatch(/schema error/i);
+
+		// Must have emitted at least one error notification
+		const errNotify = notifications.find(
+			(n) => n.level === "error" && (n.msg.includes("schema error") || n.msg.includes("forge-cli config")),
+		);
+		expect(errNotify).toBeDefined();
 	});
 });

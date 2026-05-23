@@ -12,7 +12,7 @@ import { getActiveView, getAllScopedTierAssignments, type ScopedTierAssignment }
 import { TIERS, TIER_LABELS, TIER_SUB_LABELS, tierPersonaLine } from "../tier-meta.js";
 import type { Tier } from "../tier-meta.js";
 import { rule, safeLines } from "./shared.js";
-import { padRight, cursor, accentBold, accent, muted, warning, dirtyMarker } from "../theme.js";
+import { padRight, cursor, accentBold, accent, muted, warning, error as themedError, dirtyMarker } from "../theme.js";
 
 /** Interactive row count: 3 tiers + show-resolved + advanced = 5. */
 const ITEM_COUNT = 5;
@@ -29,6 +29,14 @@ export class TierMenuScreen implements Screen {
     // ── Header ─────────────────────────────────────────────────────────
     lines.push(accentBold("forge config", theme));
     lines.push(rule(width, theme));
+
+    // ── Config schema error banner (N-B-E, non-blocking) ───────────────
+    if (state.configErrors && state.configErrors.length > 0) {
+      for (const e of state.configErrors) {
+        lines.push(themedError(`  ⚠ Config error   ${e}`, theme));
+      }
+      lines.push("");
+    }
 
     // ── "Active right now" summary ─────────────────────────────────────
     lines.push(muted("Active right now", theme));

@@ -21,11 +21,11 @@
 //   IL2  — TypeScript; no runtime cast. The layered loader has already
 //          Ajv-validated the JSON against forge-cli-schema.json before
 //          we read it.
-//   IL7  — no silent continuation past failures: a malformed config is
-//          surfaced by `loadLayeredConfig().errors` upstream; this helper
-//          treats a missing/null layer as "no opinion" and falls through
-//          to the next layer (NOT as a silent off-default — the off-default
-//          is the explicit final step).
+//   IL7  — no silent continuation past failures: schema errors at the
+//          layered-config level are surfaced by orchestrator and TUI callers
+//          upstream of this helper (see doc/decisions/layered-config-error-policy.md).
+//          This function only reads `.project`/`.global` layers; its resilience
+//          to absent layers is intentional — missing means "no opinion".
 
 import { loadLayeredConfig } from "./config-layer.js";
 

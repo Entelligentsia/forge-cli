@@ -248,4 +248,24 @@ describe("runConfigShow", () => {
     // Should not error; pipeline section absent or empty
     expect(text).not.toMatch(/error/i);
   });
+
+  // N-B-E: prints schema errors before config output and exits 0 (Decision 9).
+  it("12. schema-invalid config → schema error lines printed before output; exit 0", async () => {
+    // Write a schema-invalid project config (persona-models entry must be an object).
+    writePiConfig(tmpCwd, { "persona-models": { engineer: "not-an-object" } });
+
+    const lines: string[] = [];
+    const exitCode = await runConfigShow(
+      { subcommand: "show", resolved: false, json: false },
+      tmpCwd,
+      (line) => lines.push(line),
+    );
+
+    // Exit code must be 0 (informational surface; config inspector stays useful).
+    expect(exitCode).toBe(0);
+
+    // At least one line must mention the schema error.
+    const errorLine = lines.find((l) => l.includes("schema error") || l.includes("Config error"));
+    expect(errorLine).toBeDefined();
+  });
 });

@@ -147,7 +147,15 @@ export async function runConfigShow(
 ): Promise<number> {
   const { resolved: showResolved, json } = opts;
 
-  const { merged } = loadLayeredConfig(cwd);
+  // N-B-E: surface schema errors informally; exit 0 (CLI inspector stays useful even with a broken config).
+  // See doc/decisions/layered-config-error-policy.md.
+  const layeredShow = loadLayeredConfig(cwd);
+  if (layeredShow.errors.length > 0) {
+    for (const e of layeredShow.errors) {
+      write(`⚠ forge config: schema error — ${e}`);
+    }
+  }
+  const { merged } = layeredShow;
   const personaCatalogue = readPersonaCatalogue();
   const pipelineCatalogue = readPipelineCatalogue(cwd);
 
@@ -328,7 +336,15 @@ export function runConfigDispatch(
   const taskPipeline = args.pipeline ?? "default";
   const bugPipeline = "fix-bug";
 
-  const { merged } = loadLayeredConfig(cwd);
+  // N-B-E: surface schema errors informally; exit 0 (CLI inspector stays useful even with a broken config).
+  // See doc/decisions/layered-config-error-policy.md.
+  const layeredDispatch = loadLayeredConfig(cwd);
+  if (layeredDispatch.errors.length > 0) {
+    for (const e of layeredDispatch.errors) {
+      write(`⚠ forge config: schema error — ${e}`);
+    }
+  }
+  const { merged } = layeredDispatch;
   const registry = ModelRegistry.create(AuthStorage.create());
 
   const traceOne = (

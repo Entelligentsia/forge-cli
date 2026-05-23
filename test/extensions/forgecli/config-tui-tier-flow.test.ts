@@ -358,3 +358,48 @@ describe("Phase B — toggle-scope flow", () => {
     expect(s.buffer.project["persona-models"]?.architect).toBeDefined();
   });
 });
+
+// N-B-E: initialState forwards configErrors from InitOptions into ConfigTuiState (Decision 9).
+describe("N-B-E: configErrors forwarded from InitOptions to ConfigTuiState", () => {
+  it("configErrors is null when no errors provided", () => {
+    const s = initialState({
+      global: null,
+      project: null,
+      cwd: "/home/x/proj",
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: null,
+      availableModels: [],
+      authenticatedProviders: [],
+    });
+    expect(s.configErrors).toBeNull();
+  });
+
+  it("configErrors is null when empty array provided", () => {
+    const s = initialState({
+      global: null,
+      project: null,
+      cwd: "/home/x/proj",
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: null,
+      availableModels: [],
+      authenticatedProviders: [],
+      configErrors: [],
+    });
+    expect(s.configErrors).toBeNull();
+  });
+
+  it("passes configErrors through to state when non-empty", () => {
+    const errors = ["forge-cli global config schema error: /persona-models/engineer must be object"];
+    const s = initialState({
+      global: null,
+      project: null,
+      cwd: "/home/x/proj",
+      personaCatalogue: ["engineer"],
+      pipelineCatalogue: null,
+      availableModels: [],
+      authenticatedProviders: [],
+      configErrors: errors,
+    });
+    expect(s.configErrors).toEqual(errors);
+  });
+});

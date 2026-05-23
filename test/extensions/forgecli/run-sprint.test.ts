@@ -1307,3 +1307,62 @@ describe("Plan 12: Skip already-completed tasks", () => {
 		expect(ceremonyTask).toContain("FORGE-S21-T03");
 	});
 });
+
+// N-B-E regression: run-sprint halts when forge-cli config has schema errors (Decision 9).
+describe("N-B-E: halts on schema-invalid forge-cli config", () => {
+	const PRIOR_FORGE_CLI_HOME = process.env.FORGE_CLI_HOME;
+	const PRIOR_SKIP_MIG = process.env.FORGE_CLI_SKIP_MIGRATION;
+
+	it("does not run any task pipeline when loadLayeredConfig returns schema errors", async () => {
+		const { proj, sprintId } = scaffoldProject();
+
+		// Scope FORGE_CLI_HOME so the global config path points to an empty dir
+		// (prevents the test runner's real ~/.pi/forge-cli/config.json from leaking in).
+		process.env.FORGE_CLI_HOME = path.join(tmpRoot, "forge-cli-user-nbe");
+		process.env.FORGE_CLI_SKIP_MIGRATION = "1";
+
+		// Write a schema-invalid project config to trigger loadLayeredConfig errors.
+		const piConfigDir = path.join(proj, ".pi", "forge-cli");
+		fs.mkdirSync(piConfigDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(piConfigDir, "config.json"),
+			JSON.stringify({ "persona-models": { engineer: "not-an-object" } }),
+			"utf8",
+		);
+
+		// Mock spawnSync to return a valid sprint record so the handler advances
+		// past the sprint-record check and reaches the schema-error guard.
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+			const argArr = args as string[] | undefined;
+			if (argArr && argArr[0]?.endsWith("store-cli.cjs") && argArr[1] === "read" && argArr[2] === "sprint") {
+				return {
+					status: 0,
+					stdout: Buffer.from(JSON.stringify({ sprintId, taskIds: ["FORGE-S21-T01"], status: "active" })),
+					stderr: Buffer.from(""),
+				};
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunSprint(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunSprint(pi, ctx, sprintId);
+
+		// Restore env
+		if (PRIOR_FORGE_CLI_HOME === undefined) delete process.env.FORGE_CLI_HOME;
+		else process.env.FORGE_CLI_HOME = PRIOR_FORGE_CLI_HOME;
+		if (PRIOR_SKIP_MIG === undefined) delete process.env.FORGE_CLI_SKIP_MIGRATION;
+		else process.env.FORGE_CLI_SKIP_MIGRATION = PRIOR_SKIP_MIG;
+
+		// runTaskPipeline must NOT be called — halt before any task is dispatched
+		expect(mockRunTaskPipeline).not.toHaveBeenCalled();
+
+		// At least one error notification must mention the config schema error
+		const schemaErrorNotify = ctx.notifications.find(
+			(n) => n.level === "error" && (n.msg.includes("schema error") || n.msg.includes("forge-cli config")),
+		);
+		expect(schemaErrorNotify).toBeDefined();
+	});
+});
