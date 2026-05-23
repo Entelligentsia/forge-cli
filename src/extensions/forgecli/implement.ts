@@ -39,8 +39,8 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { assertAudience } from "./audience-gate.js";
 import { sendKickoff } from "./kickoff.js";
-import { loadPersona, PersonaSkillLoaderError } from "./loaders/persona-skill-loader.js";
-import { loadWorkflow, WorkflowLoaderError } from "./loaders/workflow-loader.js";
+import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
 
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.
@@ -132,7 +132,7 @@ export function registerImplement(pi: ExtensionAPI, options: RegisterImplementOp
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 
 			let workflowMd: string;
-			let workflowAudience: import("./loaders/workflow-loader.js").AudienceValue;
+			let workflowAudience: import("./parsers/workflow-loader.js").AudienceValue;
 			try {
 				const loaded = loadWorkflow(workflowPath);
 				workflowMd = loaded.rawMarkdown;

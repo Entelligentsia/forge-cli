@@ -12,7 +12,7 @@ import {
 	loadPersona,
 	loadSkill,
 	PersonaSkillLoaderError,
-} from "../../../../src/extensions/forgecli/loaders/persona-skill-loader.js";
+} from "../../../../src/extensions/forgecli/parsers/persona-skill-loader.js";
 
 let tmpRoot: string;
 

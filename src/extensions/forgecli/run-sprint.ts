@@ -36,7 +36,7 @@ import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir as readPersonaDirSprint, readPipelineNames as readPipelineNamesSprint } from "./lib/catalog-helpers.js";
 import { sprintStateFilePath, readJsonState, writeJsonState } from "./lib/state-helpers.js";
-import { loadWorkflow } from "./loaders/workflow-loader.js";
+import { loadWorkflow } from "./parsers/workflow-loader.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";

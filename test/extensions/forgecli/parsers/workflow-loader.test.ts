@@ -14,7 +14,7 @@ import {
 	loadWorkflow,
 	parseWorkflowFrontmatter,
 	WorkflowLoaderError,
-} from "../../../../src/extensions/forgecli/loaders/workflow-loader.js";
+} from "../../../../src/extensions/forgecli/parsers/workflow-loader.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────
 

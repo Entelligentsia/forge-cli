@@ -33,7 +33,7 @@ import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { resolveModelForPhase } from "./model-resolver.js";
 import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
-import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
+import { loadWorkflow, type AudienceValue } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";

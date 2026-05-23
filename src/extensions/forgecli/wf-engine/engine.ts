@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadWorkflow } from "./loader.js";
+import { loadWorkflowDef } from "./loader.js";
 import { makeInstanceId, makeNodeExecId, makeEventId } from "./id-gen.js";
 import { parseEventsBlock } from "./event-parser.js";
 import { checkRemit } from "./remit-check.js";
@@ -33,7 +33,7 @@ export interface RunWorkflowResult {
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<RunWorkflowResult> {
   const notify = opts.notify ?? (() => {});
   const workflowDir = path.join(opts.workflowsDir, opts.workflowId);
-  const wf = loadWorkflow(workflowDir);
+  const wf = loadWorkflowDef(workflowDir);
 
   const instanceId = makeInstanceId(wf.id);
   const workingDir = path.join(opts.cwd, ".forge-wf", "runs", instanceId);

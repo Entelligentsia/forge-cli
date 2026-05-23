@@ -35,7 +35,7 @@ import { assertAudience } from "../audience-gate.js";
 import { sendKickoff } from "../kickoff.js";
 import { checkMaterialization } from "../enhance.js";
 import { onSyntheticEvent, type InitCompleteEvent } from "../hook-dispatcher.js";
-import { loadWorkflow, WorkflowLoaderError } from "../loaders/workflow-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "../parsers/workflow-loader.js";
 
 // ── Types (re-exported for tests) ─────────────────────────────────────────────
 
@@ -94,7 +94,7 @@ export function createPostInitHookHandler(
 		// 2. Load and marker-check the enhance workflow
 		const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 		let workflowMd: string;
-		let workflowAudience: import("../loaders/workflow-loader.js").AudienceValue;
+		let workflowAudience: import("../parsers/workflow-loader.js").AudienceValue;
 		try {
 			const loaded = loadWorkflow(workflowPath);
 			workflowMd = loaded.rawMarkdown;

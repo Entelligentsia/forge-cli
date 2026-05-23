@@ -33,7 +33,7 @@ import { checkMaterialization } from "./lib/manifest-checker.js";
 import { readPersonaDir as readPersonaDirBug, readPipelineNames as readPipelineNamesBug } from "./lib/catalog-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { loadWorkflow, type AudienceValue } from "./loaders/workflow-loader.js";
+import { loadWorkflow, type AudienceValue } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { fmtPhaseSummary } from "./viewport-renderer.js";

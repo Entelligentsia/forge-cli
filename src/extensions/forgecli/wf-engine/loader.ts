@@ -4,7 +4,7 @@ import type { WorkflowDef } from "./types.js";
 
 import * as yaml from "js-yaml";
 
-export function loadWorkflow(workflowDir: string): WorkflowDef {
+export function loadWorkflowDef(workflowDir: string): WorkflowDef {
   const yamlPath = path.join(workflowDir, "workflow.yaml");
   if (!fs.existsSync(yamlPath)) {
     throw new Error(`workflow.yaml not found at ${yamlPath}`);

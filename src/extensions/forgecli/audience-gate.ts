@@ -11,7 +11,7 @@
 //   No ctx.ui.confirm/select/input — kickoff handlers must not use those.
 
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { AudienceValue } from "./loaders/workflow-loader.js";
+import type { AudienceValue } from "./parsers/workflow-loader.js";
 import { CallerContextStore } from "./subagent/caller-context.js";
 import type { CallerContext } from "./subagent/caller-context.js";
 
