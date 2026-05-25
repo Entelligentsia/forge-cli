@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] — 2026-05-25
+
+### Added
+
+- **`manage-config backfill` subcommand** — schema-validated config field backfill.
+  Reads `$FORGE_ROOT/schemas/config.schema.json`, compares against current
+  `.forge/config.json`, and writes defaults for any missing fields with
+  schema-defined defaults. Also stamps the top-level `version` field from
+  the bundled plugin version. Supports `--dry-run` for preview.
+  Fixes the root cause of `/forge:health` config-incompleteness findings:
+  the update flow now deterministically backfills missing config fields
+  instead of relying on the LLM agent to compose them manually.
+
+### Changed
+
+- **update.md Step 4** — calls `manage-config backfill` after writing
+  `paths.forgeRoot`/`paths.forgeRef`, ensuring all schema-required and
+  schema-defaulted fields are present after every update.
+- **forge-init Phase 4** — now writes `paths.forgeRef` (FR-010) and calls
+  `manage-config backfill` after `paths.forgeRoot`, ensuring fresh inits
+  also have complete config fields.
+- **`parseArgs` in manage-config.cjs** — boolean flags (e.g. `--dry-run`)
+  without a following value are now treated as `true` instead of being
+  silently dropped.
+
 ## [0.20.1] — 2026-05-25
 
 ### Fixed

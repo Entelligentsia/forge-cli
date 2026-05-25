@@ -15,9 +15,21 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { deleteInitProgress } from "../init-progress.js";
+import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { getRefreshKbLinksHandler } from "../refresh-kb-links.js";
+
+/** Read the bundled forge version from .claude-plugin/plugin.json */
+function getBundledForgeVersion(bundleRoot: string): string {
+	try {
+		const pluginPath = path.join(bundleRoot, ".claude-plugin", "plugin.json");
+		const raw = fs.readFileSync(pluginPath, "utf8");
+		const plugin = JSON.parse(raw) as { version?: string };
+		return typeof plugin.version === "string" ? plugin.version : "0.0.0";
+	} catch {
+		return "0.0.0";
+	}
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -233,6 +245,27 @@ export async function runPhase4(ctx4: Phase4Context): Promise<Phase4Result | "ab
 			cwd,
 			ctx,
 			"step 4-1 paths.forgeRoot",
+		);
+
+		// Write paths.forgeRef (FR-010) — the bundled plugin version
+		const bundledVersion = getBundledForgeVersion(bundleRoot);
+		if (bundledVersion && bundledVersion !== "0.0.0") {
+			await runToolAdvisory(
+				manageConfigTool,
+				["set", "paths.forgeRef", bundledVersion],
+				cwd,
+				ctx,
+				"step 4-1 paths.forgeRef",
+			);
+		}
+
+		// Backfill missing config fields from schema defaults (version, paths.*, etc.)
+		await runToolAdvisory(
+			manageConfigTool,
+			["backfill", "--forge-root", bundleRoot],
+			cwd,
+			ctx,
+			"step 4-1 config backfill",
 		);
 	}
 
