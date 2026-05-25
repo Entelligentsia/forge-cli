@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.3] — 2026-05-25
+
+### Fixed
+
+- **update.md Row 1: config refresh always runs.** Row 1 ("up to date, no
+  pending migrations") previously said "exit" — causing the agent to skip
+  Step 4 entirely, including the config refresh (forgeRoot, forgeRef,
+  backfill). Missing config fields accumulate across version boundaries;
+  backfill ensures the config stays structurally complete after every
+  `/forge:update` invocation. Row 1 now executes Step 4 config refresh
+  before proceeding to Step 5.
+
 ## [0.20.2] — 2026-05-25
 
 ### Added
