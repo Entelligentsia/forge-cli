@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-05-25
+
+### Changed
+
+- **`/forge:update` rewrite: monolithic TypeScript → two-layer kickoff-shim pattern.**
+  The previous handler reimplemented the plugin's 7-step update workflow in
+  TypeScript, missing critical features: generation-manifest guard (writes to
+  user-edited files without checking), snapshot replay, pipeline audit, KB
+  refresh, breaking-change confirmation, and model-alias suppression. The new
+  architecture delegates to the plugin's own `update.md` via `sendKickoff` with
+  surgical text patches for forge-cli context differences (FORGE-BUG-039, closes
+  Entelligentsia/forge-cli#33).
+  - **Gap 1 (baseline derivation):** `deriveBaseline()` reads per-project
+    `.forge/update-check-cache.json` `migratedFrom` field instead of
+    `localVersion`.
+  - **Gap 2 (5-row decision table):** `evaluateUpdateDecision()` implements
+    the full plugin decision table (Row 1–5), not just the two-row subset.
+  - **Gap 3 (regeneration after migration):** Previously, the handler applied
+    migrations but never regenerated generated artifacts. Now delegates to
+    plugin-native `regenerate.md` (with generation-manifest guard).
+  - **Gap 4 (post-migration steps):** Previously missing: structure check,
+    `calibrationBaseline` refresh, schema/tool regeneration. All delegated to
+    plugin-native Step 4.
+  - **Gap 5 (migration hint in CLI):** `forge update` bin now shows a hint
+    directing users to `/forge:update` after a CLI upgrade.
+  - **Kickoff patches:** 8 surgical text substitutions for forge-cli context:
+    (1) `CLAUDE_PLUGIN_ROOT` → bundled payload path, (2) `CLAUDE_PLUGIN_DATA`
+    → bundled payload path, (3) IS_CANARY always true, (4) DISTRIBUTATION
+    always `forge@forge`, (5) `$FORGE_ROOT/migrations.json` →
+    `$FORGE_ROOT/.schemas/migrations.json`, (6) CLI preflight result injected
+    before Step 1, (7) FORGE_ROOT resolution instruction for nested commands,
+    (8) `--base-pack` path hint for `substitute-placeholders.cjs`.
+
+### Removed
+
+- **`migration-post-migration.ts`** — 431-line post-migration handler deleted;
+  baseline derivation, decision table, and post-migration steps all handled
+  by plugin-native flow via kickoff-shim.
+
 ## [0.18.0] — 2026-05-23
 
 ### Changed

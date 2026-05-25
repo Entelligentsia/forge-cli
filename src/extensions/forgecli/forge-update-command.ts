@@ -1,23 +1,29 @@
-// Guided /forge:update command + bundled-forge drift prompt — FORGE-S16-T15.
-// Migration apply integration — FORGE-S23-T01.
+// /forge:update — CLI preflight + patched plugin-native flow (FORGE-BUG-039).
 //
-// Single update path: detect npm install method, refuse non-global, show
-// changelog from GitHub releases (Entelligentsia/forge-cli), confirm via
-// ctx.ui.confirm, then spawn `npm i -g @entelligentsia/forgecli@latest` via
-// execFile (argv array — no shell). After upgrade, prompt to run migrations
-// from the old bundled-forge version to the new one.
+// Two-layer kickoff-shim architecture:
+//   Layer 1 (TypeScript): CLI-specific preflight — install method detection,
+//     npm changelog + upgrade. NOT handled by the plugin's update.md.
+//   Layer 2 (agent follows update.md): Full 7-step plugin update workflow
+//     with surgical text patches for forge-cli context differences.
 //
-// Version detection uses the npm registry (authoritative); GitHub releases are
-// used only for the changelog body via a tag-specific URL.
+// This replaces the previous monolithic TypeScript reimplementation that:
+//   - Missed generation-manifest checks (data loss risk)
+//   - Bypassed /forge:regenerate's modification guard + snapshot replay
+//   - Skipped Steps 5 (pipeline audit) and 7 (KB link refresh)
+//   - Always lagged behind the plugin's evolving workflow
+//
+// The patched update.md is read from the bundled payload at runtime,
+// so plugin changes are automatically picked up. Patches are minimal
+// and validated by tests.
 
 import { execFile } from "node:child_process";
-import { promises as fs, existsSync, readFileSync } from "node:fs";
+import { existsSync, promises as fs, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getUserCacheDir } from "./paths/paths.js";
 import { getBundledPayloadRoot } from "./forge-init.js";
-import { runMigrations } from "./migration-engine.js";
+import { sendKickoff } from "./kickoff.js";
+import { getUserCacheDir } from "./paths/paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +37,8 @@ const UPGRADE_TIMEOUT_MS = 120_000;
 const NPM_ROOT_TIMEOUT_MS = 5000;
 const BODY_EXCERPT_MAX = 1200;
 
+// ── Install method detection ───────────────────────────────────────────────
+
 export type InstallMethod = "global" | "npx" | "local-dev" | "unknown";
 
 export interface DetectInstallOptions {
@@ -38,10 +46,6 @@ export interface DetectInstallOptions {
 	globalRoot?: string | null;
 }
 
-/**
- * Classify how the running forgecli was installed by inspecting its package
- * root path. Pure function — easy to unit-test.
- */
 export function detectInstallMethod(opts: DetectInstallOptions): InstallMethod {
 	const norm = path.resolve(opts.pkgRoot);
 	if (/[/\\]_npx[/\\]/.test(norm)) return "npx";
@@ -66,6 +70,8 @@ export async function getNpmGlobalRoot(runner?: ExecFileAsync): Promise<string |
 	}
 }
 
+// ── Changelog + upgrade ─────────────────────────────────────────────────────
+
 export interface ChangelogResult {
 	tag: string;
 	version: string;
@@ -73,7 +79,6 @@ export interface ChangelogResult {
 }
 
 export async function fetchChangelog(fetchImpl: typeof fetch): Promise<ChangelogResult | null> {
-	// Step 1: get latest version from npm (authoritative — GitHub releases may lag).
 	const npmCtl = new AbortController();
 	const npmTimer = setTimeout(() => npmCtl.abort(), PROBE_TIMEOUT_MS);
 	let npmVersion: string | null = null;
@@ -95,7 +100,6 @@ export async function fetchChangelog(fetchImpl: typeof fetch): Promise<Changelog
 	if (!npmVersion) return null;
 	const version = npmVersion.startsWith("v") ? npmVersion.slice(1) : npmVersion;
 
-	// Step 2: fetch changelog body from the tag-specific GitHub release (optional).
 	const ghCtl = new AbortController();
 	const ghTimer = setTimeout(() => ghCtl.abort(), PROBE_TIMEOUT_MS);
 	let releaseBody = "";
@@ -175,13 +179,15 @@ function truncate(s: string, max: number): string {
 	return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
-// ── Bundled-forge drift detection (Q7) ─────────────────────────────────────
+// ── Bundled-forge drift detection (session-start hook) ──────────────────────
 //
 // On every session_start we compare the bundled-forge version recorded in the
 // drift cache against the current package.json forge.bundledVersion. If the
 // version changed and we have not already prompted for it, emit a one-shot
-// migration prompt. The cache is per-version idempotent: re-prompting only
-// happens after another change.
+// migration prompt. The cache is per-version idempotent.
+//
+// This hook is independent of the /forge:update command — it runs at session
+// start, before the user invokes any command.
 
 const DRIFT_CACHE_FILE = "drift-seen.json";
 
@@ -250,6 +256,137 @@ export async function checkBundledForgeDrift(opts: DriftCheckOptions): Promise<v
 	}
 }
 
+// ── Kickoff composition ─────────────────────────────────────────────────────
+
+interface CliPreflightResult {
+	method: InstallMethod;
+	upgraded: boolean;
+	cliOldVersion?: string;
+	cliNewVersion?: string;
+	npmVersion?: string;
+	npmFetchFailed: boolean;
+	bundledForgeVersion: string;
+}
+
+/**
+ * Read the bundled update.md and apply forge-cli-specific patches.
+ *
+ * The plugin's update.md was written for Claude Code's plugin architecture.
+ * forge-cli uses a bundled payload instead of the Claude Code plugin cache,
+ * so we patch:
+ *
+ * 1. FORGE_ROOT: Replace CLAUDE_PLUGIN_ROOT with bundled payload path
+ * 2. IS_CANARY: Always true (bundle is never in /.claude/plugins/)
+ * 3. DISTRIBUTION: Always "forge@forge" (no marketplace detection)
+ * 4. migrations.json: Bundle puts it in .schemas/, not top-level
+ * 5. CLI preflight result: Instruct agent to skip Steps 1/2A/3
+ * 6. CLAUDE_PLUGIN_DATA: Replace with bundled payload path
+ *
+ * All patches are pure string replacements — no AST parsing needed.
+ * If a patch target isn't found, we log a warning but don't crash
+ * (the agent may still be able to follow the unpatched instructions
+ * partially).
+ */
+export function composeUpdateKickoff(updateMd: string, bundleRoot: string, preflight: CliPreflightResult): string {
+	let patched = updateMd;
+
+	// Patch 1: FORGE_ROOT — replace Claude Code directive with literal path
+	// Original:  FORGE_ROOT: !`echo "${CLAUDE_PLUGIN_ROOT}"`
+	// Patched:   FORGE_ROOT = <bundledPayloadRoot>
+	const forgeRootDirective = '!`echo "${CLAUDE_PLUGIN_ROOT}"`';
+	if (patched.includes(forgeRootDirective)) {
+		patched = patched.replaceAll(forgeRootDirective, bundleRoot);
+	}
+
+	// Patch 1b: Second occurrence is in Step 3's "Re-derive FORGE_ROOT"
+	// Same directive appears there. Already handled by replaceAll above.
+
+	// Patch 2: CLAUDE_PLUGIN_DATA — used for legacy cache fallback
+	// Replace with bundle root since forge-cli doesn't have plugin data dir
+	if (patched.includes("${CLAUDE_PLUGIN_DATA}")) {
+		patched = patched.replaceAll("${CLAUDE_PLUGIN_DATA}", bundleRoot);
+	}
+
+	// Patch 3: IS_CANARY — force to true. The plugin's canary detection
+	// checks for "/.claude/plugins/" in FORGE_ROOT, which never matches
+	// the bundled payload path. Setting IS_CANARY=true ensures:
+	//   - Row 3 triggers (skip Step 2A — no plugin manager install)
+	//   - Step 3 re-derivation is skipped (FORGE_ROOT doesn't change)
+	// We insert this right after the IS_CANARY detection paragraph.
+	const canaryAnchor = "**Canary / source install** (`IS_CANARY = true`)";
+	if (patched.includes(canaryAnchor)) {
+		patched = patched.replace(
+			canaryAnchor,
+			` forge-cli: IS_CANARY is ALWAYS true — the bundled payload is never in the Claude Code plugin directory. ` +
+				"Row 3 of the decision table always applies: skip Step 2A, proceed to Step 2B. " +
+				"`IS_CANARY` = true",
+		);
+	}
+
+	// Patch 4: DISTRIBUTION — forge-cli always uses canary distribution
+	// Insert after the distribution table
+	const distAnchor = "| anything else | `forge@forge` / canary |";
+	if (patched.includes(distAnchor)) {
+		patched = patched.replace(
+			distAnchor,
+			distAnchor +
+				"\n\n> **forge-cli note:** The bundled payload is never in the Claude Code plugin cache, " +
+				'so DISTRIBUTION is always `forge@forge` / canary. Set `DISTRIBUTION = "forge@forge"` now.',
+		);
+	}
+
+	// Patch 5: migrations.json path — bundle puts it in .schemas/, not top-level
+	// Step 2B reads: Read `$FORGE_ROOT/migrations.json` (local).
+	// Step 4 reads: Read `$FORGE_ROOT/migrations.json` (local — now updated after install).
+	if (patched.includes("$FORGE_ROOT/migrations.json")) {
+		patched = patched.replaceAll("$FORGE_ROOT/migrations.json", "$FORGE_ROOT/.schemas/migrations.json");
+	}
+
+	// Patch 6: CLI preflight result — inject before Step 1
+	// This tells the agent what the CLI preflight already did so it can
+	// skip the remote version check, Step 2A, and Step 3.
+	const cliResult = [
+		"",
+		"---",
+		"",
+		"## forge-cli: CLI Preflight Result",
+		"",
+		`Install method: **${preflight.method}**`,
+		preflight.upgraded
+			? `CLI upgraded: **${preflight.cliOldVersion} → ${preflight.cliNewVersion}**`
+			: "No CLI upgrade needed (or not eligible).",
+		preflight.npmVersion
+			? `Remote version (npm): **${preflight.npmVersion}**`
+			: preflight.npmFetchFailed
+				? "Could not reach npm registry — proceeding with local version only."
+				: "",
+		`LOCAL_VERSION (bundled forge): **${preflight.bundledForgeVersion}**`,
+		"",
+		"**Action for the agent:**",
+		preflight.npmFetchFailed
+			? "- Could not reach registry → use LOCAL_VERSION as both local and remote"
+			: "- Use LOCAL_VERSION and the npm version above for the decision table",
+		"- **Skip Step 2A** — CLI already handled npm upgrade (or not applicable)",
+		"- **Skip Step 3** — FORGE_ROOT does not change in forge-cli (npm path is stable)",
+		"- Resume detection (FR-002): check `.forge/update-check-cache.json` `updateStatus` as usual",
+		"- All other steps (1, 2B, 4, 5, 6, 7) proceed normally",
+		`- **FORGE_ROOT resolution**: When reading bundled commands or workflows (e.g. regenerate.md, update-tools.md), replace any Claude-Code plugin-root env-var reference with ${bundleRoot}. FORGE_ROOT = ${bundleRoot} in forge-cli.`,
+		`- **Step 6 migratedFrom**: Write migratedFrom: LOCAL_VERSION (the CURRENT version after update, e.g. ${preflight.bundledForgeVersion}), NOT the old baseline. This ensures subsequent updates correctly detect the project is up to date.`,
+		`- **substitute-placeholders base-pack path**: In forge-cli, the base-pack is at ${bundleRoot}/.base-pack/ (not init/base-pack). When invoking substitute-placeholders.cjs, pass --base-pack ${bundleRoot}/.base-pack to avoid "base-pack not found" errors.`,
+		"",
+		"---",
+		"",
+	].join("\n");
+
+	// Insert before "## Step 1"
+	const step1Anchor = "## Step 1 — Check for updates";
+	if (patched.includes(step1Anchor)) {
+		patched = patched.replace(step1Anchor, cliResult + step1Anchor);
+	}
+
+	return patched;
+}
+
 // ── Command registration ───────────────────────────────────────────────────
 
 export interface RegisterUpdateCommandOptions {
@@ -258,224 +395,142 @@ export interface RegisterUpdateCommandOptions {
 	fetchImpl?: typeof fetch;
 	globalRootResolver?: () => Promise<string | null>;
 	upgradeRunner?: (spec: string) => Promise<UpgradeResult>;
-	/** Migration runner — defaults to the production runMigrations engine (injected for testing) */
-	migrationRunner?: typeof runMigrations;
-	/** Resolved bundled-forge version for migrations — defaults to reading plugin.json from bundle */
+	/** Override bundled-forge version for drift cache */
 	currentBundledForgeVersion?: string;
-	/** Override CWD for migration projectRoot — defaults to process.cwd() */
-	migrationProjectRoot?: string;
-	/** Override drift cache path for migration lastSeenBundledForgeVersion — read from cache at migration time */
+	/** Override drift cache path */
 	driftCacheDir?: string;
 }
 
 export function registerForgeUpdateCommand(pi: ExtensionAPI, opts: RegisterUpdateCommandOptions): void {
 	pi.registerCommand("forge:update", {
-		description: "Guided upgrade for forgecli (npm i -g) + bundled forge migration prompts",
+		description: "Guided upgrade for forgecli (npm i -g) + project migration via plugin-native update workflow",
 		async handler(_args, ctx) {
 			const fetchImpl = opts.fetchImpl ?? fetch;
 			const resolveGlobal = opts.globalRootResolver ?? (() => getNpmGlobalRoot());
 			const upgrade = opts.upgradeRunner ?? ((spec: string) => runUpgrade(spec));
 
-			// 1. Install method detection (AC#1)
+			// ── Layer 1: CLI Preflight ───────────────────────────────────────
+
 			const globalRoot = await resolveGlobal();
 			const method = detectInstallMethod({ pkgRoot: opts.pkgRoot, globalRoot });
+
+			let release: ChangelogResult | null = null;
+			let upgraded = false;
+			let cliOldVersion: string | undefined;
+			let cliNewVersion: string | undefined;
+
 			if (method !== "global") {
 				ctx.ui.notify(
-					`forge:update — install method '${method}' is not eligible for guided upgrade. ` +
-						`Only globally-installed forgecli is supported. ` +
-						`To upgrade manually: npm i -g ${PKG_NAME}@latest`,
+					`forge:update — install method '${method}' is not eligible for guided npm upgrade. ` +
+						`To upgrade the CLI manually: npm i -g ${PKG_NAME}@latest. ` +
+						"Proceeding to project update…",
 					"warning",
 				);
-				return;
+			} else {
+				// Fetch latest changelog + confirm upgrade
+				ctx.ui.setStatus("forge:update", "Fetching latest release notes…");
+				release = await fetchChangelog(fetchImpl);
+				ctx.ui.setStatus("forge:update", undefined);
+
+				if (!release) {
+					ctx.ui.notify(
+						"forge:update — could not reach the npm registry to check for updates. " +
+							`Check your network and retry, or upgrade manually: npm i -g ${PKG_NAME}@latest. ` +
+							"Proceeding to project update…",
+						"warning",
+					);
+				} else {
+					const current = opts.currentCliVersion;
+					if (!isUpgrade(current, release.version)) {
+						ctx.ui.notify(
+							`forge:update — already at the latest version (${current}; latest published: ${release.version}).`,
+							"info",
+						);
+					} else {
+						const summary = composeChangelogSummary(current, release.version, release.body);
+						const proceed = await ctx.ui.confirm(`Upgrade forgecli ${current} → ${release.version}?`, summary);
+						if (!proceed) {
+							ctx.ui.notify("forge:update — npm upgrade cancelled. Proceeding to project update…", "info");
+						} else {
+							ctx.ui.setStatus("forge:update", `Upgrading to ${release.version}…`);
+							const result = await upgrade(`${PKG_NAME}@${release.version}`);
+							ctx.ui.setStatus("forge:update", undefined);
+							if (!result.ok) {
+								ctx.ui.notify(
+									`forge:update — npm i -g failed: ${truncate(result.stderr, 400)}. ` +
+										"Check the error above; you may need elevated permissions. " +
+										"Proceeding to project update…",
+									"error",
+								);
+							} else {
+								upgraded = true;
+								cliOldVersion = current;
+								cliNewVersion = release.version;
+								ctx.ui.notify(
+									`forge:update — installed ${PKG_NAME}@${release.version}. ` +
+										"Restart your forge session for the new version to take effect.",
+									"info",
+								);
+							}
+						}
+					}
+				}
+			} // end global-only branch
+
+			// ── Layer 2: Patched Plugin-Native Flow ──────────────────────────
+
+			const bundleRoot = getBundledPayloadRoot();
+
+			// Read bundled forge version for the preflight result
+			let bundledForgeVersion = opts.currentBundledForgeVersion ?? "";
+			if (!bundledForgeVersion) {
+				try {
+					const pluginJsonPath = path.join(bundleRoot, ".claude-plugin", "plugin.json");
+					if (existsSync(pluginJsonPath)) {
+						const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as { version?: string };
+						bundledForgeVersion = pluginJson.version ?? "";
+					}
+				} catch {
+					// unable to read
+				}
 			}
 
-			// 2. Fetch latest changelog (AC#2)
-			ctx.ui.setStatus("forge:update", "Fetching latest release notes…");
-			const release = await fetchChangelog(fetchImpl);
-			ctx.ui.setStatus("forge:update", undefined);
-			if (!release) {
+			if (!bundledForgeVersion) {
 				ctx.ui.notify(
-					"forge:update — could not reach the npm registry to check for updates. " +
-						`Check your network and retry, or upgrade manually: npm i -g ${PKG_NAME}@latest`,
+					"forge:update — could not determine bundled forge version. " +
+						"Run /forge:init first, or check the forge-payload installation.",
 					"error",
 				);
 				return;
 			}
 
-			// CLI npm-package upgrade and project↔bundle migration are orthogonal:
-			// the bundle can drift even when the CLI is already at npm's latest
-			// (locally-built CLI ahead of npm, fresh machine, cleared drift cache).
-			// Run each gate independently — both fall through to the migration
-			// block, only confirm-decline / npm-failure short-circuit. (#32 follow-up)
-			const current = opts.currentCliVersion;
-			if (!isUpgrade(current, release.version)) {
+			// Read and patch update.md from bundled payload
+			const updateMdPath = path.join(bundleRoot, "commands", "update.md");
+			let updateMd: string;
+			try {
+				updateMd = readFileSync(updateMdPath, "utf8");
+			} catch {
 				ctx.ui.notify(
-					`forge:update — already at the latest version (${current}; latest published: ${release.version}).`,
-					"info",
+					`forge:update — bundled update.md not found at ${updateMdPath}. ` +
+						"The bundled payload may be incomplete. Run /forge:init to repair.",
+					"error",
 				);
-			} else {
-				// 3. Show changelog + confirm (AC#3)
-				const summary = composeChangelogSummary(current, release.version, release.body);
-				const proceed = await ctx.ui.confirm(`Upgrade forgecli ${current} → ${release.version}?`, summary);
-				if (!proceed) {
-					ctx.ui.notify("forge:update — cancelled.", "info");
-					return;
-				}
-
-				// 4. Spawn npm i -g (AC#4 — execFile, no shell)
-				ctx.ui.setStatus("forge:update", `Upgrading to ${release.version}…`);
-				const result = await upgrade(`${PKG_NAME}@${release.version}`);
-				ctx.ui.setStatus("forge:update", undefined);
-				if (!result.ok) {
-					ctx.ui.notify(
-						`forge:update — npm i -g failed: ${truncate(result.stderr, 400)}. ` +
-							"Check the error above; you may need elevated permissions to install globally.",
-						"error",
-					);
-					return;
-				}
-
-				ctx.ui.notify(
-					`forge:update — installed ${PKG_NAME}@${release.version}. ` +
-						"Restart your forge session for the new version to take effect.",
-					"info",
-				);
-			}
-
-			// 5. Migration prompt — offer to apply project migrations (§2A, §2D)
-			// Only runs when the caller has opted into migration support by providing
-			// migrationRunner or currentBundledForgeVersion. Without those the command
-			// was invoked in a context where migrations are not wired (e.g. tests for
-			// the base upgrade flow, or environments without a bundled payload).
-			if (opts.migrationRunner === undefined && opts.currentBundledForgeVersion === undefined) {
 				return;
 			}
 
-			// fromVersion comes from the drift cache (what the bundle was before upgrade).
-			// toVersion comes from the newly installed bundle's plugin.json.
-			const cacheDir = opts.driftCacheDir ?? defaultCacheDir();
-			const driftCache = await readDriftCache(cacheDir);
-			const fromVersion = driftCache.lastSeenBundledForgeVersion;
+			const preflight: CliPreflightResult = {
+				method,
+				upgraded,
+				cliOldVersion,
+				cliNewVersion,
+				npmVersion: release?.version,
+				npmFetchFailed: method === "global" && !release,
+				bundledForgeVersion,
+			};
 
-			// Read toVersion from the newly installed bundle's plugin.json
-			let toVersion: string | null = opts.currentBundledForgeVersion ?? null;
-			if (!toVersion) {
-				try {
-					const bundleRoot = getBundledPayloadRoot();
-					const pluginJsonPath = path.join(bundleRoot, ".claude-plugin", "plugin.json");
-					if (existsSync(pluginJsonPath)) {
-						const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as {
-							version?: string;
-						};
-						toVersion = pluginJson.version ?? null;
-					}
-				} catch {
-					// Unable to read plugin.json — skip migration prompt
-				}
-			}
+			const kickoffText = composeUpdateKickoff(updateMd, bundleRoot, preflight);
 
-			if (fromVersion && toVersion && fromVersion !== toVersion) {
-				// Determine whether to auto-apply (FORGE_NON_INTERACTIVE=1) or prompt
-				const nonInteractive = process.env["FORGE_NON_INTERACTIVE"] === "1";
-				let applyMigrations = nonInteractive;
-
-				if (!nonInteractive) {
-					applyMigrations = await ctx.ui.confirm(
-						`Run migrations from v${fromVersion} to v${toVersion}?`,
-						`The bundled forge plugin was updated from v${fromVersion} to v${toVersion}.\n` +
-							`Applying migrations will regenerate any changed .forge/ files to match the new version.`,
-					);
-				}
-
-				if (applyMigrations) {
-					ctx.ui.setStatus("forge:update", `Applying migrations v${fromVersion} → v${toVersion}…`);
-					try {
-						const migRunner = opts.migrationRunner ?? runMigrations;
-						const bundleRoot = getBundledPayloadRoot();
-						const projectRoot = opts.migrationProjectRoot ?? process.cwd();
-						const migResult = await migRunner({
-							bundleRoot,
-							projectRoot,
-							fromVersion,
-							toVersion,
-						});
-						ctx.ui.setStatus("forge:update", undefined);
-
-						// Emit SYS-migration event for each applied version (mandatory per §2D)
-						// These are informational store events that survive post-session analysis.
-						for (const applied of migResult.applied) {
-							try {
-								const payload = JSON.stringify({
-									fromVersion: applied.fromVersion,
-									toVersion: applied.toVersion,
-									appliedCategories: applied.categories,
-									timestamp: new Date().toISOString(),
-								});
-								await execFileAsync("node", [
-									path.join(bundleRoot, "tools", "store-cli.cjs"),
-									"emit",
-									"SYS-migration",
-									payload,
-								], { cwd: projectRoot }).catch(() => {
-									// store-cli not available or project not initialized — non-fatal
-								});
-							} catch {
-								// Non-fatal: event emission failure doesn't block migration result
-							}
-						}
-
-						// Report results
-						if (migResult.applied.length > 0) {
-							ctx.ui.notify(
-								`forge:update — applied ${migResult.applied.length} migration(s) from v${fromVersion} to v${toVersion}. ` +
-									`${migResult.schemasRefreshed.length} schema file(s) refreshed.`,
-								"info",
-							);
-						} else {
-							ctx.ui.notify(
-								`forge:update — no migrations needed from v${fromVersion} to v${toVersion}.`,
-								"info",
-							);
-						}
-
-						if (migResult.skippedBreaking.length > 0) {
-							ctx.ui.notify(
-								`forge:update — ${migResult.skippedBreaking.length} breaking migration(s) skipped. Manual review required.`,
-								"warning",
-							);
-						}
-
-						if (migResult.manualSteps.length > 0) {
-							const steps = migResult.manualSteps.flatMap((m) => m.steps);
-							ctx.ui.notify(
-								`forge:update — manual steps required:\n${steps.map((s) => `  • ${s}`).join("\n")}`,
-								"warning",
-							);
-						}
-
-						// C-19: surface partial failures so the user knows some ops were skipped
-						if (migResult.failedCategories.length > 0) {
-							ctx.ui.notify(
-								`forge:update — ${migResult.failedCategories.length} category(ies) could not be applied (source absent in bundle). ` +
-									`Check .forge/ state manually or re-run after upgrade.`,
-								"warning",
-							);
-						}
-					} catch (err: unknown) {
-						ctx.ui.setStatus("forge:update", undefined);
-						const msg = err instanceof Error ? err.message : String(err);
-						ctx.ui.notify(
-							`forge:update — migration failed: ${msg}. Check .forge/ state manually.`,
-							"error",
-						);
-					}
-				} else if (!nonInteractive) {
-					ctx.ui.notify(
-						`forge:update — migrations skipped. Run /forge:update again to apply migrations from v${fromVersion} to v${toVersion}.`,
-						"info",
-					);
-				}
-			}
+			sendKickoff(pi, kickoffText);
 		},
 	});
 }
@@ -494,4 +549,5 @@ export const __test__ = {
 	UPGRADE_TIMEOUT_MS,
 	NPM_ROOT_TIMEOUT_MS,
 	PROBE_TIMEOUT_MS,
+	composeUpdateKickoff,
 };

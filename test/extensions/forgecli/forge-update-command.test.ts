@@ -19,6 +19,7 @@ import * as crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	__test__,
@@ -83,13 +84,20 @@ interface RegisteredCommand {
 }
 
 function makePi(): {
-	pi: { registerCommand: (n: string, def: { description: string; handler: RegisteredCommand["handler"] }) => void };
+	pi: {
+		registerCommand: (n: string, def: { description: string; handler: RegisteredCommand["handler"] }) => void;
+		sendUserMessage: (text: string, opts?: { deliverAs?: string }) => void;
+	};
 	commands: Map<string, RegisteredCommand>;
 } {
 	const commands = new Map<string, RegisteredCommand>();
+	const sentMessages: string[] = [];
 	const pi = {
 		registerCommand(name: string, def: { description: string; handler: RegisteredCommand["handler"] }) {
 			commands.set(name, { name, description: def.description, handler: def.handler });
+		},
+		sendUserMessage(text: string, _opts?: { deliverAs?: string }) {
+			sentMessages.push(text);
 		},
 	};
 	return { pi: pi as unknown as Parameters<typeof registerForgeUpdateCommand>[0], commands };
@@ -170,7 +178,8 @@ describe("composeChangelogSummary", () => {
 
 describe("fetchChangelog", () => {
 	it("returns version (from npm) and body (from GitHub tag) on success", async () => {
-		const f = vi.fn()
+		const f = vi
+			.fn()
 			.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "0.2.0" } }))
 			.mockResolvedValueOnce(jsonRes({ body: "notes" }));
 		const out = await fetchChangelog(f as unknown as typeof fetch);
@@ -190,7 +199,8 @@ describe("fetchChangelog", () => {
 	});
 
 	it("succeeds with empty body when GitHub tag release is not found", async () => {
-		const f = vi.fn()
+		const f = vi
+			.fn()
 			.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "0.2.0" } }))
 			.mockResolvedValueOnce(notOk());
 		const out = await fetchChangelog(f as unknown as typeof fetch);
@@ -219,7 +229,8 @@ describe("registerForgeUpdateCommand handler", () => {
 		const version = (overrides.releaseTag ?? "v0.2.0").replace(/^v/, "");
 		const fetchImpl = npmFails
 			? vi.fn().mockResolvedValue(notOk())
-			: vi.fn()
+			: vi
+					.fn()
 					.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: version } }))
 					.mockResolvedValueOnce(jsonRes({ body: overrides.releaseBody ?? "release notes" }))
 					.mockResolvedValue(notOk());
@@ -250,7 +261,7 @@ describe("registerForgeUpdateCommand handler", () => {
 		expect(cmd.description).toContain("Guided upgrade");
 	});
 
-	it("refuses non-global install with a warning notify and skips fetch", async () => {
+	it("warns about non-global install but does not block migrations", async () => {
 		const { cmd, ctx, fetchImpl, upgradeRunner } = setup({
 			pkgRoot: "/home/u/src/forge-cli",
 			globalRoot: "/usr/lib/node_modules",
@@ -260,6 +271,7 @@ describe("registerForgeUpdateCommand handler", () => {
 		const [msg, level] = ctx.ui.notify.mock.calls[0]!;
 		expect(level).toBe("warning");
 		expect(msg).toContain("local-dev");
+		expect(msg).toContain("project update");
 		expect(fetchImpl).not.toHaveBeenCalled();
 		expect(upgradeRunner).not.toHaveBeenCalled();
 	});
@@ -275,11 +287,12 @@ describe("registerForgeUpdateCommand handler", () => {
 		expect(lastNotify[1]).toBe("info");
 	});
 
-	it("surfaces an error notify when fetchChangelog returns null", async () => {
+	it("surfaces a warning when fetchChangelog returns null, then falls through to project update", async () => {
 		const { cmd, ctx, upgradeRunner } = setup({ fetchOk: false });
 		await cmd.handler("", ctx);
-		const [, level] = ctx.ui.notify.mock.calls.at(-1)!;
-		expect(level).toBe("error");
+		// fetchChangelog failure is now a warning (not error) — handler still proceeds to project update
+		const notifyMessages = ctx.ui.notify.mock.calls.map((c) => c[0] as string);
+		expect(notifyMessages.some((m) => m.includes("could not reach the npm registry"))).toBe(true);
 		expect(upgradeRunner).not.toHaveBeenCalled();
 	});
 
@@ -354,210 +367,215 @@ describe("checkBundledForgeDrift", () => {
 	});
 });
 
-// ── Migration integration tests (FORGE-S23-T01) ────────────────────────────
+// ── composeUpdateKickoff tests (FORGE-BUG-039) ─────────────────────────────
 //
-// Integration tests for post-upgrade migration prompt (§2A), FORGE_NON_INTERACTIVE
-// handling (§2B), drift notification message (§2C), and SYS-migration event
-// emission (§2D).
+// Tests for the kickoff composition function that reads the plugin's update.md
+// from the bundled payload and patches it for the forge-cli context.
 
-describe("Migration integration — registerForgeUpdateCommand", () => {
-	let dir: string;
+describe("composeUpdateKickoff", () => {
+	// Minimal update.md with all the anchors we patch
+	const SAMPLE_UPDATE_MD = [
+		"---",
+		"name: update",
+		"---",
+		"",
+		"# /forge:update",
+		"",
+		"## Locate plugin root",
+		"",
+		'FORGE_ROOT: !`echo "${CLAUDE_PLUGIN_ROOT}"`',
+		"",
+		"Detect install mode:",
+		"",
+		'IS_CANARY = FORGE_ROOT does not contain "/.claude/plugins/"',
+		"",
+		"- **Managed install** (`IS_CANARY` = false): plugin lives under the Claude Code",
+		"  plugins directory (either `/.claude/plugins/cache/` or",
+		"  `/.claude/plugins/marketplaces/`). Updated via the plugin manager.",
+		"",
+		"- **Canary / source install** (`IS_CANARY = true`): FORGE_ROOT is outside the",
+		"  Claude Code plugins directory.",
+		"",
+		"Determine the distribution from FORGE_ROOT path:",
+		"",
+		"| FORGE_ROOT contains | Distribution |",
+		"|---------------------|-------------|",
+		"| `/cache/skillforge/forge/` | `forge@skillforge` |",
+		"| `/marketplaces/skillforge/forge/` | `forge@skillforge` |",
+		"| anything else | `forge@forge` / canary |",
+		"",
+		"Legacy fallback: if .forge/update-check-cache.json does not exist but a",
+		"plugin-level cache does (`${CLAUDE_PLUGIN_DATA}/forge-plugin-data/update-check-cache.json`",
+		"",
+		"## Step 1 — Check for updates",
+		"",
+		'Read `$FORGE_ROOT/.claude-plugin/plugin.json`. Extract `"version"` → `LOCAL_VERSION`.',
+		"",
+		"## Step 2A — Plugin update available",
+		"",
+		"MIGRATIONS_URL = plugin.json → migrationsUrl",
+		"",
+		"## Step 2B — Project migration pending",
+		"",
+		"Read `$FORGE_ROOT/migrations.json` (local).",
+		"",
+		"## Step 3 — Verify installation",
+		"",
+		'FORGE_ROOT: !`echo "${CLAUDE_PLUGIN_ROOT}"`',
+		"",
+		"## Step 4 — Apply migrations",
+		"",
+		"Read `$FORGE_ROOT/migrations.json` (local — now updated after install).",
+	].join("\n");
 
-	beforeEach(async () => {
-		dir = tmpCacheDir();
-		await fs.mkdir(dir, { recursive: true });
-	});
+	const BUNDLE_ROOT = "/opt/forge-cli/dist/forge-payload";
 
-	afterEach(async () => {
-		await fs.rm(dir, { recursive: true, force: true });
-		delete process.env["FORGE_NON_INTERACTIVE"];
-	});
-
-	function setupWithMigration(opts: {
-		confirmMigration?: boolean;
-		migrationResult?: Awaited<ReturnType<typeof import("../../../src/extensions/forgecli/migration-engine.js")["runMigrations"]>>;
-		lastSeenVersion?: string;
-		nonInteractive?: boolean;
-	} = {}) {
-		const { pi, commands } = makePi();
-		const ctx = makeCtx(true); // confirm upgrade = true
-
-		// Override confirm to return true for upgrade, and configurable for migration
-		let callCount = 0;
-		ctx.ui.confirm = vi.fn().mockImplementation(async () => {
-			callCount++;
-			if (callCount === 1) return true; // upgrade confirm
-			return opts.confirmMigration ?? true; // migration confirm
+	it("replaces CLAUDE_PLUGIN_ROOT with bundled payload path", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
 		});
+		// Both occurrences of the directive should be replaced
+		expect(result).not.toContain("CLAUDE_PLUGIN_ROOT");
+		expect(result).toContain(BUNDLE_ROOT);
+	});
 
-		const migrationResult = opts.migrationResult ?? {
-			applied: [
-				{ fromVersion: "0.43.19", toVersion: "0.44.0", categories: ["workflows:fix_bug"] },
-			],
-			skippedBreaking: [],
-			manualSteps: [],
-			dryRun: false,
-			schemasRefreshed: ["event.schema.json"],
-			forgeRootUpdated: false,
-		};
+	it("replaces CLAUDE_PLUGIN_DATA with bundled payload path", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).not.toContain("CLAUDE_PLUGIN_DATA");
+		expect(result).toContain(`${BUNDLE_ROOT}/forge-plugin-data`);
+	});
 
-		const migrationRunner = vi.fn().mockResolvedValue(migrationResult);
+	it("patches migrations.json path from $FORGE_ROOT/migrations.json to $FORGE_ROOT/.schemas/migrations.json", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).not.toContain("$FORGE_ROOT/migrations.json");
+		expect(result).toContain("$FORGE_ROOT/.schemas/migrations.json");
+	});
 
-		// Prime drift cache with a lastSeenBundledForgeVersion
-		const lastSeen = opts.lastSeenVersion ?? "0.43.19";
+	it("marks IS_CANARY as always true for forge-cli", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).toContain("IS_CANARY");
+		expect(result).toContain("forge-cli: IS_CANARY is ALWAYS true");
+	});
 
-		if (opts.nonInteractive) {
-			process.env["FORGE_NON_INTERACTIVE"] = "1";
+	it("sets DISTRIBUTION to forge@forge for forge-cli", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).toContain("forge-cli note");
+		expect(result).toContain('DISTRIBUTION = "forge@forge"');
+	});
+
+	it("injects CLI preflight result before Step 1", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "global",
+			upgraded: true,
+			cliOldVersion: "0.18.0",
+			cliNewVersion: "0.19.0",
+			npmVersion: "0.19.0",
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).toContain("## forge-cli: CLI Preflight Result");
+		expect(result).toContain("Install method: **global**");
+		expect(result).toContain("CLI upgraded: **0.18.0 → 0.19.0**");
+		expect(result).toContain("LOCAL_VERSION (bundled forge): **0.51.3**");
+		expect(result).toContain("Skip Step 2A");
+		expect(result).toContain("Skip Step 3");
+		// The CLI preflight section should appear before Step 1
+		const preflightIdx = result.indexOf("## forge-cli: CLI Preflight Result");
+		const step1Idx = result.indexOf("## Step 1");
+		expect(preflightIdx).toBeLessThan(step1Idx);
+	});
+
+	it("shows no-upgrade result in CLI preflight for local-dev installs", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).toContain("No CLI upgrade needed");
+		expect(result).not.toContain("CLI upgraded:");
+	});
+
+	it("shows npm fetch failure in CLI preflight", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "global",
+			upgraded: false,
+			npmFetchFailed: true,
+			bundledForgeVersion: "0.51.3",
+		});
+		expect(result).toContain("Could not reach npm registry");
+		expect(result).toContain("Could not reach registry");
+	});
+
+	it("preserves the rest of the update.md content unchanged", () => {
+		const result = __test__.composeUpdateKickoff(SAMPLE_UPDATE_MD, BUNDLE_ROOT, {
+			method: "local-dev",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
+		});
+		// Major structural elements should survive
+		expect(result).toContain("## Step 1 — Check for updates");
+		expect(result).toContain("## Step 2A — Plugin update available");
+		expect(result).toContain("## Step 2B — Project migration pending");
+		expect(result).toContain("## Step 3 — Verify installation");
+		expect(result).toContain("## Step 4 — Apply migrations");
+	});
+
+	it("patches the real bundled update.md from the payload", async () => {
+		// Read the actual update.md from the bundled payload and verify
+		// all patches apply cleanly (no anchor missed)
+		const fsSync = await import("node:fs");
+		const payloadRoot = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..", "dist", "forge-payload");
+		const updateMdPath = path.join(payloadRoot, "commands", "update.md");
+		if (!fsSync.existsSync(updateMdPath)) {
+			// Payload not built yet in CI — skip gracefully
+			return;
 		}
-
-		return { pi, ctx, commands, migrationRunner, lastSeen, migrationResult };
-	}
-
-	it("post-upgrade migration prompt appears after successful npm upgrade with drift", async () => {
-		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration();
-
-		// Prime drift cache
-		await __test__.writeDriftCache(dir, {
-			lastSeenBundledForgeVersion: lastSeen,
-			promptedForVersions: [],
+		const updateMd = fsSync.readFileSync(updateMdPath, "utf8");
+		const result = __test__.composeUpdateKickoff(updateMd, "/test/bundle/root", {
+			method: "global",
+			upgraded: false,
+			npmFetchFailed: false,
+			bundledForgeVersion: "0.51.3",
 		});
-
-		registerForgeUpdateCommand(pi, {
-			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
-			currentCliVersion: "0.9.0",
-			fetchImpl: vi.fn()
-				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
-				.mockResolvedValueOnce(jsonRes({ body: "release notes" })) as unknown as typeof fetch,
-			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
-			upgradeRunner: vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" }),
-			migrationRunner,
-			currentBundledForgeVersion: "0.44.4",
-			migrationProjectRoot: dir,
-			driftCacheDir: dir,
-		});
-
-		const cmd = commands.get("forge:update")!;
-		await cmd.handler("", ctx);
-
-		// Migration confirm should have been called (2nd confirm call)
-		expect(ctx.ui.confirm).toHaveBeenCalledTimes(2);
-		const migrationConfirmCall = ctx.ui.confirm.mock.calls[1]!;
-		expect(migrationConfirmCall[0]).toContain("migrations");
-		expect(migrationConfirmCall[0]).toContain(lastSeen);
-		expect(migrationConfirmCall[0]).toContain("0.44.4");
-
-		// Migration runner should have been called
-		expect(migrationRunner).toHaveBeenCalledWith(
-			expect.objectContaining({
-				fromVersion: lastSeen,
-				toVersion: "0.44.4",
-			}),
-		);
+		// All CLAUDE_PLUGIN_ROOT references gone
+		expect(result).not.toContain("CLAUDE_PLUGIN_ROOT");
+		// All $FORGE_ROOT/migrations.json patched
+		expect(result).not.toContain("$FORGE_ROOT/migrations.json");
+		expect(result).toContain("$FORGE_ROOT/.schemas/migrations.json");
+		// CLI preflight section present
+		expect(result).toContain("## forge-cli: CLI Preflight Result");
 	});
+});
 
-	it("FORGE_NON_INTERACTIVE=1 skips migration confirm and applies automatically (§2B)", async () => {
-		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration({ nonInteractive: true });
+// ── Drift notification message test (§2C) ─────────────────────────────────
 
-		await __test__.writeDriftCache(dir, {
-			lastSeenBundledForgeVersion: lastSeen,
-			promptedForVersions: [],
-		});
-
-		registerForgeUpdateCommand(pi, {
-			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
-			currentCliVersion: "0.9.0",
-			fetchImpl: vi.fn()
-				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
-				.mockResolvedValueOnce(jsonRes({ body: "" })) as unknown as typeof fetch,
-			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
-			upgradeRunner: vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" }),
-			migrationRunner,
-			currentBundledForgeVersion: "0.44.4",
-			migrationProjectRoot: dir,
-			driftCacheDir: dir,
-		});
-
-		const cmd = commands.get("forge:update")!;
-		await cmd.handler("", ctx);
-
-		// Only ONE confirm call (upgrade confirm) — migration confirm skipped
-		expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
-		// Migration runner still called (auto-applied)
-		expect(migrationRunner).toHaveBeenCalled();
-	});
-
-	it("migration skipped when user declines migration confirm", async () => {
-		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration({
-			confirmMigration: false,
-		});
-
-		await __test__.writeDriftCache(dir, {
-			lastSeenBundledForgeVersion: lastSeen,
-			promptedForVersions: [],
-		});
-
-		registerForgeUpdateCommand(pi, {
-			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
-			currentCliVersion: "0.9.0",
-			fetchImpl: vi.fn()
-				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
-				.mockResolvedValueOnce(jsonRes({ body: "" })) as unknown as typeof fetch,
-			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
-			upgradeRunner: vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" }),
-			migrationRunner,
-			currentBundledForgeVersion: "0.44.4",
-			migrationProjectRoot: dir,
-			driftCacheDir: dir,
-		});
-
-		const cmd = commands.get("forge:update")!;
-		await cmd.handler("", ctx);
-
-		expect(migrationRunner).not.toHaveBeenCalled();
-		// Should notify about skipping
-		const notifyMessages = ctx.ui.notify.mock.calls.map((c) => c[0] as string);
-		expect(notifyMessages.some((m) => m.includes("migrations skipped"))).toBe(true);
-	});
-
-	it("runs migration prompt even when CLI is already at npm latest (#32 follow-up)", async () => {
-		const { pi, ctx, commands, migrationRunner, lastSeen } = setupWithMigration();
-
-		await __test__.writeDriftCache(dir, {
-			lastSeenBundledForgeVersion: lastSeen,
-			promptedForVersions: [],
-		});
-
-		// current === latest: no CLI upgrade needed, but bundle has drifted
-		const upgradeRunner = vi.fn().mockResolvedValue({ ok: true, stdout: "", stderr: "" });
-		registerForgeUpdateCommand(pi, {
-			pkgRoot: "/usr/lib/node_modules/@entelligentsia/forgecli",
-			currentCliVersion: "1.0.0",
-			fetchImpl: vi.fn()
-				.mockResolvedValueOnce(jsonRes({ "dist-tags": { latest: "1.0.0" } }))
-				.mockResolvedValueOnce(jsonRes({ body: "" })) as unknown as typeof fetch,
-			globalRootResolver: vi.fn().mockResolvedValue("/usr/lib/node_modules"),
-			upgradeRunner,
-			migrationRunner,
-			currentBundledForgeVersion: "0.44.4",
-			migrationProjectRoot: dir,
-			driftCacheDir: dir,
-		});
-
-		const cmd = commands.get("forge:update")!;
-		await cmd.handler("", ctx);
-
-		// "already at the latest" notify fires...
-		const notifyMessages = ctx.ui.notify.mock.calls.map((c) => c[0] as string);
-		expect(notifyMessages.some((m) => m.includes("already at the latest"))).toBe(true);
-		// ...npm upgrade is NOT run...
-		expect(upgradeRunner).not.toHaveBeenCalled();
-		// ...but the migration branch still fires for the bundle drift.
-		expect(migrationRunner).toHaveBeenCalledWith(
-			expect.objectContaining({ fromVersion: lastSeen, toVersion: "0.44.4" }),
-		);
-	});
-
-	it("drift notification message contains 'Run /forge:update' and 'migrations' (§2C)", async () => {
+describe("drift notification message", () => {
+	it("contains 'Run /forge:update' and 'migrations' (§2C)", async () => {
 		const notify = vi.fn();
 		const cacheDir = tmpCacheDir();
 		try {

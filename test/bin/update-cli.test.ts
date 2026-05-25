@@ -171,4 +171,30 @@ describe("runUpdate", () => {
 		});
 		expect(exit).toBe(1);
 	});
+
+	it("successful upgrade prints migration hint (Gap 5)", async () => {
+		const spy = vi.fn(makeUpgrader(true));
+		const stdoutLines: string[] = [];
+		const _origWrite = process.stdout.write.bind(process.stdout);
+		const spy2 = vi.spyOn(process.stdout, "write").mockImplementation((...args: unknown[]) => {
+			if (typeof args[0] === "string") stdoutLines.push(args[0]);
+			return true;
+		});
+		try {
+			const exit = await runUpdate(["--yes"], {
+				forgeCli: "0.7.0",
+				fetchImpl: makeFetch("v0.8.0", "release notes"),
+				globalRootResolver: makeGlobalResolver(),
+				upgradeRunner: spy,
+				pkgRootOverride: PKG_ROOT,
+			});
+			expect(exit).toBe(0);
+			// Gap 5: successful upgrade should print a migration hint
+			const fullOutput = stdoutLines.join("");
+			expect(fullOutput).toContain("/forge:update");
+			expect(fullOutput).toContain("migrations");
+		} finally {
+			spy2.mockRestore();
+		}
+	});
 });

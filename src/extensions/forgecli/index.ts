@@ -11,72 +11,71 @@
 // Spike R1/R2 env-gated blocks are preserved for backward-compat — no-op in
 // production when env flags are absent.
 
-import { existsSync } from "node:fs";
 import * as fs from "node:fs";
+import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import { type LoadSkillsResult, loadSkillsFromDir, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import { registerAddPipeline } from "./add-pipeline.js";
+import { registerAddTask } from "./add-task.js";
+import { registerApprove } from "./approve.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
-import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
 import { readProjectMeta } from "./banner.js";
+import { registerCalibrate } from "./calibrate.js";
+import { registerCollate } from "./collate.js";
+import { registerCommit } from "./commit.js";
+import { registerConfigCommand } from "./config-command.js";
 import { registerEnhance } from "./enhance.js";
+import { registerFixBug } from "./fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
+import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
 import { registerForgeInit } from "./forge-init.js";
-import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { registerForgeTools, type ForgeToolDefs } from "./forge-tools.js";
-import { loadSkillsFromDir, type LoadSkillsResult } from "@earendil-works/pi-coding-agent";
+import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
-import { registerImplement } from "./implement.js";
-import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
-import { registerPlan } from "./plan.js";
-import { buildProjectOrientation } from "./project-orientation.js";
-import { registerRegenerate } from "./regenerate.js";
-import { registerSprintIntake } from "./sprint-intake.js";
-import { registerSprintPlan } from "./sprint-plan.js";
-import { triggerUpdateCheck } from "./update-check.js";
 import {
 	buildForgeAwarenessMsg,
 	buildMultiPluginMsg,
 	buildPendingMigrationMsg,
 	syncForgeRootAndRef,
 } from "./hooks/check-update.js";
-import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./whats-new-widget.js";
-import { registerUsageHook } from "./usage-hook.js";
-import { registerReadCommand } from "./read-command.js";
-import { registerRunTask } from "./run-task.js";
-import { registerRunSprint } from "./run-sprint.js";
-import { registerFixBug } from "./fix-bug.js";
-import { registerReviewPlan } from "./review-plan.js";
-import { registerReviewCode } from "./review-code.js";
-import { registerApprove } from "./approve.js";
-import { registerCommit } from "./commit.js";
-import { registerValidate } from "./validate.js";
-import { registerCollate } from "./collate.js";
-import { registerRetrospective } from "./retrospective.js";
-import { registerCalibrate } from "./calibrate.js";
-import { registerMaterialize } from "./materialize.js";
-import { registerMigrate } from "./migrate.js";
-import { registerUpdateTools } from "./update-tools.js";
-import { registerStoreQuery } from "./store-query.js";
-import { registerStatusCommand } from "./status-command.js";
-import { registerConfigCommand } from "./config-command.js";
-import { registerAddTask } from "./add-task.js";
-import { registerAddPipeline } from "./add-pipeline.js";
-import { registerQuizAgent } from "./quiz-agent.js";
-import { registerRemoveCommand } from "./remove-command.js";
-import { registerReportBug } from "./report-bug.js";
-import { registerStoreRepair } from "./store-repair.js";
-import { getInputRouter } from "./input-router.js";
-import { registerTestOrchestrate } from "./test-orchestrate.js";
-import { registerThreadSwitcher } from "./thread-switcher.js";
-import { registerRunWorkflow } from "./wf-engine/register.js";
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
 import { registerPostSprintHook } from "./hooks/post-sprint-hook.js";
-import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
+import { registerImplement } from "./implement.js";
+import { getInputRouter } from "./input-router.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { readPkgVersionsSync } from "./lib/versions.js";
+import { registerMaterialize } from "./materialize.js";
+import { registerMigrate } from "./migrate.js";
+import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
+import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
+import { registerPlan } from "./plan.js";
+import { buildProjectOrientation } from "./project-orientation.js";
+import { registerQuizAgent } from "./quiz-agent.js";
+import { registerReadCommand } from "./read-command.js";
+import { registerRegenerate } from "./regenerate.js";
+import { registerRemoveCommand } from "./remove-command.js";
+import { registerReportBug } from "./report-bug.js";
+import { registerRetrospective } from "./retrospective.js";
+import { registerReviewCode } from "./review-code.js";
+import { registerReviewPlan } from "./review-plan.js";
+import { registerRunSprint } from "./run-sprint.js";
+import { registerRunTask } from "./run-task.js";
+import { registerSprintIntake } from "./sprint-intake.js";
+import { registerSprintPlan } from "./sprint-plan.js";
+import { registerStatusCommand } from "./status-command.js";
+import { registerStoreQuery } from "./store-query.js";
+import { registerStoreRepair } from "./store-repair.js";
+import { registerTestOrchestrate } from "./test-orchestrate.js";
+import { registerThreadSwitcher } from "./thread-switcher.js";
+import { triggerUpdateCheck } from "./update-check.js";
+import { registerUpdateTools } from "./update-tools.js";
+import { registerUsageHook } from "./usage-hook.js";
+import { registerValidate } from "./validate.js";
+import { registerRunWorkflow } from "./wf-engine/register.js";
+import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./whats-new-widget.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels
@@ -191,10 +190,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		fs.mkdirSync(globalThemesDir, { recursive: true });
 		const themeFiles = fs.readdirSync(bundledThemesDir).filter((f) => f.endsWith(".json"));
 		for (const file of themeFiles) {
-			fs.copyFileSync(
-				path.join(bundledThemesDir, file),
-				path.join(globalThemesDir, file),
-			);
+			fs.copyFileSync(path.join(bundledThemesDir, file), path.join(globalThemesDir, file));
 		}
 	} catch {
 		// Non-fatal — theme install skipped, fall back to default
@@ -272,25 +268,33 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			try {
 				const awarenessMsg = buildForgeAwarenessMsg(forgeConfig.configPath);
 				if (awarenessMsg) ctx.ui.notify(awarenessMsg, "info");
-			} catch { /* non-fatal */ }
+			} catch {
+				/* non-fatal */
+			}
 
 			// (4) Multi-plugin scan — notify if multiple Forge installations found (AC#3)
 			try {
 				const multiPluginMsg = buildMultiPluginMsg({ forgeRoot: forgeRoot!, configPath: forgeConfig.configPath });
 				if (multiPluginMsg) ctx.ui.notify(multiPluginMsg, "info");
-			} catch { /* non-fatal */ }
+			} catch {
+				/* non-fatal */
+			}
 
 			// (3) Distribution-switch detection + forgeRoot/forgeRef sync (AC#2, AC#6)
 			try {
 				const switchMsg = syncForgeRootAndRef({ forgeRoot: forgeRoot!, configPath: forgeConfig.configPath });
 				if (switchMsg) ctx.ui.notify(switchMsg, "warning");
-			} catch { /* non-fatal */ }
+			} catch {
+				/* non-fatal */
+			}
 
 			// (5) Pending-migration state surfacing (AC#4)
 			try {
 				const pendingMsg = buildPendingMigrationMsg(forgeConfig.configPath);
 				if (pendingMsg) ctx.ui.notify(pendingMsg, "warning");
-			} catch { /* non-fatal */ }
+			} catch {
+				/* non-fatal */
+			}
 		}
 
 		// 4. Update-check probe + banner (FORGE-S16-T14, issue #18 part 1).
@@ -477,7 +481,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerRetrospective(pi);
 	registerCalibrate(pi, { forgeToolDefs }); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
 	registerMaterialize(pi); // FORGE-S23-T09: Atomic handler — fill missing/stubbed artifacts
-	registerMigrate(pi);    // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
+	registerMigrate(pi); // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
 	registerUpdateTools(pi); // FORGE-S23-T10: Atomic handler — copy bundled schemas to .forge/schemas/
 	registerStoreQuery(pi, { forgeRoot }); // FORGE-S23-T10: Atomic handler — store-cli query/nlp dispatch
 	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget
@@ -539,7 +543,6 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			pkgRoot: PKG_ROOT,
 			currentCliVersion: PKG_VERSIONS.cliVersion,
 			currentBundledForgeVersion: PKG_VERSIONS.bundledForgeVersion,
-			migrationProjectRoot: process.cwd(),
 		});
 	}
 

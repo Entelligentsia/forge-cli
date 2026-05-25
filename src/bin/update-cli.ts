@@ -168,7 +168,8 @@ export async function runUpdate(args: string[], opts: RunUpdateOptions): Promise
 
 	process.stdout.write(
 		`forge update: installed ${PKG_NAME}@${release.version}.\n` +
-			"Restart your forge session for the new version to take effect.\n",
+			"Restart your forge session for the new version to take effect.\n" +
+			"Then run /forge:update inside a session to apply project migrations.\n",
 	);
 	return 0;
 }
