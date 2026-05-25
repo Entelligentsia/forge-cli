@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-05-25
+
+### Fixed
+
+- **build-payload: expand schemas/ (dotless) to mirror full forge/forge/schemas/.**
+  Previously only structure-manifest.json was copied to the dotless schemas/
+  dir. Plugin command files (health.md, etc.) that reference
+  `$FORGE_ROOT/schemas/config.schema.json` at runtime couldn't find it — the
+  file only existed in `.schemas/` (dotted). The build now recursively copies
+  all `.json` files from forge/forge/schemas/ into schemas/ (skipping
+  `__tests__`), including enum-catalog.json, transitions/*.json, and all
+  schema files. This resolves /forge:health config-validation failures in
+  forge-cli projects.
+
 ## [0.20.0] — 2026-05-25
 
 ### Changed

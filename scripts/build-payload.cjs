@@ -386,25 +386,46 @@ if (fs.existsSync(schemasSrc)) {
 	console.warn("build-payload: forge/forge/schemas/ not found — skipping");
 }
 
-// 2e0: schemas/structure-manifest.json (non-dot path) — bundled at the
-// location check-structure.cjs looks under. The tool resolves manifestPath
-// as <forgeRoot>/schemas/structure-manifest.json (no --forge-root) or via
-// __dirname/../schemas/structure-manifest.json when invoked directly.
-// Without this, /forge:health's checkStructure() silently passes (exit 0
-// with "structure-manifest.json not found") and the per-namespace file
-// expectation list (skills.files, personas.files, …) never validates against
-// the user's `.forge/` tree. Distinct from `.schemas/` (real JSON-Schemas
-// that migrate into the project) — structure-manifest.json is a plugin-side
-// expectation list, never copied into the user project.
-const structManifestSrc = path.join(forgeRoot, "schemas", "structure-manifest.json");
+// 2e0: schemas/ (non-dot path) — full recursive copy of forge/forge/schemas/
+// into <bundleRoot>/schemas/. Plugin command files (health.md, etc.) resolve
+// $FORGE_ROOT/schemas/*.json at runtime; the agent reads these paths literally.
+// The dotted .schemas/ holds the same files for tool resolution (check-structure.cjs
+// uses __dirname/../schemas/ for structure-manifest.json), but commands that
+// reference $FORGE_ROOT/schemas/ in prose need the non-dot path to work.
+// The recursive walk copies all .json files (schema + non-schema like
+// enum-catalog.json, transitions/*.json) and subdirectories, mirroring the
+// original forge/forge/schemas/ layout exactly.
 const nonDotSchemasDest = path.join(outDir, "schemas");
-const structManifestDest = path.join(nonDotSchemasDest, "structure-manifest.json");
-if (fs.existsSync(structManifestSrc)) {
+if (fs.existsSync(schemasSrc)) {
 	fs.mkdirSync(nonDotSchemasDest, { recursive: true });
-	copyFile(structManifestSrc, structManifestDest);
-	console.log("build-payload: schemas/structure-manifest.json copied (for check-structure.cjs)");
+	let nonDotCount = 0;
+	const walkNonDotSchemas = (dir, relDir) => {
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			const fullSrc = path.join(dir, entry.name);
+			const relPath = relDir ? path.join(relDir, entry.name) : entry.name;
+			if (entry.isDirectory()) {
+				walkNonDotSchemas(fullSrc, relPath);
+			} else if (entry.isFile() && entry.name.endsWith(".json")) {
+				const destPath = path.join(nonDotSchemasDest, relPath);
+				fs.mkdirSync(path.dirname(destPath), { recursive: true });
+				copyFile(fullSrc, destPath);
+				nonDotCount++;
+			}
+		}
+	};
+	// Skip __tests__ (test files not needed at runtime)
+	for (const entry of fs.readdirSync(schemasSrc, { withFileTypes: true })) {
+		if (entry.name === "__tests__") continue;
+		if (entry.isDirectory()) {
+			walkNonDotSchemas(path.join(schemasSrc, entry.name), entry.name);
+		} else if (entry.isFile() && entry.name.endsWith(".json")) {
+			copyFile(path.join(schemasSrc, entry.name), path.join(nonDotSchemasDest, entry.name));
+			nonDotCount++;
+		}
+	}
+	console.log(`build-payload: schemas/ — ${nonDotCount} files copied (mirrors .schemas/)`);
 } else {
-	console.warn("build-payload: forge/forge/schemas/structure-manifest.json not found — skipping");
+	console.warn("build-payload: forge/forge/schemas/ not found — skipping schemas/ (non-dot)");
 }
 
 // 2e0b: integrity.json — bundled at <forgeRoot>/integrity.json, the exact
