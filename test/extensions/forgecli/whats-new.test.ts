@@ -12,8 +12,7 @@
 //   8. dismissWhatsNew: collapses prev to seen, leaves current untouched.
 
 import * as crypto from "node:crypto";
-import { promises as fs } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { promises as fs, mkdirSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -29,10 +28,10 @@ import {
 	readSeenState,
 	renderSummaryPanel,
 	resolveChangelogPaths,
+	type SeenState,
 	semverGt,
 	summarizeEntries,
 	writeSeenState,
-	type SeenState,
 } from "../../../src/extensions/forgecli/whats-new.js";
 
 function tmpDir(label: string): string {
@@ -303,7 +302,10 @@ describe("computeAndPersistStartupPanel + dismissWhatsNew + computeWhatsNewView"
 		expect(r2).not.toBeNull();
 
 		// /whats-new still replays via prev baseline (was null → returns `to`).
-		const summary = await computeWhatsNewView({ pkgRoot, current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" }, cacheDir }, null);
+		const summary = await computeWhatsNewView(
+			{ pkgRoot, current: { pi: "0.74.1", forgePlugin: "0.7.8", forgeCli: "0.7.8" }, cacheDir },
+			null,
+		);
 		expect(summary).toMatch(/What's New since last login/);
 	});
 

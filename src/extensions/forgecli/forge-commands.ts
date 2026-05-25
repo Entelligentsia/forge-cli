@@ -191,26 +191,26 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:read", // Real handler registered in index.ts
 	"forge:run-task", // FORGE-S21-T02: real handler registered in run-task.ts
 	"forge:run-sprint", // FORGE-S21-T03: real handler registered in run-sprint.ts
-	"forge:fix-bug",    // FORGE-S21-T07: real handler registered in fix-bug.ts
+	"forge:fix-bug", // FORGE-S21-T07: real handler registered in fix-bug.ts
 	"forge:review-plan", // FORGE-S21-T10: real kickoff shim registered in review-plan.ts
 	"forge:review-code", // FORGE-S21-T10: real kickoff shim registered in review-code.ts
-	"forge:approve",     // FORGE-S21-T10: real kickoff shim registered in approve.ts
-	"forge:commit",      // FORGE-S21-T10: real kickoff shim registered in commit.ts
-	"forge:validate",    // FORGE-S21-T10: real kickoff shim registered in validate.ts
-	"forge:collate",     // FORGE-S21-T10: real kickoff shim registered in collate.ts
+	"forge:approve", // FORGE-S21-T10: real kickoff shim registered in approve.ts
+	"forge:commit", // FORGE-S21-T10: real kickoff shim registered in commit.ts
+	"forge:validate", // FORGE-S21-T10: real kickoff shim registered in validate.ts
+	"forge:collate", // FORGE-S21-T10: real kickoff shim registered in collate.ts
 	"forge:threads", // Thread-switcher chip strip; registered in thread-switcher.ts
 	"forge:regenerate", // Native handler registered in regenerate.ts — re-materialize .forge/ from bundled payload
 	"forge:retrospective", // FORGE-S23-T06: real kickoff shim registered in retrospective.ts
-	"forge:calibrate",    // FORGE-S23-T08: real orchestrator handler registered in calibrate.ts
-	"forge:materialize",  // FORGE-S23-T09: Atomic handler registered in materialize.ts
-	"forge:migrate",      // FORGE-S23-T09: Hybrid handler registered in migrate.ts
+	"forge:calibrate", // FORGE-S23-T08: real orchestrator handler registered in calibrate.ts
+	"forge:materialize", // FORGE-S23-T09: Atomic handler registered in materialize.ts
+	"forge:migrate", // FORGE-S23-T09: Hybrid handler registered in migrate.ts
 	"forge:update-tools", // FORGE-S23-T10: Atomic handler registered in update-tools.ts
-	"forge:store-query",  // FORGE-S23-T10: Atomic handler registered in store-query.ts
-	"forge:add-task",     // FORGE-S23-T11: Kickoff shim registered in add-task.ts
+	"forge:store-query", // FORGE-S23-T10: Atomic handler registered in store-query.ts
+	"forge:add-task", // FORGE-S23-T11: Kickoff shim registered in add-task.ts
 	"forge:add-pipeline", // FORGE-S23-T11: Kickoff shim registered in add-pipeline.ts
-	"forge:quiz-agent",   // FORGE-S23-T11: Kickoff shim registered in quiz-agent.ts
-	"forge:remove",       // FORGE-S23-T11: Kickoff shim registered in remove-command.ts
-	"forge:report-bug",   // FORGE-S23-T11: Kickoff shim registered in report-bug.ts
+	"forge:quiz-agent", // FORGE-S23-T11: Kickoff shim registered in quiz-agent.ts
+	"forge:remove", // FORGE-S23-T11: Kickoff shim registered in remove-command.ts
+	"forge:report-bug", // FORGE-S23-T11: Kickoff shim registered in report-bug.ts
 	"forge:store-repair", // FORGE-S23-T11: Kickoff shim registered in store-repair.ts
 ]);
 

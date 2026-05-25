@@ -11,10 +11,10 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-	parseAddTaskArgs,
 	composeAddTaskKickoff,
-	registerAddTask,
 	type ParsedAddTaskArgs,
+	parseAddTaskArgs,
+	registerAddTask,
 } from "../../../src/extensions/forgecli/add-task.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -205,10 +205,7 @@ describe("registerAddTask", () => {
 		const handler = pi.commands.get("forge:add-task")?.handler;
 		expect(handler).toBeDefined();
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("command file not found"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 		expect(pi.sendUserMessage).not.toHaveBeenCalled();
 	});
 
@@ -218,10 +215,7 @@ describe("registerAddTask", () => {
 		const ctx = makeCtx();
 		const handler = pi.commands.get("forge:add-task")?.handler;
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("no Forge project"),
-			"warning",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("no Forge project"), "warning");
 	});
 
 	it("sends kickoff when command file exists", async () => {

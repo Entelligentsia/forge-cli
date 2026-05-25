@@ -145,10 +145,7 @@ export function registerAddPipeline(pi: ExtensionAPI, options: RegisterAddPipeli
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify(
-					"× forge:add-pipeline — no Forge project at cwd; run /forge:init to bootstrap",
-					"warning",
-				);
+				ctx.ui.notify("× forge:add-pipeline — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 

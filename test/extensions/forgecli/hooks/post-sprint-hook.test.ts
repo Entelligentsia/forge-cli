@@ -150,9 +150,7 @@ describe("post-sprint-hook handler", () => {
 		expect(kickoffMessages.length).toBe(0);
 
 		// A notification about the marker regression must have been emitted
-		const markerNotify = notifyCalls.find(
-			(n) => n.msg.includes("workflow regression") || n.msg.includes("marker"),
-		);
+		const markerNotify = notifyCalls.find((n) => n.msg.includes("workflow regression") || n.msg.includes("marker"));
 		expect(markerNotify).toBeDefined();
 	});
 
@@ -169,9 +167,7 @@ describe("post-sprint-hook handler", () => {
 		// Audience check passed — sendKickoff was called.
 		expect(kickoffMessages.length).toBe(1);
 		// No "orchestrator-only" error notification
-		const audienceError = notifyCalls.find(
-			(n) => n.level === "error" && n.msg.includes("orchestrator-only"),
-		);
+		const audienceError = notifyCalls.find((n) => n.level === "error" && n.msg.includes("orchestrator-only"));
 		expect(audienceError).toBeUndefined();
 	});
 
@@ -232,15 +228,15 @@ describe("isSprintId / SPRINT_ID_REGEX", () => {
 
 	it("6. sprint-ID regex: bug IDs do NOT match", () => {
 		const bugIds = [
-			"FORGE-BUG-015",  // canonical FORGE-BUG pattern
-			"BUG-031",        // standalone BUG pattern (no uppercase prefix before -S)
-			"FORGE-B07",      // short bug pattern from plugin docs
-			"enhancement",    // internal enhancement sprint ID in plugin
-			"FORGE-BUG-S21",  // would match if not careful — but BUG in the middle breaks ^[A-Z]+-S\d+$
-			"forge-s21",      // lowercase — not uppercase required
-			"FORGE-",         // incomplete
-			"",               // empty
-			"FORGE-S",        // no digits after S
+			"FORGE-BUG-015", // canonical FORGE-BUG pattern
+			"BUG-031", // standalone BUG pattern (no uppercase prefix before -S)
+			"FORGE-B07", // short bug pattern from plugin docs
+			"enhancement", // internal enhancement sprint ID in plugin
+			"FORGE-BUG-S21", // would match if not careful — but BUG in the middle breaks ^[A-Z]+-S\d+$
+			"forge-s21", // lowercase — not uppercase required
+			"FORGE-", // incomplete
+			"", // empty
+			"FORGE-S", // no digits after S
 		];
 		for (const id of bugIds) {
 			expect(isSprintId(id)).toBe(false);

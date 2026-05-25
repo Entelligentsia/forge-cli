@@ -140,10 +140,7 @@ function isPluginEnabled(pluginPath: string, scope: string, homeDir: string, cwd
 
 		const projectSettingsPath = path.join(cwd, ".claude", "settings.local.json");
 		if (fs.existsSync(projectSettingsPath)) {
-			const projectSettings = JSON.parse(fs.readFileSync(projectSettingsPath, "utf8")) as Record<
-				string,
-				unknown
-			>;
+			const projectSettings = JSON.parse(fs.readFileSync(projectSettingsPath, "utf8")) as Record<string, unknown>;
 			if (projectSettings.disablePlugin === true) return false;
 			const plugins = projectSettings.plugins as Record<string, unknown> | undefined;
 			if (plugins && plugins.forge === false) return false;

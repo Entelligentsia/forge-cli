@@ -156,10 +156,7 @@ export function registerAddTask(pi: ExtensionAPI, options: RegisterAddTaskOption
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify(
-					"× forge:add-task — no Forge project at cwd; run /forge:init to bootstrap",
-					"warning",
-				);
+				ctx.ui.notify("× forge:add-task — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 

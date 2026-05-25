@@ -8,7 +8,7 @@
 //   - EXPLICITLY_REGISTERED_NAMES: "forge:status" present
 
 import * as path from "node:path";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Hoisted mock state (ESM-compatible, runs before imports) ─────────────────
 
@@ -50,8 +50,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 	};
 });
 
-import { runStatus, registerStatusCommand } from "../../../src/extensions/forgecli/status-command.js";
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
+import { registerStatusCommand, runStatus } from "../../../src/extensions/forgecli/status-command.js";
 
 const FAKE_FORGE_ROOT = "/fake/forge";
 
@@ -132,11 +132,9 @@ describe("runStatus", () => {
 describe("registerStatusCommand handler guards", () => {
 	function buildPi(handlers: Map<string, (args: string, ctx: unknown) => Promise<void>>) {
 		return {
-			registerCommand: vi.fn(
-				(name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
-					handlers.set(name, def.handler);
-				},
-			),
+			registerCommand: vi.fn((name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
+				handlers.set(name, def.handler);
+			}),
 		};
 	}
 

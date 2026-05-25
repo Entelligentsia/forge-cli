@@ -12,15 +12,17 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
-	runOrchestratorPreflight,
 	type OrchestratorPreflightResult,
+	runOrchestratorPreflight,
 } from "../../../../src/extensions/forgecli/lib/orchestrator-preflight.js";
 
 // Minimal mock for PreflightContext (only the bits runOrchestratorPreflight uses)
 function makeCtx(notifications: Array<{ msg: string; level: string }> = []) {
 	return {
 		ui: {
-			notify: vi.fn((msg: string, type?: "error" | "info" | "warning") => notifications.push({ msg, level: type ?? "info" })),
+			notify: vi.fn((msg: string, type?: "error" | "info" | "warning") =>
+				notifications.push({ msg, level: type ?? "info" }),
+			),
 		},
 	};
 }

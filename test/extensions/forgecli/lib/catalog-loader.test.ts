@@ -21,17 +21,14 @@
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	BUG_TRANSITIONS,
 	loadEnumCatalog,
 	loadTransitions,
 	resolveBundledPayloadRoot,
-	TASK_TRANSITIONS,
 	SPRINT_TRANSITIONS,
-	BUG_TRANSITIONS,
+	TASK_TRANSITIONS,
 } from "../../../../src/extensions/forgecli/lib/catalog-loader.js";
-import {
-	TASK_STATUS_VALUES,
-	SPRINT_STATUS_VALUES,
-} from "../../../../src/extensions/forgecli/lib/catalog-types.js";
+import { SPRINT_STATUS_VALUES, TASK_STATUS_VALUES } from "../../../../src/extensions/forgecli/lib/catalog-types.js";
 
 const BUNDLE_ROOT = resolveBundledPayloadRoot();
 

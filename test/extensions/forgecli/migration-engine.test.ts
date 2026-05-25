@@ -35,11 +35,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	__test__,
-	runMigrations,
-	type MigrationResult,
-} from "../../../src/extensions/forgecli/migration-engine.js";
+import { __test__, type MigrationResult, runMigrations } from "../../../src/extensions/forgecli/migration-engine.js";
 
 const { semverCompare, filterMigrationEntries, resolveCategory } = __test__;
 
@@ -72,10 +68,7 @@ function makeBundleRoot(
 
 	// Migrations JSON
 	const migrations = opts.migrationsJson ?? {};
-	fs.writeFileSync(
-		path.join(bundleRoot, ".schemas", "migrations.json"),
-		JSON.stringify(migrations),
-	);
+	fs.writeFileSync(path.join(bundleRoot, ".schemas", "migrations.json"), JSON.stringify(migrations));
 
 	// Schema files
 	for (const [name, content] of Object.entries(opts.schemas ?? {})) {
@@ -216,10 +209,7 @@ describe("case 3a: runMigrations('0.43.19','0.44.4') includes entry 0.43.19", ()
 
 	it("selects entry keyed 0.43.19 with 12 regeneration categories", async () => {
 		// Use the actual migrations.json from the forge repo
-		const actualMigrationsPath = path.resolve(
-			import.meta.dirname,
-			"../../../../forge/forge/migrations.json",
-		);
+		const actualMigrationsPath = path.resolve(import.meta.dirname, "../../../../forge/forge/migrations.json");
 
 		if (!fs.existsSync(actualMigrationsPath)) {
 			// Skip if forge repo not present (CI without submodule)
@@ -296,10 +286,7 @@ describe("runMigrations", () => {
 	it("case 5: idempotency — re-run skips already-applied versions", async () => {
 		// Write ledger with 0.9.5 already applied
 		const ledgerPath = path.join(projectRoot, ".forge", "applied-migrations.json");
-		fs.writeFileSync(
-			ledgerPath,
-			JSON.stringify({ schemaVersion: 1, appliedVersions: ["0.9.5"] }),
-		);
+		fs.writeFileSync(ledgerPath, JSON.stringify({ schemaVersion: 1, appliedVersions: ["0.9.5"] }));
 
 		const result = await runMigrations({
 			bundleRoot,
@@ -417,9 +404,7 @@ describe("runMigrations", () => {
 				version: "0.9.6",
 				date: "2024-01-01",
 				notes: "fileOps entry",
-				fileOps: [
-					{ op: "mkdir", path: ".forge/new-dir" },
-				],
+				fileOps: [{ op: "mkdir", path: ".forge/new-dir" }],
 				regenerate: ["personas:supervisor"],
 				breaking: false,
 				manual: [],
@@ -463,9 +448,7 @@ describe("runMigrations", () => {
 				version: "0.9.6",
 				date: "2024-01-01",
 				notes: "C-19 regression: copy with absent src",
-				fileOps: [
-					{ op: "copy", path: ".forge/schemas/absent-file.md", src: absentSrc },
-				],
+				fileOps: [{ op: "copy", path: ".forge/schemas/absent-file.md", src: absentSrc }],
 				breaking: false,
 				manual: [],
 			},
@@ -628,12 +611,8 @@ describe("runMigrations", () => {
 			});
 
 			// Schema files should be present in .forge/schemas/ from the always-on post-pass
-			expect(
-				fs.existsSync(path.join(sProjectRoot, ".forge", "schemas", "event.schema.json")),
-			).toBe(true);
-			expect(
-				fs.existsSync(path.join(sProjectRoot, ".forge", "schemas", "bug.schema.json")),
-			).toBe(true);
+			expect(fs.existsSync(path.join(sProjectRoot, ".forge", "schemas", "event.schema.json"))).toBe(true);
+			expect(fs.existsSync(path.join(sProjectRoot, ".forge", "schemas", "bug.schema.json"))).toBe(true);
 		} finally {
 			fs.rmSync(sdir, { recursive: true, force: true });
 		}
@@ -673,12 +652,7 @@ describe("resolveCategory", () => {
 
 	it("case 13: workflows:_fragments_store-cli-verbs resolves via underscore-compound split", () => {
 		const writes: Array<{ dest: string; src: string }> = [];
-		resolveCategory(
-			"workflows:_fragments_store-cli-verbs",
-			bundleRoot,
-			projectRoot,
-			writes,
-		);
+		resolveCategory("workflows:_fragments_store-cli-verbs", bundleRoot, projectRoot, writes);
 		expect(writes).toHaveLength(1);
 		expect(writes[0]!.dest).toContain(path.join("_fragments", "store-cli-verbs.md"));
 	});
@@ -695,18 +669,14 @@ describe("resolveCategory", () => {
 	it("case 15: schemas:events (plural orphan) — graceful ENOENT skip", () => {
 		const writes: Array<{ dest: string; src: string }> = [];
 		// events.schema.json doesn't exist — only event.schema.json does
-		expect(() =>
-			resolveCategory("schemas:events", bundleRoot, projectRoot, writes),
-		).not.toThrow();
+		expect(() => resolveCategory("schemas:events", bundleRoot, projectRoot, writes)).not.toThrow();
 		// Source doesn't exist so no write
 		expect(writes.filter((w) => w.src.endsWith("events.schema.json"))).toHaveLength(0);
 	});
 
 	it("case 16: schemas:config — graceful ENOENT skip", () => {
 		const writes: Array<{ dest: string; src: string }> = [];
-		expect(() =>
-			resolveCategory("schemas:config", bundleRoot, projectRoot, writes),
-		).not.toThrow();
+		expect(() => resolveCategory("schemas:config", bundleRoot, projectRoot, writes)).not.toThrow();
 	});
 
 	it("case 17: schemas:structure-manifest — special case for non-.schema.json file", () => {
@@ -727,10 +697,7 @@ describe("resolveCategory", () => {
 
 	it("case 22: workflows:_fragments walks only _fragments/, not full workflows/ tree", () => {
 		// Add a workflow file that should NOT be picked up
-		fs.writeFileSync(
-			path.join(bundleRoot, ".base-pack", "workflows", "implement_plan.md"),
-			"# Implement Plan",
-		);
+		fs.writeFileSync(path.join(bundleRoot, ".base-pack", "workflows", "implement_plan.md"), "# Implement Plan");
 
 		const writes: Array<{ dest: string; src: string }> = [];
 		resolveCategory("workflows:_fragments", bundleRoot, projectRoot, writes);
@@ -744,13 +711,7 @@ describe("resolveCategory", () => {
 
 	it("case 20: _fragments double-nesting guard — walker doesn't recurse into nested _fragments/", () => {
 		// Create a nested _fragments dir inside _fragments
-		const nestedDir = path.join(
-			bundleRoot,
-			".base-pack",
-			"workflows",
-			"_fragments",
-			"_fragments",
-		);
+		const nestedDir = path.join(bundleRoot, ".base-pack", "workflows", "_fragments", "_fragments");
 		fs.mkdirSync(nestedDir, { recursive: true });
 		fs.writeFileSync(path.join(nestedDir, "nested.md"), "# Nested");
 
@@ -794,30 +755,11 @@ describe("resolveCategory", () => {
 	// bundle uncontaminated (per PLAN Files-to-Modify rationale).
 	it("FORGE-S25-T09: zero-byte fragment fixture round-trips workflows:_fragments unchanged", () => {
 		// Stage the empty fixture into the fake bundle's _fragments/ dir.
-		const fixtureSrc = path.resolve(
-			__dirname,
-			"..",
-			"..",
-			"fixtures",
-			"_fragments",
-			"EMPTY_FIXTURE.md",
-		);
-		expect(
-			fs.existsSync(fixtureSrc),
-			`fixture missing at ${fixtureSrc} — required by FORGE-S25-T09`,
-		).toBe(true);
-		expect(
-			fs.statSync(fixtureSrc).size,
-			"EMPTY_FIXTURE.md must be exactly 0 bytes for this pinning test",
-		).toBe(0);
+		const fixtureSrc = path.resolve(__dirname, "..", "..", "fixtures", "_fragments", "EMPTY_FIXTURE.md");
+		expect(fs.existsSync(fixtureSrc), `fixture missing at ${fixtureSrc} — required by FORGE-S25-T09`).toBe(true);
+		expect(fs.statSync(fixtureSrc).size, "EMPTY_FIXTURE.md must be exactly 0 bytes for this pinning test").toBe(0);
 
-		const stagedSrc = path.join(
-			bundleRoot,
-			".base-pack",
-			"workflows",
-			"_fragments",
-			"EMPTY_FIXTURE.md",
-		);
+		const stagedSrc = path.join(bundleRoot, ".base-pack", "workflows", "_fragments", "EMPTY_FIXTURE.md");
 		fs.copyFileSync(fixtureSrc, stagedSrc);
 		expect(fs.statSync(stagedSrc).size).toBe(0);
 
@@ -843,8 +785,6 @@ describe("resolveCategory", () => {
 
 		// (3) Destination lives under the project's .forge/workflows/_fragments/
 		// — same location the materialized payload would land.
-		expect(emptyWrite!.dest).toContain(
-			path.join(".forge", "workflows", "_fragments", "EMPTY_FIXTURE.md"),
-		);
+		expect(emptyWrite!.dest).toContain(path.join(".forge", "workflows", "_fragments", "EMPTY_FIXTURE.md"));
 	});
 });

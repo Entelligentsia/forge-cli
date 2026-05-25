@@ -45,7 +45,11 @@ const SCHEMAS_AVAILABLE = (() => {
 	}
 })();
 
-import { applyPiEdits, checkWriteGuard, matchWriteRegistry } from "../../../../src/extensions/forgecli/hooks/write-guard.js";
+import {
+	applyPiEdits,
+	checkWriteGuard,
+	matchWriteRegistry,
+} from "../../../../src/extensions/forgecli/hooks/write-guard.js";
 
 // ── matchWriteRegistry tests ──────────────────────────────────────────────────
 

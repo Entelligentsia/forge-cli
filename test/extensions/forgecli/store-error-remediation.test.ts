@@ -6,15 +6,14 @@
 // and enhanceBlockMessage — the shared remediation surface for store validation
 // errors surfaced to users.
 
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+	enhanceBlockMessage,
 	inferEntityType,
 	parseValidationError,
 	remediateError,
 	remediateValidationOutput,
-	enhanceBlockMessage,
 } from "../../../src/extensions/forgecli/store-error-remediation.js";
-import { expect } from "vitest";
 
 // ── parseValidationError ────────────────────────────────────────────────────────
 
@@ -135,41 +134,25 @@ describe("remediateError", () => {
 	});
 
 	it("remediates missing required field", () => {
-		const result = remediateError(
-			"taskId: missing required field",
-			"task",
-			"FORGE-S18-T02",
-		);
+		const result = remediateError("taskId: missing required field", "task", "FORGE-S18-T02");
 		expect(result.hint).toContain("missing field");
-		expect(result.command).toContain("store-cli.cjs\" template task");
+		expect(result.command).toContain('store-cli.cjs" template task');
 	});
 
 	it("remediates undeclared field", () => {
-		const result = remediateError(
-			"xyz: undeclared field",
-			"task",
-			"FORGE-S18-T02",
-		);
+		const result = remediateError("xyz: undeclared field", "task", "FORGE-S18-T02");
 		expect(result.hint).toContain("undeclared");
 		expect(result.command).toContain("describe task");
 	});
 
 	it("remediates type mismatch", () => {
-		const result = remediateError(
-			"sprintId: expected string, got number",
-			"task",
-			"FORGE-S18-T02",
-		);
+		const result = remediateError("sprintId: expected string, got number", "task", "FORGE-S18-T02");
 		expect(result.hint).toContain("correct type");
 		expect(result.command).toContain("describe");
 	});
 
 	it("remediates date-time format error", () => {
-		const result = remediateError(
-			'createdAt: value "today" is not a valid date-time',
-			"task",
-			"FORGE-S18-T02",
-		);
+		const result = remediateError('createdAt: value "today" is not a valid date-time', "task", "FORGE-S18-T02");
 		expect(result.hint).toContain("ISO 8601");
 		expect(result.command).toContain("describe");
 	});
@@ -185,21 +168,13 @@ describe("remediateError", () => {
 	});
 
 	it("remediates length violation", () => {
-		const result = remediateError(
-			"title: value length 0 is below minLength 1",
-			"task",
-			"FORGE-S18-T02",
-		);
+		const result = remediateError("title: value length 0 is below minLength 1", "task", "FORGE-S18-T02");
 		expect(result.hint).toContain("length");
 		expect(result.command).toContain("describe");
 	});
 
 	it("provides generic remediation for unknown errors", () => {
-		const result = remediateError(
-			"something mysterious happened",
-			"task",
-			"FORGE-S18-T02",
-		);
+		const result = remediateError("something mysterious happened", "task", "FORGE-S18-T02");
 		expect(result.hint).toContain("schema");
 		expect(result.command).toContain("template");
 	});
@@ -210,7 +185,7 @@ describe("remediateError", () => {
 describe("remediateValidationOutput", () => {
 	it("parses validate-store --dry-run output with ERROR prefix", () => {
 		const output = [
-			"ERROR  FORGE-S18-T02: status: value \"verified\" not in [reported, triaged, in-progress, fixed]",
+			'ERROR  FORGE-S18-T02: status: value "verified" not in [reported, triaged, in-progress, fixed]',
 			"WARN   FORGE-S18-T02: description: value length 500 exceeds maxLength 300",
 		].join("\n");
 
@@ -263,10 +238,7 @@ describe("enhanceBlockMessage", () => {
 	});
 
 	it("adds remediation hint to missing required field in block message", () => {
-		const reason = [
-			"Violations:",
-			"  - taskId: missing required field",
-		].join("\n");
+		const reason = ["Violations:", "  - taskId: missing required field"].join("\n");
 
 		const enhanced = enhanceBlockMessage(reason, "task", "FORGE-S18-T02");
 		expect(enhanced).toContain("💡");

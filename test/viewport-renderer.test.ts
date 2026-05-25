@@ -18,9 +18,9 @@ import {
 	fmtPhaseSummary,
 	fmtTokenFooter,
 	fmtTokenMeter,
+	RISKY_TAG,
 	readUsage,
 	resultShape,
-	RISKY_TAG,
 	toolGlyph,
 	truncateAtBoundary,
 } from "../src/extensions/forgecli/viewport-renderer.js";
@@ -139,7 +139,10 @@ describe("resultShape", () => {
 	it("counts lines across content array of TextContent", () => {
 		expect(
 			resultShape("anything", {
-				content: [{ type: "text", text: "line1\nline2" }, { type: "text", text: "line3" }],
+				content: [
+					{ type: "text", text: "line1\nline2" },
+					{ type: "text", text: "line3" },
+				],
 			}),
 		).toBe("3L");
 	});
@@ -227,9 +230,7 @@ describe("fmtPhaseSummary", () => {
 			model: "glm-5.1:cloud",
 			provider: "ollama",
 		});
-		expect(out).toBe(
-			"▣ plan: turns=91 tools=42 ↑5.01M↓30k wall=14m22s model=glm-5.1:cloud/ollama",
-		);
+		expect(out).toBe("▣ plan: turns=91 tools=42 ↑5.01M↓30k wall=14m22s model=glm-5.1:cloud/ollama");
 	});
 
 	it("includes err count when nonzero", () => {
@@ -267,9 +268,7 @@ describe("fmtTokenFooter", () => {
 	});
 
 	it("includes cache when nonzero", () => {
-		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 320_000 })).toBe(
-			"↑1.44M ↓6.5k ⇪320k",
-		);
+		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 320_000 })).toBe("↑1.44M ↓6.5k ⇪320k");
 	});
 });
 

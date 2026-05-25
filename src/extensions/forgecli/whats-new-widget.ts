@@ -29,7 +29,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { getInputRouter } from "./input-router.js";
-
+import { getUserCacheDir } from "./paths/paths.js";
 import {
 	type ChangeSummary,
 	computeAndPersistStartupPanel,
@@ -42,7 +42,6 @@ import {
 	resolveChangelogPaths,
 	type WhatsNewRuntime,
 } from "./whats-new.js";
-import { getUserCacheDir } from "./paths/paths.js";
 
 const WIDGET_KEY = "forge:whats-new";
 
@@ -137,9 +136,7 @@ class WhatsNewStripComponent implements Component {
 		const bold = (s: string) => this.theme.bold(s);
 
 		const prefix = this.stripActive ? accent("what's new ─ ") : dim("what's new ─ ");
-		const hint = this.stripActive
-			? dim("  ←→ · enter · esc hide · d forget")
-			: dim("  ↓ to view (empty editor)");
+		const hint = this.stripActive ? dim("  ←→ · enter · esc hide · d forget") : dim("  ↓ to view (empty editor)");
 
 		const parts = this.summaries.map((s, i) => {
 			const focusedGlyph = this.focusedComponent === s.component ? "●" : "○";
@@ -239,7 +236,11 @@ export function mountStripWithSummaries(
 
 	// Idempotency: drop any prior input-router handler before re-registering.
 	if (currentUnregister) {
-		try { currentUnregister(); } catch { /* ignore */ }
+		try {
+			currentUnregister();
+		} catch {
+			/* ignore */
+		}
 		currentUnregister = null;
 	}
 
@@ -294,7 +295,11 @@ export function mountStripWithSummaries(
 		stripRef?.clearSummaries();
 		stripRef = undefined;
 		if (currentUnregister) {
-			try { currentUnregister(); } catch { /* ignore */ }
+			try {
+				currentUnregister();
+			} catch {
+				/* ignore */
+			}
 			currentUnregister = null;
 		}
 	};

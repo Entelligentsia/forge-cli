@@ -20,7 +20,8 @@ import * as fs from "node:fs";
  */
 export function readPersonaDir(dir: string): string[] {
 	try {
-		return fs.readdirSync(dir)
+		return fs
+			.readdirSync(dir)
 			.filter((f) => f.endsWith(".md") && !f.endsWith("-skills.md"))
 			.map((f) => f.replace(/\.md$/, ""));
 	} catch {

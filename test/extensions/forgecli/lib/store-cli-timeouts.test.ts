@@ -4,8 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-	STORE_CLI_TIMEOUT_MS,
 	STORE_CLI_EMIT_TIMEOUT_MS,
+	STORE_CLI_TIMEOUT_MS,
 } from "../../../../src/extensions/forgecli/lib/store-cli-timeouts.js";
 
 describe("store-cli-timeouts (lib/store-cli-timeouts.ts)", () => {

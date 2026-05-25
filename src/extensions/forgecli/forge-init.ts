@@ -64,14 +64,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { runHealthCheck } from "./health-check.js";
-import { discoverProjectName } from "./init-context.js";
-import { deleteInitProgress, readInitProgress } from "./init-progress.js";
-import { emitSyntheticEvent } from "./hook-dispatcher.js";
-import { execFileAsync, runTool } from "./lib/exec-helpers.js";
-import { runLlmPhase, PHASE_1, PHASE_2, PHASE_3 } from "./forge-init/phase-descriptors.js";
+import { PHASE_1, PHASE_2, PHASE_3, runLlmPhase } from "./forge-init/phase-descriptors.js";
 import { runPhase4 } from "./forge-init/phase4-register.js";
 import { verifyPhase1, verifyPhase3 } from "./forge-init/verifiers.js";
+import { runHealthCheck } from "./health-check.js";
+import { emitSyntheticEvent } from "./hook-dispatcher.js";
+import { discoverProjectName } from "./init-context.js";
+import { deleteInitProgress, readInitProgress } from "./init-progress.js";
+import { execFileAsync, runTool } from "./lib/exec-helpers.js";
 
 // ── Bundle path resolution ─────────────────────────────────────────────────
 
@@ -200,7 +200,6 @@ function parseInitFlags(args: string): ParsedFlags {
 	};
 }
 
-
 // ── Main command registration ──────────────────────────────────────────────
 
 export function registerForgeInit(pi: ExtensionAPI): void {
@@ -251,9 +250,7 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					`Resume from Phase ${nextPhase}?`;
 
 				// G1: in non-interactive mode, default to not resuming (start fresh)
-				const shouldResume = isNonInteractive()
-					? false
-					: await ctx.ui.confirm("Resume /forge:init?", resumeBanner);
+				const shouldResume = isNonInteractive() ? false : await ctx.ui.confirm("Resume /forge:init?", resumeBanner);
 				if (shouldResume) {
 					startPhase = nextPhase;
 					// Skip hero banner on resume (session-scoped gate)
@@ -333,9 +330,10 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			// §Config cache boundary for the full rationale.
 			let configCache: Record<string, unknown> = {};
 			try {
-				configCache = JSON.parse(
-					fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
-				) as Record<string, unknown>;
+				configCache = JSON.parse(fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8")) as Record<
+					string,
+					unknown
+				>;
 			} catch {
 				// File not yet present — Phase 1 will create it
 			}
@@ -373,9 +371,10 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				// Phase-1 agent just produced.
 				if (desc.phaseNum === 1) {
 					try {
-						configCache = JSON.parse(
-							fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
-						) as Record<string, unknown>;
+						configCache = JSON.parse(fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8")) as Record<
+							string,
+							unknown
+						>;
 					} catch {
 						// Fall back to existing cache — all downstream reads have their own defaults
 					}

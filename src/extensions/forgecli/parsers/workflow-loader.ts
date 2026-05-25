@@ -9,7 +9,7 @@
 
 import * as fs from "node:fs";
 import { type Static, Type } from "typebox";
-import { parseFrontmatterBlock, FrontmatterParseError } from "../lib/parsers.js";
+import { FrontmatterParseError, parseFrontmatterBlock } from "../lib/parsers.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -19,11 +19,7 @@ export type AudienceValue = (typeof AUDIENCE_VALUES)[number];
 export const WorkflowFrontmatterSchema = Type.Object(
 	{
 		audience: Type.Optional(
-			Type.Union([
-				Type.Literal("orchestrator-only"),
-				Type.Literal("subagent"),
-				Type.Literal("any"),
-			]),
+			Type.Union([Type.Literal("orchestrator-only"), Type.Literal("subagent"), Type.Literal("any")]),
 		),
 		deps: Type.Optional(
 			Type.Object(

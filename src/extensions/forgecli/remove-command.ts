@@ -86,9 +86,7 @@ export function composeRemoveKickoff(opts: ComposeRemoveKickoffOpts): string {
 
 	const sections: string[] = ["# /forge:remove", ""];
 	sections.push("## Dispatch", "");
-	sections.push(
-		"Run the remove command below to remove Forge artifacts from this project.",
-	);
+	sections.push("Run the remove command below to remove Forge artifacts from this project.");
 	if (parsed.apply) {
 		sections.push(
 			"",
@@ -96,10 +94,7 @@ export function composeRemoveKickoff(opts: ComposeRemoveKickoffOpts): string {
 				"Still show a final summary of what will be removed before executing, but do not prompt for each individual bucket.",
 		);
 	} else {
-		sections.push(
-			"",
-			"Interactive mode: ask for confirmation before removing each bucket (default behavior).",
-		);
+		sections.push("", "Interactive mode: ask for confirmation before removing each bucket (default behavior).");
 	}
 
 	sections.push("", "---", "", "## Command", "", commandMd.trim(), "", "---");
@@ -131,10 +126,7 @@ export function registerRemoveCommand(pi: ExtensionAPI, options: RegisterRemoveC
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify(
-					"× forge:remove — no Forge project at cwd; run /forge:init to bootstrap",
-					"warning",
-				);
+				ctx.ui.notify("× forge:remove — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 
@@ -150,10 +142,7 @@ export function registerRemoveCommand(pi: ExtensionAPI, options: RegisterRemoveC
 						"error",
 					);
 				} else {
-					ctx.ui.notify(
-						`× forge:remove — failed to read command file: ${e.message ?? "unknown error"}`,
-						"error",
-					);
+					ctx.ui.notify(`× forge:remove — failed to read command file: ${e.message ?? "unknown error"}`, "error");
 				}
 				return;
 			}

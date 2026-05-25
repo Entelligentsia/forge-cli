@@ -14,28 +14,33 @@
 // sendKickoff is NEVER called from this file.
 // Audit-grep: grep -n "sendKickoff(" run-task.ts must return empty.
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 // ModelRegistry/AuthStorage no longer instantiated here — see fix-bug.ts note
 // (FORGE-BUG-001). Use ctx.modelRegistry so session-registered providers are
 // honored by validateModelConfig.
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
-import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { checkMaterialization } from "./lib/manifest-checker.js";
-import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
-import { taskStateFilePath, readJsonState, writeJsonState, isStateStale as isJsonStateStale } from "./lib/state-helpers.js";
-import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
-import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { loadLayeredConfig } from "./config-layer.js";
-import { resolveModelForPhase } from "./model-resolver.js";
+import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
+import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
+import { checkMaterialization } from "./lib/manifest-checker.js";
 import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
-import { loadWorkflow, type AudienceValue } from "./parsers/workflow-loader.js";
+import {
+	isStateStale as isJsonStateStale,
+	readJsonState,
+	taskStateFilePath,
+	writeJsonState,
+} from "./lib/state-helpers.js";
+import { resolveModelForPhase } from "./model-resolver.js";
+import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";
 
@@ -188,7 +193,12 @@ export interface RunTaskPipelineOptions {
 	 * leave this undefined. See helpers/scripted-subagent.ts and
 	 * fixtures/sprint-fixture.ts.
 	 */
-	streamFnFactory?: (ctx: { kind: "task-phase"; persona: string; phase: string; taskId: string }) => import("@earendil-works/pi-agent-core").StreamFn | undefined;
+	streamFnFactory?: (ctx: {
+		kind: "task-phase";
+		persona: string;
+		phase: string;
+		taskId: string;
+	}) => import("@earendil-works/pi-agent-core").StreamFn | undefined;
 	/**
 	 * Optional AbortSignal from SessionRegistry. When provided, the pipeline
 	 * checks signal.aborted between phases and passes the signal to
@@ -215,12 +225,7 @@ export interface RunTaskPipelineResult {
 
 type Verdict = "approved" | "revision" | "n/a" | "missing";
 
-export function readVerdict(
-	taskId: string,
-	phaseRole: string,
-	storeCli: string,
-	cwd: string,
-): Verdict {
+export function readVerdict(taskId: string, phaseRole: string, storeCli: string, cwd: string): Verdict {
 	const result = spawnSync("node", [storeCli, "read", "task", taskId], { cwd, encoding: "utf8" });
 	if (result.status !== 0) return "missing";
 	try {
@@ -244,14 +249,13 @@ export function readVerdict(
 		//   3. Raw hyphenated phase role ("review-code") — defensive only.
 		const summaries = record.summaries ?? {};
 		const underscoreKey = phaseRole.replace(/-/g, "_");
-		const candidates = [
-			summaryKey ?? "",
-			underscoreKey,
-			phaseRole,
-		].filter(Boolean);
+		const candidates = [summaryKey ?? "", underscoreKey, phaseRole].filter(Boolean);
 		let verdict: string | undefined;
 		for (const k of candidates) {
-			if (summaries[k]?.verdict) { verdict = summaries[k].verdict; break; }
+			if (summaries[k]?.verdict) {
+				verdict = summaries[k].verdict;
+				break;
+			}
 		}
 		if (!verdict) return "missing";
 		if (verdict === "approved") return "approved";
@@ -312,7 +316,10 @@ export interface OrchestratorEmitContext {
 }
 
 export function isoCompact(ms: number): string {
-	return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+	return new Date(ms)
+		.toISOString()
+		.replace(/[-:]/g, "")
+		.replace(/\.\d{3}Z$/, "Z");
 }
 
 export function buildPhaseEvent(ec: OrchestratorEmitContext): Record<string, unknown> {
@@ -322,16 +329,16 @@ export function buildPhaseEvent(ec: OrchestratorEmitContext): Record<string, unk
 	const durationMs = Math.max(0, ec.endMs - ec.startMs);
 	const event: Record<string, unknown> = {
 		eventId,
-		sprintId:        ec.sprintId,
-		role:            ec.phase.role,
-		action:          `/forge:${action.replace(/_/g, "-")}`,
-		phase:           ec.phase.role,
-		iteration:       ec.iteration,
-		startTimestamp:  new Date(ec.startMs).toISOString(),
-		endTimestamp:    new Date(ec.endMs).toISOString(),
+		sprintId: ec.sprintId,
+		role: ec.phase.role,
+		action: `/forge:${action.replace(/_/g, "-")}`,
+		phase: ec.phase.role,
+		iteration: ec.iteration,
+		startTimestamp: new Date(ec.startMs).toISOString(),
+		endTimestamp: new Date(ec.endMs).toISOString(),
 		durationMinutes: Math.round((durationMs / 60000) * 100) / 100,
-		model:           ec.model,
-		provider:        ec.provider,
+		model: ec.model,
+		provider: ec.provider,
 	};
 	if (ec.entityType === "bug") {
 		event.bugId = ec.bugId;
@@ -339,16 +346,16 @@ export function buildPhaseEvent(ec: OrchestratorEmitContext): Record<string, unk
 		event.taskId = ec.taskId;
 	}
 	if (ec.usage.input > 0 || ec.usage.output > 0 || ec.usage.cacheRead > 0 || ec.usage.cacheWrite > 0) {
-		event.inputTokens      = ec.usage.input;
-		event.outputTokens     = ec.usage.output;
-		event.cacheReadTokens  = ec.usage.cacheRead;
+		event.inputTokens = ec.usage.input;
+		event.outputTokens = ec.usage.output;
+		event.cacheReadTokens = ec.usage.cacheRead;
 		event.cacheWriteTokens = ec.usage.cacheWrite;
-		event.tokenSource      = "reported";
+		event.tokenSource = "reported";
 	}
 	if (ec.judgement && typeof ec.judgement === "object") {
 		const j = ec.judgement as Record<string, unknown>;
 		if (typeof j.verdict === "string") event.verdict = j.verdict;
-		if (typeof j.notes   === "string") event.notes   = j.notes;
+		if (typeof j.notes === "string") event.notes = j.notes;
 	}
 	return event;
 }
@@ -406,36 +413,40 @@ export function drainFrictionFile(
 		const eventId = `${isoCompact(ec.startMs)}_${entityId}_${ec.phase.personaNoun}_friction_${i}`;
 		const event: Record<string, unknown> = {
 			eventId,
-			sprintId:        ec.sprintId,
-			role:            ec.phase.role,
-			action:          `/forge:${action.replace(/_/g, "-")}`,
-			phase:           ec.phase.role,
-			iteration:       ec.iteration,
-			startTimestamp:  new Date(ec.startMs).toISOString(),
-			endTimestamp:    new Date(ec.endMs).toISOString(),
+			sprintId: ec.sprintId,
+			role: ec.phase.role,
+			action: `/forge:${action.replace(/_/g, "-")}`,
+			phase: ec.phase.role,
+			iteration: ec.iteration,
+			startTimestamp: new Date(ec.startMs).toISOString(),
+			endTimestamp: new Date(ec.endMs).toISOString(),
 			durationMinutes: Math.round(((ec.endMs - ec.startMs) / 60000) * 100) / 100,
-			model:           ec.model,
-			provider:        ec.provider,
-			type:            "friction",
-			workflow:        typeof judgement.workflow === "string" ? judgement.workflow : ec.phase.role,
-			persona:         typeof judgement.persona  === "string" ? judgement.persona  : ec.phase.personaNoun,
-			issue:           judgement.issue,
+			model: ec.model,
+			provider: ec.provider,
+			type: "friction",
+			workflow: typeof judgement.workflow === "string" ? judgement.workflow : ec.phase.role,
+			persona: typeof judgement.persona === "string" ? judgement.persona : ec.phase.personaNoun,
+			issue: judgement.issue,
 		};
 		if (ec.entityType === "bug") {
 			event.bugId = ec.bugId;
 		} else {
 			event.taskId = ec.taskId;
 		}
-		if (judgement.subkind  !== undefined) event.subkind  = judgement.subkind;
+		if (judgement.subkind !== undefined) event.subkind = judgement.subkind;
 		if (judgement.evidence !== undefined) event.evidence = judgement.evidence;
-		if (judgement.notes    !== undefined) event.notes    = judgement.notes;
+		if (judgement.notes !== undefined) event.notes = judgement.notes;
 		const r = emitEvent(ec.storeCli, ec.cwd, ec.sprintId, event);
 		if (r.ok) emitted++;
 		else failed++;
 	}
 
 	if (failed === 0) {
-		try { fs.unlinkSync(frictionPath); } catch { /* non-fatal */ }
+		try {
+			fs.unlinkSync(frictionPath);
+		} catch {
+			/* non-fatal */
+		}
 	}
 	return { emitted, failed };
 }
@@ -452,13 +463,9 @@ export function findPredecessorIndex(phases: PhaseDescriptor[], reviewIndex: num
 // ── Task body composition ─────────────────────────────────────────────────
 
 export function composeTaskBody(subWorkflowMd: string, taskId: string): string {
-	return [
-		`Read the workflow below and follow it. Task ID: ${taskId}.`,
-		"",
-		"---",
-		"",
-		subWorkflowMd.trim(),
-	].join("\n");
+	return [`Read the workflow below and follow it. Task ID: ${taskId}.`, "", "---", "", subWorkflowMd.trim()].join(
+		"\n",
+	);
 }
 
 // ── Preflight gate ────────────────────────────────────────────────────────
@@ -506,7 +513,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		for (const e of layeredConfigErrors) {
 			ctx.ui.notify(`× forge:run-task — forge-cli config schema error: ${e}`, "error");
 		}
-		return { status: "failed", lastPhaseIndex: 0, iterationCounts: {}, lastError: `forge-cli config schema errors: ${layeredConfigErrors.join("; ")}` };
+		return {
+			status: "failed",
+			lastPhaseIndex: 0,
+			iterationCounts: {},
+			lastError: `forge-cli config schema errors: ${layeredConfigErrors.join("; ")}`,
+		};
 	}
 
 	// Pre-flight model config validation (Plan 16 Slice 3).
@@ -516,7 +528,11 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),
-			"..", "..", "forge-payload", ".base-pack", "personas",
+			"..",
+			"..",
+			"forge-payload",
+			".base-pack",
+			"personas",
 		);
 		const personaCatalogue = readPersonaDir(personasDir);
 		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
@@ -539,7 +555,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 	// Determine starting phase from resumeFromState (if provided) or phase 0.
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
-	let iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
+	const iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
 
 	// Track model/provider from last successful subagent result (REVIEW FIX #1).
 	let lastModel: string | undefined;
@@ -576,17 +592,19 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		const phase = PHASES[currentPhaseIndex];
 		if (!phase) {
 			ctx.ui.notify(`× forge:run-task — invalid phase index ${currentPhaseIndex}`, "error");
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `invalid phase index ${currentPhaseIndex}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `invalid phase index ${currentPhaseIndex}`,
+			};
 		}
 
 		ctx.ui.setStatus?.(
 			STATUS_KEY,
 			`run-task ${taskId}: phase ${currentPhaseIndex + 1}/${PHASES.length} (${phase.role})`,
 		);
-		ctx.ui.notify(
-			`→ ${taskId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${PHASES.length})`,
-			"info",
-		);
+		ctx.ui.notify(`→ ${taskId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${PHASES.length})`, "info");
 
 		const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
 
@@ -611,7 +629,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `sub-workflow read failed: ${e.message ?? "unknown"}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
+			};
 		}
 
 		// ── 6a. Preflight gate ────────────────────────────────────────
@@ -630,7 +653,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					lastError: `preflight gate exit 1 for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
-				return { status: "halted", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `preflight gate exit 1 for ${phase.role}` };
+				return {
+					status: "halted",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `preflight gate exit 1 for ${phase.role}`,
+				};
 			}
 			if (preflightResult === "escalate") {
 				ctx.ui.notify(
@@ -645,7 +673,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
-				return { status: "escalated", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `preflight gate exit 2 (escalate) for ${phase.role}` };
+				return {
+					status: "escalated",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
+				};
 			}
 		}
 
@@ -653,12 +686,14 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		const markerCheck = checkMaterialization(subWorkflowPath, subWorkflowMd);
 		if (!markerCheck.ok) {
 			for (const marker of markerCheck.missing) {
-				ctx.ui.notify(
-					`× workflow regression: ${marker} not found in ${subWorkflowPath}`,
-					"error",
-				);
+				ctx.ui.notify(`× workflow regression: ${marker} not found in ${subWorkflowPath}`, "error");
 			}
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `materialization markers missing: ${markerCheck.missing.join(", ")}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `materialization markers missing: ${markerCheck.missing.join(", ")}`,
+			};
 		}
 
 		// ── 5. Audience check ─────────────────────────────────────────
@@ -676,7 +711,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				lastError: `audience check failed for ${phase.workflowFile}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `audience check failed for ${phase.workflowFile}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `audience check failed for ${phase.workflowFile}`,
+			};
 		}
 
 		// ── Persona load ──────────────────────────────────────────────
@@ -698,7 +738,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				lastError: `persona load failed: ${e.message ?? "unknown"}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `persona load failed: ${e.message ?? "unknown"}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `persona load failed: ${e.message ?? "unknown"}`,
+			};
 		}
 
 		// ── 4. Dispatch via runForgeSubagent (IL10) ───────────────────
@@ -709,22 +754,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// Pipeline name "default" matches the Forge plugin's shipped pipeline.
 		// When config is absent or cascade bottoms out, resolves to inherit
 		// (model: undefined) — setModel is skipped and pi's current model is used.
-		const modelResolution = resolveModelForPhase(
-			"default",
-			phase.role,
-			phase.personaNoun,
-			modelRoutingConfig,
-		);
+		const modelResolution = resolveModelForPhase("default", phase.role, phase.personaNoun, modelRoutingConfig);
 
 		const phaseStart = Date.now();
 
 		// Stabilization debug log — every subagent event appended as JSONL.
-		const debugLogPath = path.join(
-			cwd,
-			".forge",
-			"cache",
-			`run-task-debug-${taskId}.jsonl`,
-		);
+		const debugLogPath = path.join(cwd, ".forge", "cache", `run-task-debug-${taskId}.jsonl`);
 		const writeDebug = (rec: Record<string, unknown>) => {
 			try {
 				fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
@@ -752,11 +787,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		let modelObservedLogged = false;
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const wrappedOnEvent = (event: any) => {
-			if (
-				!modelObservedLogged &&
-				event?.type === "turn_end" &&
-				typeof event?.message?.model === "string"
-			) {
+			if (!modelObservedLogged && event?.type === "turn_end" && typeof event?.message?.model === "string") {
 				modelObservedLogged = true;
 				writeDebug({
 					kind: "model_observed",
@@ -818,7 +849,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
+			};
 		}
 
 		// ── Post-subagent abort detection ─────────────────────────────────
@@ -861,7 +897,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero" };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
+			};
 		}
 
 		// Capture model/provider from subagent result (REVIEW FIX #1).
@@ -910,18 +951,18 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				taskId,
 				sprintId,
 				phase,
-				iteration:  phaseIteration,
-				startMs:    phaseStart,
-				endMs:      phaseEndMs,
-				model:      result.model    ?? "unknown",
-				provider:   result.provider ?? "unknown",
-				usage:      {
-					input:      result.usage.input,
-					output:     result.usage.output,
-					cacheRead:  result.usage.cacheRead,
+				iteration: phaseIteration,
+				startMs: phaseStart,
+				endMs: phaseEndMs,
+				model: result.model ?? "unknown",
+				provider: result.provider ?? "unknown",
+				usage: {
+					input: result.usage.input,
+					output: result.usage.output,
+					cacheRead: result.usage.cacheRead,
 					cacheWrite: result.usage.cacheWrite,
 				},
-				judgement:  judgementFromSummary(taskRecord, phase.role),
+				judgement: judgementFromSummary(taskRecord, phase.role),
 				storeCli,
 				cwd,
 			};
@@ -972,7 +1013,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					lastError: `verdict missing for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
-				return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `verdict missing for ${phase.role}` };
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `verdict missing for ${phase.role}`,
+				};
 			}
 
 			if (verdict === "revision") {
@@ -993,7 +1039,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						lastError: `revision cap reached for ${phase.role}`,
 						savedAt: new Date().toISOString(),
 					});
-					return { status: "escalated", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `revision cap reached for ${phase.role}` };
+					return {
+						status: "escalated",
+						lastPhaseIndex: currentPhaseIndex,
+						iterationCounts,
+						lastError: `revision cap reached for ${phase.role}`,
+					};
 				}
 
 				// Loop back to predecessor non-review phase
@@ -1032,7 +1083,13 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 	// ── All phases complete ───────────────────────────────────────────
 	deleteState(cwd, taskId);
-	return { status: "completed", lastPhaseIndex: PHASES.length - 1, iterationCounts, model: lastModel, provider: lastProvider };
+	return {
+		status: "completed",
+		lastPhaseIndex: PHASES.length - 1,
+		iterationCounts,
+		model: lastModel,
+		provider: lastProvider,
+	};
 }
 
 // ── Thin wrapper registration ────────────────────────────────────────────
@@ -1077,13 +1134,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			// at this point — the chip strip would appear before the user has
 			// chosen which task they meant, stealing arrow keys from the dialog.
 			const toolDir = resolveToolDir(forgeRoot);
-			const resolvedTaskId = await resolveToCanonicalId(
-				taskId,
-				toolDir,
-				cwd,
-				"task",
-				{ ctx, commandLabel: "forge:run-task" },
-			);
+			const resolvedTaskId = await resolveToCanonicalId(taskId, toolDir, cwd, "task", {
+				ctx,
+				commandLabel: "forge:run-task",
+			});
 			if (!resolvedTaskId) {
 				// Error already emitted by resolver
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);
@@ -1140,9 +1194,8 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 					// (explicit failure), halted=false (cancelled/interrupted), and
 					// any state with existing.status set (ADR-S21-01).
 					const stateStatus = existing.status ?? (existing.halted ? "halted" : "interrupted");
-					const statusLabel = stateStatus === "cancelled" ? "cancelled"
-						: stateStatus === "halted" ? "halted"
-						: "interrupted";
+					const statusLabel =
+						stateStatus === "cancelled" ? "cancelled" : stateStatus === "halted" ? "halted" : "interrupted";
 					const phaseRole = PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex;
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
@@ -1163,10 +1216,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 						// Non-interactive: auto-resume from state (no confirmation).
 						// Cancelled/interrupted states are valid resume points.
 						resumeFromState = existing;
-						ctx.ui.notify(
-							`forge:run-task — resuming ${taskId} from phase ${phaseRole} (${statusLabel})`,
-							"info",
-						);
+						ctx.ui.notify(`forge:run-task — resuming ${taskId} from phase ${phaseRole} (${statusLabel})`, "info");
 					}
 				}
 			}
@@ -1196,10 +1246,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			// ── Handle result ────────────────────────────────────────────────
 			if (pipelineResult.status === "completed") {
 				registry.completeSession(taskId, "completed");
-				ctx.ui.notify(
-					`〇 forge:run-task — ${taskId} pipeline complete (${PHASES.length} phases).`,
-					"info",
-				);
+				ctx.ui.notify(`〇 forge:run-task — ${taskId} pipeline complete (${PHASES.length} phases).`, "info");
 			} else if (pipelineResult.status === "cancelled") {
 				// confirmCancelled was already called by the pipeline, but
 				// completeSession("cancelled") ensures the session ends cleanly.

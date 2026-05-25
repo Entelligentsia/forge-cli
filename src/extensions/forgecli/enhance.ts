@@ -34,15 +34,17 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { assertAudience } from "./audience-gate.js";
 import { sendKickoff } from "./kickoff.js";
-import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
-import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
-
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.
 import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
+
 export { extractPersonaNames };
-import { type MaterializationCheck, checkMaterialization } from "./lib/manifest-checker.js";
-export { type MaterializationCheck, checkMaterialization };
+
+import { checkMaterialization, type MaterializationCheck } from "./lib/manifest-checker.js";
+
+export { checkMaterialization, type MaterializationCheck };
 
 // Argv parsing -------------------------------------------------------------
 
@@ -134,7 +136,7 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 			"3. If genuinely zero friction events are present (both the MCP query AND the fs-walk return empty), emit an explicit notice — `〇 no friction events present — Phase 2 produces no proposals` — and write NO proposal file. Empty artifacts are not acceptable.",
 			"4. Honour the Pack-06 Read/Write/Ask/Store discipline: store writes go via the `forge_store` MCP tool with `{command:'write', args:['<entity>','<json>']}` (2-positional, id INSIDE json); never raw-write `.forge/store/`. Do NOT bash-shell `forge store ...`.",
 			"5. **VERIFY after apply — MANDATORY (forge-cli#31)**: After applying enhancement edits via Edit/Write, BEFORE calling add-snapshot, you MUST call `forge_verify_apply` with the list of claimed file paths. The tool runs `generation-manifest check` on each and returns four buckets: `modified` (verified ✓), `unchanged` (your Edit silently no-op'd — usually an `old_string` whitespace/punctuation mismatch), `untracked` (no manifest entry — treat as potentially modified), `missing` (file gone). **If `unchanged.length > 0`**, you MUST re-apply those edits via Edit/Write and call `forge_verify_apply` again — repeat until `unchanged` is empty. **Do NOT proceed to add-snapshot until every claimed file is in `modified` or `untracked`.** This guard exists because agents historically claim 'Files Modified' in their UI reports while the actual disk content is unchanged; without it the next `/forge:regenerate` overwrites stale state and replay restores nothing.",
-			"6. **Snapshot after verify (forge#107 / forge-cli#30)**: Once `forge_verify_apply` reports no `unchanged` files, MUST call `manage-versions add-snapshot` via bash to capture the verified edits into `.forge/archive/snap-N/`. Without this, the next `/forge:regenerate` cannot restore via replay. Format:\n   ```sh\n   node \"$FORGE_ROOT/tools/manage-versions.cjs\" add-snapshot --source post-sprint:<SPRINT_ID> --enhanced-elements \"<comma-separated paths, e.g. .forge/personas/architect.md,.forge/skills/engineer-skills.md>\"\n   ```\n   `$FORGE_ROOT` is exported into the bash environment — see the orientation block above for its resolved value. After add-snapshot, verify success by checking `.forge/structure-versions.json`'s `currentSnapshot` advanced and `ls .forge/archive/snap-N/` is non-empty.",
+			'6. **Snapshot after verify (forge#107 / forge-cli#30)**: Once `forge_verify_apply` reports no `unchanged` files, MUST call `manage-versions add-snapshot` via bash to capture the verified edits into `.forge/archive/snap-N/`. Without this, the next `/forge:regenerate` cannot restore via replay. Format:\n   ```sh\n   node "$FORGE_ROOT/tools/manage-versions.cjs" add-snapshot --source post-sprint:<SPRINT_ID> --enhanced-elements "<comma-separated paths, e.g. .forge/personas/architect.md,.forge/skills/engineer-skills.md>"\n   ```\n   `$FORGE_ROOT` is exported into the bash environment — see the orientation block above for its resolved value. After add-snapshot, verify success by checking `.forge/structure-versions.json`\'s `currentSnapshot` advanced and `ls .forge/archive/snap-N/` is non-empty.',
 		);
 	} else if (parsed.phase === 1) {
 		sections.push(

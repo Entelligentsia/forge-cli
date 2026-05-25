@@ -32,9 +32,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { assertAudience } from "../audience-gate.js";
-import { sendKickoff } from "../kickoff.js";
 import { checkMaterialization } from "../enhance.js";
-import { onSyntheticEvent, type InitCompleteEvent } from "../hook-dispatcher.js";
+import { type InitCompleteEvent, onSyntheticEvent } from "../hook-dispatcher.js";
+import { sendKickoff } from "../kickoff.js";
 import { loadWorkflow, WorkflowLoaderError } from "../parsers/workflow-loader.js";
 
 // ── Types (re-exported for tests) ─────────────────────────────────────────────
@@ -78,10 +78,7 @@ const WORKFLOW_REL_PATH = path.join(".forge", "workflows", "enhance.md");
 export function createPostInitHookHandler(
 	pi: ExtensionAPI,
 ): (event: InitCompleteEvent, ctx: ExtensionCommandContext) => Promise<void> {
-	return async function postInitHookHandler(
-		event: InitCompleteEvent,
-		ctx: ExtensionCommandContext,
-	): Promise<void> {
+	return async function postInitHookHandler(event: InitCompleteEvent, ctx: ExtensionCommandContext): Promise<void> {
 		const { projectPrefix, cwd } = event;
 
 		// 1. Idempotency sentinel
@@ -108,10 +105,7 @@ export function createPostInitHookHandler(
 				);
 			} else {
 				const e = err as { message?: string };
-				ctx.ui.notify(
-					`× post-init hook: failed to load enhance workflow: ${e.message ?? "unknown"}`,
-					"error",
-				);
+				ctx.ui.notify(`× post-init hook: failed to load enhance workflow: ${e.message ?? "unknown"}`, "error");
 			}
 			return;
 		}

@@ -22,10 +22,7 @@ import { __test__ } from "../../../src/extensions/forgecli/migration-engine.js";
 const { resolveCategory } = __test__;
 
 function tmpDir(): string {
-	const dir = path.join(
-		os.tmpdir(),
-		`migration-engine-dryrun-test-${crypto.randomBytes(6).toString("hex")}`,
-	);
+	const dir = path.join(os.tmpdir(), `migration-engine-dryrun-test-${crypto.randomBytes(6).toString("hex")}`);
 	fs.mkdirSync(dir, { recursive: true });
 	return dir;
 }
@@ -66,13 +63,7 @@ describe("migration-engine dry-run — _defs/phaseSummary destination (F-5)", ()
 		const writes: Array<{ src: string; dest: string }> = [];
 		resolveCategory("schemas", bundleRoot, projectRoot, writes);
 
-		const expected = path.join(
-			projectRoot,
-			".forge",
-			"schemas",
-			"_defs",
-			"phaseSummary.schema.json",
-		);
+		const expected = path.join(projectRoot, ".forge", "schemas", "_defs", "phaseSummary.schema.json");
 		const dests = writes.map((w) => w.dest);
 		expect(dests).toContain(expected);
 
@@ -89,10 +80,7 @@ describe("migration-engine dry-run — _defs/phaseSummary destination (F-5)", ()
 		fs.mkdirSync(path.join(bundleRoot, ".schemas", "_defs"), { recursive: true });
 		fs.mkdirSync(path.join(projectRoot, ".forge"), { recursive: true });
 
-		fs.writeFileSync(
-			path.join(bundleRoot, ".schemas", "_defs", "phaseSummary.schema.json"),
-			"{}",
-		);
+		fs.writeFileSync(path.join(bundleRoot, ".schemas", "_defs", "phaseSummary.schema.json"), "{}");
 
 		const writes: Array<{ src: string; dest: string }> = [];
 		resolveCategory("schemas", bundleRoot, projectRoot, writes);
@@ -100,11 +88,7 @@ describe("migration-engine dry-run — _defs/phaseSummary destination (F-5)", ()
 		const w = writes.find((x) => x.dest.endsWith("phaseSummary.schema.json"));
 		expect(w).toBeDefined();
 		// Source under bundle/.schemas/_defs/, destination under .forge/schemas/_defs/
-		expect(w!.src).toBe(
-			path.join(bundleRoot, ".schemas", "_defs", "phaseSummary.schema.json"),
-		);
-		expect(w!.dest).toBe(
-			path.join(projectRoot, ".forge", "schemas", "_defs", "phaseSummary.schema.json"),
-		);
+		expect(w!.src).toBe(path.join(bundleRoot, ".schemas", "_defs", "phaseSummary.schema.json"));
+		expect(w!.dest).toBe(path.join(projectRoot, ".forge", "schemas", "_defs", "phaseSummary.schema.json"));
 	});
 });

@@ -113,10 +113,7 @@ const PATTERN_MAP: Record<string, PermissionPattern[]> = {
  *   write  → toolInput.path      (string; pi uses `path`, not `file_path`)
  *   edit   → toolInput.path      (string)
  */
-export function matchForgePermission(
-	toolName: string,
-	toolInput: Record<string, unknown>,
-): string | null {
+export function matchForgePermission(toolName: string, toolInput: Record<string, unknown>): string | null {
 	const patterns = PATTERN_MAP[toolName];
 	if (!patterns) return null;
 

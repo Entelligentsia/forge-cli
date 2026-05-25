@@ -138,10 +138,7 @@ export interface RegisterUpdateToolsOptions {
 	_testToolsRoot?: string;
 }
 
-export function registerUpdateTools(
-	pi: ExtensionAPI,
-	opts: RegisterUpdateToolsOptions = {},
-): void {
+export function registerUpdateTools(pi: ExtensionAPI, opts: RegisterUpdateToolsOptions = {}): void {
 	pi.registerCommand("forge:update-tools", {
 		description:
 			"Refresh .forge/schemas/ from the installed Forge plugin version. " +
@@ -152,11 +149,7 @@ export function registerUpdateTools(
 			// Outside-project guard
 			const configPath = path.join(cwd, ".forge", "config.json");
 			if (!fs.existsSync(configPath)) {
-				ctx.ui.notify(
-					"× forge:update-tools — no .forge/config.json found. " +
-						"Run /forge:init first.",
-					"error",
-				);
+				ctx.ui.notify("× forge:update-tools — no .forge/config.json found. " + "Run /forge:init first.", "error");
 				return;
 			}
 

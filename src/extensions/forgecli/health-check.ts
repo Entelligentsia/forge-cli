@@ -59,11 +59,7 @@ const REQUIRED_PATHS = ["engineering", "store", "workflows", "commands", "templa
  * @param bundleRoot - path to dist/forge-payload/ (contains tools/)
  * @param forgeRoot - optional path to the installed Forge plugin root (for plugin integrity check)
  */
-export async function runHealthCheck(
-	cwd: string,
-	bundleRoot: string,
-	forgeRoot?: string,
-): Promise<HealthCheckResult> {
+export async function runHealthCheck(cwd: string, bundleRoot: string, forgeRoot?: string): Promise<HealthCheckResult> {
 	const gaps: HealthGap[] = [];
 
 	// 1. Config-completeness check
@@ -144,7 +140,8 @@ export async function runHealthCheck(
 		gaps.push({
 			check: "kb-freshness",
 			severity: "warning",
-			message: "No calibration baseline found — run /forge:calibrate to establish one." +
+			message:
+				"No calibration baseline found — run /forge:calibrate to establish one." +
 				"\n  💡 Calibration aligns the knowledge base with your current project structure." +
 				"\n  → Set FORGE_YES=1 or FORGE_NON_INTERACTIVE=1 for hands-free calibration.",
 		});
@@ -171,10 +168,9 @@ export async function runHealthCheck(
 					}
 				}
 
-				const driftDetail = driftedSections.length > 0
-					? ` Drifted sections: ${driftedSections.join(", ")}.`
-					: "";
-				const message = `KB freshness: MASTER_INDEX.md hash has changed since last calibration — run /forge:calibrate to re-align.${driftDetail}` +
+				const driftDetail = driftedSections.length > 0 ? ` Drifted sections: ${driftedSections.join(", ")}.` : "";
+				const message =
+					`KB freshness: MASTER_INDEX.md hash has changed since last calibration — run /forge:calibrate to re-align.${driftDetail}` +
 					"\n  💡 Re-calibrating keeps the knowledge base in sync with sprint/task changes." +
 					"\n  → Set FORGE_YES=1 or FORGE_NON_INTERACTIVE=1 for hands-free calibration.";
 
@@ -222,9 +218,12 @@ export async function runHealthCheck(
 
 				const errorCount = errors.length;
 				const warnCount = warnings.length;
-				const summary = errorCount > 0
-					? `${errorCount} error(s)${warnCount > 0 ? `, ${warnCount} warning(s)` : ""}`
-					: (warnCount > 0 ? `${warnCount} warning(s)` : "");
+				const summary =
+					errorCount > 0
+						? `${errorCount} error(s)${warnCount > 0 ? `, ${warnCount} warning(s)` : ""}`
+						: warnCount > 0
+							? `${warnCount} warning(s)`
+							: "";
 
 				// Use shared remediation module to generate per-error hints and commands.
 				const remediations = remediateValidationOutput(output);
@@ -255,7 +254,8 @@ export async function runHealthCheck(
 
 				gaps.push({
 					check: "store-integrity",
-					severity: errorCount > 0 ? "error" : "warning",					message,
+					severity: errorCount > 0 ? "error" : "warning",
+					message,
 				});
 			}
 		}
@@ -301,13 +301,9 @@ export async function runHealthCheck(
  * Returns one HealthGap per stale file.
  * Silently returns [] if the architecture directory does not exist.
  */
-export function checkStaleDocs(
-	cwd: string,
-	config: Record<string, unknown>,
-): HealthGap[] {
+export function checkStaleDocs(cwd: string, config: Record<string, unknown>): HealthGap[] {
 	const gaps: HealthGap[] = [];
-	const engPath =
-		(config.paths as Record<string, string> | undefined)?.engineering ?? "engineering";
+	const engPath = (config.paths as Record<string, string> | undefined)?.engineering ?? "engineering";
 	const archDir = path.join(cwd, engPath, "architecture");
 
 	if (!fs.existsSync(archDir)) {
@@ -351,10 +347,7 @@ export function checkStaleDocs(
  * Returns one HealthGap per modified/missing file.
  * Silently returns [] if the tool is absent.
  */
-export function checkModifiedGeneratedFiles(
-	cwd: string,
-	bundleRoot: string,
-): HealthGap[] {
+export function checkModifiedGeneratedFiles(cwd: string, bundleRoot: string): HealthGap[] {
 	const gaps: HealthGap[] = [];
 	const genManifestTool = path.join(bundleRoot, "tools", "generation-manifest.cjs");
 
@@ -498,7 +491,10 @@ export function checkStructure(cwd: string, bundleRoot: string): HealthGap[] {
 		// check-structure exits 0 when all files are present.
 		// If it exits non-zero, the missing files are in stdout.
 		if (result.trim()) {
-			const lines = result.trim().split("\n").filter((l: string) => l.trim());
+			const lines = result
+				.trim()
+				.split("\n")
+				.filter((l: string) => l.trim());
 			for (const line of lines) {
 				gaps.push({
 					check: "generated-structure",

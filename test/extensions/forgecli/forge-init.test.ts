@@ -1,27 +1,34 @@
 // forge-init.test.ts — Tests for forge-init.ts (FORGE-S17-T02)
 // Covers T06-T24 from PLAN.md test table.
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs");
 vi.mock("node:child_process", () => ({
-	execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
-		if (typeof cb === "function") cb(null, "", "");
-		return { pid: 1 };
-	}),
+	execFile: vi.fn(
+		(_cmd: string, _args: string[], _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
+			if (typeof cb === "function") cb(null, "", "");
+			return { pid: 1 };
+		},
+	),
 	execFileSync: vi.fn(),
 }));
 vi.mock("node:util", () => ({
 	promisify: vi.fn((fn: unknown) => {
 		// Return a promisified version that resolves immediately
-		return (...args: unknown[]) => new Promise<void>((resolve) => {
-			const argsWithCb = [...args, (err: Error | null) => {
-				if (err) resolve(); // treat all errors as non-fatal in tests
-				else resolve();
-			}];
-			(fn as Function)(...argsWithCb); // eslint-disable-line
-		});
+		return (...args: unknown[]) =>
+			new Promise<void>((resolve) => {
+				const argsWithCb = [
+					...args,
+					(err: Error | null) => {
+						if (err)
+							resolve(); // treat all errors as non-fatal in tests
+						else resolve();
+					},
+				];
+				(fn as Function)(...argsWithCb); // eslint-disable-line
+			});
 	}),
 }));
 
@@ -49,12 +56,16 @@ vi.mock("../../../src/extensions/forgecli/init-context.js", () => ({
 }));
 
 vi.mock("../../../src/extensions/forgecli/health-check.js", () => ({
-	runHealthCheck: vi.fn(() => Promise.resolve({ clean: true, gaps: [], configPresent: true, summary: "〇 /forge:health: clean." })),
+	runHealthCheck: vi.fn(() =>
+		Promise.resolve({ clean: true, gaps: [], configPresent: true, summary: "〇 /forge:health: clean." }),
+	),
 }));
 
 vi.mock("../../../src/extensions/forgecli/refresh-kb-links.js", () => ({
 	runRefreshKbLinks: vi.fn(() => Promise.resolve({ filesUpdated: 0, filesSkipped: 0, messages: [] })),
-	getRefreshKbLinksHandler: vi.fn(() => vi.fn(() => Promise.resolve({ filesUpdated: 0, filesSkipped: 0, messages: [] }))),
+	getRefreshKbLinksHandler: vi.fn(() =>
+		vi.fn(() => Promise.resolve({ filesUpdated: 0, filesSkipped: 0, messages: [] })),
+	),
 }));
 
 const mockFs = vi.mocked(fs);
@@ -102,8 +113,12 @@ function buildMockPi(): { registerCommand: ReturnType<typeof vi.fn>; sendUserMes
 	} as ReturnType<typeof buildMockPi>;
 }
 
-import { readInitProgress, deleteInitProgress, writeInitProgress } from "../../../src/extensions/forgecli/init-progress.js";
 import { registerForgeInit } from "../../../src/extensions/forgecli/forge-init.js";
+import {
+	deleteInitProgress,
+	readInitProgress,
+	writeInitProgress,
+} from "../../../src/extensions/forgecli/init-progress.js";
 
 const mockReadInitProgress = vi.mocked(readInitProgress);
 const mockDeleteInitProgress = vi.mocked(deleteInitProgress);
@@ -175,15 +190,15 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("--fast --full", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Conflicting flags"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Conflicting flags"), "error");
 		expect(mockWriteInitProgress).not.toHaveBeenCalled();
 	});
 
@@ -192,15 +207,15 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("--fast", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("--fast"),
-			"info",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("--fast"), "info");
 	});
 
 	// T08: --full only → flag acknowledgement emitted
@@ -208,15 +223,15 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("--full", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("--full"),
-			"info",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("--full"), "info");
 	});
 
 	// T09: --fast 3 → skip to Phase 3 (no flag ack, no pre-flight table)
@@ -224,7 +239,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("--fast 3", ctx);
@@ -232,7 +250,7 @@ describe("registerForgeInit", () => {
 		// Phase 1 progress should NOT be written when starting at phase 3
 		// (startPhase = 3 so phase 1 block is skipped)
 		const phase1Calls = (mockWriteInitProgress as ReturnType<typeof vi.fn>).mock.calls.filter(
-			(c: unknown[]) => c[1] === 1
+			(c: unknown[]) => c[1] === 1,
 		);
 		expect(phase1Calls.length).toBe(0);
 	});
@@ -242,7 +260,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx({
 			ui: {
 				notify: vi.fn(),
@@ -266,7 +287,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx({
 			ui: {
 				notify: vi.fn(),
@@ -284,7 +308,9 @@ describe("registerForgeInit", () => {
 
 		// No malformed/stale warning — should not have been called for cleanup at the start
 		const notifyCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls as Array<[string, string]>;
-		const hasStaleWarning = notifyCalls.some(([msg]) => msg.toLowerCase().includes("stale") || msg.toLowerCase().includes("malformed"));
+		const hasStaleWarning = notifyCalls.some(
+			([msg]) => msg.toLowerCase().includes("stale") || msg.toLowerCase().includes("malformed"),
+		);
 		expect(hasStaleWarning).toBe(false);
 	});
 
@@ -295,15 +321,15 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("malformed"),
-			"warning",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("malformed"), "warning");
 		expect(mockDeleteInitProgress).toHaveBeenCalled();
 	});
 
@@ -314,7 +340,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("", ctx);
@@ -329,7 +358,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx();
 
 		await def.handler("", ctx);
@@ -347,7 +379,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx({
 			ui: {
 				notify: vi.fn(),
@@ -358,10 +393,7 @@ describe("registerForgeInit", () => {
 
 		await def.handler("", ctx);
 
-		expect(ctx.ui.confirm).toHaveBeenCalledWith(
-			"Resume /forge:init?",
-			expect.stringContaining("Phase 3"),
-		);
+		expect(ctx.ui.confirm).toHaveBeenCalledWith("Resume /forge:init?", expect.stringContaining("Phase 3"));
 	});
 
 	// T21: /forge:health post-Phase-4 — clean result
@@ -373,7 +405,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
@@ -395,15 +430,15 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("1 gap(s) detected"),
-			"warning",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("1 gap(s) detected"), "warning");
 	});
 
 	// T23: post-init sentinel written
@@ -422,22 +457,22 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
 
 		// Old sentinel write must NOT be present (stub removed by S21-T04)
-		const oldSentinelCalls = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.filter(
-			(c: unknown[]) => String(c[0]).includes("post-init-enhancement-triggered"),
+		const oldSentinelCalls = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.filter((c: unknown[]) =>
+			String(c[0]).includes("post-init-enhancement-triggered"),
 		);
 		expect(oldSentinelCalls.length).toBe(0);
 
 		// Phase 4 completion notification must still be emitted (no regression)
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Phase 4 complete"),
-			"info",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Phase 4 complete"), "info");
 	});
 
 	// T24: Idempotency — re-run on initialised project
@@ -450,7 +485,10 @@ describe("registerForgeInit", () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtx({
 			ui: {
 				notify: vi.fn(),
@@ -462,10 +500,7 @@ describe("registerForgeInit", () => {
 		await def.handler("", ctx);
 
 		// Should show resume prompt at Phase 4
-		expect(ctx.ui.confirm).toHaveBeenCalledWith(
-			"Resume /forge:init?",
-			expect.stringContaining("Phase 4"),
-		);
+		expect(ctx.ui.confirm).toHaveBeenCalledWith("Resume /forge:init?", expect.stringContaining("Phase 4"));
 	});
 
 	// ── Bug fix tests ───────────────────────────────────────────────────────
@@ -476,7 +511,10 @@ describe("registerForgeInit", () => {
 	it("bug-017-no-active-turn-conflict: all pi.sendUserMessage calls carry deliverAs option", async () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
@@ -495,7 +533,10 @@ describe("registerForgeInit", () => {
 	it("bug-018-phase3-marker: all 4 phase-complete markers emitted in order", async () => {
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
@@ -541,7 +582,10 @@ describe("registerForgeInit", () => {
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
@@ -572,7 +616,10 @@ describe("registerForgeInit", () => {
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
@@ -596,7 +643,10 @@ describe("registerForgeInit", () => {
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		// Should NOT throw even though INIT-SMOKE-TEST task is absent
@@ -612,16 +662,17 @@ describe("registerForgeInit", () => {
 		const mockHealth = vi.mocked(runHealthCheck);
 		mockHealth.mockResolvedValue({
 			clean: false,
-			gaps: [
-				{ check: "kb-freshness", severity: "warning", message: "MASTER_INDEX.md not found" },
-			],
+			gaps: [{ check: "kb-freshness", severity: "warning", message: "MASTER_INDEX.md not found" }],
 			configPresent: true,
 			summary: "△ /forge:health: 1 gap(s) detected.",
 		});
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		// Warning-severity gaps must not cause an exception (handler resolves cleanly)
@@ -641,16 +692,17 @@ describe("registerForgeInit", () => {
 		const mockHealth = vi.mocked(runHealthCheck);
 		mockHealth.mockResolvedValue({
 			clean: false,
-			gaps: [
-				{ check: "config-completeness", severity: "error", message: ".forge/config.json missing" },
-			],
+			gaps: [{ check: "config-completeness", severity: "error", message: ".forge/config.json missing" }],
 			configPresent: false,
 			summary: "△ /forge:health: 1 gap(s) detected.",
 		});
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		const ctx = buildMockCtxProceed();
 
 		await def.handler("", ctx);
@@ -676,7 +728,10 @@ describe("registerForgeInit", () => {
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 
 		// Build a ctx where:
 		//   - G2 pre-flight confirm returns true (proceed)
@@ -778,7 +833,10 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 		// Replace auto-generated sendUserMessage with our spy
 		(pi as unknown as { sendUserMessage: unknown }).sendUserMessage = sendUserMessage;
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
-		const [, def] = pi.registerCommand.mock.calls[0] as [string, { handler: (a: string, ctx: unknown) => Promise<void> }];
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
 		return { handler: def.handler, sendUserMessage };
 	}
 
@@ -827,7 +885,12 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
 			const ctx = buildMockCtx({
-				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(true)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(true)),
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
 			});
 			await handler("", ctx);
 			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
@@ -839,7 +902,12 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
 			const ctx = buildMockCtx({
-				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(false)),
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
 			});
 			await handler("", ctx);
 			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
@@ -851,7 +919,12 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
 			const ctx = buildMockCtx({
-				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(false)),
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
 			});
 			await handler("", ctx);
 			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
@@ -899,7 +972,12 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
 			const ctx = buildMockCtx({
-				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(false)),
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
 			});
 			await handler("", ctx);
 			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
@@ -911,7 +989,12 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
 			const ctx = buildMockCtx({
-				ui: { notify: vi.fn(), confirm: vi.fn(() => Promise.resolve(false)), input: vi.fn(() => Promise.resolve(undefined)), setStatus: vi.fn() },
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn(() => Promise.resolve(false)),
+					input: vi.fn(() => Promise.resolve(undefined)),
+					setStatus: vi.fn(),
+				},
 			});
 			await handler("", ctx);
 			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);

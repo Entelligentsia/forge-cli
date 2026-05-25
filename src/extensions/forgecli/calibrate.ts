@@ -18,10 +18,10 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { type CalibrationBaseline, computeCalibrationBaseline } from "./init-context.js";
-import { loadForgePersona, runForgeSubagent, getFinalOutput } from "./forge-subagent.js";
-import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
 import { getBundledPayloadRoot } from "./forge-init.js";
+import { getFinalOutput, loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
+import { type CalibrationBaseline, computeCalibrationBaseline } from "./init-context.js";
 import { isNonInteractive } from "./run-task.js";
 
 // ── Bundled forge version ─────────────────────────────────────────────────
@@ -309,11 +309,7 @@ export function extractPatchProposals(text: string): PatchProposal[] {
 	while ((match = blockRegex.exec(text)) !== null) {
 		try {
 			const obj = JSON.parse(match[1]) as Partial<PatchProposal>;
-			if (
-				typeof obj.target === "string" &&
-				obj.type === "regenerate" &&
-				typeof obj.rationale === "string"
-			) {
+			if (typeof obj.target === "string" && obj.type === "regenerate" && typeof obj.rationale === "string") {
 				proposals.push({ target: obj.target, type: "regenerate", rationale: obj.rationale });
 			}
 		} catch {
@@ -341,11 +337,7 @@ export interface CalibrationHistoryEntry {
 
 // ── Structural readiness check ────────────────────────────────────────────
 
-function runStructuralReadinessCheck(
-	projectRoot: string,
-	bundledVersion: string,
-	ctx: ExtensionCommandContext,
-): void {
+function runStructuralReadinessCheck(projectRoot: string, bundledVersion: string, ctx: ExtensionCommandContext): void {
 	const versionsPath = path.join(projectRoot, ".forge", "structure-versions.json");
 	try {
 		const raw = fs.readFileSync(versionsPath, "utf8");
@@ -403,10 +395,7 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 			// ── Step 1 — Read config ─────────────────────────────────────────────
 			const cfg = readForgeConfig(projectRoot);
 			if (!cfg) {
-				ctx.ui.notify(
-					"△ No Forge instance found — run /forge:init to create one.",
-					"error",
-				);
+				ctx.ui.notify("△ No Forge instance found — run /forge:init to create one.", "error");
 				return;
 			}
 
@@ -431,10 +420,7 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 					);
 				} catch (err: unknown) {
 					const e = err as { message?: string };
-					ctx.ui.notify(
-						`× Failed to write calibration baseline: ${e.message ?? "unknown"}`,
-						"error",
-					);
+					ctx.ui.notify(`× Failed to write calibration baseline: ${e.message ?? "unknown"}`, "error");
 				}
 				return;
 			}
@@ -480,7 +466,9 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 					cwd: projectRoot,
 					forgeRoot,
 					signal: ctx.signal,
-					customTools: options.forgeToolDefs ? getSubagentTools(options.forgeToolDefs, architectPersona.name) : undefined,
+					customTools: options.forgeToolDefs
+						? getSubagentTools(options.forgeToolDefs, architectPersona.name)
+						: undefined,
 				});
 
 				if (result.exitCode !== 0) {
@@ -557,17 +545,12 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 			const skippedPatches: PatchProposal[] = [];
 
 			if (isNonInteractive()) {
-				ctx.ui.notify(
-					`○ Non-interactive mode — auto-applying all ${proposals.length} patch(es).`,
-					"info",
-				);
+				ctx.ui.notify(`○ Non-interactive mode — auto-applying all ${proposals.length} patch(es).`, "info");
 				for (const p of proposals) {
 					approvedPatches.push({ ...p, applied: false });
 				}
 			} else {
-				const proposalSummary = proposals
-					.map((p, i) => `${i + 1}. ${p.target} — ${p.rationale}`)
-					.join("\n");
+				const proposalSummary = proposals.map((p, i) => `${i + 1}. ${p.target} — ${p.rationale}`).join("\n");
 
 				const applyAll = await ctx.ui.confirm(
 					"Apply all calibration patches?",
@@ -575,10 +558,7 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 				);
 
 				if (!applyAll) {
-					ctx.ui.notify(
-						"○ Calibration patches skipped — run /forge:calibrate again to apply.",
-						"info",
-					);
+					ctx.ui.notify("○ Calibration patches skipped — run /forge:calibrate again to apply.", "info");
 					skippedPatches.push(...proposals);
 				} else {
 					for (const p of proposals) {

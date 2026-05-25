@@ -38,8 +38,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 	};
 });
 
-import { runUpdateTools, registerUpdateTools } from "../../../src/extensions/forgecli/update-tools.js";
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
+import { registerUpdateTools, runUpdateTools } from "../../../src/extensions/forgecli/update-tools.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 
@@ -109,8 +109,8 @@ describe("runUpdateTools", () => {
 		const bundleRoot = path.join(tmpRoot, "bundle2");
 		const schemasDir = path.join(bundleRoot, ".schemas");
 		fs.mkdirSync(schemasDir, { recursive: true });
-		fs.writeFileSync(path.join(schemasDir, "config.schema.json"), '{}');
-		fs.writeFileSync(path.join(schemasDir, "event.schema.json"), '{}');
+		fs.writeFileSync(path.join(schemasDir, "config.schema.json"), "{}");
+		fs.writeFileSync(path.join(schemasDir, "event.schema.json"), "{}");
 
 		const projectRoot = path.join(tmpRoot, "project2");
 		fs.mkdirSync(path.join(projectRoot, ".forge"), { recursive: true });
@@ -132,11 +132,9 @@ describe("runUpdateTools", () => {
 describe("registerUpdateTools handler guards", () => {
 	function buildPi(handlers: Map<string, (args: string, ctx: unknown) => Promise<void>>) {
 		return {
-			registerCommand: vi.fn(
-				(name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
-					handlers.set(name, def.handler);
-				},
-			),
+			registerCommand: vi.fn((name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
+				handlers.set(name, def.handler);
+			}),
 		};
 	}
 

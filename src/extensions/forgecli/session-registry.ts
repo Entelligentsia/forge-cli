@@ -192,12 +192,7 @@ export class SessionRegistry extends EventEmitter {
 		this.emit("change", taskId);
 	}
 
-	recordToolStart(
-		taskId: string,
-		toolCallId: string,
-		toolName: string,
-		args: unknown,
-	): void {
+	recordToolStart(taskId: string, toolCallId: string, toolName: string, args: unknown): void {
 		const s = this.sessions.get(taskId);
 		const p = s?.phases[s.phases.length - 1];
 		if (!s || !p) return;
@@ -215,13 +210,7 @@ export class SessionRegistry extends EventEmitter {
 		this.emit("change", taskId);
 	}
 
-	recordToolEnd(
-		taskId: string,
-		toolCallId: string,
-		toolName: string,
-		isError: boolean,
-		result: unknown,
-	): void {
+	recordToolEnd(taskId: string, toolCallId: string, toolName: string, isError: boolean, result: unknown): void {
 		const s = this.sessions.get(taskId);
 		const p = s?.phases[s.phases.length - 1];
 		if (!s || !p) return;
@@ -382,11 +371,7 @@ export class SessionRegistry extends EventEmitter {
 		return agg;
 	}
 
-	setPhaseUsage(
-		taskId: string,
-		phaseRole: string,
-		usage: { input: number; output: number; cacheRead: number },
-	): void {
+	setPhaseUsage(taskId: string, phaseRole: string, usage: { input: number; output: number; cacheRead: number }): void {
 		const p = this.findPhase(taskId, phaseRole);
 		if (!p) return;
 		p.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead };
@@ -398,11 +383,7 @@ export class SessionRegistry extends EventEmitter {
 		this.emit("change", taskId);
 	}
 
-	setPhaseModel(
-		taskId: string,
-		phaseRole: string,
-		modelInfo: { provider?: string; model?: string },
-	): void {
+	setPhaseModel(taskId: string, phaseRole: string, modelInfo: { provider?: string; model?: string }): void {
 		const p = this.findPhase(taskId, phaseRole);
 		if (!p) return;
 		// Only emit when the value actually changes — turn_end fires every
@@ -466,9 +447,7 @@ export class SessionRegistry extends EventEmitter {
 
 	private evictIfNeeded(): void {
 		if (this.sessions.size <= MAX_SESSIONS) return;
-		const sorted = [...this.sessions.entries()].sort(
-			(a, b) => a[1].updatedAt - b[1].updatedAt,
-		);
+		const sorted = [...this.sessions.entries()].sort((a, b) => a[1].updatedAt - b[1].updatedAt);
 		const toRemove = sorted.slice(0, this.sessions.size - MAX_SESSIONS);
 		for (const [id] of toRemove) this.sessions.delete(id);
 	}

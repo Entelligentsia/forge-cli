@@ -18,11 +18,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-
-import { checkMaterialization as checkPlanMaterialization } from "../../../src/extensions/forgecli/plan.js";
-import { checkMaterialization as checkImplementMaterialization } from "../../../src/extensions/forgecli/implement.js";
 import { checkMaterialization as checkEnhanceMaterialization } from "../../../src/extensions/forgecli/enhance.js";
 import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init.js";
+import { checkMaterialization as checkImplementMaterialization } from "../../../src/extensions/forgecli/implement.js";
+import { checkMaterialization as checkPlanMaterialization } from "../../../src/extensions/forgecli/plan.js";
 
 describe("bundled base-pack: Pack-06 materialization markers", () => {
 	const basePackWorkflows = path.join(getBundledPayloadRoot(), ".base-pack", "workflows");

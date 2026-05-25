@@ -8,11 +8,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	type LlmPhaseDescriptor,
 	PHASE_1,
 	PHASE_2,
 	PHASE_3,
 	runLlmPhase,
-	type LlmPhaseDescriptor,
 	type VerifyResult,
 } from "../../../../src/extensions/forgecli/forge-init/phase-descriptors.js";
 
@@ -26,12 +26,14 @@ function rmTmpDir(dir: string): void {
 	fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function makeCtx(overrides: Partial<{
-	confirm: (title: string, body: string) => Promise<boolean>;
-	notify: (msg: string, level: string) => void;
-	input: (title: string, placeholder: string) => Promise<string | null>;
-	setStatus: (cmd: string, status: string | undefined) => void;
-}> = {}): {
+function makeCtx(
+	overrides: Partial<{
+		confirm: (title: string, body: string) => Promise<boolean>;
+		notify: (msg: string, level: string) => void;
+		input: (title: string, placeholder: string) => Promise<string | null>;
+		setStatus: (cmd: string, status: string | undefined) => void;
+	}> = {},
+): {
 	ui: {
 		confirm: (title: string, body: string) => Promise<boolean>;
 		notify: (msg: string, level: string) => void;
@@ -132,7 +134,18 @@ describe("runLlmPhase — happy path", () => {
 		const desc = makeOkDescriptor(1);
 		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, sendToAgent, vi.fn().mockResolvedValue(undefined), () => false);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			sendToAgent,
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
+		);
 
 		expect(sendToAgent).toHaveBeenCalledWith("test prompt");
 	});
@@ -154,7 +167,18 @@ describe("runLlmPhase — happy path", () => {
 		const desc: LlmPhaseDescriptor = { ...makeOkDescriptor(1), postVerify };
 		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, vi.fn(), vi.fn().mockResolvedValue(undefined), () => false);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
+		);
 
 		expect(postVerify).toHaveBeenCalledTimes(1);
 	});
@@ -164,7 +188,18 @@ describe("runLlmPhase — happy path", () => {
 		const desc = makeOkDescriptor(1);
 		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, vi.fn(), vi.fn().mockResolvedValue(undefined), () => false);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
+		);
 
 		expect(fs.existsSync(path.join(tmpDir, ".forge", "init-progress.json"))).toBe(true);
 	});
@@ -191,8 +226,16 @@ describe("runLlmPhase — retry steer", () => {
 		const desc = makeFailDescriptor(1, 1); // fails first, passes on retry
 
 		const result = await runLlmPhase(
-			desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {},
-			sendToAgent, vi.fn().mockResolvedValue(undefined), () => false,
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			sendToAgent,
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
 		);
 
 		expect(result).toBe("ok");
@@ -231,8 +274,16 @@ describe("runLlmPhase — abort: non-interactive mode", () => {
 		const desc = makeFailDescriptor(1, 99); // always fails
 
 		const result = await runLlmPhase(
-			desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {},
-			vi.fn(), vi.fn().mockResolvedValue(undefined), () => true,
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => true,
 		);
 
 		expect(result).toBe("abort");
@@ -243,7 +294,18 @@ describe("runLlmPhase — abort: non-interactive mode", () => {
 		const ctx = makeCtx({ notify });
 		const desc = makeFailDescriptor(1, 99);
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, vi.fn(), vi.fn().mockResolvedValue(undefined), () => true);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => true,
+		);
 
 		expect(notify).toHaveBeenCalledWith(expect.stringContaining("failed non-interactive"), "error");
 	});
@@ -267,8 +329,16 @@ describe("runLlmPhase — abort: interactive confirm-no", () => {
 		const desc = makeFailDescriptor(1, 99);
 
 		const result = await runLlmPhase(
-			desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {},
-			vi.fn(), vi.fn().mockResolvedValue(undefined), () => false,
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
 		);
 
 		expect(result).toBe("abort");
@@ -279,8 +349,16 @@ describe("runLlmPhase — abort: interactive confirm-no", () => {
 		const desc = makeFailDescriptor(1, 99);
 
 		const result = await runLlmPhase(
-			desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {},
-			vi.fn(), vi.fn().mockResolvedValue(undefined), () => false,
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
 		);
 
 		expect(result).toBe("ok");
@@ -291,7 +369,18 @@ describe("runLlmPhase — abort: interactive confirm-no", () => {
 		const ctx = makeCtx({ confirm: vi.fn().mockResolvedValue(true) });
 		const desc: LlmPhaseDescriptor = { ...makeFailDescriptor(1, 99), postVerify };
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, vi.fn(), vi.fn().mockResolvedValue(undefined), () => false);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
+		);
 
 		expect(postVerify).toHaveBeenCalledTimes(1);
 	});
@@ -321,8 +410,16 @@ describe("runLlmPhase — hardFailOnVerifyError", () => {
 		};
 
 		const result = await runLlmPhase(
-			desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {},
-			vi.fn(), vi.fn().mockResolvedValue(undefined), () => false,
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
 		);
 
 		expect(result).toBe("abort");
@@ -334,7 +431,18 @@ describe("runLlmPhase — hardFailOnVerifyError", () => {
 		const desc: LlmPhaseDescriptor = { ...makeOkDescriptor(3), buildPrompt: () => null };
 		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, sendToAgent, vi.fn().mockResolvedValue(undefined), () => false);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			sendToAgent,
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
+		);
 
 		expect(sendToAgent).not.toHaveBeenCalled();
 	});
@@ -349,7 +457,18 @@ describe("runLlmPhase — hardFailOnVerifyError", () => {
 		};
 		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
 
-		await runLlmPhase(desc, ctx as never, tmpDir, tmpDir, tmpDir, "P", {}, vi.fn(), vi.fn().mockResolvedValue(undefined), () => false);
+		await runLlmPhase(
+			desc,
+			ctx as never,
+			tmpDir,
+			tmpDir,
+			tmpDir,
+			"P",
+			{},
+			vi.fn(),
+			vi.fn().mockResolvedValue(undefined),
+			() => false,
+		);
 
 		expect(runDeterministic).toHaveBeenCalledTimes(1);
 	});
@@ -359,7 +478,9 @@ describe("runLlmPhase — hardFailOnVerifyError", () => {
 
 describe("PHASE_1 descriptor", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("has phaseNum=1 and bannerKey='north'", () => {
@@ -395,7 +516,9 @@ describe("PHASE_1 descriptor", () => {
 
 describe("PHASE_2 descriptor", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("has phaseNum=2 and bannerKey='oracle'", () => {
@@ -421,7 +544,11 @@ describe("PHASE_2 descriptor", () => {
 	});
 
 	it("buildRetrySteer references the generate-kb-doc.md rulebook", () => {
-		const steer = PHASE_2.buildRetrySteer({ ok: false, missing: ["engineering/architecture/stack.md"] }, tmpDir, tmpDir);
+		const steer = PHASE_2.buildRetrySteer(
+			{ ok: false, missing: ["engineering/architecture/stack.md"] },
+			tmpDir,
+			tmpDir,
+		);
 		expect(steer).toContain("generate-kb-doc.md");
 	});
 });

@@ -4,10 +4,10 @@
 // transitions to the full ANSI-Shadow logo + keybinding hints once startup
 // tasks are complete. The caller calls setStartupDone() to trigger the swap.
 
-import { Container, Loader, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
-import { keyHint, keyText, rawKeyHint } from "@earendil-works/pi-coding-agent";
 import type { AppKeybinding, Theme } from "@earendil-works/pi-coding-agent";
+import { keyHint, keyText, rawKeyHint } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
+import { Container, Loader, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const LOGO_SEP_WIDTH = 46;
@@ -83,7 +83,10 @@ class ForgeHeaderContainer extends Container implements ForgeHeader {
 			" " +
 			theme.fg("dim", `v${versions.cliVersion}`) +
 			"  " +
-			theme.fg("dim", `(forgecli v${versions.cliVersion}, forge-plugin v${versions.bundledForgeVersion}, pi v${versions.piVersion})`);
+			theme.fg(
+				"dim",
+				`(forgecli v${versions.cliVersion}, forge-plugin v${versions.bundledForgeVersion}, pi v${versions.piVersion})`,
+			);
 
 		const logoBlock = `\n${asciiLogo}\n${sep}\n${versionLine}`;
 
@@ -98,10 +101,7 @@ class ForgeHeaderContainer extends Container implements ForgeHeader {
 			hint("app.suspend", "to suspend"),
 			keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
 			hint("app.thinking.cycle", "to cycle thinking level"),
-			rawKeyHint(
-				`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`,
-				"to cycle models",
-			),
+			rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 			hint("app.model.select", "to select model"),
 			hint("app.tools.expand", "to expand tools"),
 			hint("app.thinking.toggle", "to expand thinking"),
@@ -161,11 +161,7 @@ class ForgeHeaderContainer extends Container implements ForgeHeader {
 	}
 }
 
-export function createForgeHeader(versions: {
-	cliVersion: string;
-	bundledForgeVersion: string;
-	piVersion: string;
-}) {
+export function createForgeHeader(versions: { cliVersion: string; bundledForgeVersion: string; piVersion: string }) {
 	return (tui: TUI, theme: Theme): ForgeHeader => {
 		return new ForgeHeaderContainer(tui, theme, versions);
 	};

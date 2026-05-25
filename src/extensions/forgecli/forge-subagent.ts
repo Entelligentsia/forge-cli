@@ -18,22 +18,22 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import {
+	type AgentSessionEvent,
 	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
 	ModelRegistry,
+	type ModelRegistry as ModelRegistryType,
 	parseFrontmatter,
 	SessionManager,
-	type AgentSessionEvent,
-	type ModelRegistry as ModelRegistryType,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
-import type { Message } from "@earendil-works/pi-ai";
-import { buildProjectOrientation } from "./project-orientation.js";
 import { FORGE_TOOL_DISCIPLINE } from "./forge-tools.js";
+import { buildProjectOrientation } from "./project-orientation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -246,10 +246,13 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// created registry would miss every per-persona model and setModel below
 	// would silently fall back to pi's current model. See FORGE-BUG-001 +
 	// the modelRegistry doc on RunSubagentOptions.
-	const modelRegistry: ModelRegistryType =
-		opts.modelRegistry ?? ModelRegistry.create(authStorage);
+	const modelRegistry: ModelRegistryType = opts.modelRegistry ?? ModelRegistry.create(authStorage);
 	// Refresh in case providers were registered after the session started.
-	try { modelRegistry.refresh?.(); } catch { /* ignore */ }
+	try {
+		modelRegistry.refresh?.();
+	} catch {
+		/* ignore */
+	}
 
 	const { session } = await createAgentSession({
 		sessionManager: SessionManager.inMemory(),
@@ -375,9 +378,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		});
 	} catch (err: unknown) {
 		const e = err as { message?: string };
-		process.stderr.write(
-			`[forge-subagent] transcript export failed (non-fatal): ${e.message ?? "unknown"}\n`,
-		);
+		process.stderr.write(`[forge-subagent] transcript export failed (non-fatal): ${e.message ?? "unknown"}\n`);
 	}
 
 	return result;

@@ -79,7 +79,7 @@ export function loadEnumCatalog(bundleRoot: string): EnumCatalog {
 	if (!fs.existsSync(catalogPath)) {
 		throw new Error(
 			`[catalog-loader] enum-catalog.json not found at ${catalogPath}. ` +
-			"Run 'npm run build' to regenerate the payload bundle.",
+				"Run 'npm run build' to regenerate the payload bundle.",
 		);
 	}
 	try {
@@ -111,7 +111,7 @@ function loadEntityTransitions(bundleRoot: string, entity: "task" | "sprint" | "
 	if (!fs.existsSync(filePath)) {
 		throw new Error(
 			`[catalog-loader] transitions/${entity}.json not found at ${filePath}. ` +
-			"Run 'npm run build' to regenerate the payload bundle.",
+				"Run 'npm run build' to regenerate the payload bundle.",
 		);
 	}
 	try {
@@ -160,64 +160,55 @@ function getCachedTransitions(): AllTransitions {
 }
 
 /** Task status FSM as Set-based lookup (T25 ADR-canonical). Source: enum-catalog. Lazy-loaded. */
-export const TASK_TRANSITIONS: Record<string, Set<string>> = new Proxy(
-	{} as Record<string, Set<string>>,
-	{
-		get(_target, prop: string) {
-			return getCachedTransitions().task[prop];
-		},
-		has(_target, prop: string) {
-			return prop in getCachedTransitions().task;
-		},
-		ownKeys(_target) {
-			return Object.keys(getCachedTransitions().task);
-		},
-		getOwnPropertyDescriptor(_target, prop: string) {
-			const val = getCachedTransitions().task[prop];
-			if (val === undefined) return undefined;
-			return { value: val, writable: false, enumerable: true, configurable: true };
-		},
+export const TASK_TRANSITIONS: Record<string, Set<string>> = new Proxy({} as Record<string, Set<string>>, {
+	get(_target, prop: string) {
+		return getCachedTransitions().task[prop];
 	},
-);
+	has(_target, prop: string) {
+		return prop in getCachedTransitions().task;
+	},
+	ownKeys(_target) {
+		return Object.keys(getCachedTransitions().task);
+	},
+	getOwnPropertyDescriptor(_target, prop: string) {
+		const val = getCachedTransitions().task[prop];
+		if (val === undefined) return undefined;
+		return { value: val, writable: false, enumerable: true, configurable: true };
+	},
+});
 
 /** Sprint status FSM as Set-based lookup (T25 ADR-canonical). Source: enum-catalog. Lazy-loaded. */
-export const SPRINT_TRANSITIONS: Record<string, Set<string>> = new Proxy(
-	{} as Record<string, Set<string>>,
-	{
-		get(_target, prop: string) {
-			return getCachedTransitions().sprint[prop];
-		},
-		has(_target, prop: string) {
-			return prop in getCachedTransitions().sprint;
-		},
-		ownKeys(_target) {
-			return Object.keys(getCachedTransitions().sprint);
-		},
-		getOwnPropertyDescriptor(_target, prop: string) {
-			const val = getCachedTransitions().sprint[prop];
-			if (val === undefined) return undefined;
-			return { value: val, writable: false, enumerable: true, configurable: true };
-		},
+export const SPRINT_TRANSITIONS: Record<string, Set<string>> = new Proxy({} as Record<string, Set<string>>, {
+	get(_target, prop: string) {
+		return getCachedTransitions().sprint[prop];
 	},
-);
+	has(_target, prop: string) {
+		return prop in getCachedTransitions().sprint;
+	},
+	ownKeys(_target) {
+		return Object.keys(getCachedTransitions().sprint);
+	},
+	getOwnPropertyDescriptor(_target, prop: string) {
+		const val = getCachedTransitions().sprint[prop];
+		if (val === undefined) return undefined;
+		return { value: val, writable: false, enumerable: true, configurable: true };
+	},
+});
 
 /** Bug status FSM as Set-based lookup (T25 ADR-canonical). Source: enum-catalog. Lazy-loaded. */
-export const BUG_TRANSITIONS: Record<string, Set<string>> = new Proxy(
-	{} as Record<string, Set<string>>,
-	{
-		get(_target, prop: string) {
-			return getCachedTransitions().bug[prop];
-		},
-		has(_target, prop: string) {
-			return prop in getCachedTransitions().bug;
-		},
-		ownKeys(_target) {
-			return Object.keys(getCachedTransitions().bug);
-		},
-		getOwnPropertyDescriptor(_target, prop: string) {
-			const val = getCachedTransitions().bug[prop];
-			if (val === undefined) return undefined;
-			return { value: val, writable: false, enumerable: true, configurable: true };
-		},
+export const BUG_TRANSITIONS: Record<string, Set<string>> = new Proxy({} as Record<string, Set<string>>, {
+	get(_target, prop: string) {
+		return getCachedTransitions().bug[prop];
 	},
-);
+	has(_target, prop: string) {
+		return prop in getCachedTransitions().bug;
+	},
+	ownKeys(_target) {
+		return Object.keys(getCachedTransitions().bug);
+	},
+	getOwnPropertyDescriptor(_target, prop: string) {
+		const val = getCachedTransitions().bug[prop];
+		if (val === undefined) return undefined;
+		return { value: val, writable: false, enumerable: true, configurable: true };
+	},
+});

@@ -12,8 +12,8 @@
 
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AudienceValue } from "./parsers/workflow-loader.js";
-import { CallerContextStore } from "./subagent/caller-context.js";
 import type { CallerContext } from "./subagent/caller-context.js";
+import { CallerContextStore } from "./subagent/caller-context.js";
 
 export type { CallerContext } from "./subagent/caller-context.js";
 export { CallerContextStore } from "./subagent/caller-context.js";

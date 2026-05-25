@@ -165,7 +165,9 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 					// ctx.ui.confirm returns true/false or undefined (cancel).
 					const answer = await ctx.ui.confirm(params.question, "", opts);
 					if (answer === undefined) {
-						return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
+						return errResult(
+							`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`,
+						);
 					}
 					return okResult(answer ? "Y" : "N");
 				}
@@ -177,7 +179,9 @@ export function registerAskUserTool(pi: ExtensionAPI): void {
 					// ctx.ui.select returns the selected string or undefined (cancel).
 					const answer = await ctx.ui.select(params.question, params.options, opts);
 					if (answer === undefined) {
-						return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
+						return errResult(
+							`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`,
+						);
 					}
 					return okResult(answer);
 				}

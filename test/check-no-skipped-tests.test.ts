@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
  * FORGE-S25-T02 — paired test for tools/check-no-skipped-tests.cjs.
@@ -40,10 +40,7 @@ describe("tools/check-no-skipped-tests.cjs", () => {
 
 	beforeAll(() => {
 		cleanDir = makeFixture();
-		writeFileSync(
-			path.join(cleanDir, "test", "a.test.ts"),
-			`import { it } from "vitest";\nit("clean", () => {});\n`,
-		);
+		writeFileSync(path.join(cleanDir, "test", "a.test.ts"), `import { it } from "vitest";\nit("clean", () => {});\n`);
 
 		skipDir = makeFixture();
 		writeFileSync(
@@ -58,10 +55,7 @@ describe("tools/check-no-skipped-tests.cjs", () => {
 		);
 
 		xitDir = makeFixture();
-		writeFileSync(
-			path.join(xitDir, "test", "d.test.ts"),
-			`xit("excluded", () => {});\n`,
-		);
+		writeFileSync(path.join(xitDir, "test", "d.test.ts"), `xit("excluded", () => {});\n`);
 
 		todoDir = makeFixture();
 		writeFileSync(

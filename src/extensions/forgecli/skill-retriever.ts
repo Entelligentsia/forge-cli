@@ -30,8 +30,8 @@
 import lunr from "lunr";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ───────────────────────────────────────────────────────
 
@@ -164,11 +164,7 @@ function safeQueryTokens(query: string): string[] {
  * for fixed (corpus, query) pairs. Returns `[]` when no token in the query
  * is present in any indexed field.
  */
-export function retrieveTopK(
-	index: SkillIndex,
-	query: string,
-	k: number,
-): RetrievalHit[] {
+export function retrieveTopK(index: SkillIndex, query: string, k: number): RetrievalHit[] {
 	if (!Number.isInteger(k) || k <= 0) {
 		throw new Error(`retrieveTopK: k must be a positive integer, got ${k}`);
 	}
@@ -224,10 +220,7 @@ function isoCompact(iso: string): string {
  * counts. Never throws on subprocess failure — the failure is surfaced via
  * the returned counter and stderr text (IL7 — explicit, not silent).
  */
-export function emitSkillUsageEvents(
-	hits: readonly RetrievalHit[],
-	runtime: EmitRuntime,
-): EmitResult {
+export function emitSkillUsageEvents(hits: readonly RetrievalHit[], runtime: EmitRuntime): EmitResult {
 	// FORGE-S24-T12 — gated rollout. Default off ⇒ zero events, zero
 	// subprocess calls, byte-identical to pre-FORGE-S24 behaviour.
 	if (!isSkillCurationEnabled(runtime.cwd)) {
@@ -242,8 +235,7 @@ export function emitSkillUsageEvents(
 
 	for (let i = 0; i < hits.length; i++) {
 		const hit = hits[i];
-		const eventId =
-			`${isoCompact(runtime.startTimestamp)}_${runtime.taskId}_skill-retriever_skill_usage_${i}_${hit.skillId}`;
+		const eventId = `${isoCompact(runtime.startTimestamp)}_${runtime.taskId}_skill-retriever_skill_usage_${i}_${hit.skillId}`;
 
 		const event: Record<string, unknown> = {
 			eventId,

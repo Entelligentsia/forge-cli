@@ -124,10 +124,7 @@ export function registerStoreRepair(pi: ExtensionAPI, options: RegisterStoreRepa
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify(
-					"× forge:store-repair — no Forge project at cwd; run /forge:init to bootstrap",
-					"warning",
-				);
+				ctx.ui.notify("× forge:store-repair — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 
@@ -156,10 +153,7 @@ export function registerStoreRepair(pi: ExtensionAPI, options: RegisterStoreRepa
 				parsed = parseStoreRepairArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(
-					`× forge:store-repair — failed to parse args: ${e.message ?? "unknown"}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:store-repair — failed to parse args: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 

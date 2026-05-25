@@ -17,16 +17,16 @@
 //   4. The value stamped as paths.forgeRoot in Phase-4 is the bundled payload root
 //      (getBundledPayloadRoot()), and ${stamp}/tools/store-cli.cjs resolves
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // We test the exported helpers directly.
 // They are exported from forge-init.ts for test access.
 import {
-	resolveBundleToolsRoot,
 	getBundledPayloadRoot,
 	isPiRuntime,
+	resolveBundleToolsRoot,
 } from "../../../src/extensions/forgecli/forge-init.js";
 
 // ── Direct helper tests ───────────────────────────────────────────────────────
@@ -58,10 +58,12 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 vi.mock("node:child_process", () => ({
-	execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
-		if (typeof cb === "function") cb(null, "", "");
-		return { pid: 1 };
-	}),
+	execFile: vi.fn(
+		(_cmd: string, _args: string[], _opts: unknown, cb: (err: null, stdout: string, stderr: string) => void) => {
+			if (typeof cb === "function") cb(null, "", "");
+			return { pid: 1 };
+		},
+	),
 	execFileSync: vi.fn(),
 }));
 
@@ -155,13 +157,11 @@ describe("FORGE-BUG-024: Phase-4 stamps pi-aware paths.forgeRoot", () => {
 
 		const execFileCalls: string[][] = [];
 		const execFileMod = await import("node:child_process");
-		vi.mocked(execFileMod.execFile).mockImplementation(
-			(cmd: string, args: string[], _opts: unknown, cb: unknown) => {
-				execFileCalls.push([cmd, ...(args as string[])]);
-				if (typeof cb === "function") (cb as (err: null, stdout: string, stderr: string) => void)(null, "", "");
-				return { pid: 1 } as ReturnType<typeof import("node:child_process").execFile>;
-			},
-		);
+		vi.mocked(execFileMod.execFile).mockImplementation((cmd: string, args: string[], _opts: unknown, cb: unknown) => {
+			execFileCalls.push([cmd, ...(args as string[])]);
+			if (typeof cb === "function") (cb as (err: null, stdout: string, stderr: string) => void)(null, "", "");
+			return { pid: 1 } as ReturnType<typeof import("node:child_process").execFile>;
+		});
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);

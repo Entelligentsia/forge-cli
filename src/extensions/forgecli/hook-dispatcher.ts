@@ -48,11 +48,13 @@
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import * as path from "node:path";
+
 // FORGE-S25-T27: Re-export SYNTHETIC_EVENT_TYPES and SyntheticEventType from lib/catalog-types.ts.
 // This makes the canonical list available to hook handlers that enumerate event types
 // (test utilities, post-init-hook.ts). Behavior of registerHookDispatcher is unchanged.
 // Source of truth: lib/catalog-types.ts (round-2-validation.md finding 37).
 export { SYNTHETIC_EVENT_TYPES, type SyntheticEventType } from "./lib/catalog-types.js";
+
 import type {
 	BashToolCallEvent,
 	ExtensionAPI,
@@ -63,10 +65,10 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { matchForgePermission } from "./hooks/forge-permissions.js";
+import { buildTriageMessage, isForgeRelated } from "./hooks/triage-error.js";
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { applyPiEdits, checkWriteGuard } from "./hooks/write-guard.js";
-import { buildTriageMessage, isForgeRelated } from "./hooks/triage-error.js";
-import { matchForgePermission } from "./hooks/forge-permissions.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
 

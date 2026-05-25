@@ -49,10 +49,10 @@ vi.mock("../../../src/extensions/forgecli/forge-init.js", () => ({
 }));
 
 import {
-	parseCalibrateFlags,
-	computeCurrentHash,
 	categorizeDrift,
+	computeCurrentHash,
 	extractPatchProposals,
+	parseCalibrateFlags,
 	registerCalibrate,
 } from "../../../src/extensions/forgecli/calibrate.js";
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
@@ -319,7 +319,10 @@ describe("registerCalibrate — 4-phase integration (non-interactive, mocked sub
 				},
 			} as unknown as import("@earendil-works/pi-coding-agent").ExtensionCommandContext;
 
-			type CommandHandler = (args: string, ctx: import("@earendil-works/pi-coding-agent").ExtensionCommandContext) => Promise<void>;
+			type CommandHandler = (
+				args: string,
+				ctx: import("@earendil-works/pi-coding-agent").ExtensionCommandContext,
+			) => Promise<void>;
 			const registeredCommands: Array<{ name: string; handler: CommandHandler }> = [];
 			const pi = {
 				registerCommand: vi.fn((name: string, opts: { handler: CommandHandler }) => {
@@ -343,9 +346,10 @@ describe("registerCalibrate — 4-phase integration (non-interactive, mocked sub
 			}
 
 			// Verify calibrationBaseline was updated (hash no longer all-zeros)
-			const updatedCfg = JSON.parse(
-				fs.readFileSync(path.join(proj, ".forge", "config.json"), "utf8"),
-			) as { calibrationBaseline?: { masterIndexHash?: string }; calibrationHistory?: unknown[] };
+			const updatedCfg = JSON.parse(fs.readFileSync(path.join(proj, ".forge", "config.json"), "utf8")) as {
+				calibrationBaseline?: { masterIndexHash?: string };
+				calibrationHistory?: unknown[];
+			};
 
 			expect(updatedCfg.calibrationBaseline?.masterIndexHash).not.toBe(
 				"0000000000000000000000000000000000000000000000000000000000000000",
@@ -364,7 +368,6 @@ describe("registerCalibrate — 4-phase integration (non-interactive, mocked sub
 		}
 	});
 });
-
 
 // ── N-H-A regression: isNonInteractive imported from run-task (FORGE-S25-T18) ──
 

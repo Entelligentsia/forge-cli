@@ -45,11 +45,7 @@ export interface StoreQueryResult {
  * Returns raw stdout for display. Does NOT JSON-parse — caller renders as-is.
  * Exported so orchestrators can call directly without going through sendUserMessage.
  */
-export async function runStoreQuery(
-	args: string,
-	forgeRoot: string,
-	cwd: string,
-): Promise<StoreQueryResult> {
+export async function runStoreQuery(args: string, forgeRoot: string, cwd: string): Promise<StoreQueryResult> {
 	const trimmed = args.trim();
 	const toolDir = resolveToolDir(forgeRoot);
 	const storeCliPath = path.join(toolDir, "store-cli.cjs");
@@ -105,10 +101,7 @@ export function registerStoreQuery(pi: ExtensionAPI, opts: { forgeRoot: string |
 
 			// Outside-project guard
 			if (!opts.forgeRoot) {
-				ctx.ui.notify(
-					"× forge:store-query — not inside a Forge project. Run /forge:init first.",
-					"error",
-				);
+				ctx.ui.notify("× forge:store-query — not inside a Forge project. Run /forge:init first.", "error");
 				return;
 			}
 

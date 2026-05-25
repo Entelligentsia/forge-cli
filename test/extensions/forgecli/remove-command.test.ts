@@ -6,10 +6,10 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-	parseRemoveArgs,
 	composeRemoveKickoff,
-	registerRemoveCommand,
 	type ParsedRemoveArgs,
+	parseRemoveArgs,
+	registerRemoveCommand,
 } from "../../../src/extensions/forgecli/remove-command.js";
 
 function makePi() {
@@ -116,10 +116,7 @@ describe("registerRemoveCommand", () => {
 		const ctx = makeCtx();
 		const handler = pi.commands.get("forge:remove")?.handler;
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("command file not found"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
 
 	it("sends kickoff with --apply instruction when --apply provided", async () => {

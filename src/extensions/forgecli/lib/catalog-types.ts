@@ -62,12 +62,7 @@ export type SprintStatus = (typeof SPRINT_STATUS_VALUES)[number];
 //
 // Source: forge/forge/schemas/bug.schema.json properties.status.enum
 
-export const BUG_STATUS_VALUES = [
-	"reported",
-	"triaged",
-	"in-progress",
-	"fixed",
-] as const satisfies string[];
+export const BUG_STATUS_VALUES = ["reported", "triaged", "in-progress", "fixed"] as const satisfies string[];
 
 export type BugStatus = (typeof BUG_STATUS_VALUES)[number];
 

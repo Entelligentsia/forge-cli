@@ -98,10 +98,7 @@ export function registerQuizAgent(pi: ExtensionAPI, options: RegisterQuizAgentOp
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify(
-					"× forge:quiz-agent — no Forge project at cwd; run /forge:init to bootstrap",
-					"warning",
-				);
+				ctx.ui.notify("× forge:quiz-agent — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 

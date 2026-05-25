@@ -78,7 +78,11 @@ function scaffoldProject(opts: ScaffoldOpts = {}): string {
 	);
 
 	if (!opts.omitWorkflow) {
-		fs.writeFileSync(path.join(proj, ".forge", "workflows", "plan_task.md"), opts.workflowMd ?? FULL_WORKFLOW, "utf8");
+		fs.writeFileSync(
+			path.join(proj, ".forge", "workflows", "plan_task.md"),
+			opts.workflowMd ?? FULL_WORKFLOW,
+			"utf8",
+		);
 	}
 
 	if (!opts.omitPersona) {

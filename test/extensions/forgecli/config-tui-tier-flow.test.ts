@@ -8,398 +8,410 @@
 // - Pick all three → 9 entries; verify schema-valid
 
 import { describe, expect, it } from "vitest";
+import type { ConfigLayer } from "../../../src/extensions/forgecli/config-layer.js";
 import {
-  initialState,
-  reducer,
-  type ConfigTuiState,
-  getTierAssignment,
-  getAllTierAssignments,
+	type ConfigTuiState,
+	getAllTierAssignments,
+	getTierAssignment,
+	initialState,
+	reducer,
 } from "../../../src/extensions/forgecli/config-tui/state.js";
 import { TIER_PERSONAS, type Tier } from "../../../src/extensions/forgecli/config-tui/tier-meta.js";
-import type { ConfigLayer } from "../../../src/extensions/forgecli/config-layer.js";
 
 function makeState(): ConfigTuiState {
-  return initialState({
-    global: null,
-    project: null,
-    cwd: "/home/x/proj",
-    personaCatalogue: [
-      "architect", "supervisor",
-      "engineer", "bug-fixer", "qa-engineer", "product-manager",
-      "collator", "librarian", "orchestrator",
-    ],
-    pipelineCatalogue: ["default"],
-    availableModels: [
-      { provider: "anthropic", id: "claude-opus-4-5" },
-      { provider: "anthropic", id: "claude-sonnet-4-6" },
-      { provider: "ollama", id: "qwen2.5:0.5b" },
-    ],
-    authenticatedProviders: ["anthropic", "ollama"],
-  });
+	return initialState({
+		global: null,
+		project: null,
+		cwd: "/home/x/proj",
+		personaCatalogue: [
+			"architect",
+			"supervisor",
+			"engineer",
+			"bug-fixer",
+			"qa-engineer",
+			"product-manager",
+			"collator",
+			"librarian",
+			"orchestrator",
+		],
+		pipelineCatalogue: ["default"],
+		availableModels: [
+			{ provider: "anthropic", id: "claude-opus-4-5" },
+			{ provider: "anthropic", id: "claude-sonnet-4-6" },
+			{ provider: "ollama", id: "qwen2.5:0.5b" },
+		],
+		authenticatedProviders: ["anthropic", "ollama"],
+	});
 }
 
 // ── Tier-picker flow tests ───────────────────────────────────────────────────
 
 describe("Phase B — tier-picker flow", () => {
-  it("select-tier pushes tier-picker view", () => {
-    let s = makeState();
-    s = reducer(s, { kind: "select-tier", tier: "heavy" });
-    const top = s.view[s.view.length - 1];
-    expect(top.kind).toBe("tier-picker");
-    if (top.kind === "tier-picker") {
-      expect(top.tier).toBe("heavy");
-      expect(top.step).toBe("pick-provider");
-    }
-  });
+	it("select-tier pushes tier-picker view", () => {
+		let s = makeState();
+		s = reducer(s, { kind: "select-tier", tier: "heavy" });
+		const top = s.view[s.view.length - 1];
+		expect(top.kind).toBe("tier-picker");
+		if (top.kind === "tier-picker") {
+			expect(top.tier).toBe("heavy");
+			expect(top.step).toBe("pick-provider");
+		}
+	});
 
-  it("set-tier-provider advances tier-picker to pick-model", () => {
-    let s = makeState();
-    s = reducer(s, { kind: "select-tier", tier: "heavy" });
-    s = reducer(s, { kind: "set-tier-provider", tier: "heavy", provider: "anthropic" });
-    const top = s.view[s.view.length - 1];
-    expect(top.kind).toBe("tier-picker");
-    if (top.kind === "tier-picker") {
-      expect(top.step).toBe("pick-model");
-      expect(top.provider).toBe("anthropic");
-    }
-  });
+	it("set-tier-provider advances tier-picker to pick-model", () => {
+		let s = makeState();
+		s = reducer(s, { kind: "select-tier", tier: "heavy" });
+		s = reducer(s, { kind: "set-tier-provider", tier: "heavy", provider: "anthropic" });
+		const top = s.view[s.view.length - 1];
+		expect(top.kind).toBe("tier-picker");
+		if (top.kind === "tier-picker") {
+			expect(top.step).toBe("pick-model");
+			expect(top.provider).toBe("anthropic");
+		}
+	});
 
-  it("commit-tier-model for Heavy writes 2 persona entries (architect, supervisor)", () => {
-    let s = makeState();
-    s = reducer(s, { kind: "select-tier", tier: "heavy" });
-    s = reducer(s, { kind: "set-tier-provider", tier: "heavy", provider: "anthropic" });
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: "global",
-    });
+	it("commit-tier-model for Heavy writes 2 persona entries (architect, supervisor)", () => {
+		let s = makeState();
+		s = reducer(s, { kind: "select-tier", tier: "heavy" });
+		s = reducer(s, { kind: "set-tier-provider", tier: "heavy", provider: "anthropic" });
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: "global",
+		});
 
-    // Should pop tier-picker, return to tier-menu
-    const top = s.view[s.view.length - 1];
-    expect(top.kind).toBe("tier-menu");
+		// Should pop tier-picker, return to tier-menu
+		const top = s.view[s.view.length - 1];
+		expect(top.kind).toBe("tier-menu");
 
-    // Buffer should have architect + supervisor set
-    const personaModels = s.buffer.global["persona-models"] ?? {};
-    expect(personaModels.architect).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
-    expect(personaModels.supervisor).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
-    expect(Object.keys(personaModels).length).toBe(2);
+		// Buffer should have architect + supervisor set
+		const personaModels = s.buffer.global["persona-models"] ?? {};
+		expect(personaModels.architect).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
+		expect(personaModels.supervisor).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
+		expect(Object.keys(personaModels).length).toBe(2);
 
-    // Dirty flag
-    expect(s.dirty).toBe(true);
+		// Dirty flag
+		expect(s.dirty).toBe(true);
 
-    // Tier selector should reflect set
-    const assignment = getTierAssignment(s, "heavy");
-    expect(assignment.status).toBe("set");
-    if (assignment.status === "set") {
-      expect(assignment.provider).toBe("anthropic");
-      expect(assignment.model).toBe("claude-opus-4-5");
-      expect(assignment.layer).toBe("global");
-    }
-  });
+		// Tier selector should reflect set
+		const assignment = getTierAssignment(s, "heavy");
+		expect(assignment.status).toBe("set");
+		if (assignment.status === "set") {
+			expect(assignment.provider).toBe("anthropic");
+			expect(assignment.model).toBe("claude-opus-4-5");
+			expect(assignment.layer).toBe("global");
+		}
+	});
 
-  it("commit-tier-model for Standard writes 4 persona entries", () => {
-    let s = makeState();
-    s = reducer(s, { kind: "select-tier", tier: "standard" });
-    s = reducer(s, { kind: "set-tier-provider", tier: "standard", provider: "anthropic" });
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "standard",
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      layer: "global",
-    });
+	it("commit-tier-model for Standard writes 4 persona entries", () => {
+		let s = makeState();
+		s = reducer(s, { kind: "select-tier", tier: "standard" });
+		s = reducer(s, { kind: "set-tier-provider", tier: "standard", provider: "anthropic" });
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "standard",
+			provider: "anthropic",
+			model: "claude-sonnet-4-6",
+			layer: "global",
+		});
 
-    const personaModels = s.buffer.global["persona-models"] ?? {};
-    const expectedPersonas = ["engineer", "bug-fixer", "qa-engineer", "product-manager"];
-    for (const p of expectedPersonas) {
-      expect(personaModels[p]).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
-    }
-    expect(Object.keys(personaModels).length).toBe(4);
+		const personaModels = s.buffer.global["persona-models"] ?? {};
+		const expectedPersonas = ["engineer", "bug-fixer", "qa-engineer", "product-manager"];
+		for (const p of expectedPersonas) {
+			expect(personaModels[p]).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
+		}
+		expect(Object.keys(personaModels).length).toBe(4);
 
-    // Standard tier set
-    expect(getTierAssignment(s, "standard").status).toBe("set");
-    // Heavy and Light still unset
-    expect(getTierAssignment(s, "heavy").status).toBe("unset");
-    expect(getTierAssignment(s, "light").status).toBe("unset");
-  });
+		// Standard tier set
+		expect(getTierAssignment(s, "standard").status).toBe("set");
+		// Heavy and Light still unset
+		expect(getTierAssignment(s, "heavy").status).toBe("unset");
+		expect(getTierAssignment(s, "light").status).toBe("unset");
+	});
 
-  it("commit-tier-model for Light writes 3 persona entries", () => {
-    let s = makeState();
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "light",
-      provider: "ollama",
-      model: "qwen2.5:0.5b",
-      layer: "global",
-    });
+	it("commit-tier-model for Light writes 3 persona entries", () => {
+		let s = makeState();
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "light",
+			provider: "ollama",
+			model: "qwen2.5:0.5b",
+			layer: "global",
+		});
 
-    const personaModels = s.buffer.global["persona-models"] ?? {};
-    const expectedPersonas = ["collator", "librarian", "orchestrator"];
-    for (const p of expectedPersonas) {
-      expect(personaModels[p]).toEqual({ provider: "ollama", model: "qwen2.5:0.5b" });
-    }
-    expect(Object.keys(personaModels).length).toBe(3);
-  });
+		const personaModels = s.buffer.global["persona-models"] ?? {};
+		const expectedPersonas = ["collator", "librarian", "orchestrator"];
+		for (const p of expectedPersonas) {
+			expect(personaModels[p]).toEqual({ provider: "ollama", model: "qwen2.5:0.5b" });
+		}
+		expect(Object.keys(personaModels).length).toBe(3);
+	});
 
-  it("pick all three tiers → 9 persona entries total", () => {
-    let s = makeState();
+	it("pick all three tiers → 9 persona entries total", () => {
+		let s = makeState();
 
-    // Pick Heavy
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: "global",
-    });
+		// Pick Heavy
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: "global",
+		});
 
-    // Pick Standard
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "standard",
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      layer: "global",
-    });
+		// Pick Standard
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "standard",
+			provider: "anthropic",
+			model: "claude-sonnet-4-6",
+			layer: "global",
+		});
 
-    // Pick Light
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "light",
-      provider: "ollama",
-      model: "qwen2.5:0.5b",
-      layer: "global",
-    });
+		// Pick Light
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "light",
+			provider: "ollama",
+			model: "qwen2.5:0.5b",
+			layer: "global",
+		});
 
-    const personaModels = s.buffer.global["persona-models"] ?? {};
-    const allKeys = Object.keys(personaModels);
-    expect(allKeys.length).toBe(9);
+		const personaModels = s.buffer.global["persona-models"] ?? {};
+		const allKeys = Object.keys(personaModels);
+		expect(allKeys.length).toBe(9);
 
-    // All 9 personas accounted for
-    const all9 = new Set([
-      "architect", "supervisor",
-      "engineer", "bug-fixer", "qa-engineer", "product-manager",
-      "collator", "librarian", "orchestrator",
-    ]);
-    expect(new Set(allKeys)).toEqual(all9);
+		// All 9 personas accounted for
+		const all9 = new Set([
+			"architect",
+			"supervisor",
+			"engineer",
+			"bug-fixer",
+			"qa-engineer",
+			"product-manager",
+			"collator",
+			"librarian",
+			"orchestrator",
+		]);
+		expect(new Set(allKeys)).toEqual(all9);
 
-    // Heavy tier should show heavy model
-    const heavyAssignment = getTierAssignment(s, "heavy");
-    expect(heavyAssignment.status).toBe("set");
-    if (heavyAssignment.status === "set") {
-      expect(heavyAssignment.provider).toBe("anthropic");
-      expect(heavyAssignment.model).toBe("claude-opus-4-5");
-    }
+		// Heavy tier should show heavy model
+		const heavyAssignment = getTierAssignment(s, "heavy");
+		expect(heavyAssignment.status).toBe("set");
+		if (heavyAssignment.status === "set") {
+			expect(heavyAssignment.provider).toBe("anthropic");
+			expect(heavyAssignment.model).toBe("claude-opus-4-5");
+		}
 
-    // Standard tier
-    const standardAssignment = getTierAssignment(s, "standard");
-    expect(standardAssignment.status).toBe("set");
-    if (standardAssignment.status === "set") {
-      expect(standardAssignment.provider).toBe("anthropic");
-      expect(standardAssignment.model).toBe("claude-sonnet-4-6");
-    }
+		// Standard tier
+		const standardAssignment = getTierAssignment(s, "standard");
+		expect(standardAssignment.status).toBe("set");
+		if (standardAssignment.status === "set") {
+			expect(standardAssignment.provider).toBe("anthropic");
+			expect(standardAssignment.model).toBe("claude-sonnet-4-6");
+		}
 
-    // Light tier
-    const lightAssignment = getTierAssignment(s, "light");
-    expect(lightAssignment.status).toBe("set");
-    if (lightAssignment.status === "set") {
-      expect(lightAssignment.provider).toBe("ollama");
-      expect(lightAssignment.model).toBe("qwen2.5:0.5b");
-    }
+		// Light tier
+		const lightAssignment = getTierAssignment(s, "light");
+		expect(lightAssignment.status).toBe("set");
+		if (lightAssignment.status === "set") {
+			expect(lightAssignment.provider).toBe("ollama");
+			expect(lightAssignment.model).toBe("qwen2.5:0.5b");
+		}
 
-    // Verify getAllTierAssignments reflects all three
-    const all = getAllTierAssignments(s);
-    expect(all.every((a) => a.assignment.status === "set")).toBe(true);
-  });
+		// Verify getAllTierAssignments reflects all three
+		const all = getAllTierAssignments(s);
+		expect(all.every((a) => a.assignment.status === "set")).toBe(true);
+	});
 
-  it("commit to project layer writes to project buffer", () => {
-    let s = makeState();
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: "project",
-    });
+	it("commit to project layer writes to project buffer", () => {
+		let s = makeState();
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: "project",
+		});
 
-    // Should be in project, not global
-    expect(s.buffer.project["persona-models"]?.architect).toEqual({
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-    });
-    expect(s.buffer.project["persona-models"]?.supervisor).toEqual({
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-    });
-    expect(s.buffer.global["persona-models"]).toBeUndefined();
+		// Should be in project, not global
+		expect(s.buffer.project["persona-models"]?.architect).toEqual({
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+		});
+		expect(s.buffer.project["persona-models"]?.supervisor).toEqual({
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+		});
+		expect(s.buffer.global["persona-models"]).toBeUndefined();
 
-    // Selector reflects project layer
-    const assignment = getTierAssignment(s, "heavy");
-    expect(assignment.status).toBe("set");
-    if (assignment.status === "set") {
-      expect(assignment.layer).toBe("project");
-    }
-  });
+		// Selector reflects project layer
+		const assignment = getTierAssignment(s, "heavy");
+		expect(assignment.status).toBe("set");
+		if (assignment.status === "set") {
+			expect(assignment.layer).toBe("project");
+		}
+	});
 
-  it("re-picking a tier overwrites previous persona entries", () => {
-    let s = makeState();
+	it("re-picking a tier overwrites previous persona entries", () => {
+		let s = makeState();
 
-    // First: Heavy = anthropic:claude-opus-4-5
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: "global",
-    });
+		// First: Heavy = anthropic:claude-opus-4-5
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: "global",
+		});
 
-    // Then: Heavy = ollama:qwen2.5:0.5b (change mind)
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "ollama",
-      model: "qwen2.5:0.5b",
-      layer: "global",
-    });
+		// Then: Heavy = ollama:qwen2.5:0.5b (change mind)
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "ollama",
+			model: "qwen2.5:0.5b",
+			layer: "global",
+		});
 
-    const personaModels = s.buffer.global["persona-models"] ?? {};
-    expect(personaModels.architect).toEqual({ provider: "ollama", model: "qwen2.5:0.5b" });
-    expect(personaModels.supervisor).toEqual({ provider: "ollama", model: "qwen2.5:0.5b" });
+		const personaModels = s.buffer.global["persona-models"] ?? {};
+		expect(personaModels.architect).toEqual({ provider: "ollama", model: "qwen2.5:0.5b" });
+		expect(personaModels.supervisor).toEqual({ provider: "ollama", model: "qwen2.5:0.5b" });
 
-    const assignment = getTierAssignment(s, "heavy");
-    expect(assignment.status).toBe("set");
-    if (assignment.status === "set") {
-      expect(assignment.provider).toBe("ollama");
-    }
-  });
+		const assignment = getTierAssignment(s, "heavy");
+		expect(assignment.status).toBe("set");
+		if (assignment.status === "set") {
+			expect(assignment.provider).toBe("ollama");
+		}
+	});
 
-  it("commit-tier-model pops tier-picker view back to tier-menu", () => {
-    let s = makeState();
-    expect(s.view[s.view.length - 1].kind).toBe("tier-menu");
+	it("commit-tier-model pops tier-picker view back to tier-menu", () => {
+		let s = makeState();
+		expect(s.view[s.view.length - 1].kind).toBe("tier-menu");
 
-    s = reducer(s, { kind: "select-tier", tier: "heavy" });
-    expect(s.view[s.view.length - 1].kind).toBe("tier-picker");
+		s = reducer(s, { kind: "select-tier", tier: "heavy" });
+		expect(s.view[s.view.length - 1].kind).toBe("tier-picker");
 
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: "global",
-    });
-    expect(s.view[s.view.length - 1].kind).toBe("tier-menu");
-  });
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: "global",
+		});
+		expect(s.view[s.view.length - 1].kind).toBe("tier-menu");
+	});
 
-  it("schema-valid: persona-model values are {provider, model} objects", () => {
-    let s = makeState();
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: "global",
-    });
+	it("schema-valid: persona-model values are {provider, model} objects", () => {
+		let s = makeState();
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: "global",
+		});
 
-    const personaModels = s.buffer.global["persona-models"] ?? {};
-    for (const [key, val] of Object.entries(personaModels)) {
-      expect(typeof key).toBe("string");
-      expect(val).toHaveProperty("provider");
-      expect(val).toHaveProperty("model");
-      expect(typeof (val as Record<string, unknown>).provider).toBe("string");
-      expect(typeof (val as Record<string, unknown>).model).toBe("string");
-    }
-  });
+		const personaModels = s.buffer.global["persona-models"] ?? {};
+		for (const [key, val] of Object.entries(personaModels)) {
+			expect(typeof key).toBe("string");
+			expect(val).toHaveProperty("provider");
+			expect(val).toHaveProperty("model");
+			expect(typeof (val as Record<string, unknown>).provider).toBe("string");
+			expect(typeof (val as Record<string, unknown>).model).toBe("string");
+		}
+	});
 });
 
 describe("Phase B — toggle-scope flow", () => {
-  it("toggle-scope switches between global and project", () => {
-    let s = makeState();
-    // Default scope in a project is "project"
-    expect(s.scope).toBe("project");
+	it("toggle-scope switches between global and project", () => {
+		let s = makeState();
+		// Default scope in a project is "project"
+		expect(s.scope).toBe("project");
 
-    s = reducer(s, { kind: "toggle-scope" });
-    expect(s.scope).toBe("global");
+		s = reducer(s, { kind: "toggle-scope" });
+		expect(s.scope).toBe("global");
 
-    s = reducer(s, { kind: "toggle-scope" });
-    expect(s.scope).toBe("project");
-  });
+		s = reducer(s, { kind: "toggle-scope" });
+		expect(s.scope).toBe("project");
+	});
 
-  it("scope determines which layer commit-tier-model writes to", () => {
-    let s = makeState();
-    // Start in project scope
-    expect(s.scope).toBe("project");
+	it("scope determines which layer commit-tier-model writes to", () => {
+		let s = makeState();
+		// Start in project scope
+		expect(s.scope).toBe("project");
 
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "heavy",
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      layer: s.scope,
-    });
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "heavy",
+			provider: "anthropic",
+			model: "claude-opus-4-5",
+			layer: s.scope,
+		});
 
-    // Written to project layer
-    expect(s.buffer.project["persona-models"]?.architect).toBeDefined();
-    expect(s.buffer.global["persona-models"]).toBeUndefined();
+		// Written to project layer
+		expect(s.buffer.project["persona-models"]?.architect).toBeDefined();
+		expect(s.buffer.global["persona-models"]).toBeUndefined();
 
-    // Toggle to global and commit Standard
-    s = reducer(s, { kind: "toggle-scope" });
-    s = reducer(s, {
-      kind: "commit-tier-model",
-      tier: "standard",
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      layer: s.scope,
-    });
+		// Toggle to global and commit Standard
+		s = reducer(s, { kind: "toggle-scope" });
+		s = reducer(s, {
+			kind: "commit-tier-model",
+			tier: "standard",
+			provider: "anthropic",
+			model: "claude-sonnet-4-6",
+			layer: s.scope,
+		});
 
-    // Standard personas in global, heavy in project
-    expect(s.buffer.global["persona-models"]?.engineer).toBeDefined();
-    expect(s.buffer.project["persona-models"]?.architect).toBeDefined();
-  });
+		// Standard personas in global, heavy in project
+		expect(s.buffer.global["persona-models"]?.engineer).toBeDefined();
+		expect(s.buffer.project["persona-models"]?.architect).toBeDefined();
+	});
 });
 
 // N-B-E: initialState forwards configErrors from InitOptions into ConfigTuiState (Decision 9).
 describe("N-B-E: configErrors forwarded from InitOptions to ConfigTuiState", () => {
-  it("configErrors is null when no errors provided", () => {
-    const s = initialState({
-      global: null,
-      project: null,
-      cwd: "/home/x/proj",
-      personaCatalogue: ["engineer"],
-      pipelineCatalogue: null,
-      availableModels: [],
-      authenticatedProviders: [],
-    });
-    expect(s.configErrors).toBeNull();
-  });
+	it("configErrors is null when no errors provided", () => {
+		const s = initialState({
+			global: null,
+			project: null,
+			cwd: "/home/x/proj",
+			personaCatalogue: ["engineer"],
+			pipelineCatalogue: null,
+			availableModels: [],
+			authenticatedProviders: [],
+		});
+		expect(s.configErrors).toBeNull();
+	});
 
-  it("configErrors is null when empty array provided", () => {
-    const s = initialState({
-      global: null,
-      project: null,
-      cwd: "/home/x/proj",
-      personaCatalogue: ["engineer"],
-      pipelineCatalogue: null,
-      availableModels: [],
-      authenticatedProviders: [],
-      configErrors: [],
-    });
-    expect(s.configErrors).toBeNull();
-  });
+	it("configErrors is null when empty array provided", () => {
+		const s = initialState({
+			global: null,
+			project: null,
+			cwd: "/home/x/proj",
+			personaCatalogue: ["engineer"],
+			pipelineCatalogue: null,
+			availableModels: [],
+			authenticatedProviders: [],
+			configErrors: [],
+		});
+		expect(s.configErrors).toBeNull();
+	});
 
-  it("passes configErrors through to state when non-empty", () => {
-    const errors = ["forge-cli global config schema error: /persona-models/engineer must be object"];
-    const s = initialState({
-      global: null,
-      project: null,
-      cwd: "/home/x/proj",
-      personaCatalogue: ["engineer"],
-      pipelineCatalogue: null,
-      availableModels: [],
-      authenticatedProviders: [],
-      configErrors: errors,
-    });
-    expect(s.configErrors).toEqual(errors);
-  });
+	it("passes configErrors through to state when non-empty", () => {
+		const errors = ["forge-cli global config schema error: /persona-models/engineer must be object"];
+		const s = initialState({
+			global: null,
+			project: null,
+			cwd: "/home/x/proj",
+			personaCatalogue: ["engineer"],
+			pipelineCatalogue: null,
+			availableModels: [],
+			authenticatedProviders: [],
+			configErrors: errors,
+		});
+		expect(s.configErrors).toEqual(errors);
+	});
 });

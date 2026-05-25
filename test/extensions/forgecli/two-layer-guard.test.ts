@@ -21,10 +21,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
-
 const PKG_ROOT = path.resolve(__dirname, "../../..");
 const BUILD_PAYLOAD_SCRIPT = path.join(PKG_ROOT, "scripts/build-payload.cjs");
-
 
 /**
  * Strip single-line comments (// …) from a line.
@@ -53,7 +51,6 @@ function stripComments(source: string): string {
 		.join("\n");
 }
 
-
 describe("two-layer-guard — build-payload.cjs source-path invariant", () => {
 	let sourceWithoutComments: string;
 
@@ -69,9 +66,7 @@ describe("two-layer-guard — build-payload.cjs source-path invariant", () => {
 		// We tolerate the word "engineering" in identifiers (e.g. variable names) —
 		// only string literals delimited by ' or " are checked.
 		const re = /["'][^"']*(?:^|[/\\])engineering(?:[/\\]|["'])/;
-		const lines = sourceWithoutComments
-			.split("\n")
-			.filter((line) => re.test(line));
+		const lines = sourceWithoutComments.split("\n").filter((line) => re.test(line));
 
 		expect(lines).toEqual([]);
 	});
@@ -81,9 +76,7 @@ describe("two-layer-guard — build-payload.cjs source-path invariant", () => {
 		// directory. Legitimate references to ".forge-*" (e.g. ".forge-payload")
 		// are allowed; we only flag the exact segment ".forge/".
 		const re = /["'][^"']*\.forge\//;
-		const lines = sourceWithoutComments
-			.split("\n")
-			.filter((line) => re.test(line));
+		const lines = sourceWithoutComments.split("\n").filter((line) => re.test(line));
 
 		expect(lines).toEqual([]);
 	});

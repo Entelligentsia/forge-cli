@@ -16,10 +16,10 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+	type ForgePersona,
+	getFinalOutput,
 	loadForgePersona,
 	runForgeSubagent,
-	getFinalOutput,
-	type ForgePersona,
 } from "../../../src/extensions/forgecli/forge-subagent.js";
 
 const SKIP_LIVE = !process.env.ANTHROPIC_API_KEY;
@@ -78,11 +78,7 @@ describe("loadForgePersona", () => {
 	});
 
 	it("falls back to filename when frontmatter omits name", () => {
-		fs.writeFileSync(
-			path.join(tmpRoot, ".forge", "personas", "qa-engineer.md"),
-			"body",
-			"utf-8",
-		);
+		fs.writeFileSync(path.join(tmpRoot, ".forge", "personas", "qa-engineer.md"), "body", "utf-8");
 		const persona = loadForgePersona("qa-engineer", tmpRoot);
 		expect(persona.name).toBe("qa-engineer");
 	});

@@ -40,9 +40,7 @@ describe("paths — default resolution", () => {
 	});
 
 	it("getGlobalConfigPath nests under the user root", () => {
-		expect(getGlobalConfigPath()).toBe(
-			path.join(os.homedir(), ".pi", "forge-cli", "config.json"),
-		);
+		expect(getGlobalConfigPath()).toBe(path.join(os.homedir(), ".pi", "forge-cli", "config.json"));
 	});
 
 	it("getUserCacheDir nests under the user root", () => {
@@ -54,9 +52,7 @@ describe("paths — default resolution", () => {
 	});
 
 	it("getMigrationMarkerPath sits at the user root", () => {
-		expect(getMigrationMarkerPath()).toBe(
-			path.join(os.homedir(), ".pi", "forge-cli", ".migrated-from-legacy"),
-		);
+		expect(getMigrationMarkerPath()).toBe(path.join(os.homedir(), ".pi", "forge-cli", ".migrated-from-legacy"));
 	});
 });
 
@@ -83,9 +79,7 @@ describe("paths — legacy resolution invariant (Advisory #2)", () => {
 		process.env.FORGE_CLI_HOME = "/tmp/some-override-root";
 		const legacy = getLegacyPaths();
 		expect(legacy.globalConfig.startsWith(os.homedir())).toBe(true);
-		expect(legacy.globalConfig).toBe(
-			path.join(os.homedir(), ".pi", "agent", "forge-cli", "config.json"),
-		);
+		expect(legacy.globalConfig).toBe(path.join(os.homedir(), ".pi", "agent", "forge-cli", "config.json"));
 		// cacheDir uses XDG_CACHE_HOME, which is the real env var (also unset here).
 		expect(legacy.cacheDir).toBe(path.join(os.homedir(), ".cache", "forgecli"));
 	});

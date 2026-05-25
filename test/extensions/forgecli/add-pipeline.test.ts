@@ -6,10 +6,10 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-	parseAddPipelineArgs,
 	composeAddPipelineKickoff,
-	registerAddPipeline,
 	type ParsedAddPipelineArgs,
+	parseAddPipelineArgs,
+	registerAddPipeline,
 } from "../../../src/extensions/forgecli/add-pipeline.js";
 
 function makePi() {
@@ -132,10 +132,7 @@ describe("registerAddPipeline", () => {
 		const ctx = makeCtx();
 		const handler = pi.commands.get("forge:add-pipeline")?.handler;
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("command file not found"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
 
 	it("sends kickoff with mode label when command file exists", async () => {

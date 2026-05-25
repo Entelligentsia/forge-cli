@@ -15,8 +15,7 @@
 // All disk I/O is fail-silent on the user surface; FORGE_DEBUG_WHATS_NEW=1
 // prints diagnostic output to stderr.
 
-import { promises as fs } from "node:fs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, promises as fs, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { getUserCacheDir } from "./paths/paths.js";
 
@@ -106,7 +105,8 @@ export async function readSeenState(cacheDir: string): Promise<SeenState> {
 		if (typeof parsed.prevForgePlugin === "string") s.prevForgePlugin = parsed.prevForgePlugin;
 		if (typeof parsed.prevForgeCli === "string") s.prevForgeCli = parsed.prevForgeCli;
 		if (typeof parsed.lastShownFromPi === "string") s.lastShownFromPi = parsed.lastShownFromPi;
-		if (typeof parsed.lastShownFromForgePlugin === "string") s.lastShownFromForgePlugin = parsed.lastShownFromForgePlugin;
+		if (typeof parsed.lastShownFromForgePlugin === "string")
+			s.lastShownFromForgePlugin = parsed.lastShownFromForgePlugin;
 		if (typeof parsed.lastShownFromForgeCli === "string") s.lastShownFromForgeCli = parsed.lastShownFromForgeCli;
 		if (typeof parsed.lastShownAt === "number") s.lastShownAt = parsed.lastShownAt;
 		return s;
@@ -475,8 +475,7 @@ export async function computeAndPersistStartupPanel(
 	const sources = resolveChangelogPaths(rt.pkgRoot);
 	const summaries = computeSummaries({ sources, current: rt.current, seen, baseline: "seen" });
 	if (summaries.length === 0) return null;
-	const findFrom = (id: ComponentId): string | null =>
-		summaries.find((s) => s.component === id)?.fromVersion ?? null;
+	const findFrom = (id: ComponentId): string | null => summaries.find((s) => s.component === id)?.fromVersion ?? null;
 	const next: SeenState = {
 		pi: rt.current.pi,
 		forgePlugin: rt.current.forgePlugin,
@@ -505,10 +504,7 @@ export async function computeAndPersistStartupPanel(
  * the panel after auto-dismiss). When `componentArg` matches one of the
  * three component IDs, returns that component's full detail view instead.
  */
-export async function computeWhatsNewView(
-	rt: WhatsNewRuntime,
-	componentArg: string | null,
-): Promise<string> {
+export async function computeWhatsNewView(rt: WhatsNewRuntime, componentArg: string | null): Promise<string> {
 	const cacheDir = rt.cacheDir ?? defaultCacheDir();
 	const seen = await readSeenState(cacheDir);
 	const sources = resolveChangelogPaths(rt.pkgRoot);

@@ -15,9 +15,9 @@
 // PoC ceremony rewrite. Remaining ceremony cases follow the same harness shape.
 
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRequire } from "node:module";
 
 import { registerRunSprint } from "../../../src/extensions/forgecli/run-sprint.js";
 import { buildSprintFixture, realForgeRoot, type SprintFixture } from "../../fixtures/sprint-fixture.js";
@@ -28,13 +28,14 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 	resolveToCanonicalId: vi.fn(async (arg: string) => arg),
 	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
 }));
+
 import {
-	scriptArchitectCeremony,
-	scriptTaskPipelinePhase,
-	scriptHalt,
 	APPROVED_PHASE_SUMMARIES,
 	approveTaskInFixture,
 	type StreamFnFactory,
+	scriptArchitectCeremony,
+	scriptHalt,
+	scriptTaskPipelinePhase,
 } from "../../helpers/scripted-subagent.js";
 
 // Use forge's built-in dependency-free validator (same one store-cli.cjs uses
@@ -68,9 +69,11 @@ afterEach(() => {
 function makePi() {
 	const commands = new Map<string, { description: string; handler: (args: string, ctx: unknown) => Promise<void> }>();
 	return {
-		registerCommand: vi.fn((name: string, def: { description: string; handler: (args: string, ctx: unknown) => Promise<void> }) => {
-			commands.set(name, def);
-		}),
+		registerCommand: vi.fn(
+			(name: string, def: { description: string; handler: (args: string, ctx: unknown) => Promise<void> }) => {
+				commands.set(name, def);
+			},
+		),
 		commands,
 	};
 }
@@ -131,7 +134,7 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		const streamFnFactory: StreamFnFactory = (ctx) => {
 			if (ctx.kind === "ceremony") {
 				return scriptArchitectCeremony({
-					model:    "test-architect-model",
+					model: "test-architect-model",
 					provider: "test-architect-provider",
 				});
 			}
@@ -162,10 +165,7 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		expect(sprintComplete.verdict).toBe("complete");
 		expect(sprintComplete.taskCount).toBe(2);
 		expect(Array.isArray(sprintComplete.completedTaskIds)).toBe(true);
-		expect((sprintComplete.completedTaskIds as string[]).sort()).toEqual([
-			"FORGE-S99-T01",
-			"FORGE-S99-T02",
-		]);
+		expect((sprintComplete.completedTaskIds as string[]).sort()).toEqual(["FORGE-S99-T01", "FORGE-S99-T02"]);
 		// Model / provider carry-through from scripted ceremony
 		expect(sprintComplete.model).toBe("test-architect-model");
 		expect(sprintComplete.provider).toBe("test-architect-provider");
@@ -184,10 +184,7 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		fixture = buildSprintFixture({
 			sprintId: "FORGE-S98",
 			sprintStatus: "active",
-			tasks: [
-				{ id: "FORGE-S98-T01" },
-				{ id: "FORGE-S98-T02" },
-			],
+			tasks: [{ id: "FORGE-S98-T01" }, { id: "FORGE-S98-T02" }],
 		});
 		process.env.FORGE_YES = "1";
 
@@ -238,9 +235,7 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		fixture = buildSprintFixture({
 			sprintId: "FORGE-S97",
 			sprintStatus: "active",
-			tasks: [
-				{ id: "FORGE-S97-T01", status: "committed" },
-			],
+			tasks: [{ id: "FORGE-S97-T01", status: "committed" }],
 		});
 		process.env.FORGE_YES = "1";
 
@@ -296,7 +291,10 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		const planCalls = factoryCalls.filter(
 			(c) => c.kind === "task-phase" && c.phase === "plan" && c.taskId === "FORGE-S95-T01",
 		);
-		expect(planCalls.length, `expected ≥1 task-phase factory call at plan; got: ${JSON.stringify(factoryCalls)}`).toBeGreaterThanOrEqual(1);
+		expect(
+			planCalls.length,
+			`expected ≥1 task-phase factory call at plan; got: ${JSON.stringify(factoryCalls)}`,
+		).toBeGreaterThanOrEqual(1);
 
 		// Ceremony was NOT dispatched (pipeline halted)
 		const ceremonyCalls = factoryCalls.filter((c) => c.kind === "ceremony");
@@ -352,7 +350,7 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		const streamFnFactory: StreamFnFactory = (sfctx) => {
 			if (sfctx.kind === "ceremony") {
 				return scriptArchitectCeremony({
-					model:    "test-architect-model",
+					model: "test-architect-model",
 					provider: "test-architect-provider",
 				});
 			}
@@ -399,10 +397,7 @@ describe("Plan 12 ceremony: clean-complete dispatches architect and emits schema
 		fixture = buildSprintFixture({
 			sprintId: "FORGE-S94",
 			sprintStatus: "active",
-			tasks: [
-				{ id: "FORGE-S94-T01" },
-				{ id: "FORGE-S94-T02" },
-			],
+			tasks: [{ id: "FORGE-S94-T01" }, { id: "FORGE-S94-T02" }],
 		});
 
 		const ctx = makeCtx({

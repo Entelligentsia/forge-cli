@@ -1,19 +1,19 @@
 // init-context.test.ts — Tests for init-context.ts (FORGE-S17-T02)
 // Covers T25-T27 from PLAN.md test table.
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs");
 
 const mockFs = vi.mocked(fs);
 
 import {
-	discoverProjectName,
 	buildProjectContext,
-	validateProjectContext,
 	computeCalibrationBaseline,
+	discoverProjectName,
+	validateProjectContext,
 } from "../../../src/extensions/forgecli/init-context.js";
 
 describe("discoverProjectName", () => {
@@ -75,10 +75,7 @@ describe("buildProjectContext", () => {
 	});
 
 	it("uses discoveryResults when config lacks project fields", () => {
-		const ctx = buildProjectContext(
-			{ projectName: "Discovered App", prefix: "DA" },
-			{},
-		);
+		const ctx = buildProjectContext({ projectName: "Discovered App", prefix: "DA" }, {});
 
 		expect(ctx.project.name).toBe("Discovered App");
 		expect(ctx.project.prefix).toBe("DA");
@@ -95,10 +92,7 @@ describe("buildProjectContext", () => {
 	});
 
 	it("includes kbPath from discovery", () => {
-		const ctx = buildProjectContext(
-			{ projectName: "App", prefix: "APP", kbPath: "custom-kb" },
-			{},
-		);
+		const ctx = buildProjectContext({ projectName: "App", prefix: "APP", kbPath: "custom-kb" }, {});
 
 		expect(ctx.knowledgeBase?.path).toBe("custom-kb");
 	});
@@ -197,10 +191,7 @@ describe("computeCalibrationBaseline", () => {
 			.mockReturnValueOnce(JSON.stringify({ sprintId: "FORGE-S02", status: "retrospective-done" }));
 
 		// readdirSync for .forge/store/sprints/ returns .json filenames
-		mockFs.readdirSync.mockReturnValue([
-			"FORGE-S01.json",
-			"FORGE-S02.json",
-		] as unknown as fs.Dirent[]);
+		mockFs.readdirSync.mockReturnValue(["FORGE-S01.json", "FORGE-S02.json"] as unknown as fs.Dirent[]);
 
 		const baseline = computeCalibrationBaseline("/proj", "engineering", "0.40.3");
 		// sprintsCovered is now a sorted array of completed sprint IDs

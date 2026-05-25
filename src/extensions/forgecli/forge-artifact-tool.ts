@@ -10,38 +10,38 @@
 // engineering/bugs/BUG-001-sprint-runner-context-accumulation) that are not
 // derivable from the ID alone.
 
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
-import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { resolveToolDir } from "./store-resolver.js";
 
 // ── Artifact catalog ────────────────────────────────────────────────────────
 
 const ARTIFACT_CATALOG: Record<string, { filename: string; type: "md" | "json" }> = {
-	"plan":                    { filename: "PLAN.md",                    type: "md" },
-	"plan-review":             { filename: "PLAN_REVIEW.md",             type: "md" },
-	"progress":                { filename: "PROGRESS.md",                type: "md" },
-	"code-review":             { filename: "CODE_REVIEW.md",             type: "md" },
-	"validation-report":       { filename: "VALIDATION_REPORT.md",       type: "md" },
-	"architect-approval":      { filename: "ARCHITECT_APPROVAL.md",      type: "md" },
-	"triage":                  { filename: "TRIAGE.md",                  type: "md" },
-	"bug-report":              { filename: "BUG_REPORT.md",              type: "md" },
-	"index":                   { filename: "INDEX.md",                   type: "md" },
-	"cost-report":             { filename: "COST_REPORT.md",             type: "md" },
-	"timesheet":               { filename: "TIMESHEET.md",               type: "md" },
-	"plan-summary":            { filename: "PLAN-SUMMARY.json",            type: "json" },
-	"review-plan-summary":     { filename: "REVIEW-PLAN-SUMMARY.json",     type: "json" },
-	"implementation-summary":  { filename: "IMPLEMENTATION-SUMMARY.json",  type: "json" },
-	"review-code-summary":     { filename: "REVIEW-CODE-SUMMARY.json",     type: "json" },
-	"review-impl-summary":     { filename: "REVIEW-IMPL-SUMMARY.json",     type: "json" },
-	"validation-summary":      { filename: "VALIDATION-SUMMARY.json",      type: "json" },
-	"approve-summary":         { filename: "APPROVE-SUMMARY.json",         type: "json" },
-	"commit-summary":          { filename: "COMMIT-SUMMARY.json",          type: "json" },
-	"triage-summary":          { filename: "TRIAGE-SUMMARY.json",          type: "json" },
-	"writeback-summary":       { filename: "WRITEBACK-SUMMARY.json",       type: "json" },
-	"collation-summary":       { filename: "COLLATION-SUMMARY.json",       type: "json" },
+	plan: { filename: "PLAN.md", type: "md" },
+	"plan-review": { filename: "PLAN_REVIEW.md", type: "md" },
+	progress: { filename: "PROGRESS.md", type: "md" },
+	"code-review": { filename: "CODE_REVIEW.md", type: "md" },
+	"validation-report": { filename: "VALIDATION_REPORT.md", type: "md" },
+	"architect-approval": { filename: "ARCHITECT_APPROVAL.md", type: "md" },
+	triage: { filename: "TRIAGE.md", type: "md" },
+	"bug-report": { filename: "BUG_REPORT.md", type: "md" },
+	index: { filename: "INDEX.md", type: "md" },
+	"cost-report": { filename: "COST_REPORT.md", type: "md" },
+	timesheet: { filename: "TIMESHEET.md", type: "md" },
+	"plan-summary": { filename: "PLAN-SUMMARY.json", type: "json" },
+	"review-plan-summary": { filename: "REVIEW-PLAN-SUMMARY.json", type: "json" },
+	"implementation-summary": { filename: "IMPLEMENTATION-SUMMARY.json", type: "json" },
+	"review-code-summary": { filename: "REVIEW-CODE-SUMMARY.json", type: "json" },
+	"review-impl-summary": { filename: "REVIEW-IMPL-SUMMARY.json", type: "json" },
+	"validation-summary": { filename: "VALIDATION-SUMMARY.json", type: "json" },
+	"approve-summary": { filename: "APPROVE-SUMMARY.json", type: "json" },
+	"commit-summary": { filename: "COMMIT-SUMMARY.json", type: "json" },
+	"triage-summary": { filename: "TRIAGE-SUMMARY.json", type: "json" },
+	"writeback-summary": { filename: "WRITEBACK-SUMMARY.json", type: "json" },
+	"collation-summary": { filename: "COLLATION-SUMMARY.json", type: "json" },
 };
 
 const ARTIFACT_NAMES = Object.keys(ARTIFACT_CATALOG).sort();
@@ -73,7 +73,9 @@ function validateSummaryJson(content: string): string | null {
  * without touching node:child_process. Reset to {} after each test.
  */
 export const _testOverrides: {
-	readStorePath?: ((entity: string, entityId: string, toolDir: string, projectRoot: string) => string | null) | undefined;
+	readStorePath?:
+		| ((entity: string, entityId: string, toolDir: string, projectRoot: string) => string | null)
+		| undefined;
 } = {};
 
 /** Read a store record via store-cli and return its `path` field, or null on failure. */
@@ -168,21 +170,18 @@ export function buildForgeArtifact(projectRoot: string, engineeringPath: string,
 			"Use forge_artifact to read/write phase outputs (PLAN.md, PROGRESS.md, *-SUMMARY.json). " +
 			"Never construct artifact paths manually — the tool resolves them from entity IDs.",
 		parameters: Type.Object({
-			command: Type.Union(
-				[Type.Literal("read"), Type.Literal("write"), Type.Literal("list")],
-				{ description: "read: fetch content. write: create/overwrite with validation. list: show existing artifacts." },
-			),
-			entity: Type.Union(
-				[Type.Literal("task"), Type.Literal("bug"), Type.Literal("sprint")],
-				{ description: "Entity type." },
-			),
+			command: Type.Union([Type.Literal("read"), Type.Literal("write"), Type.Literal("list")], {
+				description: "read: fetch content. write: create/overwrite with validation. list: show existing artifacts.",
+			}),
+			entity: Type.Union([Type.Literal("task"), Type.Literal("bug"), Type.Literal("sprint")], {
+				description: "Entity type.",
+			}),
 			entityId: Type.String({
 				description: "Entity ID (e.g. HELLO-S99-T02, HELLO-B01-shout-flag, HELLO-S99).",
 			}),
 			artifact: Type.Optional(
 				Type.String({
-					description:
-						`Artifact name (required for read/write). One of: ${artifactNameList}.`,
+					description: `Artifact name (required for read/write). One of: ${artifactNameList}.`,
 				}),
 			),
 			content: Type.Optional(
@@ -204,7 +203,7 @@ export function buildForgeArtifact(projectRoot: string, engineeringPath: string,
 			if (!entityDir) {
 				return errResult(
 					`Cannot resolve ${params.entity} directory for "${params.entityId}". ` +
-					`Expected ID pattern: task=PREFIX-SNN-TNN, bug=PREFIX-BNN-slug, sprint=PREFIX-SNN.`,
+						`Expected ID pattern: task=PREFIX-SNN-TNN, bug=PREFIX-BNN-slug, sprint=PREFIX-SNN.`,
 				);
 			}
 
@@ -241,7 +240,7 @@ export function buildForgeArtifact(projectRoot: string, engineeringPath: string,
 				const suggestions = ARTIFACT_NAMES.filter((n) => n.includes(params.artifact!.toLowerCase()));
 				return errResult(
 					`Unknown artifact "${params.artifact}". Known: ${artifactNameList}.` +
-					(suggestions.length > 0 ? ` Did you mean: ${suggestions.join(", ")}?` : ""),
+						(suggestions.length > 0 ? ` Did you mean: ${suggestions.join(", ")}?` : ""),
 				);
 			}
 
@@ -265,14 +264,16 @@ export function buildForgeArtifact(projectRoot: string, engineeringPath: string,
 					if (validationError) {
 						return errResult(
 							`Summary validation failed for ${catalogEntry.filename}: ${validationError}. ` +
-							`Required fields: ${SUMMARY_REQUIRED.join(", ")}.`,
+								`Required fields: ${SUMMARY_REQUIRED.join(", ")}.`,
 						);
 					}
 				}
 
 				fs.mkdirSync(absDir, { recursive: true });
 				fs.writeFileSync(filePath, params.content, "utf8");
-				return okResult(`Wrote ${Buffer.byteLength(params.content, "utf8")} bytes to ${path.join(entityDir, catalogEntry.filename)}`);
+				return okResult(
+					`Wrote ${Buffer.byteLength(params.content, "utf8")} bytes to ${path.join(entityDir, catalogEntry.filename)}`,
+				);
 			}
 
 			return errResult(`Unknown command: ${params.command}`);

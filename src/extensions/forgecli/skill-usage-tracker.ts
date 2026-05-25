@@ -40,8 +40,8 @@
 
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ───────────────────────────────────────────────────────
 
@@ -64,9 +64,7 @@ export const RetrievedSkillForTrackingSchema = Type.Object({
 	name: Type.String({ minLength: 1 }),
 	workflowSteps: Type.Array(Type.String()),
 });
-export type RetrievedSkillForTracking = Static<
-	typeof RetrievedSkillForTrackingSchema
->;
+export type RetrievedSkillForTracking = Static<typeof RetrievedSkillForTrackingSchema>;
 
 /** One observed tool invocation in the task's trajectory. */
 export const ToolCallObservationSchema = Type.Object({
@@ -134,10 +132,7 @@ function normalize(s: string): string {
  * observed tool-call sequence (case-insensitive substring). A step that
  * matches multiple tool calls is counted once.
  */
-function countStepOverlap(
-	steps: readonly string[],
-	toolCalls: readonly ToolCallObservation[],
-): number {
+function countStepOverlap(steps: readonly string[], toolCalls: readonly ToolCallObservation[]): number {
 	if (steps.length === 0 || toolCalls.length === 0) return 0;
 	const observed = toolCalls.map((c) => normalize(c.name));
 	let hits = 0;
@@ -154,10 +149,7 @@ function countStepOverlap(
  * the observed task trajectory. Pure function — no IO, no allocation
  * beyond return value.
  */
-export function classifySkillUsage(
-	skill: RetrievedSkillForTracking,
-	trajectory: TaskTrajectory,
-): UsageVerdict {
+export function classifySkillUsage(skill: RetrievedSkillForTracking, trajectory: TaskTrajectory): UsageVerdict {
 	const overlap = countStepOverlap(skill.workflowSteps, trajectory.toolCalls);
 	const totalSteps = skill.workflowSteps.length;
 
@@ -174,8 +166,7 @@ export function classifySkillUsage(
 	// false negatives.
 	const reasoning = normalize(trajectory.reasoningText);
 	const skillNeedle = normalize(skill.name);
-	const mentionedInReasoning =
-		skillNeedle.length > 0 && reasoning.includes(skillNeedle);
+	const mentionedInReasoning = skillNeedle.length > 0 && reasoning.includes(skillNeedle);
 
 	// Signal 2: ≥2 distinct workflow steps overlapped with executed tool calls.
 	const overlapStrong = overlap >= 2;
@@ -232,8 +223,7 @@ export function emitSkillUsageTrackingEvents(
 		const skill = retrieved[i];
 		const verdict = classifySkillUsage(skill, trajectory);
 
-		const eventId =
-			`${isoCompact(runtime.startTimestamp)}_${runtime.taskId}_skill-usage-tracker_skill_usage_${i}_${skill.skillId}`;
+		const eventId = `${isoCompact(runtime.startTimestamp)}_${runtime.taskId}_skill-usage-tracker_skill_usage_${i}_${skill.skillId}`;
 
 		const event: Record<string, unknown> = {
 			eventId,

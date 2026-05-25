@@ -19,7 +19,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mock createAgentSession before any import ──────────────────────────────
 
-const { mockSession, mockRunTaskPipeline, mockStartSession, mockCompleteSession, mockRunForgeSubagent, mockLoadForgePersona } = vi.hoisted(() => {
+const {
+	mockSession,
+	mockRunTaskPipeline,
+	mockStartSession,
+	mockCompleteSession,
+	mockRunForgeSubagent,
+	mockLoadForgePersona,
+} = vi.hoisted(() => {
 	const mockSession = {
 		subscribe: vi.fn(() => () => undefined),
 		prompt: vi.fn(() => Promise.resolve()),
@@ -31,14 +38,23 @@ const { mockSession, mockRunTaskPipeline, mockStartSession, mockCompleteSession,
 	const mockCompleteSession = vi.fn();
 	const mockRunForgeSubagent = vi.fn();
 	const mockLoadForgePersona = vi.fn();
-	return { mockSession, mockRunTaskPipeline, mockStartSession, mockCompleteSession, mockRunForgeSubagent, mockLoadForgePersona };
+	return {
+		mockSession,
+		mockRunTaskPipeline,
+		mockStartSession,
+		mockCompleteSession,
+		mockRunForgeSubagent,
+		mockLoadForgePersona,
+	};
 });
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
 	// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 	class MockDefaultResourceLoader {
-		reload() { return Promise.resolve(); }
+		reload() {
+			return Promise.resolve();
+		}
 	}
 	return {
 		...actual,
@@ -106,8 +122,8 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", async (importOrigi
 	};
 });
 
-import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { registerRunSprint } from "../../../src/extensions/forgecli/run-sprint.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
@@ -280,11 +296,7 @@ function scaffoldProject(opts: ScaffoldOpts = {}): { proj: string; sprintId: str
 	// Write task records
 	for (const taskId of taskIds) {
 		const taskRecord = { taskId, sprintId, status: "plan-approved", summaries: {} };
-		fs.writeFileSync(
-			path.join(proj, ".forge", "store", `tasks-${taskId}.json`),
-			JSON.stringify(taskRecord),
-			"utf8",
-		);
+		fs.writeFileSync(path.join(proj, ".forge", "store", `tasks-${taskId}.json`), JSON.stringify(taskRecord), "utf8");
 	}
 
 	return { proj, sprintId };
@@ -293,17 +305,21 @@ function scaffoldProject(opts: ScaffoldOpts = {}): { proj: string; sprintId: str
 function makePi() {
 	const commands = new Map<string, { description: string; handler: (args: string, ctx: unknown) => Promise<void> }>();
 	const pi = {
-		registerCommand: vi.fn((name: string, def: { description: string; handler: (args: string, ctx: unknown) => Promise<void> }) => {
-			commands.set(name, def);
-		}),
+		registerCommand: vi.fn(
+			(name: string, def: { description: string; handler: (args: string, ctx: unknown) => Promise<void> }) => {
+				commands.set(name, def);
+			},
+		),
 		commands,
 	};
 	return pi;
 }
 
-function makeCtx(overrides: Partial<{
-	confirm: (title: string, desc?: string) => Promise<boolean>;
-}> = {}) {
+function makeCtx(
+	overrides: Partial<{
+		confirm: (title: string, desc?: string) => Promise<boolean>;
+	}> = {},
+) {
 	const notifications: { msg: string; level: string }[] = [];
 	const statuses: { key: string; val: string | undefined }[] = [];
 	const ctx = {
@@ -367,7 +383,12 @@ function mockStoreCliForSprint(sprintId: string, taskIds: string[], sprintStatus
 		if (!argArr) return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
 
 		// store-cli read sprint — returns sprintStatusOverride so ceremony can resolve verdict
-		if (argArr[0]?.endsWith("store-cli.cjs") && argArr[1] === "read" && argArr[2] === "sprint" && argArr[3] === sprintId) {
+		if (
+			argArr[0]?.endsWith("store-cli.cjs") &&
+			argArr[1] === "read" &&
+			argArr[2] === "sprint" &&
+			argArr[3] === sprintId
+		) {
 			return {
 				status: 0,
 				stdout: Buffer.from(JSON.stringify({ sprintId, taskIds, status: sprintStatusOverride })),
@@ -428,9 +449,23 @@ describe("Test 2: Happy path 2-task sprint", () => {
 		mockRunTaskPipeline.mockImplementation(async () => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { status: "completed", lastPhaseIndex: 7, iterationCounts: {}, lastError: undefined, model: "gpt-5.1", provider: "openai" };
+				return {
+					status: "completed",
+					lastPhaseIndex: 7,
+					iterationCounts: {},
+					lastError: undefined,
+					model: "gpt-5.1",
+					provider: "openai",
+				};
 			}
-			return { status: "completed", lastPhaseIndex: 7, iterationCounts: {}, lastError: undefined, model: "gpt-5.1", provider: "openai" };
+			return {
+				status: "completed",
+				lastPhaseIndex: 7,
+				iterationCounts: {},
+				lastError: undefined,
+				model: "gpt-5.1",
+				provider: "openai",
+			};
 		});
 
 		const pi = makePi();
@@ -458,9 +493,7 @@ describe("Test 2: Happy path 2-task sprint", () => {
 		expect(mockCompleteSession).toHaveBeenCalledWith("FORGE-S21:ceremony", "completed");
 
 		// Completion notification sent
-		const completeNotify = ctx.notifications.find(
-			(n) => n.msg.includes("complete") && n.msg.includes("2/2"),
-		);
+		const completeNotify = ctx.notifications.find((n) => n.msg.includes("complete") && n.msg.includes("2/2"));
 		expect(completeNotify).toBeDefined();
 
 		// Sprint state file deleted on success (no leftover state)
@@ -522,13 +555,17 @@ describe("Test 4: Sprint state — resume mid-sprint with fresh tasks", () => {
 
 		// Write a fresh sprint state file (1 hour ago) indicating T01 completed
 		const stateFile = path.join(proj, ".forge", "cache", `run-sprint-state-${sprintId}.json`);
-		fs.writeFileSync(stateFile, JSON.stringify({
-			sprintId,
-			taskIndex: 1,
-			completedTaskIds: ["FORGE-S21-T01"],
-			halted: false,
-			savedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-		}), "utf8");
+		fs.writeFileSync(
+			stateFile,
+			JSON.stringify({
+				sprintId,
+				taskIndex: 1,
+				completedTaskIds: ["FORGE-S21-T01"],
+				halted: false,
+				savedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+			}),
+			"utf8",
+		);
 
 		// Override FORGE_YES so we can test the resume logic:
 		// The handler detects existing state in non-interactive context and auto-aborts.
@@ -582,13 +619,17 @@ describe("Test 6: Resume >7d offers purge", () => {
 
 		// Write a stale sprint state file (8 days ago)
 		const stateFile = path.join(proj, ".forge", "cache", `run-sprint-state-${sprintId}.json`);
-		fs.writeFileSync(stateFile, JSON.stringify({
-			sprintId,
-			taskIndex: 1,
-			completedTaskIds: ["FORGE-S21-T01"],
-			halted: false,
-			savedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-		}), "utf8");
+		fs.writeFileSync(
+			stateFile,
+			JSON.stringify({
+				sprintId,
+				taskIndex: 1,
+				completedTaskIds: ["FORGE-S21-T01"],
+				halted: false,
+				savedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+			}),
+			"utf8",
+		);
 
 		const pi = makePi();
 		registerRunSprint(pi as never, { cwd: proj });
@@ -653,9 +694,7 @@ describe("Test 9: Materialization marker missing → refusal", () => {
 		await invokeRunSprint(pi, ctx, sprintId);
 
 		// Should notify about missing markers
-		const markerNotify = ctx.notifications.find(
-			(n) => n.level === "error" && n.msg.includes("not found"),
-		);
+		const markerNotify = ctx.notifications.find((n) => n.level === "error" && n.msg.includes("not found"));
 		expect(markerNotify).toBeDefined();
 
 		// runTaskPipeline should NOT have been called (handler exits before task loop)
@@ -709,7 +748,11 @@ describe("Test 12: Sprint resolution — malformed sprint", () => {
 		fs.writeFileSync(path.join(forgePayload, "tools", "preflight-gate.cjs"), "process.exit(0);", "utf8");
 
 		// store-cli will fail to find sprint
-		vi.mocked(spawnSync).mockImplementation(() => ({ status: 1, stdout: Buffer.from(""), stderr: Buffer.from("not found") }));
+		vi.mocked(spawnSync).mockImplementation(() => ({
+			status: 1,
+			stdout: Buffer.from(""),
+			stderr: Buffer.from("not found"),
+		}));
 
 		const pi = makePi();
 		registerRunSprint(pi as never, { cwd: proj });
@@ -766,9 +809,23 @@ describe("Test 14: Ceremony model/provider carried through to sprint-complete ev
 		mockRunTaskPipeline.mockImplementation(async () => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { status: "completed", lastPhaseIndex: 7, iterationCounts: {}, lastError: undefined, model: "glm-5.1", provider: "deepseek" };
+				return {
+					status: "completed",
+					lastPhaseIndex: 7,
+					iterationCounts: {},
+					lastError: undefined,
+					model: "glm-5.1",
+					provider: "deepseek",
+				};
 			}
-			return { status: "completed", lastPhaseIndex: 7, iterationCounts: {}, lastError: undefined, model: "gpt-5.1", provider: "openai" };
+			return {
+				status: "completed",
+				lastPhaseIndex: 7,
+				iterationCounts: {},
+				lastError: undefined,
+				model: "gpt-5.1",
+				provider: "openai",
+			};
 		});
 
 		const pi = makePi();
@@ -783,9 +840,9 @@ describe("Test 14: Ceremony model/provider carried through to sprint-complete ev
 		// The sprint-complete event should use ceremony model/provider as primary,
 		// falling back to last task's model/provider when ceremony doesn't provide them.
 		// The ceremony mock returns test-model-ceremony / test-provider-ceremony.
-		const emitCalls = vi.mocked(spawnSync).mock.calls.filter(
-			(call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"),
-		);
+		const emitCalls = vi
+			.mocked(spawnSync)
+			.mock.calls.filter((call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"));
 		expect(emitCalls.length).toBeGreaterThanOrEqual(1);
 
 		// Find the sprint-complete emit call
@@ -797,7 +854,7 @@ describe("Test 14: Ceremony model/provider carried through to sprint-complete ev
 				try {
 					const evt = JSON.parse(jsonArg);
 					expect(evt.type).toBe("sprint-complete");
-					expect(evt.model).toBe("test-model-ceremony");   // ceremony model
+					expect(evt.model).toBe("test-model-ceremony"); // ceremony model
 					expect(evt.provider).toBe("test-provider-ceremony"); // ceremony provider
 					expect(evt.taskCount).toBe(2);
 					expect(evt.verdict).toBe("complete");
@@ -808,7 +865,7 @@ describe("Test 14: Ceremony model/provider carried through to sprint-complete ev
 			}
 		}
 		if (!foundSprintComplete) {
-			const allArgs = emitCalls.map(c => (c[1] as string[]).join(" ")).join(" ");
+			const allArgs = emitCalls.map((c) => (c[1] as string[]).join(" ")).join(" ");
 			expect(allArgs).toContain("sprint_complete");
 		}
 	});
@@ -824,9 +881,7 @@ describe("Test 15: Path traversal rejection", () => {
 		// Try various path traversal patterns
 		await invokeRunSprint(pi, ctx, "../etc/passwd");
 
-		const errorNotify = ctx.notifications.find(
-			(n) => n.level === "error" && n.msg.includes("invalid sprint ID"),
-		);
+		const errorNotify = ctx.notifications.find((n) => n.level === "error" && n.msg.includes("invalid sprint ID"));
 		expect(errorNotify).toBeDefined();
 
 		// No runTaskPipeline calls should have been made
@@ -842,13 +897,17 @@ describe("Test 16: FORGE_NON_INTERACTIVE auto-abort on sprint resume", () => {
 
 		// Write a sprint state file (fresh)
 		const stateFile = path.join(proj, ".forge", "cache", `run-sprint-state-${sprintId}.json`);
-		fs.writeFileSync(stateFile, JSON.stringify({
-			sprintId,
-			taskIndex: 1,
-			completedTaskIds: ["FORGE-S21-T01"],
-			halted: false,
-			savedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-		}), "utf8");
+		fs.writeFileSync(
+			stateFile,
+			JSON.stringify({
+				sprintId,
+				taskIndex: 1,
+				completedTaskIds: ["FORGE-S21-T01"],
+				halted: false,
+				savedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+			}),
+			"utf8",
+		);
 
 		const pi = makePi();
 		registerRunSprint(pi as never, { cwd: proj });
@@ -888,8 +947,12 @@ describe("Test 18: Session lifecycle — startSession/completeSession per task",
 
 		// Track call order: startSession -> runTaskPipeline -> completeSession
 		const callOrder: string[] = [];
-		mockStartSession.mockImplementation((taskId: string) => { callOrder.push(`start-${taskId}`); });
-		mockCompleteSession.mockImplementation((taskId: string, status: string) => { callOrder.push(`complete-${taskId}-${status}`); });
+		mockStartSession.mockImplementation((taskId: string) => {
+			callOrder.push(`start-${taskId}`);
+		});
+		mockCompleteSession.mockImplementation((taskId: string, status: string) => {
+			callOrder.push(`complete-${taskId}-${status}`);
+		});
 		mockRunTaskPipeline.mockImplementation(async (opts: Record<string, unknown>) => {
 			const taskId = opts.taskId as string;
 			callOrder.push(`pipeline-${taskId}`);
@@ -962,7 +1025,6 @@ describe("Test 10: Slice-2 emit smoke — sprint-complete event structure (Plan 
 	});
 });
 
-
 // ── Plan 12 Ceremony Tests (§7.2) ────────────────────────────────────────────
 
 describe("Plan 12: Clean-complete dispatches architect ceremony", () => {
@@ -1001,9 +1063,9 @@ describe("Plan 12: Clean-complete dispatches architect ceremony", () => {
 		await invokeRunSprint(pi, ctx, sprintId);
 
 		// Find the sprint-complete emit call
-		const emitCalls = vi.mocked(spawnSync).mock.calls.filter(
-			(call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"),
-		);
+		const emitCalls = vi
+			.mocked(spawnSync)
+			.mock.calls.filter((call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"));
 		expect(emitCalls.length).toBeGreaterThanOrEqual(1);
 
 		let sprintEvent: Record<string, unknown> | undefined;
@@ -1068,9 +1130,9 @@ describe("Plan 12: Clean-complete with architect failure falls back gracefully",
 		await invokeRunSprint(pi, ctx, sprintId);
 
 		// Should still emit an event — verdict falls back to "partial"
-		const emitCalls = vi.mocked(spawnSync).mock.calls.filter(
-			(call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"),
-		);
+		const emitCalls = vi
+			.mocked(spawnSync)
+			.mock.calls.filter((call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"));
 		let foundEvent = false;
 		for (const call of emitCalls) {
 			const args = call[1] as string[];
@@ -1088,9 +1150,7 @@ describe("Plan 12: Clean-complete with architect failure falls back gracefully",
 		expect(foundEvent).toBe(true);
 
 		// Warning notification should be surfaced
-		const warningNotify = ctx.notifications.find(
-			(n) => n.level === "warning" && n.msg.includes("Revision Required"),
-		);
+		const warningNotify = ctx.notifications.find((n) => n.level === "warning" && n.msg.includes("Revision Required"));
 		expect(warningNotify).toBeDefined();
 	});
 });
@@ -1166,9 +1226,9 @@ describe("Plan 12: User-paused with N completed tasks dispatches partial ceremon
 		expect(callArgs.task).toContain("Mode: partial");
 
 		// Emit event has pausedAfterTaskIndex
-		const emitCalls = vi.mocked(spawnSync).mock.calls.filter(
-			(call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"),
-		);
+		const emitCalls = vi
+			.mocked(spawnSync)
+			.mock.calls.filter((call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"));
 		let foundPausedEvent = false;
 		for (const call of emitCalls) {
 			const args = call[1] as string[];
@@ -1207,9 +1267,9 @@ describe("Plan 12: Halted-on-failure emits sprint-halted event (no ceremony)", (
 		expect(mockRunForgeSubagent).not.toHaveBeenCalled();
 
 		// But sprint-halted event WAS emitted
-		const emitCalls = vi.mocked(spawnSync).mock.calls.filter(
-			(call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"),
-		);
+		const emitCalls = vi
+			.mocked(spawnSync)
+			.mock.calls.filter((call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"));
 		let foundHaltedEvent = false;
 		for (const call of emitCalls) {
 			const args = call[1] as string[];
@@ -1252,10 +1312,21 @@ describe("Plan 12: Skip already-completed tasks", () => {
 			if (!argArr) return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
 
 			// store-cli read sprint
-			if (argArr[0]?.endsWith("store-cli.cjs") && argArr[1] === "read" && argArr[2] === "sprint" && argArr[3] === sprintId) {
+			if (
+				argArr[0]?.endsWith("store-cli.cjs") &&
+				argArr[1] === "read" &&
+				argArr[2] === "sprint" &&
+				argArr[3] === sprintId
+			) {
 				return {
 					status: 0,
-					stdout: Buffer.from(JSON.stringify({ sprintId, taskIds: ["FORGE-S21-T01", "FORGE-S21-T02", "FORGE-S21-T03"], status: "completed" })),
+					stdout: Buffer.from(
+						JSON.stringify({
+							sprintId,
+							taskIds: ["FORGE-S21-T01", "FORGE-S21-T02", "FORGE-S21-T03"],
+							status: "completed",
+						}),
+					),
 					stderr: Buffer.from(""),
 				};
 			}

@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runPhase4, type Phase4Context } from "../../../../src/extensions/forgecli/forge-init/phase4-register.js";
+import { type Phase4Context, runPhase4 } from "../../../../src/extensions/forgecli/forge-init/phase4-register.js";
 
 // ── Test utilities ─────────────────────────────────────────────────────────
 
@@ -81,7 +81,9 @@ function makeBundle(dir: string, opts: { storeCli?: boolean; pluginJson?: boolea
 
 describe("runPhase4 — step 4-1 abort on missing store-cli", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("returns 'abort' when store-cli.cjs is missing", async () => {
@@ -104,10 +106,7 @@ describe("runPhase4 — step 4-1 abort on missing store-cli", () => {
 
 		await runPhase4(ctx4);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("store-cli.cjs missing"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("store-cli.cjs missing"), "error");
 	});
 
 	it("does NOT return 'abort' when store-cli.cjs exists", async () => {
@@ -127,7 +126,9 @@ describe("runPhase4 — step 4-1 abort on missing store-cli", () => {
 
 describe("runPhase4 — kbPathFinal extraction from configCache", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("returns kbPathFinal from configCache.paths.engineering", async () => {
@@ -164,7 +165,9 @@ describe("runPhase4 — kbPathFinal extraction from configCache", () => {
 
 describe("runPhase4 — deleteInitProgress called on success", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("deletes .forge/init-progress.json after all steps complete", async () => {
@@ -235,16 +238,14 @@ if (subcmd === 'record') {
 
 describe("runPhase4 — step 4-3 generation-manifest seeds KB .md files inline path", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	function makeBundleWithManifestStub(dir: string): string {
 		const bundleRoot = makeBundle(dir);
-		fs.writeFileSync(
-			path.join(bundleRoot, "tools", "generation-manifest.cjs"),
-			STUB_GENERATION_MANIFEST,
-			"utf8",
-		);
+		fs.writeFileSync(path.join(bundleRoot, "tools", "generation-manifest.cjs"), STUB_GENERATION_MANIFEST, "utf8");
 		return bundleRoot;
 	}
 
@@ -318,7 +319,9 @@ describe("runPhase4 — step 4-3 generation-manifest seeds KB .md files inline p
 
 describe("runPhase4 — advisory non-fatal steps", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("proceeds past step 4-8 even if plugin.json is missing (non-fatal)", async () => {
@@ -337,10 +340,7 @@ describe("runPhase4 — advisory non-fatal steps", () => {
 		// Should NOT abort — step 4-8 is non-fatal
 		expect(result).not.toBe("abort");
 		// Should emit a warning about non-fatal
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("update-check cache"),
-			"warning",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("update-check cache"), "warning");
 	});
 
 	it("proceeds past step 4-4 (build-persona-pack) even when tool is absent", async () => {

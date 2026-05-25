@@ -3,36 +3,36 @@
 // Strategy (a): mock createAgentSession since Plan 13 streamFn test harness has
 // NOT shipped. All subagent dispatch is mocked; no real LLM calls.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
 	BUG_PHASES,
 	BUG_SUMMARY_KEY_BY_ROLE,
 	BUG_TYPE_TOKENS,
-	readBugRecord,
-	readBugVerdict,
+	type BugRecord,
 	composeBugBody,
-	extractBugIdFromEvents,
-	readBugState,
-	writeBugState,
 	deleteBugState,
+	extractBugIdFromEvents,
 	isBugStateStale,
 	type RunBugState,
-	type BugRecord,
+	readBugRecord,
+	readBugState,
+	readBugVerdict,
+	writeBugState,
 } from "../../../src/extensions/forgecli/fix-bug.js";
 import {
-	buildPhaseEvent,
-	isoCompact,
 	actionForRole,
-	judgementFromSummary,
-	runPreflightGate,
-	validateId,
+	buildPhaseEvent,
 	findPredecessorIndex,
+	isoCompact,
+	judgementFromSummary,
 	type OrchestratorEmitContext,
 	type PhaseDescriptor,
+	runPreflightGate,
+	validateId,
 } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -103,19 +103,17 @@ describe("BUG_PHASES", () => {
 	});
 
 	it("should have correct role names in order", () => {
-		const roles = BUG_PHASES.map(p => p.role);
-		expect(roles).toEqual([
-			"triage", "plan-fix", "review-plan", "implement", "review-code", "approve", "commit",
-		]);
+		const roles = BUG_PHASES.map((p) => p.role);
+		expect(roles).toEqual(["triage", "plan-fix", "review-plan", "implement", "review-code", "approve", "commit"]);
 	});
 
 	it("should mark review phases correctly", () => {
 		expect(BUG_PHASES[0].isReview).toBe(false); // triage
 		expect(BUG_PHASES[1].isReview).toBe(false); // plan-fix
-		expect(BUG_PHASES[2].isReview).toBe(true);  // review-plan
+		expect(BUG_PHASES[2].isReview).toBe(true); // review-plan
 		expect(BUG_PHASES[3].isReview).toBe(false); // implement
-		expect(BUG_PHASES[4].isReview).toBe(true);  // review-code
-		expect(BUG_PHASES[5].isReview).toBe(true);  // approve
+		expect(BUG_PHASES[4].isReview).toBe(true); // review-code
+		expect(BUG_PHASES[5].isReview).toBe(true); // approve
 		expect(BUG_PHASES[6].isReview).toBe(false); // commit
 	});
 
@@ -375,7 +373,7 @@ describe("Bug state persistence", () => {
 		// No file should exist for PENDING bugIds
 		const cacheDir = path.join(tmpDir, ".forge", "cache");
 		if (fs.existsSync(cacheDir)) {
-			const entries = fs.readdirSync(cacheDir).filter(e => e.includes("PENDING"));
+			const entries = fs.readdirSync(cacheDir).filter((e) => e.includes("PENDING"));
 			expect(entries).toHaveLength(0);
 		}
 	});
@@ -460,7 +458,11 @@ describe("buildPhaseEvent generalization", () => {
 	});
 
 	it("should include bug event ID with bugId for bug events", () => {
-		const ec = mkEmitCtx({ entityType: "bug", bugId: "FORGE-BUG-042", phase: mkPhaseDescriptor({ role: "triage", personaNoun: "bug-fixer" }) });
+		const ec = mkEmitCtx({
+			entityType: "bug",
+			bugId: "FORGE-BUG-042",
+			phase: mkPhaseDescriptor({ role: "triage", personaNoun: "bug-fixer" }),
+		});
 		const event = buildPhaseEvent(ec);
 		expect(event.eventId).toContain("FORGE-BUG-042");
 	});
@@ -514,16 +516,12 @@ describe("BUG_TYPE_TOKENS in phase events", () => {
 
 describe("extractBugIdFromEvents", () => {
 	it("should extract bug ID from store-cli result string", () => {
-		const events = [
-			{ toolName: "store-cli", result: "Created bug FORGE-BUG-042" },
-		];
+		const events = [{ toolName: "store-cli", result: "Created bug FORGE-BUG-042" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-042");
 	});
 
 	it("should extract bug ID from store-cli result object with bugId", () => {
-		const events = [
-			{ toolName: "store-cli", result: { bugId: "FORGE-BUG-042" } },
-		];
+		const events = [{ toolName: "store-cli", result: { bugId: "FORGE-BUG-042" } }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-042");
 	});
 
@@ -536,9 +534,7 @@ describe("extractBugIdFromEvents", () => {
 	});
 
 	it("should return null when no bug ID is found", () => {
-		const events = [
-			{ toolName: "bash", result: "some output" },
-		];
+		const events = [{ toolName: "bash", result: "some output" }];
 		expect(extractBugIdFromEvents(events as any)).toBeNull();
 	});
 
@@ -714,9 +710,7 @@ describe("Bug FSM canonical-enum assertion", () => {
 
 describe("extractBugIdFromEvents advanced", () => {
 	it("should extract bug ID from store-cli tool result containing write bug output", () => {
-		const events = [
-			{ toolName: "store-cli", result: "Created bug FORGE-BUG-007" },
-		];
+		const events = [{ toolName: "store-cli", result: "Created bug FORGE-BUG-007" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-007");
 	});
 
@@ -729,23 +723,17 @@ describe("extractBugIdFromEvents advanced", () => {
 	});
 
 	it("should extract bug ID from store-cli result with JSON object containing bugId", () => {
-		const events = [
-			{ toolName: "store-cli", result: { bugId: "FORGE-BUG-123", status: "reported" } },
-		];
+		const events = [{ toolName: "store-cli", result: { bugId: "FORGE-BUG-123", status: "reported" } }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-123");
 	});
 
 	it("should extract bug ID from bash event containing store-cli write bug output", () => {
-		const events = [
-			{ toolName: "bash", result: "node store-cli.cjs write bug FORGE-BUG-018\nSuccess" },
-		];
+		const events = [{ toolName: "bash", result: "node store-cli.cjs write bug FORGE-BUG-018\nSuccess" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-018");
 	});
 
 	it("should NOT false-positive from bash event mentioning bug ID without store-cli write", () => {
-		const events = [
-			{ toolName: "bash", result: "ls FORGE-BUG-999" },
-		];
+		const events = [{ toolName: "bash", result: "ls FORGE-BUG-999" }];
 		expect(extractBugIdFromEvents(events as any)).toBeNull();
 	});
 });
@@ -756,7 +744,8 @@ describe("composeBugBody with bug description prepended", () => {
 	it("should include originalArg in triage-phase body when isNewBug is true", () => {
 		// Simulates the prepending done in runBugPipeline for new bugs.
 		const originalArg = "Login button not working on mobile Safari";
-		const body = `Bug description: ${originalArg}\n\n---\n\n` + composeBugBody("workflow content", "FORGE-BUG-042", "triage");
+		const body =
+			`Bug description: ${originalArg}\n\n---\n\n` + composeBugBody("workflow content", "FORGE-BUG-042", "triage");
 		expect(body).toContain(originalArg);
 		expect(body).toContain("Bug ID: FORGE-BUG-042");
 	});
@@ -784,4 +773,3 @@ describe("runPreflightGate entityType parameter", () => {
 		}).not.toThrow();
 	});
 });
-

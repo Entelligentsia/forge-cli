@@ -11,16 +11,16 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { main } from "@earendil-works/pi-coding-agent";
 import forgecli from "../extensions/forgecli/index.js";
+import {
+	readBundledPluginVersion,
+	readForgeCliVersion,
+	readPiVersionAsync,
+} from "../extensions/forgecli/lib/versions.js";
 import { isParseError, parseForgeArgv } from "./argv.js";
+import { runConfig } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { applyForgeOwnedEnvDefaults } from "./env-defaults.js";
 import { runUpdate } from "./update-cli.js";
-import { runConfig } from "./config.js";
-import {
-	readForgeCliVersion,
-	readBundledPluginVersion,
-	readPiVersionAsync,
-} from "../extensions/forgecli/lib/versions.js";
 
 // ---------------------------------------------------------------------------
 // Version information (resolved at startup from package.json files)
@@ -184,6 +184,6 @@ async function run(): Promise<void> {
 }
 
 run().catch((err) => {
-	process.stderr.write(`forge: fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+	process.stderr.write(`forge: fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
 	process.exit(1);
 });

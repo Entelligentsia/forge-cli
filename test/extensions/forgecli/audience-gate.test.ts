@@ -7,8 +7,8 @@
 // Test #6 intentionally exercises CallerContextStore.set() to prove the gate
 // fires without an explicit callerContext param.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { assertAudience, CallerContextStore } from "../../../src/extensions/forgecli/audience-gate.js";
 
@@ -65,10 +65,7 @@ describe("assertAudience", () => {
 	// Test 3a: audience "any", subagent context — unrestricted
 	it("allows subagent caller when audience is 'any'", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		const result = assertAudience(
-			{ workflowName: "plan_task", audience: "any", callerContext: "subagent" },
-			ctx,
-		);
+		const result = assertAudience({ workflowName: "plan_task", audience: "any", callerContext: "subagent" }, ctx);
 		expect(result).toBe(true);
 		expect(notifyCalls).toHaveLength(0);
 	});
@@ -76,10 +73,7 @@ describe("assertAudience", () => {
 	// Test 3b: audience "any", orchestrator context — unrestricted
 	it("allows orchestrator caller when audience is 'any'", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		const result = assertAudience(
-			{ workflowName: "plan_task", audience: "any", callerContext: "orchestrator" },
-			ctx,
-		);
+		const result = assertAudience({ workflowName: "plan_task", audience: "any", callerContext: "orchestrator" }, ctx);
 		expect(result).toBe(true);
 		expect(notifyCalls).toHaveLength(0);
 	});
@@ -111,10 +105,7 @@ describe("assertAudience", () => {
 	// Test 4: refusal-message format pinned (AC#3 verbatim)
 	it("refusal message exactly matches AC#3 prescribed format", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		assertAudience(
-			{ workflowName: "enhance", audience: "orchestrator-only", callerContext: "subagent" },
-			ctx,
-		);
+		assertAudience({ workflowName: "enhance", audience: "orchestrator-only", callerContext: "subagent" }, ctx);
 		expect(notifyCalls[0][0]).toBe(
 			"× workflow enhance is orchestrator-only; cannot run from subagent context — forge-cli internal error if you did not run it as a subagent",
 		);
@@ -144,10 +135,7 @@ describe("assertAudience", () => {
 		const { resolve } = await import("node:path");
 		const { fileURLToPath } = await import("node:url");
 		const __dirname = fileURLToPath(new URL(".", import.meta.url));
-		const src = readFileSync(
-			resolve(__dirname, "../../../src/extensions/forgecli/enhance.ts"),
-			"utf8",
-		);
+		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/enhance.ts"), "utf8");
 		expect(src).toContain("assertAudience");
 		expect(src).toContain("sendKickoff");
 	});
@@ -158,10 +146,7 @@ describe("assertAudience", () => {
 		const { resolve } = await import("node:path");
 		const { fileURLToPath } = await import("node:url");
 		const __dirname = fileURLToPath(new URL(".", import.meta.url));
-		const src = readFileSync(
-			resolve(__dirname, "../../../src/extensions/forgecli/plan.ts"),
-			"utf8",
-		);
+		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/plan.ts"), "utf8");
 		expect(src).toContain("assertAudience");
 		expect(src).toContain("sendKickoff");
 	});
@@ -172,10 +157,7 @@ describe("assertAudience", () => {
 		const { resolve } = await import("node:path");
 		const { fileURLToPath } = await import("node:url");
 		const __dirname = fileURLToPath(new URL(".", import.meta.url));
-		const src = readFileSync(
-			resolve(__dirname, "../../../src/extensions/forgecli/implement.ts"),
-			"utf8",
-		);
+		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/implement.ts"), "utf8");
 		expect(src).toContain("assertAudience");
 		expect(src).toContain("sendKickoff");
 	});

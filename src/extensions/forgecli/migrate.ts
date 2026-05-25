@@ -17,8 +17,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getBundledPayloadRoot } from "./forge-init.js";
-import { runHealthCheck } from "./health-check.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { runHealthCheck } from "./health-check.js";
 import { runMigrations } from "./migration-engine.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -218,10 +218,7 @@ async function runStructuralMigration(
 	});
 
 	if (result.exitCode !== 0) {
-		ctx.ui.notify(
-			`× forge:migrate — structural migration subagent failed (exit ${result.exitCode})`,
-			"error",
-		);
+		ctx.ui.notify(`× forge:migrate — structural migration subagent failed (exit ${result.exitCode})`, "error");
 		ctx.ui.setStatus?.("forge:migrate", undefined);
 		return;
 	}
@@ -291,15 +288,9 @@ async function runSchemaMigration(
 	// Surface results
 	if (migResult.applied.length > 0) {
 		const versions = migResult.applied.map((a) => `v${a.toVersion}`).join(", ");
-		ctx.ui.notify(
-			`〇 forge:migrate — applied ${migResult.applied.length} migration(s): ${versions}`,
-			"info",
-		);
+		ctx.ui.notify(`〇 forge:migrate — applied ${migResult.applied.length} migration(s): ${versions}`, "info");
 	} else {
-		ctx.ui.notify(
-			`〇 forge:migrate — no new migrations to apply from v${fromVersion} to v${toVersion}`,
-			"info",
-		);
+		ctx.ui.notify(`〇 forge:migrate — no new migrations to apply from v${fromVersion} to v${toVersion}`, "info");
 	}
 
 	if (migResult.skippedBreaking.length > 0) {
@@ -337,10 +328,7 @@ async function runPostMigrationHealthCheck(
 		if (healthResult.clean) {
 			ctx.ui.notify("〇 /forge:health: clean.", "info");
 		} else {
-			ctx.ui.notify(
-				`△ /forge:health: ${healthResult.gaps.length} gap(s) detected after migration`,
-				"warning",
-			);
+			ctx.ui.notify(`△ /forge:health: ${healthResult.gaps.length} gap(s) detected after migration`, "warning");
 			for (const gap of healthResult.gaps) {
 				ctx.ui.notify(`  · ${gap.check}: ${gap.message}`, "info");
 			}

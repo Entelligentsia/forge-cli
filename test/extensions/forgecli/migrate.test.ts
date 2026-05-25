@@ -63,11 +63,11 @@ vi.mock("../../../src/extensions/forgecli/health-check.js", () => ({
 	}),
 }));
 
+import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
+import { loadForgePersona, runForgeSubagent } from "../../../src/extensions/forgecli/forge-subagent.js";
+import { runHealthCheck } from "../../../src/extensions/forgecli/health-check.js";
 import { parseMigrateArgs, registerMigrate } from "../../../src/extensions/forgecli/migrate.js";
 import { runMigrations } from "../../../src/extensions/forgecli/migration-engine.js";
-import { runHealthCheck } from "../../../src/extensions/forgecli/health-check.js";
-import { runForgeSubagent, loadForgePersona } from "../../../src/extensions/forgecli/forge-subagent.js";
-import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 
@@ -129,11 +129,7 @@ function scaffoldProject(opts: ScaffoldOpts): string {
 	const bundledVersion = opts.withBundleVersion ?? "0.44.0";
 	const pluginDir = path.join(bundleDir, ".claude-plugin");
 	fs.mkdirSync(pluginDir, { recursive: true });
-	fs.writeFileSync(
-		path.join(pluginDir, "plugin.json"),
-		JSON.stringify({ version: bundledVersion }, null, 2),
-		"utf8",
-	);
+	fs.writeFileSync(path.join(pluginDir, "plugin.json"), JSON.stringify({ version: bundledVersion }, null, 2), "utf8");
 
 	if (opts.withConfig !== false) {
 		const config = {
@@ -154,11 +150,7 @@ function scaffoldProject(opts: ScaffoldOpts): string {
 
 	if (opts.appliedVersions !== undefined) {
 		const ledger = { schemaVersion: 1, appliedVersions: opts.appliedVersions };
-		fs.writeFileSync(
-			path.join(forgeDir, "applied-migrations.json"),
-			JSON.stringify(ledger, null, 2),
-			"utf8",
-		);
+		fs.writeFileSync(path.join(forgeDir, "applied-migrations.json"), JSON.stringify(ledger, null, 2), "utf8");
 	}
 
 	if (opts.withWorkflow) {
@@ -278,9 +270,7 @@ describe("schema branch", () => {
 			await handler!("", ctx);
 
 			// runMigrations called with fromVersion: "0.0.0"
-			expect(runMigrations).toHaveBeenCalledWith(
-				expect.objectContaining({ fromVersion: "0.0.0" }),
-			);
+			expect(runMigrations).toHaveBeenCalledWith(expect.objectContaining({ fromVersion: "0.0.0" }));
 		} finally {
 			process.chdir(origCwd);
 		}
@@ -373,11 +363,7 @@ describe("structural branch", () => {
 		const forgeDir = path.join(tmpRoot, ".forge");
 		const wfDir = path.join(forgeDir, "workflows");
 		fs.mkdirSync(wfDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(wfDir, "migrate_structural.md"),
-			"# Structural Migration\n\nNo laws here.\n",
-			"utf8",
-		);
+		fs.writeFileSync(path.join(wfDir, "migrate_structural.md"), "# Structural Migration\n\nNo laws here.\n", "utf8");
 
 		const origCwd = process.cwd();
 		process.chdir(tmpRoot);
@@ -393,7 +379,9 @@ describe("structural branch", () => {
 			expect(runForgeSubagent).not.toHaveBeenCalled();
 			// Should have notified about marker failure
 			const notifyCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls as Array<[string, string]>;
-			const markerMsg = notifyCalls.find(([msg]) => msg.includes("Iron Laws") || msg.includes("workflow regression"));
+			const markerMsg = notifyCalls.find(
+				([msg]) => msg.includes("Iron Laws") || msg.includes("workflow regression"),
+			);
 			expect(markerMsg).toBeDefined();
 		} finally {
 			process.chdir(origCwd);

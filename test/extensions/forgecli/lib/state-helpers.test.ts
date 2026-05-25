@@ -10,19 +10,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	readJsonState,
-	writeJsonState,
 	isStateStale,
-	taskStateFilePath,
+	readJsonState,
 	sprintStateFilePath,
+	taskStateFilePath,
+	writeJsonState,
 } from "../../../../src/extensions/forgecli/lib/state-helpers.js";
 // Regression imports: run-task.ts re-exports readState/writeState which internally
 // delegate to lib helpers. These tests verify the chain is intact.
-import {
-	readState,
-	writeState,
-	type RunTaskState,
-} from "../../../../src/extensions/forgecli/run-task.js";
+import { type RunTaskState, readState, writeState } from "../../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

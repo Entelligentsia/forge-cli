@@ -49,9 +49,7 @@ export async function runStoreCli(toolDir: string, argv: string[], cwd: string):
 	try {
 		return JSON.parse(result.stdout);
 	} catch {
-		throw new Error(
-			`store-cli returned non-JSON for argv=${JSON.stringify(argv)}: ${result.stdout.slice(0, 200)}`,
-		);
+		throw new Error(`store-cli returned non-JSON for argv=${JSON.stringify(argv)}: ${result.stdout.slice(0, 200)}`);
 	}
 }
 
@@ -68,20 +66,13 @@ async function pickFromResults(
 	if (items.length === 1) return { item: items[0] };
 
 	ctx.ui.setStatus(statusLabel, undefined);
-	const nonInteractive =
-		process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
+	const nonInteractive = process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";
 	if (nonInteractive) {
-		ctx.ui.notify(
-			`Multiple records match "${arg}" — refusing to pick in non-interactive mode`,
-			"error",
-		);
+		ctx.ui.notify(`Multiple records match "${arg}" — refusing to pick in non-interactive mode`, "error");
 		return null;
 	}
 	const options = items.map((t: any, i: number) => `[${i}] ${t.id} (${t.type}): ${t.title}`);
-	const selection = await ctx.ui.select(
-		`Multiple records found for "${arg}". Select one:`,
-		options,
-	);
+	const selection = await ctx.ui.select(`Multiple records found for "${arg}". Select one:`, options);
 	if (!selection) return null;
 	const idx = parseInt(selection.match(/^\[(\d+)\]/)?.[1] ?? "-1", 10);
 	if (idx < 0 || idx >= items.length) return null;
@@ -189,8 +180,8 @@ export async function resolveEntityRef(
 				if (fast && fast.length > 0) return pick(fast);
 				if (fast === null) {
 					const r = await runStoreCli(toolDir, ["query", "--list-sprints"], cwd);
-					const matched = (r?.results ?? []).filter((s: any) =>
-						s.id?.toUpperCase().endsWith(`-${suffix}`) || s.id?.toUpperCase() === suffix,
+					const matched = (r?.results ?? []).filter(
+						(s: any) => s.id?.toUpperCase().endsWith(`-${suffix}`) || s.id?.toUpperCase() === suffix,
 					);
 					if (matched.length > 0) {
 						const canonical: any[] = [];
@@ -199,7 +190,8 @@ export async function resolveEntityRef(
 								const rr = await runStoreCli(toolDir, ["query", "--sprint", s.id], cwd);
 								canonical.push(...(rr?.results ?? []));
 							} catch (err: any) {
-								if (isDebug()) console.error(`[forge:resolver] sprint lookup failed for ${s.id}: ${err.message}`);
+								if (isDebug())
+									console.error(`[forge:resolver] sprint lookup failed for ${s.id}: ${err.message}`);
 							}
 						}
 						if (canonical.length > 0) return pick(canonical);
@@ -221,7 +213,8 @@ export async function resolveEntityRef(
 							const rr = await runStoreCli(toolDir, ["query", "--task", taskId], cwd);
 							if (rr?.results?.length > 0) return pick(rr.results);
 						} catch (err: any) {
-							if (isDebug()) console.error(`[forge:resolver] task lookup failed for ${s.id}-${tPart}: ${err.message}`);
+							if (isDebug())
+								console.error(`[forge:resolver] task lookup failed for ${s.id}-${tPart}: ${err.message}`);
 						}
 					}
 				}
@@ -288,11 +281,7 @@ export async function resolveToCanonicalId(
 	kind: "task" | "sprint" | "bug" | "feature",
 	opts: ResolveToCanonicalIdOptions & { ctx?: ExtensionCommandContext },
 ): Promise<string | null> {
-	const {
-		ctx,
-		entityTypes = new Set([kind]),
-		commandLabel = `forge:${kind}`,
-	} = opts;
+	const { ctx, entityTypes = new Set([kind]), commandLabel = `forge:${kind}` } = opts;
 
 	const resolved = await resolveEntityRef(arg, toolDir, cwd, {
 		entityTypes,
@@ -303,8 +292,8 @@ export async function resolveToCanonicalId(
 	if (!resolved) {
 		ctx?.ui.notify(
 			`× ${commandLabel} — could not resolve "${arg}". ` +
-			`No matching ${kind} found. ` +
-			`Try a canonical ID like <PREFIX>-S<N>-T<N> or use /forge:read for search.`,
+				`No matching ${kind} found. ` +
+				`Try a canonical ID like <PREFIX>-S<N>-T<N> or use /forge:read for search.`,
 			"error",
 		);
 		return null;
@@ -314,7 +303,7 @@ export async function resolveToCanonicalId(
 		// @path resolution — not a task/sprint/bug ID pattern.
 		ctx?.ui.notify(
 			`× ${commandLabel} — "${arg}" resolved to a directory path, not a ${kind} ID. ` +
-			`Provide a canonical ${kind} ID instead.`,
+				`Provide a canonical ${kind} ID instead.`,
 			"error",
 		);
 		return null;
@@ -322,19 +311,13 @@ export async function resolveToCanonicalId(
 
 	const canonicalId = resolved.item?.id;
 	if (!canonicalId || typeof canonicalId !== "string") {
-		ctx?.ui.notify(
-			`× ${commandLabel} — resolved "${arg}" but record has no canonical ID.`,
-			"error",
-		);
+		ctx?.ui.notify(`× ${commandLabel} — resolved "${arg}" but record has no canonical ID.`, "error");
 		return null;
 	}
 
 	// If the canonical ID differs from the raw arg, notify the user.
 	if (canonicalId !== arg) {
-		ctx?.ui.notify(
-			`ℹ ${commandLabel} — resolved "${arg}" → ${canonicalId}`,
-			"info",
-		);
+		ctx?.ui.notify(`ℹ ${commandLabel} — resolved "${arg}" → ${canonicalId}`, "info");
 	}
 
 	return canonicalId;

@@ -22,9 +22,9 @@
 //   IL7 — every failure path emits ctx.ui.notify and returns; no silent
 //         continuation.
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { sendKickoff } from "./kickoff.js";
@@ -108,12 +108,12 @@ export function composeReportBugKickoff(opts: ComposeReportBugKickoffOpts): stri
 
 	const sections: string[] = ["# /forge:report-bug", ""];
 	sections.push("## Dispatch", "");
-	sections.push(
-		"File a bug report against Forge (not your project). Follow the command steps below. Specifically:",
-	);
+	sections.push("File a bug report against Forge (not your project). Follow the command steps below. Specifically:");
 	sections.push("");
-	sections.push(`1. File the issue to: \`${bugRepo}\` (override via \`FORGE_BUG_REPO\` env or \`config.json\` \`bugs.repo\` field).`);
-	sections.push("2. \`gh\` is authenticated (pre-flight passed). Use it to file the issue.");
+	sections.push(
+		`1. File the issue to: \`${bugRepo}\` (override via \`FORGE_BUG_REPO\` env or \`config.json\` \`bugs.repo\` field).`,
+	);
+	sections.push("2. `gh` is authenticated (pre-flight passed). Use it to file the issue.");
 	if (ghAuthOutput) {
 		sections.push(`3. Auth context: \`${ghAuthOutput.replace(/\n/g, " ").slice(0, 200)}\``);
 	}
@@ -200,10 +200,7 @@ export function registerReportBug(pi: ExtensionAPI, options: RegisterReportBugOp
 				parsed = parseReportBugArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(
-					`× forge:report-bug — failed to parse args: ${e.message ?? "unknown"}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:report-bug — failed to parse args: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 

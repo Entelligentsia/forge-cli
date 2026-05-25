@@ -8,7 +8,7 @@
 //   - EXPLICITLY_REGISTERED_NAMES: "forge:store-query" present
 
 import * as path from "node:path";
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Hoisted mock state (ESM-compatible, runs before imports) ─────────────────
 
@@ -54,8 +54,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 	};
 });
 
-import { registerStoreQuery } from "../../../src/extensions/forgecli/store-query.js";
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
+import { registerStoreQuery } from "../../../src/extensions/forgecli/store-query.js";
 
 const FAKE_FORGE_ROOT = "/fake/forge";
 
@@ -74,11 +74,9 @@ afterEach(() => {
 describe("registerStoreQuery dispatch", () => {
 	function buildPi(handlers: Map<string, (args: string, ctx: unknown) => Promise<void>>) {
 		return {
-			registerCommand: vi.fn(
-				(name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
-					handlers.set(name, def.handler);
-				},
-			),
+			registerCommand: vi.fn((name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
+				handlers.set(name, def.handler);
+			}),
 		};
 	}
 

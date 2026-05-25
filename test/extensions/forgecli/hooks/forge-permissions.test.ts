@@ -160,7 +160,7 @@ describe("matchForgePermission — pure function", () => {
 
 	it("7. bash: node -e exclusion → null (security: arbitrary code not auto-approved)", () => {
 		// node -e is deliberately excluded from BASH_PATTERNS in the plugin and this port.
-		const rule = matchForgePermission("bash", { command: 'node -e "require(\'os\').platform()"' });
+		const rule = matchForgePermission("bash", { command: "node -e \"require('os').platform()\"" });
 		expect(rule).toBeNull();
 	});
 
@@ -201,10 +201,7 @@ describe("registerHookDispatcher — forge-permissions wiring (AC#4 + AC#5)", ()
 		// node tool invocation to exercise the BASH_PATTERNS match.
 		const { pi, handlers } = makeStubApi();
 		registerHookDispatcher(pi, "/fake/forge-root");
-		const result = callToolCall(
-			handlers,
-			makeBashEvent("node /home/x/.forge/tools/build-manifest.cjs"),
-		);
+		const result = callToolCall(handlers, makeBashEvent("node /home/x/.forge/tools/build-manifest.cjs"));
 		expect(result).toBeUndefined();
 	});
 
@@ -242,10 +239,7 @@ describe("registerHookDispatcher — forge-permissions wiring (AC#4 + AC#5)", ()
 		const { pi, handlers } = makeStubApi();
 		registerHookDispatcher(pi, "/fake/forge-root");
 		// .forge/store/tasks/ is matched by WRITE_PATTERNS (/^\.forge\//)
-		const result = callToolCall(
-			handlers,
-			makeWriteEvent(".forge/store/tasks/FORGE-S23-T04.json", '{"bad":"data"}'),
-		);
+		const result = callToolCall(handlers, makeWriteEvent(".forge/store/tasks/FORGE-S23-T04.json", '{"bad":"data"}'));
 		// Must be blocked by write-guard despite permission match (AC#4)
 		expect(result).toBeDefined();
 		const blocked = result as { block: boolean; reason: string };

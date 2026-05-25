@@ -22,12 +22,12 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { assertAudience } from "./audience-gate.js";
 import { sendKickoff } from "./kickoff.js";
-import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
-import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
-
 // FORGE-S25-T16: extracted to lib module (H-1). Re-exported here for
 // backward compatibility with existing test and consumer imports.
 import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
+
 export { extractPersonaNames };
 
 // Argv parsing -------------------------------------------------------------
@@ -131,18 +131,12 @@ export function registerRetrospective(pi: ExtensionAPI, options: RegisterRetrosp
 							"error",
 						);
 					} else {
-						ctx.ui.notify(
-							`× forge:retrospective — workflow load failed (${err.code}): ${err.message}`,
-							"error",
-						);
+						ctx.ui.notify(`× forge:retrospective — workflow load failed (${err.code}): ${err.message}`, "error");
 					}
 					return;
 				}
 				const e = err as { message?: string };
-				ctx.ui.notify(
-					`× forge:retrospective — failed to read workflow: ${e.message ?? "unknown"}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:retrospective — failed to read workflow: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 

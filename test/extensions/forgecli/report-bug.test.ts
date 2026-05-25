@@ -16,12 +16,12 @@ vi.mock("node:child_process", () => ({
 }));
 
 import {
-	parseReportBugArgs,
-	resolveBugRepo,
-	composeReportBugKickoff,
-	registerReportBug,
 	checkGhAuth,
+	composeReportBugKickoff,
 	type ParsedReportBugArgs,
+	parseReportBugArgs,
+	registerReportBug,
+	resolveBugRepo,
 } from "../../../src/extensions/forgecli/report-bug.js";
 
 function makePi() {
@@ -203,10 +203,7 @@ describe("registerReportBug", () => {
 		const ctx = makeCtx();
 		const handler = pi.commands.get("forge:report-bug")?.handler;
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("command file not found"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
 
 	it("sends kickoff with default repo when command file exists", async () => {

@@ -27,7 +27,9 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	class MockDefaultResourceLoader {
-		reload() { return Promise.resolve(); }
+		reload() {
+			return Promise.resolve();
+		}
 	}
 	return {
 		...actual,
@@ -47,10 +49,10 @@ vi.mock("node:child_process", () => ({
 	execFile: vi.fn(),
 }));
 
-import { runTaskPipeline, type RunTaskPipelineResult } from "../../../src/extensions/forgecli/run-task.js";
-import { runBugPipeline, type RunBugPipelineResult } from "../../../src/extensions/forgecli/fix-bug.js";
-import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 import { spawnSync } from "node:child_process";
+import { type RunBugPipelineResult, runBugPipeline } from "../../../src/extensions/forgecli/fix-bug.js";
+import { type RunTaskPipelineResult, runTaskPipeline } from "../../../src/extensions/forgecli/run-task.js";
+import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 
 // ── Setup / teardown ──────────────────────────────────────────────────────
 
@@ -143,8 +145,14 @@ function scaffoldProject(): string {
 	fs.writeFileSync(path.join(proj, ".forge", "workflows", "orchestrate_task.md"), ORCHESTRATE_MD, "utf8");
 
 	const workflows = [
-		"plan_task", "review_plan", "implement_plan", "review_code",
-		"validate_task", "architect_approve", "collator_agent", "commit_task",
+		"plan_task",
+		"review_plan",
+		"implement_plan",
+		"review_code",
+		"validate_task",
+		"architect_approve",
+		"collator_agent",
+		"commit_task",
 		"fix_bug",
 	];
 	for (const w of workflows) {

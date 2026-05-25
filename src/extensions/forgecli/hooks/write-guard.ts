@@ -18,8 +18,8 @@
 //
 // FORGE_SKIP_WRITE_VALIDATION=1: bypass switch (operator-only). Logs to hooks.log.
 
-import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { enhanceBlockMessage } from "../store-error-remediation.js";
@@ -140,10 +140,7 @@ function loadValidator(forgeRoot: string): ValidateModule {
 // Apply all edits sequentially against the current file contents.
 // Fail-open if the file cannot be read (return empty string).
 
-export function applyPiEdits(
-	filePath: string,
-	edits: Array<{ oldText: string; newText: string }>,
-): string {
+export function applyPiEdits(filePath: string, edits: Array<{ oldText: string; newText: string }>): string {
 	let contents: string;
 	try {
 		contents = existsSync(filePath) ? readFileSync(filePath, "utf8") : "";
@@ -180,25 +177,23 @@ export interface WriteGuardResult {
  *
  * Fail-open: returns { block: false } on any internal error.
  */
-export function checkWriteGuard(
-	filePath: string,
-	contents: string,
-	forgeRoot: string,
-): WriteGuardResult {
+export function checkWriteGuard(filePath: string, contents: string, forgeRoot: string): WriteGuardResult {
 	// Bypass: operator-only escape hatch
 	if (process.env.FORGE_SKIP_WRITE_VALIDATION === "1") {
 		try {
 			// Audit log — best-effort
-			import("node:fs").then(({ appendFileSync, mkdirSync }) => {
-				const logsDir = path.join(process.cwd(), ".forge", "logs");
-				mkdirSync(logsDir, { recursive: true });
-				const relPath = path.relative(process.cwd(), filePath);
-				appendFileSync(
-					path.join(logsDir, "hooks.log"),
-					`[write-guard] FORGE_SKIP_WRITE_VALIDATION=1 bypass on ${relPath}\n`,
-					"utf8",
-				);
-			}).catch(() => {});
+			import("node:fs")
+				.then(({ appendFileSync, mkdirSync }) => {
+					const logsDir = path.join(process.cwd(), ".forge", "logs");
+					mkdirSync(logsDir, { recursive: true });
+					const relPath = path.relative(process.cwd(), filePath);
+					appendFileSync(
+						path.join(logsDir, "hooks.log"),
+						`[write-guard] FORGE_SKIP_WRITE_VALIDATION=1 bypass on ${relPath}\n`,
+						"utf8",
+					);
+				})
+				.catch(() => {});
 		} catch {
 			// Audit is best-effort
 		}

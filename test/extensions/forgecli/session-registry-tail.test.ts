@@ -1,7 +1,7 @@
 // session-registry-tail.test.ts — tests for per-phase tailBuffer + unreadWarnings
 // added in Step 2 of the thread-switcher UX rebuild.
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { SessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 
 describe("SessionRegistry — tailBuffer + unreadWarnings", () => {
@@ -17,10 +17,7 @@ describe("SessionRegistry — tailBuffer + unreadWarnings", () => {
 		r.appendTail("HLO-S01-T03", "plan", "[plan] reading architect.md");
 		r.appendTail("HLO-S01-T03", "plan", "[plan] resolved FORGE_ROOT");
 		const lines = r.getTailLines("HLO-S01-T03", "plan");
-		expect(lines).toEqual([
-			"[plan] reading architect.md",
-			"[plan] resolved FORGE_ROOT",
-		]);
+		expect(lines).toEqual(["[plan] reading architect.md", "[plan] resolved FORGE_ROOT"]);
 	});
 
 	it("appendTail with warning:true increments unreadWarnings", () => {

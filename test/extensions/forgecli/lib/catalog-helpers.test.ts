@@ -8,10 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	readPersonaDir,
-	readPipelineNames,
-} from "../../../../src/extensions/forgecli/lib/catalog-helpers.js";
+import { readPersonaDir, readPipelineNames } from "../../../../src/extensions/forgecli/lib/catalog-helpers.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -53,11 +50,7 @@ describe("readPersonaDir (lib/catalog-helpers.ts)", () => {
 	});
 
 	it("excludes -skills.md files from results", () => {
-		const dir = makePersonasDir(tmpRoot, [
-			"engineer.md",
-			"engineer-skills.md",
-			"supervisor-skills.md",
-		]);
+		const dir = makePersonasDir(tmpRoot, ["engineer.md", "engineer-skills.md", "supervisor-skills.md"]);
 		const result = readPersonaDir(dir);
 		expect(result).toContain("engineer");
 		expect(result).not.toContain("engineer-skills");

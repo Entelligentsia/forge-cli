@@ -15,12 +15,12 @@
 
 import type { SessionRegistry } from "./session-registry.js";
 import {
-	argHint as fmtArgHint,
 	extractThinkingOneLiner,
 	extractTurnPreview,
+	argHint as fmtArgHint,
+	RISKY_TAG,
 	readUsage,
 	resultShape,
-	RISKY_TAG,
 	toolGlyph,
 	type UsageDelta,
 } from "./viewport-renderer.js";
@@ -77,7 +77,18 @@ export interface AttachedObserver {
 }
 
 export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObserver {
-	const { registry, sessionId, phaseRole, displayRole, beginHeader, writeDebug, setStatusVerbose, notify, verboseKeys, afterEach } = opts;
+	const {
+		registry,
+		sessionId,
+		phaseRole,
+		displayRole,
+		beginHeader,
+		writeDebug,
+		setStatusVerbose,
+		notify,
+		verboseKeys,
+		afterEach,
+	} = opts;
 	const role = displayRole ?? phaseRole;
 
 	const state = {
@@ -108,8 +119,8 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 			typeof result === "string"
 				? result
 				: typeof result === "object" && result !== null
-				? JSON.stringify(result)
-				: String(result);
+					? JSON.stringify(result)
+					: String(result);
 		const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0) ?? raw;
 		return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
 	};
@@ -236,10 +247,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				registry.recordToolEnd(sessionId, e.toolCallId, e.toolName, e.isError, e.result);
 				if (e.isError) {
 					state.errCount++;
-					emitTurnLine(
-						`⚠ ${e.toolName} failed: ${extractErrorSummary(e.result)}`,
-						{ warning: true },
-					);
+					emitTurnLine(`⚠ ${e.toolName} failed: ${extractErrorSummary(e.result)}`, { warning: true });
 				} else {
 					const shape = resultShape(e.toolName, e.result);
 					emitTurnLine(`← ${e.toolName} ok${shape ? ` ${shape}` : ""}`);
@@ -255,10 +263,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 			case "auto_retry_start": {
 				const e = event as { attempt: number; maxAttempts: number; errorMessage?: string };
 				const err = e.errorMessage ?? "";
-				notify?.(
-					`↻ ${role}: model retry ${e.attempt}/${e.maxAttempts}${err ? `\n${err}` : ""}`,
-					"warning",
-				);
+				notify?.(`↻ ${role}: model retry ${e.attempt}/${e.maxAttempts}${err ? `\n${err}` : ""}`, "warning");
 				appendTail(
 					`${tailPrefix()} ↻ retry ${e.attempt}/${e.maxAttempts}${err ? `: ${extractErrorSummary(err)}` : ""}`,
 					{ warning: true },

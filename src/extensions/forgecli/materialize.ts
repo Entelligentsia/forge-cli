@@ -112,10 +112,7 @@ export function registerMaterialize(pi: ExtensionAPI): void {
 			// Config guard
 			const configPath = path.join(cwd, ".forge", "config.json");
 			if (!fs.existsSync(configPath)) {
-				ctx.ui.notify(
-					"× forge:materialize — no .forge/config.json found. Run /forge:init first.",
-					"error",
-				);
+				ctx.ui.notify("× forge:materialize — no .forge/config.json found. Run /forge:init first.", "error");
 				return;
 			}
 
@@ -137,17 +134,11 @@ export function registerMaterialize(pi: ExtensionAPI): void {
 
 			// Guard: tools must exist
 			if (!fs.existsSync(substituteTool)) {
-				ctx.ui.notify(
-					`× forge:materialize — substitute-placeholders.cjs not found at ${substituteTool}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:materialize — substitute-placeholders.cjs not found at ${substituteTool}`, "error");
 				return;
 			}
 			if (!fs.existsSync(basePackDir)) {
-				ctx.ui.notify(
-					`× forge:materialize — .base-pack not found at ${basePackDir}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:materialize — .base-pack not found at ${basePackDir}`, "error");
 				return;
 			}
 
@@ -173,10 +164,7 @@ export function registerMaterialize(pi: ExtensionAPI): void {
 			const subResult = await runTool(substituteTool, subArgv, cwd, "substitute-placeholders", 60_000);
 			if (!subResult.ok) {
 				const errMsg = subResult.stderr.trim().split("\n").slice(-3).join(" | ") || "unknown error";
-				ctx.ui.notify(
-					`× forge:materialize — substitute-placeholders.cjs failed: ${errMsg}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:materialize — substitute-placeholders.cjs failed: ${errMsg}`, "error");
 				ctx.ui.setStatus?.("forge:materialize", undefined);
 				return;
 			}
@@ -195,10 +183,7 @@ export function registerMaterialize(pi: ExtensionAPI): void {
 				);
 				if (!personaResult.ok) {
 					const msg = personaResult.stderr.trim().split("\n").at(-1) ?? "unknown";
-					ctx.ui.notify(
-						`△ forge:materialize — build-persona-pack.cjs failed (non-fatal): ${msg}`,
-						"warning",
-					);
+					ctx.ui.notify(`△ forge:materialize — build-persona-pack.cjs failed (non-fatal): ${msg}`, "warning");
 				}
 			}
 
@@ -231,10 +216,7 @@ export function registerMaterialize(pi: ExtensionAPI): void {
 				);
 				if (!ctxResult.ok) {
 					const msg = ctxResult.stderr.trim().split("\n").at(-1) ?? "unknown";
-					ctx.ui.notify(
-						`△ forge:materialize — build-context-pack.cjs failed (non-fatal): ${msg}`,
-						"warning",
-					);
+					ctx.ui.notify(`△ forge:materialize — build-context-pack.cjs failed (non-fatal): ${msg}`, "warning");
 				}
 			}
 
@@ -247,10 +229,7 @@ export function registerMaterialize(pi: ExtensionAPI): void {
 				const raw = fs.readFileSync(configPath, "utf8");
 				const cfg = JSON.parse(raw) as Record<string, unknown>;
 				if ((cfg as Record<string, unknown>).mode === "fast") {
-					ctx.ui.notify(
-						"〇 To declare the project fully generated: /forge:config mode full",
-						"info",
-					);
+					ctx.ui.notify("〇 To declare the project fully generated: /forge:config mode full", "info");
 				}
 			} catch {
 				// non-fatal — promotion hint is cosmetic

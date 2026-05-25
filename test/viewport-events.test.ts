@@ -53,7 +53,10 @@ describe("attachViewportObserver", () => {
 		observer.onEvent({ type: "turn_start" });
 		observer.onEvent({ type: "turn_end", message: makeAssistantMessage({ input: 1000, output: 50 }) });
 		observer.onEvent({ type: "turn_start" });
-		observer.onEvent({ type: "turn_end", message: makeAssistantMessage({ input: 2000, output: 100, cacheRead: 500 }) });
+		observer.onEvent({
+			type: "turn_end",
+			message: makeAssistantMessage({ input: 2000, output: 100, cacheRead: 500 }),
+		});
 
 		expect(observer.state.turn).toBe(2);
 		expect(observer.state.cumUsage).toEqual({ input: 3000, output: 150, cacheRead: 500 });
@@ -67,8 +70,20 @@ describe("attachViewportObserver", () => {
 		observer.onEvent({ type: "turn_start" });
 		observer.onEvent({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { command: "ls" } });
 		observer.onEvent({ type: "tool_execution_start", toolCallId: "c2", toolName: "bash", args: { command: "pwd" } });
-		observer.onEvent({ type: "tool_execution_end", toolCallId: "c1", toolName: "bash", isError: false, result: { stdout: "a\nb\n" } });
-		observer.onEvent({ type: "tool_execution_end", toolCallId: "c2", toolName: "bash", isError: false, result: { stdout: "/" } });
+		observer.onEvent({
+			type: "tool_execution_end",
+			toolCallId: "c1",
+			toolName: "bash",
+			isError: false,
+			result: { stdout: "a\nb\n" },
+		});
+		observer.onEvent({
+			type: "tool_execution_end",
+			toolCallId: "c2",
+			toolName: "bash",
+			isError: false,
+			result: { stdout: "/" },
+		});
 		observer.onEvent({
 			type: "turn_end",
 			message: makeAssistantMessage({
@@ -117,7 +132,12 @@ describe("attachViewportObserver", () => {
 		observer.onEvent({ type: "turn_start" });
 		observer.onEvent({
 			type: "turn_end",
-			message: makeAssistantMessage({ input: 1000, output: 50, text: "doing the plan", thinking: "weighing options" }),
+			message: makeAssistantMessage({
+				input: 1000,
+				output: 50,
+				text: "doing the plan",
+				thinking: "weighing options",
+			}),
 		});
 
 		expect(events.length).toBe(1);
@@ -167,7 +187,12 @@ describe("attachViewportObserver", () => {
 	it("flags risky bash commands with warning", () => {
 		const { registry, observer } = bootstrap();
 		observer.onEvent({ type: "turn_start" });
-		observer.onEvent({ type: "tool_execution_start", toolCallId: "c", toolName: "bash", args: { command: "rm -rf /tmp/x" } });
+		observer.onEvent({
+			type: "tool_execution_start",
+			toolCallId: "c",
+			toolName: "bash",
+			args: { command: "rm -rf /tmp/x" },
+		});
 		const phase = registry.getSession("T1")?.phases.find((p) => p.role === "plan");
 		expect(phase?.unreadWarnings ?? 0).toBeGreaterThan(0);
 	});

@@ -68,7 +68,15 @@ describe("buildPhase2PromptText", () => {
 
 	it("includes paths for all 7 KB docs", () => {
 		const result = buildPhase2PromptText(BUNDLE_ROOT, KB_PATH, PROJECT_NAME);
-		for (const doc of ["stack", "processes", "database", "routing", "deployment", "entity-model", "stack-checklist"]) {
+		for (const doc of [
+			"stack",
+			"processes",
+			"database",
+			"routing",
+			"deployment",
+			"entity-model",
+			"stack-checklist",
+		]) {
 			expect(result).toContain(`${doc}.md`);
 		}
 	});

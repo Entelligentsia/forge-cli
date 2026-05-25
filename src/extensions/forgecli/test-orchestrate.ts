@@ -15,12 +15,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-import {
-	type ForgePersona,
-	getFinalOutput,
-	loadForgePersona,
-	runForgeSubagent,
-} from "./forge-subagent.js";
+import { type ForgePersona, getFinalOutput, loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 
 const STATUS_KEY = "test-orchestrate";
 
@@ -167,7 +162,11 @@ export function registerTestOrchestrate(pi: ExtensionAPI): void {
 								break;
 							case "turn_end": {
 								turn++;
-								const u = (event.message as { usage?: { input?: number; output?: number; cost?: { total?: number } } } | undefined)?.usage;
+								const u = (
+									event.message as
+										| { usage?: { input?: number; output?: number; cost?: { total?: number } } }
+										| undefined
+								)?.usage;
 								const usageStr = u
 									? ` · ↑${u.input ?? 0} ↓${u.output ?? 0}` +
 										(u.cost?.total ? ` $${u.cost.total.toFixed(4)}` : "")

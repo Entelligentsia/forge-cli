@@ -144,10 +144,7 @@ export async function runStatus(forgeRoot: string, cwd: string): Promise<StatusR
  * Register /forge:status (v0 native handler).
  * forgeRoot is nullable — null means we're outside a Forge project.
  */
-export function registerStatusCommand(
-	pi: ExtensionAPI,
-	opts: { forgeRoot: string | null },
-): void {
+export function registerStatusCommand(pi: ExtensionAPI, opts: { forgeRoot: string | null }): void {
 	pi.registerCommand("forge:status", {
 		description: "Sprint and task summary widget — lists active sprint and task statuses.",
 		async handler(_args: string, ctx: ExtensionCommandContext) {
@@ -155,10 +152,7 @@ export function registerStatusCommand(
 
 			// Outside-project guard
 			if (!opts.forgeRoot) {
-				ctx.ui.notify(
-					"× forge:status — not inside a Forge project. Run /forge:init first.",
-					"error",
-				);
+				ctx.ui.notify("× forge:status — not inside a Forge project. Run /forge:init first.", "error");
 				return;
 			}
 

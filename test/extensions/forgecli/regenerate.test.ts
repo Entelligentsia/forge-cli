@@ -11,12 +11,12 @@
 // not unit-mocked here — too many dependencies (substitute-placeholders.cjs,
 // bundled payload, ctx).
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { findModifiedStructuralFiles } from "../../../src/extensions/forgecli/regenerate.js";
 
@@ -38,9 +38,7 @@ function makeTestProject(): string {
 function recordHash(cwd: string, relPath: string): void {
 	const r = spawnSync("node", [manifestTool, "record", relPath], { cwd, encoding: "utf8" });
 	if (r.status !== 0) {
-		throw new Error(
-			`failed to record ${relPath}: status=${r.status} stderr=${r.stderr} stdout=${r.stdout}`,
-		);
+		throw new Error(`failed to record ${relPath}: status=${r.status} stderr=${r.stderr} stdout=${r.stdout}`);
 	}
 }
 
@@ -75,11 +73,7 @@ describe("findModifiedStructuralFiles (forge-cli#26 / forge#106)", () => {
 		recordHash(tmp, file);
 
 		// Simulate /forge:enhance edit
-		fs.writeFileSync(
-			path.join(tmp, file),
-			"# Architect\n\nIdentity line.\n\n## New section by enhance\n",
-			"utf8",
-		);
+		fs.writeFileSync(path.join(tmp, file), "# Architect\n\nIdentity line.\n\n## New section by enhance\n", "utf8");
 
 		const modified = findModifiedStructuralFiles(tmp, toolsRoot);
 		expect(modified).toHaveLength(1);
@@ -95,11 +89,7 @@ describe("findModifiedStructuralFiles (forge-cli#26 / forge#106)", () => {
 		// re-applied edits. The file is on disk but has no manifest hash. The
 		// v0.11.4-era guard ignored this case and silently overwrote.
 		const file = ".forge/personas/orchestrator.md";
-		fs.writeFileSync(
-			path.join(tmp, file),
-			"# Orchestrator\n\nContent with no manifest entry.\n",
-			"utf8",
-		);
+		fs.writeFileSync(path.join(tmp, file), "# Orchestrator\n\nContent with no manifest entry.\n", "utf8");
 		// Deliberately NOT calling recordHash — file is untracked.
 
 		const divergent = findModifiedStructuralFiles(tmp, toolsRoot);
@@ -151,11 +141,7 @@ describe("findModifiedStructuralFiles (forge-cli#26 / forge#106)", () => {
 		// Pre-#30 behaviour: ignored. Post-#30: surfaced as state="untracked"
 		// because their appearance signals a prior incomplete regenerate (clear-namespace
 		// without re-record), and the user should be prompted before they're overwritten.
-		fs.writeFileSync(
-			path.join(tmp, ".forge/personas/new-persona.md"),
-			"# Untracked\n",
-			"utf8",
-		);
+		fs.writeFileSync(path.join(tmp, ".forge/personas/new-persona.md"), "# Untracked\n", "utf8");
 		const divergent = findModifiedStructuralFiles(tmp, toolsRoot);
 		expect(divergent).toHaveLength(1);
 		expect(divergent[0].state).toBe("untracked");

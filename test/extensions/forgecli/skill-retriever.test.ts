@@ -30,8 +30,8 @@ vi.mock("node:child_process", () => ({
 import {
 	buildSkillIndex,
 	emitSkillUsageEvents,
-	retrieveTopK,
 	type RetrievableSkill,
+	retrieveTopK,
 } from "../../../src/extensions/forgecli/skill-retriever.js";
 
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
@@ -42,29 +42,25 @@ const CORPUS: RetrievableSkill[] = [
 	{
 		skillId: "refresh-kb-links",
 		name: "refresh-kb-links",
-		description:
-			"Refresh Forge KB and workflow links in agent instruction files (CLAUDE.md, AGENTS.md).",
+		description: "Refresh Forge KB and workflow links in agent instruction files (CLAUDE.md, AGENTS.md).",
 		frontmatter: { name: "refresh-kb-links", tags: ["kb", "links", "agents"] },
 	},
 	{
 		skillId: "store-query-nlp",
 		name: "store-query-nlp",
-		description:
-			"Query the Forge store using natural language. Find tasks, bugs, sprints, features.",
+		description: "Query the Forge store using natural language. Find tasks, bugs, sprints, features.",
 		frontmatter: { name: "store-query-nlp", tags: ["store", "query", "nlp"] },
 	},
 	{
 		skillId: "store-query-grammar",
 		name: "store-query-grammar",
-		description:
-			"Reference for the Forge NLP query grammar — entity synonyms, status synonyms.",
+		description: "Reference for the Forge NLP query grammar — entity synonyms, status synonyms.",
 		frontmatter: { name: "store-query-grammar", tags: ["grammar", "query"] },
 	},
 	{
 		skillId: "store-custodian",
 		name: "store-custodian",
-		description:
-			"Sole authorized gateway for reading and writing the Forge JSON store via store-cli.",
+		description: "Sole authorized gateway for reading and writing the Forge JSON store via store-cli.",
 		frontmatter: { name: "store-custodian", tags: ["store", "gateway"] },
 	},
 ];
@@ -138,7 +134,7 @@ describe("skill-retriever / emitSkillUsageEvents", () => {
 		phase: "engineer",
 		iteration: 1,
 		startTimestamp: "2026-05-22T00:00:00.000Z",
-		endTimestamp:   "2026-05-22T00:00:01.000Z",
+		endTimestamp: "2026-05-22T00:00:01.000Z",
 		durationMinutes: 0.02,
 		model: "claude-opus-4-7",
 		provider: "anthropic",

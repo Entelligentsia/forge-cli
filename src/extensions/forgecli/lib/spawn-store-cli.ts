@@ -15,7 +15,7 @@
 // the three previous callers that were missing timeouts now carry them.
 
 import { spawnSync } from "node:child_process";
-import { STORE_CLI_TIMEOUT_MS, STORE_CLI_EMIT_TIMEOUT_MS } from "./store-cli-timeouts.js";
+import { STORE_CLI_EMIT_TIMEOUT_MS, STORE_CLI_TIMEOUT_MS } from "./store-cli-timeouts.js";
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -46,17 +46,12 @@ export interface SpawnValidateResult {
  * @param event     Event payload object; JSON.stringify'd before dispatch.
  * @param cwd       Working directory for the subprocess.
  */
-export function spawnStoreCliEmit(
-	storeCli: string,
-	sprintId: string,
-	event: unknown,
-	cwd: string,
-): SpawnEmitResult {
-	const result = spawnSync(
-		process.execPath,
-		[storeCli, "emit", sprintId, JSON.stringify(event)],
-		{ cwd, encoding: "utf8", timeout: STORE_CLI_EMIT_TIMEOUT_MS },
-	);
+export function spawnStoreCliEmit(storeCli: string, sprintId: string, event: unknown, cwd: string): SpawnEmitResult {
+	const result = spawnSync(process.execPath, [storeCli, "emit", sprintId, JSON.stringify(event)], {
+		cwd,
+		encoding: "utf8",
+		timeout: STORE_CLI_EMIT_TIMEOUT_MS,
+	});
 	if (result.status !== 0 || result.error) {
 		const stderr =
 			(typeof result.stderr === "string" ? result.stderr : "") ||
@@ -90,11 +85,11 @@ export function spawnStoreCliRead(
 	cwd: string,
 ): Record<string, unknown> | null {
 	try {
-		const result = spawnSync(
-			process.execPath,
-			[storeCli, "read", entity, entityId],
-			{ cwd, encoding: "utf8", timeout: STORE_CLI_TIMEOUT_MS },
-		);
+		const result = spawnSync(process.execPath, [storeCli, "read", entity, entityId], {
+			cwd,
+			encoding: "utf8",
+			timeout: STORE_CLI_TIMEOUT_MS,
+		});
 		if (result.status !== 0 || result.error) return null;
 		const stdout = typeof result.stdout === "string" ? result.stdout : String(result.stdout);
 		return JSON.parse(stdout) as Record<string, unknown>;
@@ -124,16 +119,14 @@ export function spawnStoreCliValidate(
 	cwd: string,
 ): SpawnValidateResult {
 	const payloadStr = typeof payload === "string" ? payload : JSON.stringify(payload);
-	const result = spawnSync(
-		process.execPath,
-		[storeCli, "validate", entity, payloadStr],
-		{ encoding: "utf8", cwd, timeout: STORE_CLI_TIMEOUT_MS },
-	);
+	const result = spawnSync(process.execPath, [storeCli, "validate", entity, payloadStr], {
+		encoding: "utf8",
+		cwd,
+		timeout: STORE_CLI_TIMEOUT_MS,
+	});
 	if (result.status !== 0 || result.error) {
 		const reason =
-			result.stderr?.trim() ||
-			result.error?.message ||
-			`store-cli validate exited ${String(result.status)}`;
+			result.stderr?.trim() || result.error?.message || `store-cli validate exited ${String(result.status)}`;
 		return { ok: false, reason };
 	}
 	return { ok: true, reason: "" };

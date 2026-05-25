@@ -28,10 +28,7 @@ function setupForgeProject(dir: string): void {
 	fs.mkdirSync(forgeDir, { recursive: true });
 	const pluginDir = path.join(dir, "plugin");
 	fs.mkdirSync(pluginDir, { recursive: true });
-	fs.writeFileSync(
-		path.join(forgeDir, "config.json"),
-		JSON.stringify({ paths: { forgeRoot: "./plugin" } }, null, 2),
-	);
+	fs.writeFileSync(path.join(forgeDir, "config.json"), JSON.stringify({ paths: { forgeRoot: "./plugin" } }, null, 2));
 }
 
 describe("discoverForgeConfigCached", () => {
@@ -74,9 +71,7 @@ describe("discoverForgeConfigCached", () => {
 
 	it("matches the result of the uncached discoverForgeConfig", async () => {
 		setupForgeProject(tmpRoot);
-		const { discoverForgeConfig } = await import(
-			"../../../../src/extensions/forgecli/forge-root.js"
-		);
+		const { discoverForgeConfig } = await import("../../../../src/extensions/forgecli/forge-root.js");
 		const cached = discoverForgeConfigCached(tmpRoot);
 		const uncached = discoverForgeConfig(tmpRoot);
 		expect(cached).toEqual(uncached);

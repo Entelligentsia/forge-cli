@@ -10,12 +10,16 @@
 //   6. /forge:status ENOENT fallback — emits fallback notify when status.md absent.
 //   7. T28 (FORGE-S17-T02): registerAllForgeCommands count matches bundled command files.
 
-import { promises as fs } from "node:fs";
 import * as fsSync from "node:fs";
+import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __test__, registerForgeCommands, registerAllForgeCommands } from "../../../src/extensions/forgecli/forge-commands.js";
+import {
+	__test__,
+	registerAllForgeCommands,
+	registerForgeCommands,
+} from "../../../src/extensions/forgecli/forge-commands.js";
 
 type Handler = (args: string, ctx: FakeCtx) => Promise<void>;
 type BeforeAgentStartHandler = () => Promise<{ systemPrompt?: string } | undefined>;

@@ -34,16 +34,18 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { assertAudience } from "./audience-gate.js";
 import { sendKickoff } from "./kickoff.js";
-import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
-import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
-
 // FORGE-S25-T16: extracted to lib modules. Re-exported here for backward compat
 // (plan.test.ts, bundled-base-pack-markers.test.ts, run-task.ts, run-sprint.ts,
 // fix-bug.ts all import checkMaterialization / extractPersonaNames from plan.js).
 import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
+
 export { extractPersonaNames };
-import { type MaterializationCheck, checkMaterialization } from "./lib/manifest-checker.js";
-export { type MaterializationCheck, checkMaterialization };
+
+import { checkMaterialization, type MaterializationCheck } from "./lib/manifest-checker.js";
+
+export { checkMaterialization, type MaterializationCheck };
 
 // Argv parsing -------------------------------------------------------------
 
@@ -68,7 +70,6 @@ export function parsePlanArgs(rawArgs: string, cwd: string): ParsedArgs {
 	}
 	return { mode: "text", taskRef: trimmed, sourceLabel: "(seed from inline text)" };
 }
-
 
 // Kickoff composition ------------------------------------------------------
 

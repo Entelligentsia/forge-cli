@@ -18,11 +18,11 @@ import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { buildForgeArtifact } from "./forge-artifact-tool.js";
 import { execFileAsync } from "./lib/exec-helpers.js";
 // FORGE-S25-T22 (N-C-D): adopt shared resolveToolDir from store-resolver instead of duplicating.
 // The private copy was identical to store-resolver.resolveToolDir; deleted per R2 Pass-3 scope-corrected.
 import { resolveToolDir } from "./store-resolver.js";
-import { buildForgeArtifact } from "./forge-artifact-tool.js";
 
 // ── Shared helper ────────────────────────────────────────────────────────────
 
@@ -148,7 +148,9 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 		const configPath = path.join(projectRoot, ".forge", "config.json");
 		const config = JSON.parse(readFileSync(configPath, "utf8")) as { paths?: { engineering?: string } };
 		if (typeof config.paths?.engineering === "string") engineeringPath = config.paths.engineering;
-	} catch { /* default */ }
+	} catch {
+		/* default */
+	}
 	const defs: ForgeToolDefs = {
 		collate: buildForgeCollate(toolDir, projectRoot),
 		store: buildForgeStore(toolDir, projectRoot),
@@ -594,11 +596,11 @@ function buildForgeVerifyApply(toolDir: string, projectRoot: string): ToolDefini
 
 			const { spawnSync } = await import("node:child_process");
 			for (const claimedPath of params.claimed_paths) {
-				const r = spawnSync(
-					"node",
-					[manifestTool, "check", claimedPath],
-					{ cwd: projectRoot, encoding: "utf8", timeout: 5_000 },
-				);
+				const r = spawnSync("node", [manifestTool, "check", claimedPath], {
+					cwd: projectRoot,
+					encoding: "utf8",
+					timeout: 5_000,
+				});
 				switch (r.status) {
 					case 0:
 						result.unchanged.push(claimedPath);

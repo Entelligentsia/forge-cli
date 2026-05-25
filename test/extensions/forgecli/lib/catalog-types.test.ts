@@ -13,14 +13,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
-	FRICTION_SUBKINDS,
-	SYNTHETIC_EVENT_TYPES,
-	ROLE_KINDS,
 	ACTION_KINDS,
-	TASK_STATUS_VALUES,
-	SPRINT_STATUS_VALUES,
 	BUG_STATUS_VALUES,
 	COMMAND_NAME_VALUES,
+	FRICTION_SUBKINDS,
+	ROLE_KINDS,
+	SPRINT_STATUS_VALUES,
+	SYNTHETIC_EVENT_TYPES,
+	TASK_STATUS_VALUES,
 } from "../../../../src/extensions/forgecli/lib/catalog-types.js";
 
 // event.schema.json subkind pattern: ^(skill_unused|skill_failed|skill_missing|skill_stale|skill_redundant|x_[a-z_]+)$

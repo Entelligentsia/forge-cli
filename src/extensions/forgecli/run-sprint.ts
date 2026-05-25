@@ -33,31 +33,33 @@
 //   any LLM dispatch. The two paths are deliberately separate.
 //   Reference: lib/orchestrator-preflight.ts (N-H-D, FORGE-S25-T17).
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
 // ModelRegistry/AuthStorage no longer instantiated here — see fix-bug.ts note
 // (FORGE-BUG-001). Use ctx.modelRegistry so session-registered providers are
 // honored by validateModelConfig.
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-
 import { assertAudience } from "./audience-gate.js";
-import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { checkMaterialization } from "./lib/manifest-checker.js";
-import { readPersonaDir as readPersonaDirSprint, readPipelineNames as readPipelineNamesSprint } from "./lib/catalog-helpers.js";
-import { sprintStateFilePath, readJsonState, writeJsonState } from "./lib/state-helpers.js";
-import { loadWorkflow } from "./parsers/workflow-loader.js";
-import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { getSessionRegistry } from "./session-registry.js";
-import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
 import { loadLayeredConfig } from "./config-layer.js";
+import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
+import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
+import {
+	readPersonaDir as readPersonaDirSprint,
+	readPipelineNames as readPipelineNamesSprint,
+} from "./lib/catalog-helpers.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
+import { checkMaterialization } from "./lib/manifest-checker.js";
+import { readJsonState, sprintStateFilePath, writeJsonState } from "./lib/state-helpers.js";
 import { lookupPersonaModel } from "./model-resolver.js";
 import { validateModelConfig } from "./model-validator.js";
+import { loadWorkflow } from "./parsers/workflow-loader.js";
+import { getSessionRegistry } from "./session-registry.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
-import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "./hook-dispatcher.js";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
 
 /**
  * Test-only seam (forge-cli#17). Resolves a StreamFn for a given dispatch
@@ -69,25 +71,26 @@ export type SprintStreamFnFactory = (ctx: {
 	phase?: string;
 	taskId?: string;
 }) => StreamFn | undefined;
+
 import {
-	runTaskPipeline,
-	isNonInteractive,
-	formatLocalTime,
 	emitEvent,
+	formatLocalTime,
+	isNonInteractive,
 	isoCompact,
-	validateId,
-	readState as readTaskState,
 	isStateStale,
-	type RunTaskState,
 	type RunTaskPipelineResult,
+	type RunTaskState,
+	readState as readTaskState,
+	runTaskPipeline,
+	validateId,
 } from "./run-task.js";
 
 // ── Sprint-level state persistence ────────────────────────────────────────
 
 interface RunSprintState {
 	sprintId: string;
-	taskIndex: number;           // index into sprint.taskIds (points to NEXT task to run)
-	completedTaskIds: string[];  // only tasks that returned status "completed" (advisory #6)
+	taskIndex: number; // index into sprint.taskIds (points to NEXT task to run)
+	completedTaskIds: string[]; // only tasks that returned status "completed" (advisory #6)
 	halted: boolean;
 	lastError?: string;
 	savedAt: string;
@@ -152,39 +155,50 @@ function readSprintRecord(sprintId: string, storeCli: string, cwd: string): Spri
 // ── Sprint ceremony dispatch (Plan 12 §6.2) ────────────────────────────────
 
 type SprintCeremonyResult = {
-	verdict:        "complete" | "partial" | "revision-required";
-	model?:         string;
-	provider?:      string;
-	durationMs:     number;
-	errorMessage?:  string;
+	verdict: "complete" | "partial" | "revision-required";
+	model?: string;
+	provider?: string;
+	durationMs: number;
+	errorMessage?: string;
 };
 
 async function dispatchSprintCeremony(params: {
-	sprintId:           string;
-	mode:               "complete" | "partial";
-	completedTaskIds:   string[];
-	pausedAfterIndex?:  number;
-	cwd:                string;
-	forgeRoot:          string;
-	ctx:                ExtensionCommandContext;
-	registry:           ReturnType<typeof getSessionRegistry>;
-	streamFnFactory?:   SprintStreamFnFactory;
-	forgeToolDefs?:     ForgeToolDefs;
+	sprintId: string;
+	mode: "complete" | "partial";
+	completedTaskIds: string[];
+	pausedAfterIndex?: number;
+	cwd: string;
+	forgeRoot: string;
+	ctx: ExtensionCommandContext;
+	registry: ReturnType<typeof getSessionRegistry>;
+	streamFnFactory?: SprintStreamFnFactory;
+	forgeToolDefs?: ForgeToolDefs;
 }): Promise<SprintCeremonyResult> {
-	const { sprintId, mode, completedTaskIds, pausedAfterIndex, cwd, forgeRoot, ctx, registry, streamFnFactory, forgeToolDefs } = params;
+	const {
+		sprintId,
+		mode,
+		completedTaskIds,
+		pausedAfterIndex,
+		cwd,
+		forgeRoot,
+		ctx,
+		registry,
+		streamFnFactory,
+		forgeToolDefs,
+	} = params;
 	const startMs = Date.now();
 
 	// Materialized workflow path — already shipped from base pack.
 	const workflowName = "architect_review_sprint_completion";
-	const personaName  = "architect";
+	const personaName = "architect";
 
 	let persona;
 	try {
 		persona = loadForgePersona(personaName, cwd);
 	} catch {
 		return {
-			verdict:      "revision-required",
-			durationMs:   Date.now() - startMs,
+			verdict: "revision-required",
+			durationMs: Date.now() - startMs,
 			errorMessage: `architect persona not found`,
 		};
 	}
@@ -256,7 +270,7 @@ async function dispatchSprintCeremony(params: {
 			modelRegistry: ctx.modelRegistry,
 			customTools: forgeToolDefs ? getSubagentTools(forgeToolDefs, persona.name) : undefined,
 		});
-		model    = result.model;
+		model = result.model;
 		provider = result.provider;
 		if (result.exitCode !== 0) {
 			errorMessage = result.errorMessage ?? "architect subagent exited non-zero";
@@ -272,14 +286,15 @@ async function dispatchSprintCeremony(params: {
 	// The store is the source of truth — verdict text in SPRINT_COMPLETION_REVIEW.md
 	// is human-readable but the store status is authoritative.
 	let verdict: "complete" | "partial" | "revision-required" = "revision-required";
-	const readResult = spawnSync("node", [
-		`${forgeRoot}/tools/store-cli.cjs`, "read", "sprint", sprintId,
-	], { cwd, encoding: "utf8" });
+	const readResult = spawnSync("node", [`${forgeRoot}/tools/store-cli.cjs`, "read", "sprint", sprintId], {
+		cwd,
+		encoding: "utf8",
+	});
 	if (readResult.status === 0) {
 		try {
 			const sprint = JSON.parse(readResult.stdout as string);
-			if (sprint.status === "completed")                     verdict = "complete";
-			else if (sprint.status === "partially-completed")   verdict = "partial";
+			if (sprint.status === "completed") verdict = "complete";
+			else if (sprint.status === "partially-completed") verdict = "partial";
 			// else: status unchanged → revision-required
 		} catch {
 			// fall through with revision-required
@@ -347,13 +362,10 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			// Handles unprefixed IDs like "S22" → "FORGE-S22".
 			// Issue #20: unprefixed entity IDs silently poisoned substitutions.
 			const toolDir = resolveToolDir(forgeRoot);
-			const resolvedSprintId = await resolveToCanonicalId(
-				sprintId,
-				toolDir,
-				cwd,
-				"sprint",
-				{ ctx, commandLabel: "forge:run-sprint" },
-			);
+			const resolvedSprintId = await resolveToCanonicalId(sprintId, toolDir, cwd, "sprint", {
+				ctx,
+				commandLabel: "forge:run-sprint",
+			});
 			if (!resolvedSprintId) {
 				// Error already emitted by resolver
 				ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
@@ -403,10 +415,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				const markerCheck = checkMaterialization(workflowPath, workflowMd);
 				if (!markerCheck.ok) {
 					for (const marker of markerCheck.missing) {
-						ctx.ui.notify(
-							`× workflow regression: ${marker} not found in ${workflowPath}`,
-							"error",
-						);
+						ctx.ui.notify(`× workflow regression: ${marker} not found in ${workflowPath}`, "error");
 					}
 					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
 					return;
@@ -415,10 +424,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 
 			// ── Pre-flight confirm (AC B-7) ───────────────────────────────────
 			if (!isNonInteractive()) {
-				const proceed = await ctx.ui.confirm(
-					`Begin sprint ${sprintId}?`,
-					`Tasks: ${taskIds.join(", ")}`,
-				);
+				const proceed = await ctx.ui.confirm(`Begin sprint ${sprintId}?`, `Tasks: ${taskIds.join(", ")}`);
 				if (!proceed) {
 					ctx.ui.notify("forge:run-sprint — sprint aborted.", "info");
 					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
@@ -430,7 +436,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			const existingSprintState = readSprintState(cwd, sprintId);
 			let startTaskIndex = 0;
 			let completedTaskIds: string[] = [];
-			let resumeTaskStates: Map<string, RunTaskState> = new Map();
+			const resumeTaskStates: Map<string, RunTaskState> = new Map();
 
 			if (existingSprintState) {
 				if (isSprintStateStale(existingSprintState)) {
@@ -507,7 +513,11 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				}
 				const personasDir = path.resolve(
 					path.dirname(fileURLToPath(import.meta.url)),
-					"..", "..", "forge-payload", ".base-pack", "personas",
+					"..",
+					"..",
+					"forge-payload",
+					".base-pack",
+					"personas",
 				);
 				const personaCatalogue = readPersonaDirSprint(personasDir);
 				const forgeCfgPath = path.join(cwd, ".forge", "config.json");
@@ -548,9 +558,10 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				// phase pipeline and accumulate it as completed. This handles
 				// re-runs where tasks finished in a prior attempt.
 				{
-					const taskReadResult = spawnSync("node", [
-						`${forgeRoot}/tools/store-cli.cjs`, "read", "task", taskId,
-					], { cwd, encoding: "utf8" });
+					const taskReadResult = spawnSync("node", [`${forgeRoot}/tools/store-cli.cjs`, "read", "task", taskId], {
+						cwd,
+						encoding: "utf8",
+					});
 					if (taskReadResult.status === 0) {
 						try {
 							const taskRecord = JSON.parse(taskReadResult.stdout as string);
@@ -581,31 +592,25 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					SPRINT_STATUS_KEY,
 					`run-sprint ${sprintId}: task ${i + 1}/${taskIds.length} (${taskId})`,
 				);
-				ctx.ui.notify(
-					`▶ ${sprintId}: task ${i + 1}/${taskIds.length} — ${taskId}`,
-					"info",
-				);
+				ctx.ui.notify(`▶ ${sprintId}: task ${i + 1}/${taskIds.length} — ${taskId}`, "info");
 
 				// Determine resumeFromState for mid-task resume (REVIEW FIX #2).
 				// If a halted task state exists for this task, pass it to runTaskPipeline.
 				let resumeFromState: RunTaskState | undefined = resumeTaskStates.get(taskId);
 				if (resumeFromState) {
 					// Validate the state is not corrupt
-					if (typeof resumeFromState.phaseIndex !== "number" || typeof resumeFromState.iterationCounts !== "object") {
-						ctx.ui.notify(
-							`⚠ forge:run-sprint — corrupt task state for ${taskId}; starting fresh.`,
-							"warning",
-						);
+					if (
+						typeof resumeFromState.phaseIndex !== "number" ||
+						typeof resumeFromState.iterationCounts !== "object"
+					) {
+						ctx.ui.notify(`⚠ forge:run-sprint — corrupt task state for ${taskId}; starting fresh.`, "warning");
 						resumeFromState = undefined;
 					}
 				}
 
 				// Stale task state fallback: if task state >7d, delete and start fresh
 				if (resumeFromState && isStateStale(resumeFromState)) {
-					ctx.ui.notify(
-						`⚠ forge:run-sprint — stale task state for ${taskId} (>7d); starting fresh.`,
-						"warning",
-					);
+					ctx.ui.notify(`⚠ forge:run-sprint — stale task state for ${taskId} (>7d); starting fresh.`, "warning");
 					resumeFromState = undefined;
 				}
 
@@ -626,12 +631,13 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					signal: taskSignal,
 					forgeToolDefs: options.forgeToolDefs,
 					streamFnFactory: options.streamFnFactory
-						? (c) => options.streamFnFactory?.({
-							kind: "task-phase",
-							persona: c.persona,
-							phase: c.phase,
-							taskId: c.taskId,
-						})
+						? (c) =>
+								options.streamFnFactory?.({
+									kind: "task-phase",
+									persona: c.persona,
+									phase: c.phase,
+									taskId: c.taskId,
+								})
 						: undefined,
 				});
 
@@ -648,19 +654,19 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					// state, emit sprint-halted with cancellation detail, exit.
 					registry.completeSession(taskId, "cancelled");
 					const cancelledEvent: Record<string, unknown> = {
-						eventId:         `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
+						eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
 						sprintId,
-						role:            "orchestrator",
-						action:          "sprint-halted",
-						startTimestamp:  new Date(sprintStartMs).toISOString(),
-						endTimestamp:    new Date(Date.now()).toISOString(),
+						role: "orchestrator",
+						action: "sprint-halted",
+						startTimestamp: new Date(sprintStartMs).toISOString(),
+						endTimestamp: new Date(Date.now()).toISOString(),
 						durationMinutes: Math.round(((Date.now() - sprintStartMs) / 60000) * 100) / 100,
-						model:           lastModel    ?? "orchestrator",
-						provider:        lastProvider ?? "orchestrator",
-						type:            "sprint-halted",
+						model: lastModel ?? "orchestrator",
+						provider: lastProvider ?? "orchestrator",
+						type: "sprint-halted",
 						haltedAtTaskIndex: i,
-						haltedAtTaskId:    taskId,
-						lastError:         "cancelled",
+						haltedAtTaskId: taskId,
+						lastError: "cancelled",
 					};
 					emitEvent(storeCli, cwd, sprintId, cancelledEvent);
 
@@ -679,19 +685,19 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					// Task halted/escalated/failed: mark session failed, persist sprint state, emit sprint-halted, exit.
 					registry.completeSession(taskId, "failed");
 					const haltedEvent: Record<string, unknown> = {
-						eventId:         `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
+						eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
 						sprintId,
-						role:            "orchestrator",
-						action:          "sprint-halted",
-						startTimestamp:  new Date(sprintStartMs).toISOString(),
-						endTimestamp:    new Date(Date.now()).toISOString(),
+						role: "orchestrator",
+						action: "sprint-halted",
+						startTimestamp: new Date(sprintStartMs).toISOString(),
+						endTimestamp: new Date(Date.now()).toISOString(),
 						durationMinutes: Math.round(((Date.now() - sprintStartMs) / 60000) * 100) / 100,
-						model:           lastModel    ?? "orchestrator",
-						provider:        lastProvider ?? "orchestrator",
-						type:            "sprint-halted",
+						model: lastModel ?? "orchestrator",
+						provider: lastProvider ?? "orchestrator",
+						type: "sprint-halted",
 						haltedAtTaskIndex: i,
-						haltedAtTaskId:    taskId,
-						lastError:         taskResult.lastError ?? "unknown",
+						haltedAtTaskId: taskId,
+						lastError: taskResult.lastError ?? "unknown",
 					};
 					emitEvent(storeCli, cwd, sprintId, haltedEvent);
 
@@ -746,22 +752,22 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 						}
 
 						const pausedEvent: Record<string, unknown> = {
-							eventId:         `${isoCompact(sprintStartMs)}_${sprintId}_sprint_complete`,
+							eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_complete`,
 							sprintId,
-							role:            "architect",
-							action:          "sprint-complete",
-							startTimestamp:  new Date(sprintStartMs).toISOString(),
-							endTimestamp:    new Date(pauseEndMs).toISOString(),
+							role: "architect",
+							action: "sprint-complete",
+							startTimestamp: new Date(sprintStartMs).toISOString(),
+							endTimestamp: new Date(pauseEndMs).toISOString(),
 							durationMinutes: Math.round(((pauseEndMs - sprintStartMs) / 60000) * 100) / 100,
-							model:           ceremonyResult?.model    ?? lastModel    ?? "orchestrator",
-							provider:        ceremonyResult?.provider ?? lastProvider ?? "orchestrator",
-							type:            "sprint-complete",
-							taskCount:       taskIds.length,
+							model: ceremonyResult?.model ?? lastModel ?? "orchestrator",
+							provider: ceremonyResult?.provider ?? lastProvider ?? "orchestrator",
+							type: "sprint-complete",
+							taskCount: taskIds.length,
 							completedTaskIds,
-							verdict:         "partial",
+							verdict: "partial",
 							pausedAfterTaskIndex: i,
-							waveCount:       1,
-							maxConcurrency:  1,
+							waveCount: 1,
+							maxConcurrency: 1,
 						};
 						emitEvent(storeCli, cwd, sprintId, pausedEvent);
 
@@ -800,21 +806,21 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			});
 
 			const sprintEvent: Record<string, unknown> = {
-				eventId:         `${isoCompact(sprintStartMs)}_${sprintId}_sprint_complete`,
+				eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_complete`,
 				sprintId,
-				role:            "architect",
-				action:          "sprint-complete",
-				startTimestamp:  new Date(sprintStartMs).toISOString(),
-				endTimestamp:    new Date(sprintEndMs).toISOString(),
+				role: "architect",
+				action: "sprint-complete",
+				startTimestamp: new Date(sprintStartMs).toISOString(),
+				endTimestamp: new Date(sprintEndMs).toISOString(),
 				durationMinutes: Math.round(((sprintEndMs - sprintStartMs) / 60000) * 100) / 100,
-				model:           ceremony.model    ?? lastModel    ?? "orchestrator",
-				provider:        ceremony.provider ?? lastProvider ?? "orchestrator",
-				type:            "sprint-complete",
-				taskCount:       taskIds.length,
+				model: ceremony.model ?? lastModel ?? "orchestrator",
+				provider: ceremony.provider ?? lastProvider ?? "orchestrator",
+				type: "sprint-complete",
+				taskCount: taskIds.length,
 				completedTaskIds,
-				verdict:         ceremony.verdict === "revision-required" ? "partial" : ceremony.verdict,
-				waveCount:       1,
-				maxConcurrency:  1,
+				verdict: ceremony.verdict === "revision-required" ? "partial" : ceremony.verdict,
+				waveCount: 1,
+				maxConcurrency: 1,
 			};
 
 			const emitResult = emitEvent(storeCli, cwd, sprintId, sprintEvent);
@@ -855,7 +861,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				// Architect did not approve; surface to user.
 				ctx.ui.notify(
 					`▲ forge:run-sprint — sprint ${sprintId} ceremony returned "Revision Required". ` +
-					`See engineering/sprints/${sprintId}/SPRINT_COMPLETION_REVIEW.md.`,
+						`See engineering/sprints/${sprintId}/SPRINT_COMPLETION_REVIEW.md.`,
 					"warning",
 				);
 			} else {

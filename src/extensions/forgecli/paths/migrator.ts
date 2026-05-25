@@ -24,11 +24,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+	getForgeCliUserRoot,
 	getGlobalConfigPath,
 	getLegacyPaths,
 	getMigrationMarkerPath,
 	getUserCacheDir,
-	getForgeCliUserRoot,
 } from "./paths.js";
 
 export interface MigrationResult {
@@ -48,12 +48,7 @@ export interface MigrateOptions {
 }
 
 /** Cache filenames that may live under the legacy ~/.cache/forgecli/ root. */
-const LEGACY_CACHE_FILES = [
-	"update-banner.json",
-	"whats-new-seen.json",
-	"seen.json",
-	"drift-seen.json",
-];
+const LEGACY_CACHE_FILES = ["update-banner.json", "whats-new-seen.json", "seen.json", "drift-seen.json"];
 
 function exists(p: string): boolean {
 	try {

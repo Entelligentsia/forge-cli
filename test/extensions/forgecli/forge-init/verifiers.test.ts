@@ -2,8 +2,8 @@
 // Unit tests for forge-init/verifiers.ts: verifyPhase1/2/3.
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { verifyPhase1, verifyPhase2, verifyPhase3 } from "../../../../src/extensions/forgecli/forge-init/verifiers.js";
 
@@ -41,7 +41,9 @@ const VALID_CONFIG = {
 
 describe("verifyPhase1", () => {
 	let tmpDir: string;
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	it("returns ok=true when config.json contains all required fields", () => {
@@ -134,7 +136,9 @@ describe("verifyPhase2", () => {
 	const KB_PATH = "engineering";
 	const ARCH_DOCS = ["stack", "processes", "database", "routing", "deployment", "entity-model", "stack-checklist"];
 
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	function writeAllDocs(): void {
@@ -173,7 +177,9 @@ describe("verifyPhase2", () => {
 describe("verifyPhase3", () => {
 	let tmpDir: string;
 
-	beforeEach(() => { tmpDir = makeTmpDir(); });
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
 	afterEach(() => rmTmpDir(tmpDir));
 
 	function writeAllDirs(): void {

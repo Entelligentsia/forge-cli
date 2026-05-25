@@ -37,45 +37,47 @@
 //
 // N-H-E tag: see inline comment at the materialization skip (~line 707 / checkMaterialization).
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { assertAudience, CallerContextStore } from "./audience-gate.js";
 // ModelRegistry/AuthStorage no longer instantiated here — use ctx.modelRegistry
 // so extension-registered providers (registered against the live session) are
 // visible to validateModelConfig. Creating a fresh registry here would miss
 // them and produce spurious MODEL_UNAVAILABLE warnings (FORGE-BUG-001).
 import { loadLayeredConfig } from "./config-layer.js";
-import { resolveModelForPhase } from "./model-resolver.js";
-import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
-
-import { assertAudience, CallerContextStore } from "./audience-gate.js";
-import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { checkMaterialization } from "./lib/manifest-checker.js";
-import { readPersonaDir as readPersonaDirBug, readPipelineNames as readPipelineNamesBug } from "./lib/catalog-helpers.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { getSubagentTools, type ForgeToolDefs } from "./forge-tools.js";
-import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { loadWorkflow, type AudienceValue } from "./parsers/workflow-loader.js";
-import { getSessionRegistry } from "./session-registry.js";
-import { attachViewportObserver } from "./viewport-events.js";
-import { fmtPhaseSummary } from "./viewport-renderer.js";
+import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
 import {
-	type PhaseDescriptor,
-	validateId,
-	isoCompact,
-	isNonInteractive,
-	formatLocalTime,
-	emitEvent,
-	findPredecessorIndex,
-	runPreflightGate,
-	type PreflightResult,
-	type OrchestratorEmitContext,
+	readPersonaDir as readPersonaDirBug,
+	readPipelineNames as readPipelineNamesBug,
+} from "./lib/catalog-helpers.js";
+import { discoverForgeConfigCached } from "./lib/forge-config.js";
+import { checkMaterialization } from "./lib/manifest-checker.js";
+import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
+import { resolveModelForPhase } from "./model-resolver.js";
+import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
+import {
 	buildPhaseEvent,
 	drainFrictionFile,
+	emitEvent,
+	findPredecessorIndex,
+	formatLocalTime,
+	isNonInteractive,
+	isoCompact,
 	judgementFromSummary,
+	type OrchestratorEmitContext,
+	type PhaseDescriptor,
+	type PreflightResult,
+	runPreflightGate,
+	validateId,
 } from "./run-task.js";
+import { getSessionRegistry } from "./session-registry.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
+import { attachViewportObserver } from "./viewport-events.js";
+import { fmtPhaseSummary } from "./viewport-renderer.js";
 
 // ── Bug phase descriptor table ──────────────────────────────────────────────
 //
@@ -87,39 +89,39 @@ import {
 // lib/catalog-helpers.ts and imported above with aliases (H-4, N-H-G).
 
 export const BUG_PHASES: PhaseDescriptor[] = [
-	{ role: "triage",      workflowFile: "fix_bug",          personaNoun: "bug-fixer",  isReview: false, maxIterations: 1 },
-	{ role: "plan-fix",   workflowFile: "fix_bug",          personaNoun: "bug-fixer",  isReview: false, maxIterations: 1 },
-	{ role: "review-plan", workflowFile: "review_plan",     personaNoun: "supervisor",  isReview: true,  maxIterations: 3 },
-	{ role: "implement",   workflowFile: "fix_bug",          personaNoun: "bug-fixer",  isReview: false, maxIterations: 1 },
-	{ role: "review-code", workflowFile: "review_code",     personaNoun: "supervisor",  isReview: true,  maxIterations: 3 },
-	{ role: "approve",     workflowFile: "architect_approve", personaNoun: "architect",   isReview: true,  maxIterations: 3 },
-	{ role: "commit",      workflowFile: "commit_task",      personaNoun: "engineer",    isReview: false, maxIterations: 1 },
+	{ role: "triage", workflowFile: "fix_bug", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
+	{ role: "plan-fix", workflowFile: "fix_bug", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
+	{ role: "review-plan", workflowFile: "review_plan", personaNoun: "supervisor", isReview: true, maxIterations: 3 },
+	{ role: "implement", workflowFile: "fix_bug", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
+	{ role: "review-code", workflowFile: "review_code", personaNoun: "supervisor", isReview: true, maxIterations: 3 },
+	{ role: "approve", workflowFile: "architect_approve", personaNoun: "architect", isReview: true, maxIterations: 3 },
+	{ role: "commit", workflowFile: "commit_task", personaNoun: "engineer", isReview: false, maxIterations: 1 },
 ];
 
 // Map phase.role → canonical summary key written by base-pack workflows.
 // Phases mapped to null use update-status bug instead of set-bug-summary
 // for verdict tracking (Option B).
 export const BUG_SUMMARY_KEY_BY_ROLE: Record<string, string | null> = {
-	"triage":      "triage",
-	"plan-fix":    "plan",
+	triage: "triage",
+	"plan-fix": "plan",
 	"review-plan": "review_plan",
-	"implement":   "implementation",
+	implement: "implementation",
 	"review-code": "code_review",
-	"approve":     "approve",  // read from bug.summaries.approve (set-bug-summary)
-	"commit":      null,    // commit transitions bug.status → fixed (terminal), no summaries entry
+	approve: "approve", // read from bug.summaries.approve (set-bug-summary)
+	commit: null, // commit transitions bug.status → fixed (terminal), no summaries entry
 };
 
 // Bug-event type tokens — explicit mapping per review finding #3.
 // Non-review phases always emit the pass token. Review phases select
 // pass or fail based on ec.judgement.verdict.
 export const BUG_TYPE_TOKENS: Record<string, { pass: string; fail: string }> = {
-	"triage":      { pass: "bug-triaged",            fail: "bug-triaged" },
-	"plan-fix":    { pass: "fix-planned",            fail: "fix-planned" },
-	"review-plan": { pass: "fix-review-passed",      fail: "fix-review-failed" },
-	"implement":   { pass: "fix-implemented",        fail: "fix-implemented" },
+	triage: { pass: "bug-triaged", fail: "bug-triaged" },
+	"plan-fix": { pass: "fix-planned", fail: "fix-planned" },
+	"review-plan": { pass: "fix-review-passed", fail: "fix-review-failed" },
+	implement: { pass: "fix-implemented", fail: "fix-implemented" },
 	"review-code": { pass: "fix-code-review-passed", fail: "fix-code-review-failed" },
-	"approve":     { pass: "fix-approved",           fail: "fix-revision-requested" },
-	"commit":      { pass: "bug-committed",           fail: "bug-commit-failed" },
+	approve: { pass: "fix-approved", fail: "fix-revision-requested" },
+	commit: { pass: "bug-committed", fail: "bug-commit-failed" },
 };
 
 // ── Bug FSM transitions ────────────────────────────────────────────────────
@@ -179,9 +181,7 @@ export function readBugState(cwd: string, bugId: string, sessionId?: string): Ru
 					bestMtime = st.mtimeMs;
 					bestFile = fp;
 				}
-			} catch {
-			continue;
-			}
+			} catch {}
 		}
 	} catch {
 		return null;
@@ -213,7 +213,11 @@ export function deleteBugState(cwd: string, bugId: string): void {
 		const entries = fs.readdirSync(cacheDir);
 		for (const entry of entries) {
 			if ((entry.startsWith(statePrefix) && entry.endsWith(".json")) || entry.startsWith(debugPrefix)) {
-				try { fs.unlinkSync(path.join(cacheDir, entry)); } catch { /* non-fatal */ }
+				try {
+					fs.unlinkSync(path.join(cacheDir, entry));
+				} catch {
+					/* non-fatal */
+				}
 			}
 		}
 	} catch {
@@ -265,7 +269,9 @@ export function assignNextBugId(storeCli: string, cwd: string): string {
 					}
 				}
 			}
-		} catch { /* empty store — start from 1 */ }
+		} catch {
+			/* empty store — start from 1 */
+		}
 	}
 	const next = maxNum + 1;
 	return `FORGE-BUG-${String(next).padStart(3, "0")}`;
@@ -342,7 +348,12 @@ export function readBugVerdict(
 
 // ── Bug body composition ──────────────────────────────────────────────────
 
-export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: string, bugStatusBeforePhase?: string): string {
+export function composeBugBody(
+	subWorkflowMd: string,
+	bugId: string,
+	phaseRole: string,
+	bugStatusBeforePhase?: string,
+): string {
 	// Entity-kind override block prepended before workflow body.
 	// Conforms to forge v0.44.x meta-fix-bug contract:
 	//   - bug.status enum is {reported, triaged, in-progress, fixed}; `fixed` is terminal.
@@ -366,13 +377,13 @@ export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: 
 		`  node "$FORGE_ROOT/tools/store-cli.cjs" set-bug-summary ${bugId} approve <APPROVE-SUMMARY.json>`,
 		`  The summary's "verdict" field MUST be "approved" or "revision". The downstream commit gate reads this, not bug.status.`,
 		`- Commit phase: on successful git commit, run \`node "$FORGE_ROOT/tools/store-cli.cjs" update-status bug ${bugId} status fixed\` (terminal).`,
-		`- Do NOT write \"approved\" or \"verified\" to bug.status — those values were removed from the schema in forge v0.44.0.`,
-		`- Do NOT reference task-specific status values (e.g., \"committed\") or task entity kind.`,
+		`- Do NOT write "approved" or "verified" to bug.status — those values were removed from the schema in forge v0.44.0.`,
+		`- Do NOT reference task-specific status values (e.g., "committed") or task entity kind.`,
 		"- CRITICAL: All `set-summary` calls must use `set-bug-summary` (not `set-summary`).",
 		`  e.g. node "$FORGE_ROOT/tools/store-cli.cjs" set-bug-summary ${bugId} review_plan <jsonFile>`,
 		`- Preflight gate: use \`--bug\` flag (not \`--task\`). e.g. node "$FORGE_ROOT/tools/preflight-gate.cjs" --phase review-plan --bug ${bugId}`,
 		"- Skip re-running preflight-gate — the orchestrator already checked it. Proceed directly to the review.",
-		"Any workflow text that says \"task\" should be read as \"bug\" for this context.",
+		'Any workflow text that says "task" should be read as "bug" for this context.',
 	];
 
 	// Phase-specific reinforcement when the orchestrator can name the current status.
@@ -388,7 +399,7 @@ export function composeBugBody(subWorkflowMd: string, bugId: string, phaseRole: 
 	}
 	if (phaseRole === "triage") {
 		entityKindLines.push(
-			"- Triage phase: in addition to writing TRIAGE.md and TRIAGE-SUMMARY.json, the summary MUST include a `route` field set to `\"A\"` or `\"B\"`.",
+			'- Triage phase: in addition to writing TRIAGE.md and TRIAGE-SUMMARY.json, the summary MUST include a `route` field set to `"A"` or `"B"`.',
 			"  Path A (short-circuit): severity == minor AND single-file fix ≤ ~20 lines AND no schema/API/migration AND regression test obvious from repro.",
 			"  Path B (default): everything else. When in doubt, choose B.",
 			"  The orchestrator reads bug.summaries.triage.route to select the downstream phase list.",
@@ -506,7 +517,18 @@ const STATUS_KEY = "forge:fix-bug";
 const MESSAGE_KEY = "forge:fix-bug:message";
 
 export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBugPipelineResult> {
-	const { bugId: initialBugId, originalArg, isNewBug, cwd, ctx, forgeRoot, storeCli, preflightGate, registry, resumeFromState } = opts;
+	const {
+		bugId: initialBugId,
+		originalArg,
+		isNewBug,
+		cwd,
+		ctx,
+		forgeRoot,
+		storeCli,
+		preflightGate,
+		registry,
+		resumeFromState,
+	} = opts;
 
 	// Mutable bugId — for new bugs, pre-assign a real FORGE-BUG-NNN ID
 	// before triage so the subagent never needs to create or discover one.
@@ -514,7 +536,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	// expected to create the bug record and we'd fish the ID from events.
 	let bugId = initialBugId;
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
-	let iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
+	const iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
 	let lastModel: string | undefined;
 	let lastProvider: string | undefined;
 
@@ -530,7 +552,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		for (const e of layeredConfigErrors) {
 			ctx.ui.notify(`× forge:fix-bug — forge-cli config schema error: ${e}`, "error");
 		}
-		return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `forge-cli config schema errors: ${layeredConfigErrors.join("; ")}` };
+		return {
+			status: "failed",
+			lastPhaseIndex: currentPhaseIndex,
+			iterationCounts,
+			lastError: `forge-cli config schema errors: ${layeredConfigErrors.join("; ")}`,
+		};
 	}
 
 	// Pre-flight validation — same shape as run-task / run-sprint.
@@ -538,7 +565,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),
-			"..", "..", "forge-payload", ".base-pack", "personas",
+			"..",
+			"..",
+			"forge-payload",
+			".base-pack",
+			"personas",
 		);
 		const personaCatalogue = readPersonaDirBug(personasDir);
 		const forgeCfgPath = path.join(cwd, ".forge", "config.json");
@@ -585,17 +616,19 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		const phase = BUG_PHASES[currentPhaseIndex];
 		if (!phase) {
 			ctx.ui.notify(`× forge:fix-bug — invalid phase index ${currentPhaseIndex}`, "error");
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `invalid phase index ${currentPhaseIndex}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `invalid phase index ${currentPhaseIndex}`,
+			};
 		}
 
 		ctx.ui.setStatus?.(
 			STATUS_KEY,
 			`fix-bug ${bugId}: phase ${currentPhaseIndex + 1}/${BUG_PHASES.length} (${phase.role})`,
 		);
-		ctx.ui.notify(
-			`→ ${bugId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${BUG_PHASES.length})`,
-			"info",
-		);
+		ctx.ui.notify(`→ ${bugId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${BUG_PHASES.length})`, "info");
 
 		const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
 
@@ -620,7 +653,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `sub-workflow read failed: ${e.message ?? "unknown"}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
+			};
 		}
 
 		// ── 6a. Phase skip (state-aware, defense-in-depth) ─────────────
@@ -635,9 +673,9 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// `verified` are no longer valid bug status values; references
 		// removed.
 		const PHASE_SKIP_STATES: Record<string, Set<string>> = {
-			"plan-fix":  new Set(["fixed"]),
-			"implement": new Set(["fixed"]),
-			"commit":    new Set(["fixed"]),    // commit writes the terminal status; skip if already there
+			"plan-fix": new Set(["fixed"]),
+			implement: new Set(["fixed"]),
+			commit: new Set(["fixed"]), // commit writes the terminal status; skip if already there
 		};
 		const bugNow = readBugRecord(bugId, storeCli, cwd);
 		const skipStates = PHASE_SKIP_STATES[phase.role];
@@ -662,14 +700,21 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				};
 				const synthFile = path.join(cwd, ".forge", "cache", `synthetic-summary-${bugId}-${summaryKey}.json`);
 				fs.writeFileSync(synthFile, JSON.stringify(synthSummary, null, 2), "utf8");
-				const synthResult = spawnSync("node", [storeCli, "set-bug-summary", bugId, summaryKey, synthFile], { cwd, encoding: "utf8" });
+				const synthResult = spawnSync("node", [storeCli, "set-bug-summary", bugId, summaryKey, synthFile], {
+					cwd,
+					encoding: "utf8",
+				});
 				if (synthResult.status !== 0) {
 					ctx.ui.notify(
 						`⚠ forge:fix-bug — synthetic summary write failed for ${phase.role}: ${String(synthResult.stderr).trim()}`,
 						"warning",
 					);
 				}
-				try { fs.unlinkSync(synthFile); } catch { /* non-fatal */ }
+				try {
+					fs.unlinkSync(synthFile);
+				} catch {
+					/* non-fatal */
+				}
 			}
 			currentPhaseIndex++;
 			continue;
@@ -703,7 +748,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `preflight gate exit 1 for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
-				return { status: "halted", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `preflight gate exit 1 for ${phase.role}` };
+				return {
+					status: "halted",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `preflight gate exit 1 for ${phase.role}`,
+				};
 			}
 			if (preflightResult === "escalate") {
 				ctx.ui.notify(
@@ -718,7 +768,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
-				return { status: "escalated", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `preflight gate exit 2 (escalate) for ${phase.role}` };
+				return {
+					status: "escalated",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
+				};
 			}
 		}
 
@@ -733,12 +788,14 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			const markerCheck = checkMaterialization(subWorkflowPath, subWorkflowMd);
 			if (!markerCheck.ok) {
 				for (const marker of markerCheck.missing) {
-					ctx.ui.notify(
-						`× workflow regression: ${marker} not found in ${subWorkflowPath}`,
-						"error",
-					);
+					ctx.ui.notify(`× workflow regression: ${marker} not found in ${subWorkflowPath}`, "error");
 				}
-				return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `materialization markers missing: ${markerCheck.missing.join(", ")}` };
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `materialization markers missing: ${markerCheck.missing.join(", ")}`,
+				};
 			}
 		}
 
@@ -748,9 +805,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// Skip the audience gate for the monolithic fix_bug.md; only check the
 		// true sub-workflows (review_plan, review_code, architect_approve, commit_task)
 		// which the subagent does run directly.
-		const audienceOk = phase.workflowFile === "fix_bug" || CallerContextStore.asSubagent(() =>
-			assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
-		);
+		const audienceOk =
+			phase.workflowFile === "fix_bug" ||
+			CallerContextStore.asSubagent(() =>
+				assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
+			);
 		if (!audienceOk) {
 			writeBugState(cwd, {
 				bugId,
@@ -760,7 +819,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				lastError: `audience check failed for ${phase.workflowFile}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `audience check failed for ${phase.workflowFile}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `audience check failed for ${phase.workflowFile}`,
+			};
 		}
 
 		// ── Persona load ──────────────────────────────────────────────
@@ -782,7 +846,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				lastError: `persona load failed: ${e.message ?? "unknown"}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `persona load failed: ${e.message ?? "unknown"}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `persona load failed: ${e.message ?? "unknown"}`,
+			};
 		}
 
 		// ── Read bug record for current status ────────────────────────
@@ -815,12 +884,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		let debugLogPath: string | null = null;
 		let writeDebug: (rec: Record<string, unknown>) => void = () => {};
 		if (!pendingBugId && !debugLogDisabled) {
-			debugLogPath = path.join(
-				cwd,
-				".forge",
-				"cache",
-				`fix-bug-debug-${bugId}.jsonl`,
-			);
+			debugLogPath = path.join(cwd, ".forge", "cache", `fix-bug-debug-${bugId}.jsonl`);
 			writeDebug = (rec: Record<string, unknown>) => {
 				try {
 					fs.mkdirSync(path.dirname(debugLogPath!), { recursive: true });
@@ -834,7 +898,9 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 							const keep = Math.floor(lines.length * 0.8);
 							fs.writeFileSync(debugLogPath!, lines.slice(-keep).join("\n"), "utf8");
 						}
-					} catch { /* file may not exist yet */ }
+					} catch {
+						/* file may not exist yet */
+					}
 					fs.appendFileSync(
 						debugLogPath!,
 						`${JSON.stringify({ ts: new Date().toISOString(), phase: phase.role, ...rec })}\n`,
@@ -893,12 +959,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// out, resolves to inherit (model: undefined) — setModel is skipped and
 		// pi's current model is used. IL10 still holds: result.model below is
 		// the stream-observed runtime model, not whatever we requested here.
-		const modelResolution = resolveModelForPhase(
-			"fix-bug",
-			phase.role,
-			phase.personaNoun,
-			modelRoutingConfig,
-		);
+		const modelResolution = resolveModelForPhase("fix-bug", phase.role, phase.personaNoun, modelRoutingConfig);
 		writeDebug({
 			kind: "requested_model",
 			requested: modelResolution.model ?? null,
@@ -917,7 +978,10 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				// Keeps every phase of this bug-fix pipeline in a single cache
 				// namespace so the system-prompt + persona prefix stays warm
 				// across the ~10-minute phases.
-				cacheSessionId: typeof bugRecordBefore?.sprintId === "string" ? `forge:${bugRecordBefore.sprintId}` : `forge:bug:${bugId}`,
+				cacheSessionId:
+					typeof bugRecordBefore?.sprintId === "string"
+						? `forge:${bugRecordBefore.sprintId}`
+						: `forge:bug:${bugId}`,
 				onEvent: onSubagentEvent,
 				requestedModel: modelResolution.model,
 				modelRegistry: ctx.modelRegistry,
@@ -938,7 +1002,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}` };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
+			};
 		}
 
 		// ── Post-subagent abort detection ─────────────────────────────────
@@ -975,7 +1044,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
 				savedAt: new Date().toISOString(),
 			});
-			return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero" };
+			return {
+				status: "failed",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
+			};
 		}
 
 		// Capture model/provider from subagent result.
@@ -1001,14 +1075,23 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 							const pipelineStartIso = new Date(parseInt(bugId.replace("PENDING-", ""))).toISOString();
 							const recent = bugs
 								.filter((b: Record<string, unknown>) => b.reportedAt && b.reportedAt >= pipelineStartIso)
-								.sort((a: Record<string, unknown>, b: Record<string, unknown>) => String(b.reportedAt).localeCompare(String(a.reportedAt)))[0];
-							if (recent && recent.bugId && typeof recent.bugId === "string" && recent.bugId.startsWith("FORGE-BUG-")) {
+								.sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+									String(b.reportedAt).localeCompare(String(a.reportedAt)),
+								)[0];
+							if (
+								recent &&
+								recent.bugId &&
+								typeof recent.bugId === "string" &&
+								recent.bugId.startsWith("FORGE-BUG-")
+							) {
 								bugId = recent.bugId;
 								ctx.ui.notify(`forge:fix-bug — captured bug ID via store fallback: ${bugId}`, "info");
 							}
-							}
-						} catch { /* parse failure — fall through to assertion */ }
+						}
+					} catch {
+						/* parse failure — fall through to assertion */
 					}
+				}
 			}
 
 			// Defensive guard: if bugId is still PENDING after triage, pipeline cannot proceed.
@@ -1017,17 +1100,17 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					"× forge:fix-bug — failed to capture real bug ID after triage. Cannot proceed with PENDING placeholder.",
 					"error",
 				);
-				return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: "bugId still PENDING after triage" };
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: "bugId still PENDING after triage",
+				};
 			}
 
 			// Re-initialize debug log now that real bugId is available.
 			if (!debugLogDisabled) {
-				debugLogPath = path.join(
-					cwd,
-					".forge",
-					"cache",
-					`fix-bug-debug-${bugId}.jsonl`,
-				);
+				debugLogPath = path.join(cwd, ".forge", "cache", `fix-bug-debug-${bugId}.jsonl`);
 				const savedWriteDebug = writeDebug;
 				writeDebug = (rec: Record<string, unknown>) => {
 					try {
@@ -1040,7 +1123,9 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 								const keep = Math.floor(lines.length * 0.8);
 								fs.writeFileSync(debugLogPath!, lines.slice(-keep).join("\n"), "utf8");
 							}
-						} catch { /* file may not exist yet */ }
+						} catch {
+							/* file may not exist yet */
+						}
 						fs.appendFileSync(
 							debugLogPath!,
 							`${JSON.stringify({ ts: new Date().toISOString(), phase: phase.role, ...rec })}\n`,
@@ -1093,17 +1178,17 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		const emitCtx: OrchestratorEmitContext = {
 			entityType: "bug",
 			bugId,
-			sprintId,    // routing key "bugs" — not a sprint reference
+			sprintId, // routing key "bugs" — not a sprint reference
 			phase,
-			iteration:  phaseIteration,
-			startMs:    phaseStart,
-			endMs:      phaseEndMs,
-			model:      result.model    ?? "unknown",
-			provider:   result.provider ?? "unknown",
-			usage:      {
-				input:      result.usage.input,
-				output:     result.usage.output,
-				cacheRead:  result.usage.cacheRead,
+			iteration: phaseIteration,
+			startMs: phaseStart,
+			endMs: phaseEndMs,
+			model: result.model ?? "unknown",
+			provider: result.provider ?? "unknown",
+			usage: {
+				input: result.usage.input,
+				output: result.usage.output,
+				cacheRead: result.usage.cacheRead,
 				cacheWrite: result.usage.cacheWrite,
 			},
 			judgement,
@@ -1153,13 +1238,14 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		if (currentBugRecordForAssert && currentBugRecordForAssert.status) {
 			// Defer to store-cli's isLegalTransition as authoritative guard.
 			// Only warn on statuses store-cli itself would reject.
-			const validateResult = spawnSync("node", [storeCli, "validate", "bug", JSON.stringify(currentBugRecordForAssert)], { cwd, encoding: "utf8" });
+			const validateResult = spawnSync(
+				"node",
+				[storeCli, "validate", "bug", JSON.stringify(currentBugRecordForAssert)],
+				{ cwd, encoding: "utf8" },
+			);
 			if (validateResult.status !== 0) {
 				const detail = typeof validateResult.stderr === "string" ? validateResult.stderr.trim() : "unknown";
-				ctx.ui.notify(
-					`⚠ forge:fix-bug — bug ${bugId} validation warning: ${detail}`,
-					"warning",
-				);
+				ctx.ui.notify(`⚠ forge:fix-bug — bug ${bugId} validation warning: ${detail}`, "warning");
 				writeDebug({ kind: "fsm_assertion_warning", bugId, status: currentBugRecordForAssert.status, detail });
 			}
 		}
@@ -1183,7 +1269,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `verdict missing for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
-				return { status: "failed", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `verdict missing for ${phase.role}` };
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `verdict missing for ${phase.role}`,
+				};
 			}
 
 			if (verdict === "revision") {
@@ -1203,14 +1294,23 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						lastError: `revision cap reached for ${phase.role}`,
 						savedAt: new Date().toISOString(),
 					});
-					return { status: "escalated", lastPhaseIndex: currentPhaseIndex, iterationCounts, lastError: `revision cap reached for ${phase.role}` };
+					return {
+						status: "escalated",
+						lastPhaseIndex: currentPhaseIndex,
+						iterationCounts,
+						lastError: `revision cap reached for ${phase.role}`,
+					};
 				}
 
 				// Transition bug back to in-progress before re-dispatching implement.
 				// This is required for review-code → implement and approve → implement loops.
 				const currentBugStatus = updatedBugRecord?.status;
 				if (currentBugStatus === "fixed" || currentBugStatus === "approved") {
-					const transitionResult = spawnSync("node", [storeCli, "update-status", "bug", bugId, "status", "in-progress"], { cwd, encoding: "utf8" });
+					const transitionResult = spawnSync(
+						"node",
+						[storeCli, "update-status", "bug", bugId, "status", "in-progress"],
+						{ cwd, encoding: "utf8" },
+					);
 					if (transitionResult.status !== 0) {
 						ctx.ui.notify(
 							`⚠ forge:fix-bug — failed to transition bug ${bugId} from ${currentBugStatus} to in-progress: ${transitionResult.stderr ?? "unknown"}`,
@@ -1269,17 +1369,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		// bug status proves the work happened.
 		if (phase.role === "triage") {
 			const bugAfterTriage = readBugRecord(bugId, storeCli, cwd);
-			const triageSummary = bugAfterTriage?.summaries?.triage as
-				| { route?: unknown }
-				| undefined;
+			const triageSummary = bugAfterTriage?.summaries?.triage as { route?: unknown } | undefined;
 			const route = triageSummary?.route;
 			if (route === "A") {
 				const skipUntilIndex = BUG_PHASES.findIndex((p) => p.role === "implement");
 				if (skipUntilIndex > currentPhaseIndex + 1) {
-					ctx.ui.notify(
-						`⊘ forge:fix-bug — Path A selected by triage; skipping plan-fix and review-plan.`,
-						"info",
-					);
+					ctx.ui.notify(`⊘ forge:fix-bug — Path A selected by triage; skipping plan-fix and review-plan.`, "info");
 					currentPhaseIndex = skipUntilIndex;
 					continue;
 				}
@@ -1292,7 +1387,13 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 	// ── All phases complete ───────────────────────────────────────────
 	deleteBugState(cwd, bugId);
-	return { status: "completed", lastPhaseIndex: BUG_PHASES.length - 1, iterationCounts, model: lastModel, provider: lastProvider };
+	return {
+		status: "completed",
+		lastPhaseIndex: BUG_PHASES.length - 1,
+		iterationCounts,
+		model: lastModel,
+		provider: lastProvider,
+	};
 }
 
 // ── Thin wrapper registration ────────────────────────────────────────────
@@ -1313,7 +1414,10 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			const rawArg = args.trim();
 
 			if (!rawArg) {
-				ctx.ui.notify("× forge:fix-bug — bug ID or summary required. Usage: /forge:fix-bug <BUG_ID_OR_SUMMARY>", "error");
+				ctx.ui.notify(
+					"× forge:fix-bug — bug ID or summary required. Usage: /forge:fix-bug <BUG_ID_OR_SUMMARY>",
+					"error",
+				);
 				return;
 			}
 
@@ -1339,8 +1443,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 
 			// Check if arg looks like it could be a bug ID (prefixed or unprefixed).
 			// Covers: FORGE-BUG-042, BUG-042, B042.
-			const looksLikeBugId = /^(?:[A-Z0-9]+-)?(?:BUG-?\d+|B\d+)$/i.test(rawArg) ||
-				/^BUG-\d+$/i.test(rawArg);
+			const looksLikeBugId = /^(?:[A-Z0-9]+-)?(?:BUG-?\d+|B\d+)$/i.test(rawArg) || /^BUG-\d+$/i.test(rawArg);
 
 			if (/^FORGE-BUG-\d+$/.test(rawArg)) {
 				// Canonical bug ID — verify it exists
@@ -1364,13 +1467,10 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 				// Unprefixed bug ID — resolve through the store cascade.
 				// Issue #20: unprefixed entity IDs silently poisoned substitutions.
 				const toolDir = resolveToolDir(forgeRoot);
-				const resolvedBugId = await resolveToCanonicalId(
-					rawArg,
-					toolDir,
-					cwd,
-					"bug",
-					{ ctx, commandLabel: "forge:fix-bug" },
-				);
+				const resolvedBugId = await resolveToCanonicalId(rawArg, toolDir, cwd, "bug", {
+					ctx,
+					commandLabel: "forge:fix-bug",
+				});
 				if (!resolvedBugId) {
 					// Error already emitted by resolver
 					ctx.ui.setStatus?.(STATUS_KEY, undefined);
@@ -1405,10 +1505,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 				const confirmMsg = isNewBug
 					? `Fix bug: "${rawArg.slice(0, 80)}"? A bug record will be created during triage.`
 					: `Fix bug ${bugId}?`;
-				const proceed = await ctx.ui.confirm(
-					`Fix bug?`,
-					confirmMsg,
-				);
+				const proceed = await ctx.ui.confirm(`Fix bug?`, confirmMsg);
 				if (!proceed) {
 					ctx.ui.notify("forge:fix-bug — cancelled.", "info");
 					ctx.ui.setStatus?.(STATUS_KEY, undefined);
@@ -1451,9 +1548,8 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 					// (explicit failure), halted=false (cancelled/interrupted), and
 					// any state with existing.status set.
 					const stateStatus = existing.status ?? (existing.halted ? "halted" : "interrupted");
-					const statusLabel = stateStatus === "cancelled" ? "cancelled"
-						: stateStatus === "halted" ? "halted"
-						: "interrupted";
+					const statusLabel =
+						stateStatus === "cancelled" ? "cancelled" : stateStatus === "halted" ? "halted" : "interrupted";
 					const phaseRole = BUG_PHASES[existing.phaseIndex]?.role ?? existing.phaseIndex;
 					if (!isNonInteractive()) {
 						const resume = await ctx.ui.confirm(
@@ -1474,10 +1570,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 						// Non-interactive: auto-resume from state (no confirmation).
 						// Cancelled/interrupted states are valid resume points.
 						resumeFromState = existing;
-						ctx.ui.notify(
-							`forge:fix-bug — resuming ${bugId} from phase ${phaseRole} (${statusLabel})`,
-							"info",
-						);
+						ctx.ui.notify(`forge:fix-bug — resuming ${bugId} from phase ${phaseRole} (${statusLabel})`, "info");
 					}
 				}
 			}
@@ -1521,12 +1614,15 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			// needs the real ID before startSession is called.
 			if (isNewBug && bugId.startsWith("PENDING-")) {
 				const realBugId = assignNextBugId(storeCli, cwd);
-				const title = (rawArg && !rawArg.startsWith("@")) ? rawArg.slice(0, 120) : "New bug (pending triage)";
+				const title = rawArg && !rawArg.startsWith("@") ? rawArg.slice(0, 120) : "New bug (pending triage)";
 				if (preCreateBug(realBugId, title, storeCli, cwd)) {
 					ctx.ui.notify(`forge:fix-bug — pre-assigned bug ID: ${realBugId}`, "info");
 					bugId = realBugId;
 				} else {
-					ctx.ui.notify("× forge:fix-bug — failed to pre-create bug record. Falling back to PENDING capture.", "error");
+					ctx.ui.notify(
+						"× forge:fix-bug — failed to pre-create bug record. Falling back to PENDING capture.",
+						"error",
+					);
 				}
 			}
 
@@ -1555,10 +1651,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			// ── Handle result ────────────────────────────────────────────────
 			if (pipelineResult.status === "completed") {
 				registry.completeSession(bugId, "completed");
-				ctx.ui.notify(
-					`〇 forge:fix-bug — ${bugId} pipeline complete (${BUG_PHASES.length} phases).`,
-					"info",
-				);
+				ctx.ui.notify(`〇 forge:fix-bug — ${bugId} pipeline complete (${BUG_PHASES.length} phases).`, "info");
 			} else if (pipelineResult.status === "cancelled") {
 				registry.completeSession(bugId, "cancelled");
 			} else {

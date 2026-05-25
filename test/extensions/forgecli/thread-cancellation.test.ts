@@ -11,7 +11,7 @@
 //   8. ChipStrip cancel prompt rendering
 //   9. ChipStripGlyphs for cancelling/cancelled sessions
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionRegistry, type SessionState } from "../../../src/extensions/forgecli/session-registry.js";
 
 // ── SessionRegistry cancellation lifecycle ─────────────────────────────────

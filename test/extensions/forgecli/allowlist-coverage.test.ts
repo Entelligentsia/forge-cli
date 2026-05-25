@@ -109,9 +109,9 @@ describe("allowlist-coverage: every .cjs tool referenced in TS is in TOOLS_TO_CO
 		if (uncovered.length > 0) {
 			throw new Error(
 				`The following .cjs tool(s) are referenced in TS source but missing from ` +
-				`TOOLS_TO_COPY in scripts/build-payload.cjs:\n` +
-				uncovered.map((t) => `  - ${t}`).join("\n") +
-				`\n\nAdd them to TOOLS_TO_COPY or to ALLOWLIST_EXCLUSIONS in this test.`,
+					`TOOLS_TO_COPY in scripts/build-payload.cjs:\n` +
+					uncovered.map((t) => `  - ${t}`).join("\n") +
+					`\n\nAdd them to TOOLS_TO_COPY or to ALLOWLIST_EXCLUSIONS in this test.`,
 			);
 		}
 

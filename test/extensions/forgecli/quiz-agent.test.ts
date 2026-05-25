@@ -6,10 +6,10 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-	parseQuizAgentArgs,
 	composeQuizAgentKickoff,
-	registerQuizAgent,
 	type ParsedQuizAgentArgs,
+	parseQuizAgentArgs,
+	registerQuizAgent,
 } from "../../../src/extensions/forgecli/quiz-agent.js";
 
 function makePi() {
@@ -111,10 +111,7 @@ describe("registerQuizAgent", () => {
 		const ctx = makeCtx();
 		const handler = pi.commands.get("forge:quiz-agent")?.handler;
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("command file not found"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
 
 	it("sends kickoff when command file exists", async () => {

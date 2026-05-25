@@ -32,8 +32,8 @@ import {
 	computeFrictionSignals,
 	emitFrictionEvents,
 	FRICTION_SUBKINDS,
-	type FrictionInputs,
 	type FrictionEmitRuntime,
+	type FrictionInputs,
 	type FrictionSignal,
 } from "../../../src/extensions/forgecli/friction-emit.js";
 
@@ -73,9 +73,7 @@ const runtime: FrictionEmitRuntime = {
 describe("friction-emit / computeFrictionSignals", () => {
 	it("emits skill_unused when retrieved && !used && task.success", () => {
 		const inputs: FrictionInputs = {
-			retrievedSkills: [
-				{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 },
-			],
+			retrievedSkills: [{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 }],
 			taskSuccess: true,
 			toolErrorCount: 0,
 			history: {},
@@ -90,9 +88,7 @@ describe("friction-emit / computeFrictionSignals", () => {
 
 	it("emits skill_failed when retrieved && used && !task.success", () => {
 		const inputs: FrictionInputs = {
-			retrievedSkills: [
-				{ skillId: "calibrate", retrieved: true, used: true, retrievalScore: 0.7 },
-			],
+			retrievedSkills: [{ skillId: "calibrate", retrieved: true, used: true, retrievalScore: 0.7 }],
 			taskSuccess: false,
 			toolErrorCount: 3,
 			history: {},
@@ -127,16 +123,12 @@ describe("friction-emit / computeFrictionSignals", () => {
 		};
 
 		const signals = computeFrictionSignals(inputs);
-		expect(signals.filter((s) => s.subkind === "skill_missing")).toHaveLength(
-			0,
-		);
+		expect(signals.filter((s) => s.subkind === "skill_missing")).toHaveLength(0);
 	});
 
 	it("emits skill_stale when skill seen retrieved && !used in 3 consecutive sprints", () => {
 		const inputs: FrictionInputs = {
-			retrievedSkills: [
-				{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 },
-			],
+			retrievedSkills: [{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 }],
 			taskSuccess: true,
 			toolErrorCount: 0,
 			history: {
@@ -153,9 +145,7 @@ describe("friction-emit / computeFrictionSignals", () => {
 
 	it("does NOT emit skill_stale when consecutive sprint count is < 3", () => {
 		const inputs: FrictionInputs = {
-			retrievedSkills: [
-				{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 },
-			],
+			retrievedSkills: [{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 }],
 			taskSuccess: true,
 			toolErrorCount: 0,
 			history: {
@@ -176,9 +166,7 @@ describe("friction-emit / computeFrictionSignals", () => {
 			taskSuccess: true,
 			toolErrorCount: 0,
 			history: {},
-			pairwiseRetrievalOverlap: [
-				{ skillA: "skill-a", skillB: "skill-b", overlap: 0.85 },
-			],
+			pairwiseRetrievalOverlap: [{ skillA: "skill-a", skillB: "skill-b", overlap: 0.85 }],
 		};
 
 		const signals = computeFrictionSignals(inputs);
@@ -199,22 +187,16 @@ describe("friction-emit / computeFrictionSignals", () => {
 			taskSuccess: true,
 			toolErrorCount: 0,
 			history: {},
-			pairwiseRetrievalOverlap: [
-				{ skillA: "skill-a", skillB: "skill-b", overlap: 0.8 },
-			],
+			pairwiseRetrievalOverlap: [{ skillA: "skill-a", skillB: "skill-b", overlap: 0.8 }],
 		};
 
 		const signals = computeFrictionSignals(inputs);
-		expect(signals.filter((s) => s.subkind === "skill_redundant")).toHaveLength(
-			0,
-		);
+		expect(signals.filter((s) => s.subkind === "skill_redundant")).toHaveLength(0);
 	});
 
 	it("emits no signals when all gates fail", () => {
 		const inputs: FrictionInputs = {
-			retrievedSkills: [
-				{ skillId: "calibrate", retrieved: true, used: true, retrievalScore: 0.7 },
-			],
+			retrievedSkills: [{ skillId: "calibrate", retrieved: true, used: true, retrievalScore: 0.7 }],
 			taskSuccess: true,
 			toolErrorCount: 0,
 			history: { calibrate: { consecutiveUnusedSprints: 0 } },
@@ -226,9 +208,7 @@ describe("friction-emit / computeFrictionSignals", () => {
 
 	it("does NOT emit skill_unused on a failed task (avoids double-counting with skill_failed)", () => {
 		const inputs: FrictionInputs = {
-			retrievedSkills: [
-				{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 },
-			],
+			retrievedSkills: [{ skillId: "calibrate", retrieved: true, used: false, retrievalScore: 0.7 }],
 			taskSuccess: false,
 			toolErrorCount: 0,
 			history: {},
@@ -297,9 +277,7 @@ describe("friction-emit / emitFrictionEvents", () => {
 		];
 
 		emitFrictionEvents(signals, runtime);
-		const payload = JSON.parse(
-			mockSpawnSync.mock.calls[0][1]?.[3] as string,
-		) as Record<string, unknown>;
+		const payload = JSON.parse(mockSpawnSync.mock.calls[0][1]?.[3] as string) as Record<string, unknown>;
 		expect(payload.type).toBe("friction");
 		expect(payload.workflow).toBe("orchestrate");
 		expect(payload.persona).toBe("orchestrator");

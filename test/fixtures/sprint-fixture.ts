@@ -12,10 +12,10 @@
 //
 // See forge-cli#17.
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // ── Resolve real forge payload (forge/forge/ in the outer monorepo) ──────
@@ -136,7 +136,7 @@ export interface SprintFixture {
 	taskIds: string[];
 	/** Update sprint status via real store-cli (used to drive ceremony verdict). */
 	updateSprintStatus(status: string): void;
-	/** Update task status via real store-cli. */	updateTaskStatus(taskId: string, status: string): void;
+	/** Update task status via real store-cli. */ updateTaskStatus(taskId: string, status: string): void;
 	/** Add phase summaries to a task record via real store-cli set-summary. */
 	addTaskSummaries(taskId: string, phases: Record<string, FixturePhaseSummary>): void;
 	/** Read the latest sprint-* event written to .forge/store/events/<sprintId>/. */
@@ -310,8 +310,6 @@ function storeWrite(storeCli: string, cwd: string, entity: string, data: Record<
 		encoding: "utf8",
 	});
 	if (r.status !== 0) {
-		throw new Error(
-			`store-cli write ${entity} failed (status=${r.status}): ${r.stderr || r.stdout || "no output"}`,
-		);
+		throw new Error(`store-cli write ${entity} failed (status=${r.status}): ${r.stderr || r.stdout || "no output"}`);
 	}
 }

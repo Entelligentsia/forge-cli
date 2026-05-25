@@ -21,13 +21,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { registerReviewPlan } from "../../../src/extensions/forgecli/review-plan.js";
-import { registerReviewCode } from "../../../src/extensions/forgecli/review-code.js";
 import { registerApprove } from "../../../src/extensions/forgecli/approve.js";
-import { registerCommit } from "../../../src/extensions/forgecli/commit.js";
-import { registerValidate } from "../../../src/extensions/forgecli/validate.js";
 import { registerCollate } from "../../../src/extensions/forgecli/collate.js";
+import { registerCommit } from "../../../src/extensions/forgecli/commit.js";
+import { registerReviewCode } from "../../../src/extensions/forgecli/review-code.js";
+import { registerReviewPlan } from "../../../src/extensions/forgecli/review-plan.js";
+import { registerValidate } from "../../../src/extensions/forgecli/validate.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 
@@ -336,10 +335,7 @@ for (const spec of COMMANDS) {
 		// ── AC7.3: Materialization-marker missing → refusal ─────────────────────
 
 		it("missing Store-Write Verification → notify error + abort (no dispatch)", async () => {
-			const broken = makeWorkflow(spec.personaName, "any").replace(
-				/Store-Write Verification/g,
-				"Store-Write XXX",
-			);
+			const broken = makeWorkflow(spec.personaName, "any").replace(/Store-Write Verification/g, "Store-Write XXX");
 			const proj = scaffoldProject({
 				workflowFile: spec.workflowFile,
 				workflowContent: broken,
@@ -350,11 +346,9 @@ for (const spec of COMMANDS) {
 			await stub.invoke(cmdName, "");
 
 			expect(stub.pi.sendUserMessage).not.toHaveBeenCalled();
-			expect(
-				stub.notifications.some(
-					(n) => n.level === "error" && n.msg.includes("Store-Write Verification"),
-				),
-			).toBe(true);
+			expect(stub.notifications.some((n) => n.level === "error" && n.msg.includes("Store-Write Verification"))).toBe(
+				true,
+			);
 		});
 
 		// ── AC7.4: Audience behaviour ────────────────────────────────────────────
@@ -421,11 +415,7 @@ for (const spec of COMMANDS) {
 			await stub.invoke(cmdName, "");
 
 			expect(stub.pi.sendUserMessage).not.toHaveBeenCalled();
-			expect(
-				stub.notifications.some(
-					(n) => n.level === "error" && n.msg.includes("workflow not found"),
-				),
-			).toBe(true);
+			expect(stub.notifications.some((n) => n.level === "error" && n.msg.includes("workflow not found"))).toBe(true);
 		});
 
 		// ── @<missing> argv → error ──────────────────────────────────────────────
@@ -441,9 +431,9 @@ for (const spec of COMMANDS) {
 			await stub.invoke(cmdName, "@/no/such/file/exists.md");
 
 			expect(stub.pi.sendUserMessage).not.toHaveBeenCalled();
-			expect(
-				stub.notifications.some((n) => n.level === "error" && n.msg.includes("failed to read seed")),
-			).toBe(true);
+			expect(stub.notifications.some((n) => n.level === "error" && n.msg.includes("failed to read seed"))).toBe(
+				true,
+			);
 		});
 
 		// ── deliverAs:'steer' enforcement ───────────────────────────────────────

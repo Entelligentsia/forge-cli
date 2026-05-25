@@ -6,7 +6,7 @@
 // extraction (tests import the shared export directly, not the loaders).
 
 import { describe, expect, it } from "vitest";
-import { parseFrontmatterBlock, FrontmatterParseError } from "../../../../src/extensions/forgecli/lib/parsers.js";
+import { FrontmatterParseError, parseFrontmatterBlock } from "../../../../src/extensions/forgecli/lib/parsers.js";
 
 // ── Flat parsing (allowNesting: false) ─────────────────────────────────────
 
@@ -153,9 +153,7 @@ requirements:
 	it("throws FrontmatterParseError for indented line with no parent block", () => {
 		const content = "---\n  orphan: value\n---\n";
 		expect(() => parseFrontmatterBlock(content, { allowNesting: true })).toThrowError(FrontmatterParseError);
-		expect(() => parseFrontmatterBlock(content, { allowNesting: true })).toThrow(
-			"Indented frontmatter line",
-		);
+		expect(() => parseFrontmatterBlock(content, { allowNesting: true })).toThrow("Indented frontmatter line");
 	});
 
 	it("returns body content after closing --- in nested mode", () => {

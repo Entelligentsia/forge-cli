@@ -60,13 +60,10 @@ describe("resolveToCanonicalId — exact canonical ID", () => {
 		mockResolveToCanonicalId.mockResolvedValue("FORGE-S22-T03");
 
 		const ctx = makeCtx();
-		const result = await resolveToCanonicalId(
-			"FORGE-S22-T03",
-			"/fake/tools",
-			"/fake/cwd",
-			"task",
-			{ ctx, commandLabel: "forge:run-task" },
-		);
+		const result = await resolveToCanonicalId("FORGE-S22-T03", "/fake/tools", "/fake/cwd", "task", {
+			ctx,
+			commandLabel: "forge:run-task",
+		});
 
 		expect(result).toBe("FORGE-S22-T03");
 	});
@@ -79,13 +76,10 @@ describe("resolveToCanonicalId — unprefixed ID normalization", () => {
 		mockResolveToCanonicalId.mockResolvedValue("FORGE-S22-T03");
 
 		const ctx = makeCtx();
-		const result = await resolveToCanonicalId(
-			"S22-T03",
-			"/fake/tools",
-			"/fake/cwd",
-			"task",
-			{ ctx, commandLabel: "forge:run-task" },
-		);
+		const result = await resolveToCanonicalId("S22-T03", "/fake/tools", "/fake/cwd", "task", {
+			ctx,
+			commandLabel: "forge:run-task",
+		});
 
 		expect(result).toBe("FORGE-S22-T03");
 	});
@@ -95,25 +89,20 @@ describe("resolveToCanonicalId — unprefixed ID normalization", () => {
 
 describe("resolveToCanonicalId — unknown ID", () => {
 	it("returns null and emits actionable error for completely unknown ID", async () => {
-		mockResolveToCanonicalId.mockImplementation(
-			async (_arg, _toolDir, _cwd, kind, opts) => {
-				opts?.ctx?.ui.notify(
-					`× ${opts?.commandLabel ?? `forge:${kind}`} — could not resolve "${_arg}". ` +
+		mockResolveToCanonicalId.mockImplementation(async (_arg, _toolDir, _cwd, kind, opts) => {
+			opts?.ctx?.ui.notify(
+				`× ${opts?.commandLabel ?? `forge:${kind}`} — could not resolve "${_arg}". ` +
 					`No matching ${kind} found. Try a canonical ID like <PREFIX>-S<N>-T<N> or use /forge:read for search.`,
-					"error",
-				);
-				return null;
-			},
-		);
+				"error",
+			);
+			return null;
+		});
 
 		const ctx = makeCtx();
-		const result = await resolveToCanonicalId(
-			"xyz-bogus",
-			"/fake/tools",
-			"/fake/cwd",
-			"task",
-			{ ctx, commandLabel: "forge:run-task" },
-		);
+		const result = await resolveToCanonicalId("xyz-bogus", "/fake/tools", "/fake/cwd", "task", {
+			ctx,
+			commandLabel: "forge:run-task",
+		});
 
 		expect(result).toBeNull();
 		const errorNotify = ctx.notifications.find((n) => n.level === "error" && n.msg.includes("could not resolve"));
@@ -125,24 +114,19 @@ describe("resolveToCanonicalId — unknown ID", () => {
 
 describe("resolveToCanonicalId — @path rejection", () => {
 	it("returns null and emits error when arg resolves to a directory path", async () => {
-		mockResolveToCanonicalId.mockImplementation(
-			async (_arg, _toolDir, _cwd, _kind, opts) => {
-				opts?.ctx?.ui.notify(
-					`× ${opts?.commandLabel ?? "forge"} — "@/engineering/sprints" resolved to a directory path, not a task ID. Provide a canonical task ID instead.`,
-					"error",
-				);
-				return null;
-			},
-		);
+		mockResolveToCanonicalId.mockImplementation(async (_arg, _toolDir, _cwd, _kind, opts) => {
+			opts?.ctx?.ui.notify(
+				`× ${opts?.commandLabel ?? "forge"} — "@/engineering/sprints" resolved to a directory path, not a task ID. Provide a canonical task ID instead.`,
+				"error",
+			);
+			return null;
+		});
 
 		const ctx = makeCtx();
-		const result = await resolveToCanonicalId(
-			"@engineering/sprints",
-			"/fake/tools",
-			"/fake/cwd",
-			"task",
-			{ ctx, commandLabel: "forge:run-task" },
-		);
+		const result = await resolveToCanonicalId("@engineering/sprints", "/fake/tools", "/fake/cwd", "task", {
+			ctx,
+			commandLabel: "forge:run-task",
+		});
 
 		expect(result).toBeNull();
 		const errorNotify = ctx.notifications.find((n) => n.level === "error" && n.msg.includes("directory path"));
@@ -157,13 +141,10 @@ describe("resolveToCanonicalId — sprint kind", () => {
 		mockResolveToCanonicalId.mockResolvedValue("FORGE-S22");
 
 		const ctx = makeCtx();
-		const result = await resolveToCanonicalId(
-			"S22",
-			"/fake/tools",
-			"/fake/cwd",
-			"sprint",
-			{ ctx, commandLabel: "forge:run-sprint" },
-		);
+		const result = await resolveToCanonicalId("S22", "/fake/tools", "/fake/cwd", "sprint", {
+			ctx,
+			commandLabel: "forge:run-sprint",
+		});
 
 		expect(result).toBe("FORGE-S22");
 	});
@@ -176,13 +157,10 @@ describe("resolveToCanonicalId — bug kind", () => {
 		mockResolveToCanonicalId.mockResolvedValue("FORGE-BUG-042");
 
 		const ctx = makeCtx();
-		const result = await resolveToCanonicalId(
-			"BUG-042",
-			"/fake/tools",
-			"/fake/cwd",
-			"bug",
-			{ ctx, commandLabel: "forge:fix-bug" },
-		);
+		const result = await resolveToCanonicalId("BUG-042", "/fake/tools", "/fake/cwd", "bug", {
+			ctx,
+			commandLabel: "forge:fix-bug",
+		});
 
 		expect(result).toBe("FORGE-BUG-042");
 	});

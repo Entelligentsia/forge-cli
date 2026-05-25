@@ -29,12 +29,7 @@ import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-in
 
 const PAYLOAD_ROOT = getBundledPayloadRoot();
 const META_FRAGMENTS_DIR = path.join(PAYLOAD_ROOT, "meta", "workflows", "_fragments");
-const BASE_PACK_FRAGMENTS_DIR = path.join(
-	PAYLOAD_ROOT,
-	".base-pack",
-	"workflows",
-	"_fragments",
-);
+const BASE_PACK_FRAGMENTS_DIR = path.join(PAYLOAD_ROOT, ".base-pack", "workflows", "_fragments");
 
 // Source of truth — the plugin's authoring location. Tests below cross-check
 // that every authored fragment survives the bundling step into BOTH bundled
@@ -86,10 +81,7 @@ describe("FORGE-S25-T09 — _fragments/ surface bundled in .base-pack/", () => {
 
 	it("dist/forge-payload/.base-pack/workflows/_fragments/ contains ≥1 markdown fragment", () => {
 		const files = listMarkdown(BASE_PACK_FRAGMENTS_DIR);
-		expect(
-			files.length,
-			`expected ≥1 .md fragment in ${BASE_PACK_FRAGMENTS_DIR}`,
-		).toBeGreaterThan(0);
+		expect(files.length, `expected ≥1 .md fragment in ${BASE_PACK_FRAGMENTS_DIR}`).toBeGreaterThan(0);
 	});
 });
 
@@ -103,19 +95,13 @@ describe("FORGE-S25-T09 — _fragments/ name parity (source → meta + base-pack
 	// forge-engineering dev layout the directory is always present.
 	const sourceAvailable = fs.existsSync(FORGE_PLUGIN_FRAGMENTS_SRC);
 
-	it.runIf(sourceAvailable)(
-		"every authored fragment appears in dist/forge-payload/meta/workflows/_fragments/",
-		() => {
-			const authored = listMarkdown(FORGE_PLUGIN_FRAGMENTS_SRC);
-			const bundled = listMarkdown(META_FRAGMENTS_DIR);
-			for (const name of authored) {
-				expect(
-					bundled,
-					`authored fragment ${name} missing from bundled meta/ path`,
-				).toContain(name);
-			}
-		},
-	);
+	it.runIf(sourceAvailable)("every authored fragment appears in dist/forge-payload/meta/workflows/_fragments/", () => {
+		const authored = listMarkdown(FORGE_PLUGIN_FRAGMENTS_SRC);
+		const bundled = listMarkdown(META_FRAGMENTS_DIR);
+		for (const name of authored) {
+			expect(bundled, `authored fragment ${name} missing from bundled meta/ path`).toContain(name);
+		}
+	});
 
 	it.runIf(sourceAvailable)(
 		"every authored fragment appears in dist/forge-payload/.base-pack/workflows/_fragments/",
@@ -123,10 +109,7 @@ describe("FORGE-S25-T09 — _fragments/ name parity (source → meta + base-pack
 			const authored = listMarkdown(FORGE_PLUGIN_FRAGMENTS_SRC);
 			const bundled = listMarkdown(BASE_PACK_FRAGMENTS_DIR);
 			for (const name of authored) {
-				expect(
-					bundled,
-					`authored fragment ${name} missing from bundled .base-pack/ path`,
-				).toContain(name);
+				expect(bundled, `authored fragment ${name} missing from bundled .base-pack/ path`).toContain(name);
 			}
 		},
 	);

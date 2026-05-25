@@ -17,11 +17,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CallerContextStore } from "../../../../src/extensions/forgecli/subagent/caller-context.js";
 import {
 	createPostInitHookHandler,
 	type InitCompleteEventPayload,
 } from "../../../../src/extensions/forgecli/hooks/post-init-hook.js";
+import { CallerContextStore } from "../../../../src/extensions/forgecli/subagent/caller-context.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -146,9 +146,7 @@ describe("post-init-hook handler", () => {
 		expect(kickoffMessages.length).toBe(0);
 
 		// A notification about the marker regression must have been emitted
-		const markerNotify = notifyCalls.find(
-			(n) => n.msg.includes("workflow regression") || n.msg.includes("marker"),
-		);
+		const markerNotify = notifyCalls.find((n) => n.msg.includes("workflow regression") || n.msg.includes("marker"));
 		expect(markerNotify).toBeDefined();
 	});
 
@@ -165,9 +163,7 @@ describe("post-init-hook handler", () => {
 		// Audience check passed — sendKickoff was called.
 		expect(kickoffMessages.length).toBe(1);
 		// No "orchestrator-only" error notification
-		const audienceError = notifyCalls.find(
-			(n) => n.level === "error" && n.msg.includes("orchestrator-only"),
-		);
+		const audienceError = notifyCalls.find((n) => n.level === "error" && n.msg.includes("orchestrator-only"));
 		expect(audienceError).toBeUndefined();
 	});
 

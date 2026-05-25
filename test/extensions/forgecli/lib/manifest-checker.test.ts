@@ -4,7 +4,9 @@
 // Includes regression tests verifying the re-export chain from plan.ts,
 // implement.ts, and enhance.ts (these are all consumed by bundled-base-pack-markers.test.ts).
 
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import { checkMaterialization as checkFromEnhance } from "../../../../src/extensions/forgecli/enhance.js";
+import { checkMaterialization as checkFromImplement } from "../../../../src/extensions/forgecli/implement.js";
 import {
 	checkMaterialization,
 	type MaterializationCheck,
@@ -12,8 +14,6 @@ import {
 // Regression imports: these kickoff shims re-export checkMaterialization from lib.
 // The tests below verify the re-export chains.
 import { checkMaterialization as checkFromPlan } from "../../../../src/extensions/forgecli/plan.js";
-import { checkMaterialization as checkFromImplement } from "../../../../src/extensions/forgecli/implement.js";
-import { checkMaterialization as checkFromEnhance } from "../../../../src/extensions/forgecli/enhance.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -44,10 +44,17 @@ function makeWorkflow(opts: {
 	hasStoreVerification?: boolean;
 	hasForgeStore?: boolean;
 }): string {
-	const { personas = ["architect"], bodyRef = "architect.md", hasIronLaws = true, hasStoreVerification = true, hasForgeStore = true } = opts;
-	const frontmatter = personas.length > 0
-		? `---\naudience: subagent\ndeps:\n  personas: [${personas.join(", ")}]\n---\n\n`
-		: `---\naudience: subagent\n---\n\n`;
+	const {
+		personas = ["architect"],
+		bodyRef = "architect.md",
+		hasIronLaws = true,
+		hasStoreVerification = true,
+		hasForgeStore = true,
+	} = opts;
+	const frontmatter =
+		personas.length > 0
+			? `---\naudience: subagent\ndeps:\n  personas: [${personas.join(", ")}]\n---\n\n`
+			: `---\naudience: subagent\n---\n\n`;
 	const body = [
 		bodyRef ? `# Workflow\n\nSee ${bodyRef} persona for guidance.` : "# Workflow\n",
 		hasIronLaws ? "\n## Iron Laws\n\nFollow these laws.\n" : "",

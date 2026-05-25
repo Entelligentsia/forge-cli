@@ -29,8 +29,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { getPiAgentAgentsDir } from "../paths/paths.js";
 import { isDirectory } from "../lib/shared-fs-utils.js";
+import { getPiAgentAgentsDir } from "../paths/paths.js";
 
 export type AgentScope = "user" | "project" | "both";
 

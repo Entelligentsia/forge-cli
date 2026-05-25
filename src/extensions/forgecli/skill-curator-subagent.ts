@@ -40,17 +40,12 @@
 //          ZERO phase events; the orchestrator owns runtime attribution and
 //          event emission after this function returns.
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as crypto from "node:crypto";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import {
-	getFinalOutput,
-	runForgeSubagent,
-	type ForgePersona,
-	type SubagentResult,
-} from "./forge-subagent.js";
+import { type ForgePersona, getFinalOutput, runForgeSubagent, type SubagentResult } from "./forge-subagent.js";
 import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ────────────────────────────────────────────────────────
@@ -101,11 +96,7 @@ export type CuratorInput = Static<typeof CuratorInputSchema>;
  */
 const ProposalSchema = Type.Object(
 	{
-		op: Type.Union([
-			Type.Literal("insert_skill"),
-			Type.Literal("update_skill"),
-			Type.Literal("delete_skill"),
-		]),
+		op: Type.Union([Type.Literal("insert_skill"), Type.Literal("update_skill"), Type.Literal("delete_skill")]),
 		target_path: Type.String({ minLength: 1 }),
 		diff_body: Type.String(),
 		// Optional pass-through fields (kept minimal — extra unknown keys are
@@ -175,7 +166,7 @@ export function composeCuratorTask(input: CuratorInput): string {
 	lines.push(
 		"Return a single fenced ```json``` block containing a JSON array.",
 		"Each array element is one proposal with these required keys:",
-		"  - op:          one of \"insert_skill\" | \"update_skill\" | \"delete_skill\"",
+		'  - op:          one of "insert_skill" | "update_skill" | "delete_skill"',
 		"  - target_path: repository-relative path (e.g. forge/skills/engineer-skills.md)",
 		"  - diff_body:   unified-diff body, or full file body for inserts;",
 		"                 may be empty string for delete_skill",
@@ -281,13 +272,7 @@ function dedupeProposals(items: readonly Proposal[]): Proposal[] {
  * slot is found. Caller never overwrites an existing file (append-only).
  */
 function chooseQueuePath(input: CuratorInput): string {
-	const dir = path.join(
-		input.cwd,
-		".forge",
-		"enhancement-proposals",
-		"queue",
-		input.sprintId,
-	);
+	const dir = path.join(input.cwd, ".forge", "enhancement-proposals", "queue", input.sprintId);
 	const base = `${input.taskId}-${input.ts}`;
 	let candidate = path.join(dir, `${base}.json`);
 	let n = 1;

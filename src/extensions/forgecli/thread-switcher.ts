@@ -43,7 +43,13 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { getInputRouter } from "./input-router.js";
-import { type PhaseSummary, getSessionRegistry, type SessionRegistry, type SessionState, type SessionStatus } from "./session-registry.js";
+import {
+	getSessionRegistry,
+	type PhaseSummary,
+	type SessionRegistry,
+	type SessionState,
+	type SessionStatus,
+} from "./session-registry.js";
 import { fmtModelAndTokenFooter, fmtModelLabel, fmtTokenFooter } from "./viewport-renderer.js";
 import { paintFooterLine, paintTailLine } from "./viewport-theme.js";
 
@@ -93,12 +99,13 @@ class TailViewComponent implements Component {
 			phase?.usage,
 		);
 
-		const bodyLines = lines.length === 0
-			? [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)]
-			: lines.map((line) => {
-				const painted = paintTailLine(line, this.theme);
-				return visibleWidth(painted) <= width ? painted : truncateToWidth(painted, width);
-			});
+		const bodyLines =
+			lines.length === 0
+				? [truncateToWidth(`(no output yet for ${this.phaseRole})`, width)]
+				: lines.map((line) => {
+						const painted = paintTailLine(line, this.theme);
+						return visibleWidth(painted) <= width ? painted : truncateToWidth(painted, width);
+					});
 
 		if (!footerText) return bodyLines;
 
@@ -167,7 +174,7 @@ class ViewportFooterComponent implements Component {
 		if (!tokens && !orchModel) return [];
 		const left = orchModel ? `⌂ ${orchModel}` : "";
 		const right = tokens ? `Σ ${tokens}` : "";
-		const text = left && right ? `${left}  ${right}` : (left || right);
+		const text = left && right ? `${left}  ${right}` : left || right;
 		return [paintFooterLine(text, width, this.theme)];
 	}
 
@@ -323,21 +330,16 @@ class ChipStripComponent implements Component {
 		// Orchestrator chip: bracketed + accent-colored (anchor identity).
 		// Subagent chips: <glyph> <role>, dimmed.
 		const orchChip = accent(`[${session.taskId}]`);
-		const phaseChips = chips
-			.filter((c) => c.id !== "main")
-			.map((c) => dim(`${this.chipGlyph(c)} ${c.label}`));
+		const phaseChips = chips.filter((c) => c.id !== "main").map((c) => dim(`${this.chipGlyph(c)} ${c.label}`));
 		const chipsLine = [orchChip, ...phaseChips].join("  ");
 
 		// Right-side: status · spinner · command hints.
 		// Cancelled sessions show "r resume" affordance; all others show "↓ to navigate".
-		const statusLabel = session.status === "cancelled" ? "cancelled"
-			: session.status === "cancelling" ? "cancelling…"
-			: "";
+		const statusLabel =
+			session.status === "cancelled" ? "cancelled" : session.status === "cancelling" ? "cancelling…" : "";
 		const statusPart = statusLabel ? dim(`  ${statusLabel}`) : "";
 		const spinPart = spin ? `  ${spin}` : "";
-		const hint = session.status === "cancelled"
-			? dim("  ↓ nav · r resume")
-			: dim("  ↓ to navigate");
+		const hint = session.status === "cancelled" ? dim("  ↓ nav · r resume") : dim("  ↓ to navigate");
 
 		// Truncate preview text from the MIDDLE of the line to keep chips and hints visible.
 		const previewText = session.currentTurnPreview ? `"${session.currentTurnPreview}"` : "";
@@ -435,9 +437,8 @@ class ChipStripComponent implements Component {
 
 		const budget = Math.max(0, width - visibleWidth(prompt) - visibleWidth(actionWord));
 		const tail = budget > 0 ? dim(` · n/esc dismiss · y confirm`) : "";
-		const budgetedTail = visibleWidth(tail) > budget
-			? dim(truncateToWidth(` · n/esc dismiss · y confirm`, budget))
-		: tail;
+		const budgetedTail =
+			visibleWidth(tail) > budget ? dim(truncateToWidth(` · n/esc dismiss · y confirm`, budget)) : tail;
 
 		let line = `${prompt}${actionWord}${budgetedTail}`;
 		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
@@ -599,30 +600,25 @@ function isNKey(d: string): boolean {
  * `tN` marker dim, and leaves the preview body in the default text colour.
  */
 function registerTurnMessageRenderer(pi: ExtensionAPI): void {
-	pi.registerMessageRenderer<{ displayRole?: string; turn?: number }>(
-		"forge:turn",
-		(message, _opts, theme) => {
-			const rawContent =
-				typeof message.content === "string"
-					? message.content
-					: message.content
-						.map((c) => ((c as { text?: string }).text ?? ""))
-						.join("");
-			const m = rawContent.match(/^\[([^\]]+)\]\s+t(\d+)\s+(.*)$/);
-			let line: string;
-			if (m) {
-				const [, role, turn, body] = m;
-				line = `${theme.bold(theme.fg("accent", `[${role}]`))} ${theme.fg("dim", `t${turn}`)} ${body}`;
-			} else {
-				line = rawContent;
-			}
-			return {
-				render: (_w: number) => [line],
-				invalidate: () => {},
-				setInvalidationCallback: () => {},
-			};
-		},
-	);
+	pi.registerMessageRenderer<{ displayRole?: string; turn?: number }>("forge:turn", (message, _opts, theme) => {
+		const rawContent =
+			typeof message.content === "string"
+				? message.content
+				: message.content.map((c) => (c as { text?: string }).text ?? "").join("");
+		const m = rawContent.match(/^\[([^\]]+)\]\s+t(\d+)\s+(.*)$/);
+		let line: string;
+		if (m) {
+			const [, role, turn, body] = m;
+			line = `${theme.bold(theme.fg("accent", `[${role}]`))} ${theme.fg("dim", `t${turn}`)} ${body}`;
+		} else {
+			line = rawContent;
+		}
+		return {
+			render: (_w: number) => [line],
+			invalidate: () => {},
+			setInvalidationCallback: () => {},
+		};
+	});
 }
 
 export function registerThreadSwitcher(pi: ExtensionAPI): void {
@@ -650,9 +646,7 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 		// When all sessions are terminal, the timer stops itself.
 		if (spinnerTimer) return;
 		spinnerTimer = setInterval(() => {
-			const anyActive = registry.listSessions().some(
-				(s) => s.status === "running" || s.status === "cancelling",
-			);
+			const anyActive = registry.listSessions().some((s) => s.status === "running" || s.status === "cancelling");
 			if (!anyActive) {
 				if (spinnerTimer) clearInterval(spinnerTimer);
 				spinnerTimer = undefined;
@@ -765,62 +759,62 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					}
 
 					// ── Cancel-confirmation handling (cancelTarget active) ────────
-				// When the strip shows a cancel prompt, y/Enter confirms,
-				// n/Esc dismisses. All other keys are consumed (no passthrough).
-				if (stripRef.isCancelPromptActive()) {
-					if (isYKey(data) || isEnter(data)) {
-						const target = stripRef.confirmCancel();
-						if (target?.taskId) {
-							registry.requestCancel(target.taskId);
+					// When the strip shows a cancel prompt, y/Enter confirms,
+					// n/Esc dismisses. All other keys are consumed (no passthrough).
+					if (stripRef.isCancelPromptActive()) {
+						if (isYKey(data) || isEnter(data)) {
+							const target = stripRef.confirmCancel();
+							if (target?.taskId) {
+								registry.requestCancel(target.taskId);
+							}
+							stripRef.setStripActive(false);
+							setFocusToMain(live);
+							return { consume: true };
 						}
-					stripRef.setStripActive(false);
-					setFocusToMain(live);
-					return { consume: true };
-					}
-				// Dismiss: n, Esc
-				if (isNKey(data) || isEsc(data)) {
-					stripRef.dismissCancel();
-					stripRef.setStripActive(false);
-					return { consume: true };
-					}
-				// Any other key in cancel-confirmation mode is consumed silently.
-				return { consume: true };
-				}
-
-				if (isXKey(data)) {
-					const chip = stripRef.cursorChip();
-					if (chip && stripRef.isCursorCancellable()) {
-						stripRef.requestCancelChip(chip);
+						// Dismiss: n, Esc
+						if (isNKey(data) || isEsc(data)) {
+							stripRef.dismissCancel();
+							stripRef.setStripActive(false);
+							return { consume: true };
+						}
+						// Any other key in cancel-confirmation mode is consumed silently.
 						return { consume: true };
 					}
-					return undefined;
-				}
 
-				if (isRKey(data)) {
-					// Resume a cancelled session. The state file is preserved on cancel
-					// (ADR-S21-01). Write the slash command to the editor and simulate
-					// Enter — exactly mirrors how a user types and submits the command.
-					const session = registry.listSessions()[0];
-					if (session && stripRef.isCursorResumable()) {
-						const entityId = session.taskId;
-						const cmd = entityId.startsWith("FORGE-BUG-")
-							? `forge:fix-bug ${entityId}`
-							: `forge:run-task ${entityId}`;
-						stripRef.setStripActive(false);
-						try {
-							live.ui.setEditorText(`/${cmd}`);
-						} catch {
-							// Non-fatal — editor may not be accessible in all contexts.
-							live.ui.notify(`↻ Resume: /${cmd}`, "info");
+					if (isXKey(data)) {
+						const chip = stripRef.cursorChip();
+						if (chip && stripRef.isCursorCancellable()) {
+							stripRef.requestCancelChip(chip);
+							return { consume: true };
 						}
-						// Return Enter to submit the command. The router dispatches 
-						// normally; pi processes it as a slash-command submit.
-						return { data: "\r" };
+						return undefined;
 					}
-					return undefined;
-				}
 
-				if (isLeftArrow(data)) {
+					if (isRKey(data)) {
+						// Resume a cancelled session. The state file is preserved on cancel
+						// (ADR-S21-01). Write the slash command to the editor and simulate
+						// Enter — exactly mirrors how a user types and submits the command.
+						const session = registry.listSessions()[0];
+						if (session && stripRef.isCursorResumable()) {
+							const entityId = session.taskId;
+							const cmd = entityId.startsWith("FORGE-BUG-")
+								? `forge:fix-bug ${entityId}`
+								: `forge:run-task ${entityId}`;
+							stripRef.setStripActive(false);
+							try {
+								live.ui.setEditorText(`/${cmd}`);
+							} catch {
+								// Non-fatal — editor may not be accessible in all contexts.
+								live.ui.notify(`↻ Resume: /${cmd}`, "info");
+							}
+							// Return Enter to submit the command. The router dispatches
+							// normally; pi processes it as a slash-command submit.
+							return { data: "\r" };
+						}
+						return undefined;
+					}
+
+					if (isLeftArrow(data)) {
 						stripRef.moveCursor(-1);
 						return { consume: true };
 					}

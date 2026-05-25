@@ -4,8 +4,8 @@
 // copy-pasted in forge-tools.ts:24 and store-resolver.ts:14, and the
 // `runTool`/`runToolAdvisory` pair extracted from forge-init.ts.
 
-import * as path from "node:path";
 import { execFile } from "node:child_process";
+import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 

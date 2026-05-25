@@ -9,10 +9,10 @@
 // Subagent dispatch path (runForgeSubagent) already sets this; this test
 // covers the main-thread / kickoff handler path that was previously missing.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoist a Proxy-backed mock pi that accepts every method call as a no-op,
 // recording on() handlers for assertion. Using a Proxy avoids having to mirror
@@ -53,9 +53,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 });
 
 // Import after the mock is registered.
-const { default: forgecli } = await import(
-	"../../../src/extensions/forgecli/index.js"
-);
+const { default: forgecli } = await import("../../../src/extensions/forgecli/index.js");
 
 describe("forge-cli#28 — process.env.FORGE_ROOT injection on activate", () => {
 	let tmp: string;

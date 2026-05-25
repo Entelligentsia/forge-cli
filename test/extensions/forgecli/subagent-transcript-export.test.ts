@@ -21,7 +21,13 @@ afterEach(() => {
 });
 
 const emptyUsage = {
-	input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0,
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	cost: 0,
+	contextTokens: 0,
+	turns: 0,
 };
 
 describe("writeSubagentTranscript", () => {

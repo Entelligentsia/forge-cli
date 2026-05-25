@@ -2,5 +2,5 @@
 // This file exists to give the init discovery scans something to analyze.
 
 export function hello(): string {
-  return "Hello from init-fixture";
+	return "Hello from init-fixture";
 }

@@ -7,9 +7,9 @@
 // fields are structurally identical.
 
 import { describe, expect, it } from "vitest";
+import type { RunBugPipelineResult } from "../../../../src/extensions/forgecli/fix-bug.js";
 import type { OrchestratorResult } from "../../../../src/extensions/forgecli/lib/orchestrator-types.js";
 import type { RunTaskPipelineResult } from "../../../../src/extensions/forgecli/run-task.js";
-import type { RunBugPipelineResult } from "../../../../src/extensions/forgecli/fix-bug.js";
 
 // Type-level: OrchestratorResult must be assignable from RunTaskPipelineResult
 // and RunBugPipelineResult. These are compile-time checks; if they fail,

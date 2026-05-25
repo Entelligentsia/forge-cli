@@ -22,7 +22,7 @@ import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
 import { discoverForgeConfigCached } from "../lib/forge-config.js";
-import { parseFrontmatterBlock, FrontmatterParseError } from "../lib/parsers.js";
+import { FrontmatterParseError, parseFrontmatterBlock } from "../lib/parsers.js";
 
 // ── TypeBox schemas ──────────────────────────────────────────────────────
 

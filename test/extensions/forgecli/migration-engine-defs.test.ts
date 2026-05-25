@@ -20,10 +20,7 @@ import { __test__ } from "../../../src/extensions/forgecli/migration-engine.js";
 const { resolveCategory } = __test__;
 
 function tmpDir(): string {
-	const dir = path.join(
-		os.tmpdir(),
-		`migration-engine-defs-test-${crypto.randomBytes(6).toString("hex")}`,
-	);
+	const dir = path.join(os.tmpdir(), `migration-engine-defs-test-${crypto.randomBytes(6).toString("hex")}`);
 	fs.mkdirSync(dir, { recursive: true });
 	return dir;
 }
@@ -84,13 +81,7 @@ describe("resolveCategory('schemas') — recursive _defs/ walk (F-1, F-2)", () =
 		resolveCategory("schemas", bundleRoot, projectRoot, writes);
 
 		const dests = writes.map((w) => w.dest);
-		const expected = path.join(
-			projectRoot,
-			".forge",
-			"schemas",
-			"_defs",
-			"phaseSummary.schema.json",
-		);
+		const expected = path.join(projectRoot, ".forge", "schemas", "_defs", "phaseSummary.schema.json");
 		expect(dests).toContain(expected);
 	});
 
@@ -99,13 +90,9 @@ describe("resolveCategory('schemas') — recursive _defs/ walk (F-1, F-2)", () =
 		const writes: WriteDescriptor[] = [];
 		resolveCategory("schemas", bundleRoot, projectRoot, writes);
 
-		const nested = writes.find((w) =>
-			w.dest.endsWith(path.join("_defs", "phaseSummary.schema.json")),
-		);
+		const nested = writes.find((w) => w.dest.endsWith(path.join("_defs", "phaseSummary.schema.json")));
 		expect(nested).toBeDefined();
-		expect(nested!.src).toBe(
-			path.join(bundleRoot, ".schemas", "_defs", "phaseSummary.schema.json"),
-		);
+		expect(nested!.src).toBe(path.join(bundleRoot, ".schemas", "_defs", "phaseSummary.schema.json"));
 	});
 
 	it("filters non-.schema.json files at every depth", () => {

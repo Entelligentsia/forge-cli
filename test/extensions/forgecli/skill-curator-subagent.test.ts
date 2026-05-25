@@ -29,10 +29,10 @@
 //    12. Surfaces a subagent failure (exitCode=1) as a structured result
 //        without throwing (IL7).
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock forge-subagent BEFORE importing the curator module.
@@ -42,16 +42,13 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", () => ({
 	getFinalOutput: vi.fn(),
 }));
 
+import { getFinalOutput, runForgeSubagent } from "../../../src/extensions/forgecli/forge-subagent.js";
 import {
-	runForgeSubagent,
-	getFinalOutput,
-} from "../../../src/extensions/forgecli/forge-subagent.js";
-import {
-	parseProposalsFromOutput,
-	runSkillCurator,
-	composeCuratorTask,
 	type CuratorInput,
+	composeCuratorTask,
+	parseProposalsFromOutput,
 	type RetrievedSkillBody,
+	runSkillCurator,
 } from "../../../src/extensions/forgecli/skill-curator-subagent.js";
 
 const mockRunForgeSubagent = vi.mocked(runForgeSubagent);
@@ -94,8 +91,7 @@ function baseInput(): CuratorInput {
 		taskId: "FORGE-S24-T10",
 		cwd: tmpRoot,
 		ts: "20260522T000000Z",
-		trajectorySummary:
-			"Agent planned, implemented skill-curator-subagent.ts, ran tests, all pass.",
+		trajectorySummary: "Agent planned, implemented skill-curator-subagent.ts, ran tests, all pass.",
 		retrievedSkills: [skill1, skill2],
 		outcome: { verdict: "approved", notes: "Tests pass; commit clean." },
 	};
@@ -119,18 +115,14 @@ const validProposal2 = {
 
 describe("skill-curator-subagent / parseProposalsFromOutput", () => {
 	it("extracts proposals from a fenced ```json block", () => {
-		const text =
-			"Some reasoning.\n\n```json\n" +
-			JSON.stringify([validProposal]) +
-			"\n```\n\nThanks.";
+		const text = "Some reasoning.\n\n```json\n" + JSON.stringify([validProposal]) + "\n```\n\nThanks.";
 		const out = parseProposalsFromOutput(text);
 		expect(out.length).toBe(1);
 		expect(out[0].op).toBe("update_skill");
 	});
 
 	it("extracts proposals from a bare JSON array", () => {
-		const text =
-			"PROPOSALS:\n" + JSON.stringify([validProposal, validProposal2]);
+		const text = "PROPOSALS:\n" + JSON.stringify([validProposal, validProposal2]);
 		const out = parseProposalsFromOutput(text);
 		expect(out.length).toBe(2);
 	});
@@ -196,9 +188,7 @@ describe("skill-curator-subagent / runSkillCurator", () => {
 	}
 
 	it("dispatches via runForgeSubagent and writes deduped proposals to the canonical queue path", async () => {
-		mockSubagentReturning(
-			"```json\n" + JSON.stringify([validProposal, validProposal2]) + "\n```",
-		);
+		mockSubagentReturning("```json\n" + JSON.stringify([validProposal, validProposal2]) + "\n```");
 
 		const result = await runSkillCurator(baseInput());
 
@@ -232,9 +222,7 @@ describe("skill-curator-subagent / runSkillCurator", () => {
 
 	it("dedupes proposals by {op, target_path, sha256(diff_body)} before writing", async () => {
 		const dupe = { ...validProposal, rationale: "different rationale, same diff body" };
-		mockSubagentReturning(
-			"```json\n" + JSON.stringify([validProposal, dupe, validProposal2]) + "\n```",
-		);
+		mockSubagentReturning("```json\n" + JSON.stringify([validProposal, dupe, validProposal2]) + "\n```");
 
 		const result = await runSkillCurator(baseInput());
 		expect(result.written).toBe(2);
@@ -243,14 +231,8 @@ describe("skill-curator-subagent / runSkillCurator", () => {
 		expect(written.length).toBe(2);
 
 		// Verify the dedupe key actually collapsed the duplicate (sha256 same).
-		const h1 = crypto
-			.createHash("sha256")
-			.update(validProposal.diff_body, "utf8")
-			.digest("hex");
-		const h2 = crypto
-			.createHash("sha256")
-			.update(dupe.diff_body, "utf8")
-			.digest("hex");
+		const h1 = crypto.createHash("sha256").update(validProposal.diff_body, "utf8").digest("hex");
+		const h2 = crypto.createHash("sha256").update(dupe.diff_body, "utf8").digest("hex");
 		expect(h1).toBe(h2);
 	});
 
@@ -286,13 +268,7 @@ describe("skill-curator-subagent / runSkillCurator", () => {
 		expect(result.written).toBe(0);
 		expect(result.queueFile).toBeUndefined();
 
-		const dir = path.join(
-			tmpRoot,
-			".forge",
-			"enhancement-proposals",
-			"queue",
-			"FORGE-S24",
-		);
+		const dir = path.join(tmpRoot, ".forge", "enhancement-proposals", "queue", "FORGE-S24");
 		expect(fs.existsSync(dir)).toBe(false);
 	});
 

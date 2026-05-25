@@ -45,8 +45,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 	};
 });
 
-import { parseMaterializeArgs, registerMaterialize } from "../../../src/extensions/forgecli/materialize.js";
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
+import { parseMaterializeArgs, registerMaterialize } from "../../../src/extensions/forgecli/materialize.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 
@@ -129,10 +129,7 @@ describe("registerMaterialize handler guards", () => {
 			const ctx = buildCtx();
 			await handler!("workflows plan_task", ctx);
 
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("single-workflow mode"),
-				"info",
-			);
+			expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("single-workflow mode"), "info");
 			// spawn should NOT have been called
 			const { spawn } = await import("node:child_process");
 			expect(spawn).not.toHaveBeenCalled();
@@ -152,10 +149,7 @@ describe("registerMaterialize handler guards", () => {
 			const ctx = buildCtx();
 			await handler!("", ctx);
 
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("no .forge/config.json"),
-				"error",
-			);
+			expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("no .forge/config.json"), "error");
 			const { spawn } = await import("node:child_process");
 			expect(spawn).not.toHaveBeenCalled();
 		} finally {

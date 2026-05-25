@@ -9,8 +9,8 @@
 // Mock pattern: vi.mock + vi.hoisted() for ESM compatibility.
 // Each describe block resets mock state via beforeEach / afterEach.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Hoisted mock state ────────────────────────────────────────────────────
 // vi.hoisted() runs before the vi.mock factories and before module imports.
@@ -34,9 +34,9 @@ vi.mock("node:child_process", () => execFileSyncMock);
 // ── Module under test ─────────────────────────────────────────────────────
 
 import {
-	checkStaleDocs,
 	checkModifiedGeneratedFiles,
 	checkPluginIntegrity,
+	checkStaleDocs,
 	runHealthCheck,
 } from "../../../src/extensions/forgecli/health-check.js";
 
@@ -99,9 +99,7 @@ describe("checkStaleDocs", () => {
 
 		checkStaleDocs("/project", config);
 
-		expect(fsMock.existsSync).toHaveBeenCalledWith(
-			expect.stringContaining("custom-eng/architecture"),
-		);
+		expect(fsMock.existsSync).toHaveBeenCalledWith(expect.stringContaining("custom-eng/architecture"));
 	});
 
 	it("skips individual files that cannot be stat'd", () => {
@@ -140,9 +138,7 @@ describe("checkModifiedGeneratedFiles", () => {
 
 	it("returns a gap per modified file reported on stdout (exit 0)", () => {
 		fsMock.existsSync.mockReturnValue(true);
-		execFileSyncMock.execFileSync.mockReturnValue(
-			".forge/workflows/plan_task.md\n.forge/personas/engineer.md\n",
-		);
+		execFileSyncMock.execFileSync.mockReturnValue(".forge/workflows/plan_task.md\n.forge/personas/engineer.md\n");
 
 		const gaps = checkModifiedGeneratedFiles("/project", "/bundle");
 		expect(gaps).toHaveLength(2);
@@ -167,9 +163,7 @@ describe("checkModifiedGeneratedFiles", () => {
 
 	it("filters blank lines and lines starting with #", () => {
 		fsMock.existsSync.mockReturnValue(true);
-		execFileSyncMock.execFileSync.mockReturnValue(
-			"# Modified files:\n.forge/workflows/plan_task.md\n\n",
-		);
+		execFileSyncMock.execFileSync.mockReturnValue("# Modified files:\n.forge/workflows/plan_task.md\n\n");
 
 		const gaps = checkModifiedGeneratedFiles("/project", "/bundle");
 		expect(gaps).toHaveLength(1);
@@ -210,9 +204,7 @@ describe("checkPluginIntegrity", () => {
 
 		fsMock.existsSync.mockReturnValue(true);
 		// First call: read integrity.json; second call: read commands/health.md
-		fsMock.readFileSync
-			.mockReturnValueOnce(manifest)
-			.mockReturnValueOnce(fileContent);
+		fsMock.readFileSync.mockReturnValueOnce(manifest).mockReturnValueOnce(fileContent);
 
 		const gaps = checkPluginIntegrity("/forge-root");
 		expect(gaps).toHaveLength(0);
@@ -224,9 +216,7 @@ describe("checkPluginIntegrity", () => {
 		});
 
 		fsMock.existsSync.mockReturnValue(true);
-		fsMock.readFileSync
-			.mockReturnValueOnce(manifest)
-			.mockReturnValueOnce(Buffer.from("tampered content"));
+		fsMock.readFileSync.mockReturnValueOnce(manifest).mockReturnValueOnce(Buffer.from("tampered content"));
 
 		const gaps = checkPluginIntegrity("/forge-root");
 		expect(gaps).toHaveLength(1);
@@ -242,7 +232,7 @@ describe("checkPluginIntegrity", () => {
 
 		// integrity.json exists; plugin file does not
 		fsMock.existsSync
-			.mockReturnValueOnce(true)  // integrity.json exists
+			.mockReturnValueOnce(true) // integrity.json exists
 			.mockReturnValueOnce(false); // commands/health.md missing
 		fsMock.readFileSync.mockReturnValueOnce(manifest);
 
@@ -300,19 +290,25 @@ describe("runHealthCheck: KB freshness drift detail", () => {
 			project: { name: "test", prefix: "TEST" },
 			stack: {},
 			commands: { test: "npm test" },
-			paths: { engineering: "engineering", store: ".forge/store", workflows: ".forge/workflows", commands: ".forge/commands", templates: ".forge/templates" },
+			paths: {
+				engineering: "engineering",
+				store: ".forge/store",
+				workflows: ".forge/workflows",
+				commands: ".forge/commands",
+				templates: ".forge/templates",
+			},
 			calibrationBaseline: { masterIndexHash: baselineHash },
 		});
 
 		// Config read, then MASTER_INDEX.md read (for drift detection)
 		fsMock.readFileSync
-			.mockReturnValueOnce(config)  // config.json
+			.mockReturnValueOnce(config) // config.json
 			.mockReturnValueOnce(masterIndexContent); // MASTER_INDEX.md
 
 		// config.json exists, everything else doesn't
 		fsMock.existsSync
-			.mockReturnValueOnce(true)   // config.json exists
-			.mockReturnValue(false);      // everything else
+			.mockReturnValueOnce(true) // config.json exists
+			.mockReturnValue(false); // everything else
 
 		const result = await runHealthCheck("/project", "/bundle");
 
@@ -330,7 +326,13 @@ describe("runHealthCheck: KB freshness drift detail", () => {
 			project: { name: "test", prefix: "TEST" },
 			stack: {},
 			commands: { test: "npm test" },
-			paths: { engineering: "engineering", store: ".forge/store", workflows: ".forge/workflows", commands: ".forge/commands", templates: ".forge/templates" },
+			paths: {
+				engineering: "engineering",
+				store: ".forge/store",
+				workflows: ".forge/workflows",
+				commands: ".forge/commands",
+				templates: ".forge/templates",
+			},
 			// no calibrationBaseline
 		});
 

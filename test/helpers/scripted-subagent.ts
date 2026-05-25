@@ -17,9 +17,9 @@
 // task status from the real store after the subagent returns — set the
 // status in the fixture to control the verdict the orchestrator resolves.
 
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { AssistantMessage, Api, Provider } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { Api, AssistantMessage, Provider } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 
 // ── Shared assistant-message builder ─────────────────────────────────────
 
@@ -126,11 +126,11 @@ export interface PhaseSummary {
 
 /** Approved-phase summaries for every review gate in the task pipeline. */
 export const APPROVED_PHASE_SUMMARIES: Record<string, PhaseSummary> = {
-	plan:          { objective: "Plan created",       written_at: "2026-01-01T00:00:00Z", verdict: "approved" },
-	review_plan:   { objective: "Plan reviewed",      written_at: "2026-01-01T00:01:00Z", verdict: "approved" },
+	plan: { objective: "Plan created", written_at: "2026-01-01T00:00:00Z", verdict: "approved" },
+	review_plan: { objective: "Plan reviewed", written_at: "2026-01-01T00:01:00Z", verdict: "approved" },
 	implementation: { objective: "Implementation done", written_at: "2026-01-01T00:02:00Z", verdict: "approved" },
-	code_review:   { objective: "Code reviewed",      written_at: "2026-01-01T00:03:00Z", verdict: "approved" },
-	validation:   { objective: "Validation passed",   written_at: "2026-01-01T00:04:00Z", verdict: "approved" },
+	code_review: { objective: "Code reviewed", written_at: "2026-01-01T00:03:00Z", verdict: "approved" },
+	validation: { objective: "Validation passed", written_at: "2026-01-01T00:04:00Z", verdict: "approved" },
 };
 
 /**

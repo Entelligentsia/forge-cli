@@ -45,7 +45,9 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
 	// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 	class MockDefaultResourceLoader {
-		reload() { return Promise.resolve(); }
+		reload() {
+			return Promise.resolve();
+		}
 	}
 	return {
 		...actual,
@@ -73,8 +75,8 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
 }));
 
-import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
 import { registerRunTask, runPreflightGate } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
@@ -264,17 +266,21 @@ function scaffoldProject(opts: ScaffoldOpts = {}): { proj: string; taskId: strin
 function makePi() {
 	const commands = new Map<string, { description: string; handler: (args: string, ctx: unknown) => Promise<void> }>();
 	const pi = {
-		registerCommand: vi.fn((name: string, def: { description: string; handler: (args: string, ctx: unknown) => Promise<void> }) => {
-			commands.set(name, def);
-		}),
+		registerCommand: vi.fn(
+			(name: string, def: { description: string; handler: (args: string, ctx: unknown) => Promise<void> }) => {
+				commands.set(name, def);
+			},
+		),
 		commands,
 	};
 	return pi;
 }
 
-function makeCtx(overrides: Partial<{
-	confirm: (title: string, desc?: string) => Promise<boolean>;
-}> = {}) {
+function makeCtx(
+	overrides: Partial<{
+		confirm: (title: string, desc?: string) => Promise<boolean>;
+	}> = {},
+) {
 	const notifications: { msg: string; level: string }[] = [];
 	const statuses: { key: string; val: string | undefined }[] = [];
 	const ctx = {
@@ -393,10 +399,10 @@ describe("Test 1b: readVerdict resolves canonical workflow keys (forge#85-follow
 	it("finds verdict at canonical key for review-code, validate; reads task.status for approve", async () => {
 		const { proj, taskId } = scaffoldProject();
 		mockStoreCliVerdict({
-			review_plan: "approved",     // canonical for review-plan
-			code_review: "approved",     // canonical for review-code (was the broken case)
-			validation: "approved",      // canonical for validate
-			approve: "approved",         // → sets record.status = "approved"
+			review_plan: "approved", // canonical for review-plan
+			code_review: "approved", // canonical for review-code (was the broken case)
+			validation: "approved", // canonical for validate
+			approve: "approved", // → sets record.status = "approved"
 		});
 
 		const pi = makePi();
@@ -405,15 +411,11 @@ describe("Test 1b: readVerdict resolves canonical workflow keys (forge#85-follow
 
 		await invokeRunTask(pi, ctx, taskId);
 
-		const missingNotify = ctx.notifications.find((n) =>
-			n.msg.includes("verdict missing"),
-		);
+		const missingNotify = ctx.notifications.find((n) => n.msg.includes("verdict missing"));
 		expect(missingNotify).toBeUndefined();
 
 		const completionNotify = ctx.notifications.find(
-			(n) =>
-				n.level === "info" &&
-				(n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
+			(n) => n.level === "info" && (n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
 		);
 		expect(completionNotify).toBeDefined();
 	});
@@ -442,16 +444,12 @@ describe("Test 1a: readVerdict tolerates underscore summary keys (forge-cli#?)",
 		await invokeRunTask(pi, ctx, taskId);
 
 		// Should NOT escalate with "verdict missing".
-		const missingNotify = ctx.notifications.find((n) =>
-			n.msg.includes("verdict missing"),
-		);
+		const missingNotify = ctx.notifications.find((n) => n.msg.includes("verdict missing"));
 		expect(missingNotify).toBeUndefined();
 
 		// And the chain should reach completion.
 		const completionNotify = ctx.notifications.find(
-			(n) =>
-				n.level === "info" &&
-				(n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
+			(n) => n.level === "info" && (n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
 		);
 		expect(completionNotify).toBeDefined();
 	});
@@ -564,7 +562,9 @@ describe("Test 5: Audience refusal mid-chain", () => {
 
 		// Should have notified an error (audience refusal)
 		const errorNotify = ctx.notifications.find(
-			(n) => n.level === "error" && (n.msg.includes("orchestrator-only") || n.msg.includes("audience") || n.msg.includes("workflow")),
+			(n) =>
+				n.level === "error" &&
+				(n.msg.includes("orchestrator-only") || n.msg.includes("audience") || n.msg.includes("workflow")),
 		);
 		expect(errorNotify).toBeDefined();
 
@@ -576,9 +576,10 @@ describe("Test 5: Audience refusal mid-chain", () => {
 describe("Test 6: Materialization marker missing", () => {
 	it("notifies per missing marker and aborts without calling createAgentSession", async () => {
 		// Sub-workflow missing required markers
-		const badWorkflow = GOOD_WORKFLOW_MD
-			.replace(/Store-Write Verification/g, "Store-Write XXX")
-			.replace(/Iron Laws/g, "Iron Rules");
+		const badWorkflow = GOOD_WORKFLOW_MD.replace(/Store-Write Verification/g, "Store-Write XXX").replace(
+			/Iron Laws/g,
+			"Iron Rules",
+		);
 
 		const { proj, taskId } = scaffoldProject({
 			subWorkflowMd: badWorkflow,
@@ -592,7 +593,12 @@ describe("Test 6: Materialization marker missing", () => {
 
 		// Should notify about missing markers
 		const markerErrors = ctx.notifications.filter(
-			(n) => n.level === "error" && (n.msg.includes("Store-Write Verification") || n.msg.includes("Iron Laws") || n.msg.includes("marker") || n.msg.includes("workflow regression")),
+			(n) =>
+				n.level === "error" &&
+				(n.msg.includes("Store-Write Verification") ||
+					n.msg.includes("Iron Laws") ||
+					n.msg.includes("marker") ||
+					n.msg.includes("workflow regression")),
 		);
 		expect(markerErrors.length).toBeGreaterThan(0);
 
@@ -766,9 +772,7 @@ describe("Test 11: Persona loaded per phase via loadForgePersona", () => {
 		await invokeRunTask(pi, ctx, taskId);
 
 		// Happy path must complete (proves all 8 persona loads succeeded)
-		const completionNotify = ctx.notifications.find(
-			(n) => n.level === "info" && n.msg.includes("〇"),
-		);
+		const completionNotify = ctx.notifications.find((n) => n.level === "info" && n.msg.includes("〇"));
 		expect(completionNotify, "Pipeline must complete for all personas to be loaded").toBeDefined();
 
 		// Verify the PHASES table has distinct persona nouns (contract: per-phase persona loading)
@@ -862,9 +866,7 @@ describe("Test 13: Unprefixed task ID resolution (Issue #20)", () => {
 		await invokeRunTask(pi, ctx, "FORGE-S21-T02");
 
 		// Should NOT emit resolver error
-		const resolverError = ctx.notifications.find(
-			(n) => n.level === "error" && n.msg.includes("could not resolve"),
-		);
+		const resolverError = ctx.notifications.find((n) => n.level === "error" && n.msg.includes("could not resolve"));
 		expect(resolverError).toBeUndefined();
 	});
 

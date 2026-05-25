@@ -18,10 +18,10 @@ import {
 	buildMultiPluginMsg,
 	buildPendingMigrationMsg,
 	detectDistribution,
+	type ProjectCache,
 	readProjectCache,
 	scanPluginInstallations,
 	syncForgeRootAndRef,
-	type ProjectCache,
 } from "../../../../src/extensions/forgecli/hooks/check-update.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

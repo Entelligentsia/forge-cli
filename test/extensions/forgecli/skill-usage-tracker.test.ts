@@ -51,29 +51,19 @@ afterEach(() => {
 const storeQueryNlp: RetrievedSkillForTracking = {
 	skillId: "store-query-nlp",
 	name: "store-query-nlp",
-	workflowSteps: [
-		"store-cli query",
-		"store-cli list",
-		"store-cli read",
-	],
+	workflowSteps: ["store-cli query", "store-cli list", "store-cli read"],
 };
 
 const refreshKbLinks: RetrievedSkillForTracking = {
 	skillId: "refresh-kb-links",
 	name: "refresh-kb-links",
-	workflowSteps: [
-		"refresh-kb-links",
-		"validate-store",
-	],
+	workflowSteps: ["refresh-kb-links", "validate-store"],
 };
 
 const reasoningOnly: RetrievedSkillForTracking = {
 	skillId: "calibrate",
 	name: "calibrate",
-	workflowSteps: [
-		"calibrate-drift",
-		"propose-patch",
-	],
+	workflowSteps: ["calibrate-drift", "propose-patch"],
 };
 
 // ── classifySkillUsage ────────────────────────────────────────────────────────
@@ -81,11 +71,7 @@ const reasoningOnly: RetrievedSkillForTracking = {
 describe("skill-usage-tracker / classifySkillUsage", () => {
 	it("flags used=true when ≥2 workflow steps overlap with executed tool calls", () => {
 		const trajectory: TaskTrajectory = {
-			toolCalls: [
-				{ name: "store-cli query" },
-				{ name: "store-cli list" },
-				{ name: "unrelated-tool" },
-			],
+			toolCalls: [{ name: "store-cli query" }, { name: "store-cli list" }, { name: "unrelated-tool" }],
 			reasoningText: "Doing some work.",
 		};
 
@@ -99,8 +85,7 @@ describe("skill-usage-tracker / classifySkillUsage", () => {
 	it("flags used=true when skill name appears in agent reasoning (no overlap)", () => {
 		const trajectory: TaskTrajectory = {
 			toolCalls: [{ name: "unrelated-tool" }],
-			reasoningText:
-				"I should consult the calibrate skill before applying patches.",
+			reasoningText: "I should consult the calibrate skill before applying patches.",
 		};
 
 		const verdict = classifySkillUsage(reasoningOnly, trajectory);
@@ -193,10 +178,7 @@ describe("skill-usage-tracker / emitSkillUsageTrackingEvents", () => {
 
 		const retrieved = [storeQueryNlp, refreshKbLinks];
 		const trajectory: TaskTrajectory = {
-			toolCalls: [
-				{ name: "store-cli query" },
-				{ name: "store-cli list" },
-			],
+			toolCalls: [{ name: "store-cli query" }, { name: "store-cli list" }],
 			reasoningText: "Used store query.",
 		};
 
@@ -263,9 +245,7 @@ describe("skill-usage-tracker / emitSkillUsageTrackingEvents", () => {
 			toolCalls: [{ name: "store-cli query" }, { name: "store-cli list" }],
 			reasoningText: "",
 		};
-		expect(() =>
-			emitSkillUsageTrackingEvents(retrieved, trajectory, runtime),
-		).not.toThrow();
+		expect(() => emitSkillUsageTrackingEvents(retrieved, trajectory, runtime)).not.toThrow();
 
 		const r = emitSkillUsageTrackingEvents(retrieved, trajectory, runtime);
 		expect(r.emitted).toBe(0);

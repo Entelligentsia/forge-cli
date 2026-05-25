@@ -1,121 +1,111 @@
 // Config TUI buffer mutation helpers — pure functions, no I/O.
 // Split from state.ts (Phase 1).
 
-import type { ConfigBuffer, PhaseOverride } from "./model.js";
+import type { PersonaModel, PipelineConfig } from "../../config-layer.js";
 import type { ConfigLayer } from "../../config-writer.js";
-import type { PersonaModel } from "../../config-layer.js";
-import type { PipelineConfig } from "../../config-layer.js";
 import type { Tier } from "../tier-meta.js";
 import { TIER_PERSONAS } from "../tier-meta.js";
+import type { ConfigBuffer, PhaseOverride } from "./model.js";
 
 export function writePersonaEntry(
-  buffer: ConfigBuffer,
-  layer: ConfigLayer,
-  persona: string,
-  entry: PersonaModel,
+	buffer: ConfigBuffer,
+	layer: ConfigLayer,
+	persona: string,
+	entry: PersonaModel,
 ): ConfigBuffer {
-  const targetLayer = buffer[layer];
-  const personaModels = { ...(targetLayer["persona-models"] ?? {}) };
-  personaModels[persona] = entry;
-  const updatedLayer = { ...targetLayer, "persona-models": personaModels };
-  return { ...buffer, [layer]: updatedLayer };
+	const targetLayer = buffer[layer];
+	const personaModels = { ...(targetLayer["persona-models"] ?? {}) };
+	personaModels[persona] = entry;
+	const updatedLayer = { ...targetLayer, "persona-models": personaModels };
+	return { ...buffer, [layer]: updatedLayer };
 }
 
-export function deletePersonaEntry(
-  buffer: ConfigBuffer,
-  layer: ConfigLayer,
-  persona: string,
-): ConfigBuffer {
-  const targetLayer = buffer[layer];
-  const personaModels = { ...(targetLayer["persona-models"] ?? {}) };
-  if (!(persona in personaModels)) return buffer;
-  delete personaModels[persona];
-  const updatedLayer = { ...targetLayer };
-  if (Object.keys(personaModels).length === 0) {
-    delete updatedLayer["persona-models"];
-  } else {
-    updatedLayer["persona-models"] = personaModels;
-  }
-  return { ...buffer, [layer]: updatedLayer };
+export function deletePersonaEntry(buffer: ConfigBuffer, layer: ConfigLayer, persona: string): ConfigBuffer {
+	const targetLayer = buffer[layer];
+	const personaModels = { ...(targetLayer["persona-models"] ?? {}) };
+	if (!(persona in personaModels)) return buffer;
+	delete personaModels[persona];
+	const updatedLayer = { ...targetLayer };
+	if (Object.keys(personaModels).length === 0) {
+		delete updatedLayer["persona-models"];
+	} else {
+		updatedLayer["persona-models"] = personaModels;
+	}
+	return { ...buffer, [layer]: updatedLayer };
 }
 
 /** Fan out a single model into all persona entries for a tier.
  *  E.g. setting Heavy → anthropic:claude-opus writes architect and supervisor. */
 export function writeTierAssignment(
-  buffer: ConfigBuffer,
-  layer: ConfigLayer,
-  tier: Tier,
-  entry: PersonaModel,
+	buffer: ConfigBuffer,
+	layer: ConfigLayer,
+	tier: Tier,
+	entry: PersonaModel,
 ): ConfigBuffer {
-  const personas = TIER_PERSONAS[tier];
-  let next = buffer;
-  for (const persona of personas) {
-    next = writePersonaEntry(next, layer, persona, entry);
-  }
-  return next;
+	const personas = TIER_PERSONAS[tier];
+	let next = buffer;
+	for (const persona of personas) {
+		next = writePersonaEntry(next, layer, persona, entry);
+	}
+	return next;
 }
 
 export function writePhaseOverride(
-  buffer: ConfigBuffer,
-  pipelineName: string,
-  phaseRole: string,
-  override: PhaseOverride,
+	buffer: ConfigBuffer,
+	pipelineName: string,
+	phaseRole: string,
+	override: PhaseOverride,
 ): ConfigBuffer {
-  const project = { ...buffer.project };
-  const pipelines = { ...(project.pipelines ?? {}) };
-  const pipeline: PipelineConfig = { ...(pipelines[pipelineName] ?? {}) };
-  const phases = { ...(pipeline.phases ?? {}) };
-  phases[phaseRole] = { ...phases[phaseRole], "model-override": override };
-  pipeline.phases = phases;
-  pipelines[pipelineName] = pipeline;
-  project.pipelines = pipelines;
-  return { ...buffer, project };
+	const project = { ...buffer.project };
+	const pipelines = { ...(project.pipelines ?? {}) };
+	const pipeline: PipelineConfig = { ...(pipelines[pipelineName] ?? {}) };
+	const phases = { ...(pipeline.phases ?? {}) };
+	phases[phaseRole] = { ...phases[phaseRole], "model-override": override };
+	pipeline.phases = phases;
+	pipelines[pipelineName] = pipeline;
+	project.pipelines = pipelines;
+	return { ...buffer, project };
 }
 
-export function clearPhaseOverride(
-  buffer: ConfigBuffer,
-  pipelineName: string,
-  phaseRole: string,
-): ConfigBuffer {
-  const existingPipeline = buffer.project.pipelines?.[pipelineName];
-  const existingPhases = existingPipeline?.phases;
-  if (!existingPhases) return buffer;
-  const existingPhase = existingPhases[phaseRole];
-  if (!existingPhase || existingPhase["model-override"] === undefined) return buffer;
+export function clearPhaseOverride(buffer: ConfigBuffer, pipelineName: string, phaseRole: string): ConfigBuffer {
+	const existingPipeline = buffer.project.pipelines?.[pipelineName];
+	const existingPhases = existingPipeline?.phases;
+	if (!existingPhases) return buffer;
+	const existingPhase = existingPhases[phaseRole];
+	if (!existingPhase || existingPhase["model-override"] === undefined) return buffer;
 
-  const project = { ...buffer.project };
-  const pipelines = { ...(project.pipelines ?? {}) };
-  const pipeline: PipelineConfig = { ...pipelines[pipelineName] };
-  const phases = { ...existingPhases };
-  const nextPhase = { ...phases[phaseRole] };
-  delete nextPhase["model-override"];
-  if (Object.keys(nextPhase).length === 0) {
-    delete phases[phaseRole];
-  } else {
-    phases[phaseRole] = nextPhase;
-  }
-  if (Object.keys(phases).length === 0) {
-    delete pipeline.phases;
-  } else {
-    pipeline.phases = phases;
-  }
+	const project = { ...buffer.project };
+	const pipelines = { ...(project.pipelines ?? {}) };
+	const pipeline: PipelineConfig = { ...pipelines[pipelineName] };
+	const phases = { ...existingPhases };
+	const nextPhase = { ...phases[phaseRole] };
+	delete nextPhase["model-override"];
+	if (Object.keys(nextPhase).length === 0) {
+		delete phases[phaseRole];
+	} else {
+		phases[phaseRole] = nextPhase;
+	}
+	if (Object.keys(phases).length === 0) {
+		delete pipeline.phases;
+	} else {
+		pipeline.phases = phases;
+	}
 
-  // If the pipeline has no persona-models and no remaining phase overrides, drop it.
-  const hasPipelinePersonaModels =
-    pipeline["persona-models"] !== undefined &&
-    Object.keys(pipeline["persona-models"]).length > 0;
-  const hasPhases = Object.keys(pipeline.phases ?? {}).length > 0;
-  if (!hasPipelinePersonaModels && !hasPhases) {
-    delete pipelines[pipelineName];
-  } else {
-    pipelines[pipelineName] = pipeline;
-  }
+	// If the pipeline has no persona-models and no remaining phase overrides, drop it.
+	const hasPipelinePersonaModels =
+		pipeline["persona-models"] !== undefined && Object.keys(pipeline["persona-models"]).length > 0;
+	const hasPhases = Object.keys(pipeline.phases ?? {}).length > 0;
+	if (!hasPipelinePersonaModels && !hasPhases) {
+		delete pipelines[pipelineName];
+	} else {
+		pipelines[pipelineName] = pipeline;
+	}
 
-  if (Object.keys(pipelines).length === 0) {
-    delete project.pipelines;
-  } else {
-    project.pipelines = pipelines;
-  }
+	if (Object.keys(pipelines).length === 0) {
+		delete project.pipelines;
+	} else {
+		project.pipelines = pipelines;
+	}
 
-  return { ...buffer, project };
+	return { ...buffer, project };
 }

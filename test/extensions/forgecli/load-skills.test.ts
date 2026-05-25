@@ -6,11 +6,11 @@
 //   3. Invalid frontmatter: skill missing description → diagnostics present, skill null/excluded
 //   4. Empty directory: no SKILL.md, no subdirs → 0 skills, 0 diagnostics
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Create a temporary directory with a deterministic prefix, cleaned up after each test.

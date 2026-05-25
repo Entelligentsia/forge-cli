@@ -5,8 +5,8 @@
 // styling should appear in screen renderers — route everything through
 // here or through theme methods so theme changes propagate globally.
 
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export type { Theme };
 
@@ -19,9 +19,9 @@ export function rule(width: number, theme: Theme): string {
 
 /** Breadcrumb: "forge config › personas › pick which". */
 export function breadcrumb(parts: string[], width: number, theme: Theme): string {
-  const raw = parts.join(" › ");
-  const truncated = truncateToWidth(raw, width, "");
-  return theme.fg("accent", theme.bold(truncated));
+	const raw = parts.join(" › ");
+	const truncated = truncateToWidth(raw, width, "");
+	return theme.fg("accent", theme.bold(truncated));
 }
 
 // ── Inline style helpers ────────────────────────────────────────────────────
@@ -64,13 +64,13 @@ export function success(text: string, theme: Theme): string {
 
 /** Mark an unsaved-change indicator — themed as warning. */
 export function dirtyMarker(theme: Theme): string {
-  return theme.fg("warning", "* unsaved");
+	return theme.fg("warning", "* unsaved");
 }
 
 /** Tier badge — displays Heavy / Standard / Light in accent color. */
 export function tierBadge(tier: "heavy" | "standard" | "light", theme: Theme): string {
-  const labels: Record<string, string> = { heavy: "Heavy", standard: "Standard", light: "Light" };
-  return theme.fg("accent", labels[tier] ?? tier);
+	const labels: Record<string, string> = { heavy: "Heavy", standard: "Standard", light: "Light" };
+	return theme.fg("accent", labels[tier] ?? tier);
 }
 
 // ── Padding (ANSI-aware) ────────────────────────────────────────────────────
@@ -105,5 +105,5 @@ export function padOrTruncate(text: string, width: number): string {
  * guard in every screen's render method so no line overflows the terminal.
  */
 export function truncateLines(lines: string[], width: number): string[] {
-  return lines.map(line => truncateToWidth(line, width, ""));
+	return lines.map((line) => truncateToWidth(line, width, ""));
 }

@@ -2,25 +2,25 @@
 // Drives the pipeline with a mocked runForgeSubagent per Fix 12.
 // All subagent dispatch is mocked; no real LLM calls.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+	assignNextBugId,
 	BUG_PHASES,
 	BUG_SUMMARY_KEY_BY_ROLE,
 	BUG_TYPE_TOKENS,
-	readBugVerdict,
-	extractBugIdFromEvents,
-	assignNextBugId,
-	preCreateBug,
-	readBugState,
-	writeBugState,
-	deleteBugState,
-	runBugPipeline,
 	type BugRecord,
+	deleteBugState,
+	extractBugIdFromEvents,
+	preCreateBug,
 	type RunBugState,
+	readBugState,
+	readBugVerdict,
+	runBugPipeline,
+	writeBugState,
 } from "../../../src/extensions/forgecli/fix-bug.js";
 import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 
@@ -39,10 +39,8 @@ function mkBugRecord(overrides: Partial<BugRecord> = {}): BugRecord {
 
 describe("fix-bug pipeline integration", () => {
 	it("should have 7 phases in correct order", () => {
-		const roles = BUG_PHASES.map(p => p.role);
-		expect(roles).toEqual([
-			"triage", "plan-fix", "review-plan", "implement", "review-code", "approve", "commit",
-		]);
+		const roles = BUG_PHASES.map((p) => p.role);
+		expect(roles).toEqual(["triage", "plan-fix", "review-plan", "implement", "review-code", "approve", "commit"]);
 	});
 
 	it("should map approve to 'approve' summary key (not null)", () => {
@@ -93,23 +91,17 @@ describe("extractBugIdFromEvents — bash capture", () => {
 	});
 
 	it("should NOT false-positive from unrelated bash commands mentioning bug IDs", () => {
-		const events = [
-			{ toolName: "bash", result: "ls FORGE-BUG-999" },
-		];
+		const events = [{ toolName: "bash", result: "ls FORGE-BUG-999" }];
 		expect(extractBugIdFromEvents(events as any)).toBeNull();
 	});
 
 	it("should capture from store-cli tool events", () => {
-		const events = [
-			{ toolName: "store-cli", result: "Created bug FORGE-BUG-007" },
-		];
+		const events = [{ toolName: "store-cli", result: "Created bug FORGE-BUG-007" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-007");
 	});
 
 	it("should capture from write tool events", () => {
-		const events = [
-			{ toolName: "write", result: "Wrote FORGE-BUG-042 to .forge/store/bugs/" },
-		];
+		const events = [{ toolName: "write", result: "Wrote FORGE-BUG-042 to .forge/store/bugs/" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-042");
 	});
 
@@ -147,7 +139,7 @@ describe("PENDING bugId state guards", () => {
 		// No file should be written for PENDING bugIds
 		const cacheDir = path.join(tmpDir, ".forge", "cache");
 		if (fs.existsSync(cacheDir)) {
-			const pendingFiles = fs.readdirSync(cacheDir).filter(e => e.includes("PENDING"));
+			const pendingFiles = fs.readdirSync(cacheDir).filter((e) => e.includes("PENDING"));
 			expect(pendingFiles).toHaveLength(0);
 		}
 		// readBugState should return null for PENDING
@@ -322,6 +314,7 @@ describe("read-verdict bug integration", () => {
 		expect(readBugVerdict(record, "plan-fix", BUG_SUMMARY_KEY_BY_ROLE)).toBe("missing");
 	});
 });
+
 // ── Regression: top-level audience check must use asOrchestrator ────────────
 // Bug: CallerContextStore.asSubagent on the top-level fix_bug.md audience
 // check caused "orchestrator-only" workflows to be rejected from the
@@ -351,23 +344,17 @@ describe("Top-level audience check context regression", () => {
 
 describe("extractBugIdFromEvents — forge_store (pi runtime)", () => {
 	it("should capture bugId from forge_store tool events", () => {
-		const events = [
-			{ toolName: "forge_store", result: "Created bug FORGE-BUG-042" },
-		];
+		const events = [{ toolName: "forge_store", result: "Created bug FORGE-BUG-042" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-042");
 	});
 
 	it("should capture bugId from forge_store result object", () => {
-		const events = [
-			{ toolName: "forge_store", result: { bugId: "FORGE-BUG-007", status: "reported" } },
-		];
+		const events = [{ toolName: "forge_store", result: { bugId: "FORGE-BUG-007", status: "reported" } }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-007");
 	});
 
 	it("should NOT false-positive from forge_store non-bug results", () => {
-		const events = [
-			{ toolName: "forge_store", result: "Listed 5 sprints" },
-		];
+		const events = [{ toolName: "forge_store", result: "Listed 5 sprints" }];
 		expect(extractBugIdFromEvents(events as any)).toBeNull();
 	});
 });
@@ -419,7 +406,9 @@ describe("N-B-E: runBugPipeline fails-fast on schema-invalid forge-cli config", 
 		const notifications: { msg: string; level: string }[] = [];
 		const ctx = {
 			ui: {
-				notify: (msg: string, level: string) => { notifications.push({ msg, level }); },
+				notify: (msg: string, level: string) => {
+					notifications.push({ msg, level });
+				},
 				setStatus: vi.fn(),
 				confirm: vi.fn(() => Promise.resolve(false)),
 			},

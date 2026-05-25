@@ -12,7 +12,11 @@
 //     7. Omits snippet placeholder when snippet is empty
 
 import { describe, expect, it } from "vitest";
-import { buildTriageMessage, FORGE_PATTERNS, isForgeRelated } from "../../../../src/extensions/forgecli/hooks/triage-error.js";
+import {
+	buildTriageMessage,
+	FORGE_PATTERNS,
+	isForgeRelated,
+} from "../../../../src/extensions/forgecli/hooks/triage-error.js";
 
 describe("FORGE_PATTERNS", () => {
 	it("exports 11 patterns", () => {

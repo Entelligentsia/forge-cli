@@ -1,7 +1,7 @@
-import * as http from "node:http";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import { spawn } from "node:child_process";
+import * as fs from "node:fs/promises";
+import * as http from "node:http";
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,22 +16,19 @@ export interface ReviewFeedback {
  * Starts a local HTTP server to host the review UI, opens the browser,
  * and waits for the user to submit feedback.
  */
-export function startReviewServer(
-	artifactPath: string,
-	taskId: string,
-): Promise<ReviewFeedback[]> {
+export function startReviewServer(artifactPath: string, taskId: string): Promise<ReviewFeedback[]> {
 	return new Promise((resolve, reject) => {
 		const server = http.createServer(async (req, res) => {
 			res.setHeader("Access-Control-Allow-Origin", "*");
-			
+
 			try {
 				if (req.method === "GET" && req.url === "/") {
 					// Serve the index.html viewer
 					let html = getViewerHtml();
-					
+
 					// Inject the task ID into the HTML
 					html = html.replace("{{TASK_ID}}", taskId);
-					
+
 					res.writeHead(200, { "Content-Type": "text/html" });
 					res.end(html);
 					return;
@@ -64,7 +61,7 @@ export function startReviewServer(
 							const feedback: ReviewFeedback[] = JSON.parse(body);
 							res.writeHead(200, { "Content-Type": "application/json" });
 							res.end(JSON.stringify({ success: true }));
-							
+
 							// Close the server and resolve the promise
 							server.close(() => {
 								resolve(feedback);
@@ -94,14 +91,12 @@ export function startReviewServer(
 				reject(new Error("Failed to get server address"));
 				return;
 			}
-			
+
 			const url = `http://127.0.0.1:${address.port}/`;
-			
+
 			// Open the browser (argv-array spawn — Iron Law 6)
 			const isWin = process.platform === "win32";
-			const cmd = process.platform === "darwin"
-				? "open"
-				: isWin ? "cmd" : "xdg-open";
+			const cmd = process.platform === "darwin" ? "open" : isWin ? "cmd" : "xdg-open";
 			// win32 `start` needs an empty title arg first
 			const argv = isWin ? ["/c", "start", "", url] : [url];
 

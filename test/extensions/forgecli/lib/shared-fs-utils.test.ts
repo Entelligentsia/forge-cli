@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isFile, isDirectory } from "../../../../src/extensions/forgecli/lib/shared-fs-utils.js";
+import { isDirectory, isFile } from "../../../../src/extensions/forgecli/lib/shared-fs-utils.js";
 
 let tmpRoot: string;
 
@@ -68,9 +68,7 @@ describe("regression: forge-root.ts uses shared isFile", () => {
 		);
 
 		// discoverForgeConfig calls findNearestForgeConfig which uses isFile from lib
-		const { discoverForgeConfig } = await import(
-			"../../../../src/extensions/forgecli/forge-root.js"
-		);
+		const { discoverForgeConfig } = await import("../../../../src/extensions/forgecli/forge-root.js");
 		const result = discoverForgeConfig(tmpRoot);
 		expect(result).not.toBeNull();
 		expect(result!.forgeRoot).toBe(forgeRoot);

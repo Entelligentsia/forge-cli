@@ -37,10 +37,10 @@
 // fix-bug.ts, gated by FORGE-S24-T12 flag) does that and passes the
 // shaped inputs in.
 
-import { isSkillCurationEnabled } from "./skill-curation-flag.js";
-import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
+import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ──────────────────────────────────────────────────────────
 
@@ -85,6 +85,7 @@ export type FrictionInputs = Static<typeof FrictionInputsSchema>;
 // compatibility — all existing imports of FRICTION_SUBKINDS from this module continue to work.
 // Source of truth: event.schema.json subkind pattern (skill_unused|skill_failed|…).
 import { FRICTION_SUBKINDS, type FrictionSubkind } from "./lib/catalog-types.js";
+
 export { FRICTION_SUBKINDS, type FrictionSubkind };
 
 /**
@@ -140,9 +141,7 @@ const MISSING_TOOL_ERROR_FLOOR = 2;
  * than `skill_unused`, so the two signals never double-count the same
  * outcome.
  */
-export function computeFrictionSignals(
-	inputs: FrictionInputs,
-): FrictionSignal[] {
+export function computeFrictionSignals(inputs: FrictionInputs): FrictionSignal[] {
 	Value.Parse(FrictionInputsSchema, inputs);
 
 	const signals: FrictionSignal[] = [];
@@ -190,11 +189,7 @@ export function computeFrictionSignals(
 
 	// skill_missing — no skill retrieved AND task succeeded AND ≥2 tool errors.
 	// Emitted once per task (no skillId — there's nothing to attribute).
-	if (
-		inputs.retrievedSkills.length === 0 &&
-		inputs.taskSuccess &&
-		inputs.toolErrorCount >= MISSING_TOOL_ERROR_FLOOR
-	) {
+	if (inputs.retrievedSkills.length === 0 && inputs.taskSuccess && inputs.toolErrorCount >= MISSING_TOOL_ERROR_FLOOR) {
 		signals.push({
 			subkind: "skill_missing",
 			skillId: undefined,
@@ -260,8 +255,7 @@ export function emitFrictionEvents(
 		const sig = signals[i];
 
 		const idTail = sig.skillId ?? "none";
-		const eventId =
-			`${isoCompact(runtime.startTimestamp)}_${runtime.taskId}_friction_${sig.subkind}_${i}_${idTail}`;
+		const eventId = `${isoCompact(runtime.startTimestamp)}_${runtime.taskId}_friction_${sig.subkind}_${i}_${idTail}`;
 
 		const event: Record<string, unknown> = {
 			eventId,

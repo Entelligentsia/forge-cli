@@ -5,9 +5,9 @@
 // (e.g. engineering/bugs/BUG-001-sprint-runner-context-accumulation)
 // must be reachable.
 
-import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 
 // Import the module with _testOverrides for DI-based mocking
 import { _testOverrides, buildForgeArtifact } from "../../../src/extensions/forgecli/forge-artifact-tool.js";
@@ -65,7 +65,12 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 			try {
 				createTestProject(tmpDir);
 
-				const bugSlugDir = path.join(tmpDir, "engineering", "bugs", "FORGE-BUG-017-preflight-gate-workflow-shadowing");
+				const bugSlugDir = path.join(
+					tmpDir,
+					"engineering",
+					"bugs",
+					"FORGE-BUG-017-preflight-gate-workflow-shadowing",
+				);
 				fs.mkdirSync(bugSlugDir, { recursive: true });
 				fs.writeFileSync(path.join(bugSlugDir, "TRIAGE.md"), "# Triage content", "utf8");
 
@@ -77,11 +82,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "bug",
-					entityId: "FORGE-BUG-017",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "bug",
+						entityId: "FORGE-BUG-017",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("TRIAGE.md");
@@ -106,11 +115,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = () => null;
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "bug",
-					entityId: "FORGE-BUG-999",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "bug",
+						entityId: "FORGE-BUG-999",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("INDEX.md");
@@ -138,11 +151,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "bug",
-					entityId: "FORGE-BUG-040",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "bug",
+						entityId: "FORGE-BUG-040",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("TRIAGE.md");
@@ -169,11 +186,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "sprint",
-					entityId: "FORGE-S07",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "sprint",
+						entityId: "FORGE-S07",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("INDEX.md");
@@ -190,7 +211,13 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 			try {
 				createTestProject(tmpDir);
 
-				const taskDir = path.join(tmpDir, "engineering", "sprints", "FORGE-S25-foundation-refactor", "FORGE-S25-T01");
+				const taskDir = path.join(
+					tmpDir,
+					"engineering",
+					"sprints",
+					"FORGE-S25-foundation-refactor",
+					"FORGE-S25-T01",
+				);
 				fs.mkdirSync(taskDir, { recursive: true });
 				fs.writeFileSync(path.join(taskDir, "PLAN.md"), "# Plan", "utf8");
 
@@ -202,11 +229,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "task",
-					entityId: "FORGE-S25-T01",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "task",
+						entityId: "FORGE-S25-T01",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("PLAN.md");
@@ -238,11 +269,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "task",
-					entityId: "FORGE-S07-T01",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "task",
+						entityId: "FORGE-S07-T01",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("PLAN.md");
@@ -271,11 +306,15 @@ describe("forge_artifact path resolution (forge-cli#33)", () => {
 				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
 
 				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute("test-call", {
-					command: "list",
-					entity: "bug",
-					entityId: "BUG-001",
-				}, undefined);
+				const result = await artifact.execute(
+					"test-call",
+					{
+						command: "list",
+						entity: "bug",
+						entityId: "BUG-001",
+					},
+					undefined,
+				);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("INDEX.md");

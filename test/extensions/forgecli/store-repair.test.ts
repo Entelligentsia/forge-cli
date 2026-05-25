@@ -6,10 +6,10 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-	parseStoreRepairArgs,
 	composeStoreRepairKickoff,
-	registerStoreRepair,
 	type ParsedStoreRepairArgs,
+	parseStoreRepairArgs,
+	registerStoreRepair,
 } from "../../../src/extensions/forgecli/store-repair.js";
 
 function makePi() {
@@ -116,10 +116,7 @@ describe("registerStoreRepair", () => {
 		const ctx = makeCtx();
 		const handler = pi.commands.get("forge:store-repair")?.handler;
 		await handler!("", ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("command file not found"),
-			"error",
-		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
 
 	it("sends kickoff with dry-run instruction when --dry-run provided", async () => {

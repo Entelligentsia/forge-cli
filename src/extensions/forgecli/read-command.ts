@@ -29,9 +29,9 @@ export function registerReadCommand(pi: ExtensionAPI, forgeRoot: string | null):
 			if (!arg) {
 				ctx.ui.notify(
 					"Usage: /forge:read <task-id|sprint-id|@path|natural language>\n" +
-					"Examples: /forge:read S01-T01  |  /forge:read S01  |  " +
-					"/forge:read @engineering/sprints/HELLO-S01/HELLO-S01-T01  |  " +
-					"/forge:read the i18n task",
+						"Examples: /forge:read S01-T01  |  /forge:read S01  |  " +
+						"/forge:read @engineering/sprints/HELLO-S01/HELLO-S01-T01  |  " +
+						"/forge:read the i18n task",
 					"error",
 				);
 				return;
@@ -75,7 +75,7 @@ export function registerReadCommand(pi: ExtensionAPI, forgeRoot: string | null):
 				return;
 			}
 
-			const mdFiles = files.filter(f => f.endsWith(".md"));
+			const mdFiles = files.filter((f) => f.endsWith(".md"));
 			if (mdFiles.length === 0) {
 				ctx.ui.notify(`No markdown artifacts found at ${taskDir}`, "info");
 				return;

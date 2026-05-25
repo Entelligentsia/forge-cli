@@ -7,13 +7,16 @@
 //   - error paths surface correctly (fail-open vs fail-closed per wrapper)
 
 import * as childProcess from "node:child_process";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	spawnStoreCliEmit,
 	spawnStoreCliRead,
 	spawnStoreCliValidate,
 } from "../../../../src/extensions/forgecli/lib/spawn-store-cli.js";
-import { STORE_CLI_TIMEOUT_MS, STORE_CLI_EMIT_TIMEOUT_MS } from "../../../../src/extensions/forgecli/lib/store-cli-timeouts.js";
+import {
+	STORE_CLI_EMIT_TIMEOUT_MS,
+	STORE_CLI_TIMEOUT_MS,
+} from "../../../../src/extensions/forgecli/lib/store-cli-timeouts.js";
 
 vi.mock("node:child_process", () => ({
 	spawnSync: vi.fn(),

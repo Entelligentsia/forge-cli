@@ -21,8 +21,8 @@
 //   That block is architecturally distinct and is explicitly out of scope
 //   per the plan-review finding (N-H-D resolved, reviewer-approved).
 
-import { validateModelConfig } from "../model-validator.js";
 import type { MergedConfig } from "../config-layer.js";
+import { validateModelConfig } from "../model-validator.js";
 import type { OrchestratorResult } from "./orchestrator-types.js";
 
 // ---------------------------------------------------------------------------
@@ -54,9 +54,7 @@ export interface RunOrchestratorPreflightOptions {
 }
 
 /** Discriminated union: proceed=true → continue; proceed=false → return result early. */
-export type OrchestratorPreflightResult =
-	| { proceed: true }
-	| { proceed: false; result: OrchestratorResult };
+export type OrchestratorPreflightResult = { proceed: true } | { proceed: false; result: OrchestratorResult };
 
 // ---------------------------------------------------------------------------
 // runOrchestratorPreflight
@@ -73,9 +71,7 @@ export type OrchestratorPreflightResult =
  * validateModelConfig. This matches the existing behaviour of ceremony dispatch
  * which uses lookupPersonaModel rather than the full validator.
  */
-export function runOrchestratorPreflight(
-	opts: RunOrchestratorPreflightOptions,
-): OrchestratorPreflightResult {
+export function runOrchestratorPreflight(opts: RunOrchestratorPreflightOptions): OrchestratorPreflightResult {
 	if (opts.mode === "ceremony") {
 		return { proceed: true };
 	}

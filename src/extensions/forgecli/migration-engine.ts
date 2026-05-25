@@ -11,8 +11,8 @@
 //
 // Layer: Layer 1 of the two-layer split (pure engine / command handler).
 
-import { createRequire } from "node:module";
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { isFile } from "./lib/shared-fs-utils.js";
 
@@ -136,10 +136,7 @@ export function filterMigrationEntries(
 ): EntryWithKey[] {
 	return Object.entries(migrations)
 		.filter(([key]) => {
-			return (
-				semverCompare(key, fromVersion) >= 0 &&
-				semverCompare(key, toVersion) < 0
-			);
+			return semverCompare(key, fromVersion) >= 0 && semverCompare(key, toVersion) < 0;
 		})
 		.map(([key, entry]) => ({ key, entry }))
 		.sort((a, b) => semverCompare(a.key, b.key));
@@ -243,10 +240,7 @@ export function resolveCategory(
 		}
 
 		// Standard schema: <name>.schema.json
-		tryAdd(
-			path.join(schemas, `${name}.schema.json`),
-			safeDest(path.join("schemas", `${name}.schema.json`)),
-		);
+		tryAdd(path.join(schemas, `${name}.schema.json`), safeDest(path.join("schemas", `${name}.schema.json`)));
 		return;
 	}
 
@@ -368,11 +362,12 @@ export function resolveCategory(
 		try {
 			const files = fs.readdirSync(srcDir).filter((f) => f.endsWith(".md"));
 			for (const f of files) {
-				const dest = type === "skills"
-					? safeDest(path.join(type, f)) // skills files already have -skills.md suffix
-					: type === "commands"
-					? safeDest(path.join("commands", "forge", f))
-					: safeDest(path.join(type, f));
+				const dest =
+					type === "skills"
+						? safeDest(path.join(type, f)) // skills files already have -skills.md suffix
+						: type === "commands"
+							? safeDest(path.join("commands", "forge", f))
+							: safeDest(path.join(type, f));
 				tryAdd(path.join(srcDir, f), dest);
 			}
 		} catch (err: unknown) {
@@ -388,14 +383,13 @@ export function resolveCategory(
 	}
 
 	// Sub-target category: <type>:<name>
-	const filename = type === "skills"
-		? `${subTarget}-skills.md` // skills:<name> → <name>-skills.md
-		: `${subTarget}.md`;
+	const filename =
+		type === "skills"
+			? `${subTarget}-skills.md` // skills:<name> → <name>-skills.md
+			: `${subTarget}.md`;
 
 	const dest =
-		type === "commands"
-			? safeDest(path.join("commands", "forge", filename))
-			: safeDest(path.join(type, filename));
+		type === "commands" ? safeDest(path.join("commands", "forge", filename)) : safeDest(path.join(type, filename));
 
 	tryAdd(path.join(basePack, type, filename), dest);
 }
@@ -408,11 +402,7 @@ interface FileOpsResult {
 	failed: Array<{ category: string; reason: string }>;
 }
 
-function executeFileOps(
-	fileOps: FileOp[],
-	projectRoot: string,
-	dryRun: boolean,
-): FileOpsResult {
+function executeFileOps(fileOps: FileOp[], projectRoot: string, dryRun: boolean): FileOpsResult {
 	const forgeDir = path.join(projectRoot, ".forge");
 	const safePrefix = forgeDir + path.sep;
 	const categories: string[] = [];

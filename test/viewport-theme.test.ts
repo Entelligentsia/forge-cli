@@ -64,10 +64,7 @@ describe("paintTailLine", () => {
 
 	it("paints store-cli glyph with toolTitle", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			"[plan 12:00:00 t1 ↑1k↓0] ⚙ forge_store_emit task=X",
-			theme as never,
-		);
+		const out = paintTailLine("[plan 12:00:00 t1 ↑1k↓0] ⚙ forge_store_emit task=X", theme as never);
 		expect(out).toContain("<toolTitle>⚙</toolTitle>");
 	});
 
@@ -79,10 +76,7 @@ describe("paintTailLine", () => {
 
 	it("paints failure line in error colour", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			"[plan 12:00:00 t1 ↑1k↓0] ⚠ bash failed: ENOENT",
-			theme as never,
-		);
+		const out = paintTailLine("[plan 12:00:00 t1 ↑1k↓0] ⚠ bash failed: ENOENT", theme as never);
 		expect(out).toContain("<error>⚠ bash failed: ENOENT</error>");
 	});
 
@@ -94,28 +88,19 @@ describe("paintTailLine", () => {
 
 	it("paints thinking line italic + thinkingText", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			"[plan 12:00:00 t1 ↑1k↓0] ✱ analysing preflight gate failure",
-			theme as never,
-		);
+		const out = paintTailLine("[plan 12:00:00 t1 ↑1k↓0] ✱ analysing preflight gate failure", theme as never);
 		expect(out).toMatch(/<i><thinkingText>✱ analysing preflight gate failure<\/thinkingText><\/i>/);
 	});
 
 	it("paints preview line italic + muted", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			'[plan 12:00:00 t1 ↑1k↓0] » "Now let me read..."',
-			theme as never,
-		);
+		const out = paintTailLine('[plan 12:00:00 t1 ↑1k↓0] » "Now let me read..."', theme as never);
 		expect(out).toMatch(/<i><muted>» "Now let me read\.\.\."<\/muted><\/i>/);
 	});
 
 	it("paints batched line in dim", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			"[plan 12:00:00 t1 ↑1k↓0] ⇉ batched 6 tool calls in turn 9",
-			theme as never,
-		);
+		const out = paintTailLine("[plan 12:00:00 t1 ↑1k↓0] ⇉ batched 6 tool calls in turn 9", theme as never);
 		expect(out).toMatch(/<dim>⇉ batched 6 tool calls in turn 9<\/dim>/);
 	});
 
@@ -166,10 +151,7 @@ describe("paintTailLine — tree connectors", () => {
 
 	it("paints ╰ connector dim and recurses into thinking body", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			"[plan 14:09:40 t11] ╰ ✱ analysing preflight gate failure",
-			theme as never,
-		);
+		const out = paintTailLine("[plan 14:09:40 t11] ╰ ✱ analysing preflight gate failure", theme as never);
 		expect(out).toContain("<dim>╰</dim>");
 		expect(out).toMatch(/<i><thinkingText>✱ analysing preflight gate failure<\/thinkingText><\/i>/);
 	});
@@ -190,10 +172,7 @@ describe("paintTailLine — tree connectors", () => {
 
 	it("paints ╰ connector with preview line", () => {
 		const { theme } = makeStub();
-		const out = paintTailLine(
-			'[plan 14:09:40 t11] ╰ » "now let me read the architecture"',
-			theme as never,
-		);
+		const out = paintTailLine('[plan 14:09:40 t11] ╰ » "now let me read the architecture"', theme as never);
 		expect(out).toContain("<dim>╰</dim>");
 		expect(out).toMatch(/<i><muted>» "now let me read the architecture"<\/muted><\/i>/);
 	});

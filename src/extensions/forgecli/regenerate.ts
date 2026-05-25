@@ -135,10 +135,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			const cwd = process.cwd();
 			const configPath = path.join(cwd, ".forge", "config.json");
 			if (!fs.existsSync(configPath)) {
-				ctx.ui.notify(
-					"× forge:regenerate — no .forge/config.json at cwd. Run /forge:init first.",
-					"error",
-				);
+				ctx.ui.notify("× forge:regenerate — no .forge/config.json at cwd. Run /forge:init first.", "error");
 				return;
 			}
 
@@ -149,10 +146,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			const basePackDir = path.join(bundleRoot, ".base-pack");
 
 			if (!fs.existsSync(substituteTool)) {
-				ctx.ui.notify(
-					`× forge:regenerate — substitute-placeholders.cjs missing at ${substituteTool}`,
-					"error",
-				);
+				ctx.ui.notify(`× forge:regenerate — substitute-placeholders.cjs missing at ${substituteTool}`, "error");
 				return;
 			}
 			if (!fs.existsSync(basePackDir)) {
@@ -295,10 +289,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 					});
 				}
 				if (replayTotal > 0) {
-					ctx.ui.notify(
-						`〇 replay: ${replayTotal} user enhancement(s) restored from snapshots`,
-						"info",
-					);
+					ctx.ui.notify(`〇 replay: ${replayTotal} user enhancement(s) restored from snapshots`, "info");
 				}
 			}
 
@@ -314,15 +305,10 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				const schemasDest = path.join(cwd, ".forge", "schemas");
 				if (fs.existsSync(schemasSrc)) {
 					fs.mkdirSync(schemasDest, { recursive: true });
-					const files = fs
-						.readdirSync(schemasSrc)
-						.filter((f) => f.endsWith(".json"));
+					const files = fs.readdirSync(schemasSrc).filter((f) => f.endsWith(".json"));
 					for (const f of files) {
 						try {
-							fs.copyFileSync(
-								path.join(schemasSrc, f),
-								path.join(schemasDest, f),
-							);
+							fs.copyFileSync(path.join(schemasSrc, f), path.join(schemasDest, f));
 							schemaCount++;
 						} catch {
 							// non-fatal — surfaced in count below
@@ -346,17 +332,11 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 							config.paths = config.paths || {};
 							config.paths.forgeRoot = bundleRoot;
 							fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
-							ctx.ui.notify(
-								`Updated forgeRoot in config.json: ${oldRoot ?? "(unset)"} → ${bundleRoot}`,
-								"info",
-							);
+							ctx.ui.notify(`Updated forgeRoot in config.json: ${oldRoot ?? "(unset)"} → ${bundleRoot}`, "info");
 						}
 					} catch (e: unknown) {
 						const msg = e instanceof Error ? e.message : String(e);
-						ctx.ui.notify(
-							`⚠ forge:regenerate — could not update forgeRoot in config.json: ${msg}`,
-							"warning",
-						);
+						ctx.ui.notify(`⚠ forge:regenerate — could not update forgeRoot in config.json: ${msg}`, "warning");
 					}
 				}
 

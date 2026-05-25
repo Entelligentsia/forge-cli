@@ -19,19 +19,19 @@
 //   - `preDispatchNotify` (optional): fired before LLM dispatch — used by Phase 1 to
 //     emit the "Running 5 discovery scans in parallel..." info notice.
 
-import * as path from "node:path";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
-import { writeInitProgress } from "../init-progress.js";
 import {
 	buildProjectContext,
 	computeCalibrationBaseline,
 	validateProjectContext,
 	writeProjectContext,
 } from "../init-context.js";
-import { verifyPhase1, verifyPhase2, verifyPhase3 } from "./verifiers.js";
+import { writeInitProgress } from "../init-progress.js";
+import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { buildPhase1PromptText, buildPhase2PromptText } from "./prompts.js";
+import { verifyPhase1, verifyPhase2, verifyPhase3 } from "./verifiers.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -199,7 +199,16 @@ export async function runLlmPhase(
 
 	// 8. Post-verify hook (called on success AND on partial-continue)
 	if (desc.postVerify) {
-		await desc.postVerify({ cwd, bundleRoot, toolsRoot, projectName, configCache, ctx, sendToAgent, isNonInteractive });
+		await desc.postVerify({
+			cwd,
+			bundleRoot,
+			toolsRoot,
+			projectName,
+			configCache,
+			ctx,
+			sendToAgent,
+			isNonInteractive,
+		});
 	}
 
 	// 9. Write progress marker + completion notify
@@ -410,10 +419,7 @@ export const PHASE_2: LlmPhaseDescriptor = {
 			ctx.ui.notify("〇 project-context.json written.", "info");
 		} catch (err: unknown) {
 			const e = err as { message?: string };
-			ctx.ui.notify(
-				`△ project-context.json validation failed: ${e.message ?? "unknown"} — proceeding.`,
-				"warning",
-			);
+			ctx.ui.notify(`△ project-context.json validation failed: ${e.message ?? "unknown"} — proceeding.`, "warning");
 		}
 
 		// Calibration baseline — read bundled version from plugin.json (same pattern as phase4-register.ts step 4-8)

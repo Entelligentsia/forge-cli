@@ -28,10 +28,10 @@
 // All subprocess calls are mocked. The runForgeSubagent surface for T10
 // is mocked to assert it is NOT called when the flag is off.
 
+import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as childProcess from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({
@@ -43,26 +43,23 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", () => ({
 	getFinalOutput: vi.fn(() => ""),
 }));
 
-import {
-	isSkillCurationEnabled,
-	_internal,
-} from "../../../src/extensions/forgecli/skill-curation-flag.js";
-import {
-	emitSkillUsageEvents,
-	type EmitRuntime as RetrieverEmitRuntime,
-	type RetrievalHit,
-} from "../../../src/extensions/forgecli/skill-retriever.js";
-import {
-	emitSkillUsageTrackingEvents,
-	type EmitRuntime as TrackerEmitRuntime,
-} from "../../../src/extensions/forgecli/skill-usage-tracker.js";
+import { runForgeSubagent } from "../../../src/extensions/forgecli/forge-subagent.js";
 import {
 	emitFrictionEvents,
 	type FrictionEmitRuntime,
 	type FrictionSignal,
 } from "../../../src/extensions/forgecli/friction-emit.js";
+import { _internal, isSkillCurationEnabled } from "../../../src/extensions/forgecli/skill-curation-flag.js";
 import { runSkillCurator } from "../../../src/extensions/forgecli/skill-curator-subagent.js";
-import { runForgeSubagent } from "../../../src/extensions/forgecli/forge-subagent.js";
+import {
+	emitSkillUsageEvents,
+	type RetrievalHit,
+	type EmitRuntime as RetrieverEmitRuntime,
+} from "../../../src/extensions/forgecli/skill-retriever.js";
+import {
+	emitSkillUsageTrackingEvents,
+	type EmitRuntime as TrackerEmitRuntime,
+} from "../../../src/extensions/forgecli/skill-usage-tracker.js";
 
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockRunSubagent = vi.mocked(runForgeSubagent);
@@ -269,13 +266,7 @@ describe("skill-curation gate / flag-off no-op guarantee (AC3)", () => {
 		expect(result).toEqual({ exitCode: 0, written: 0 });
 		expect(mockRunSubagent).not.toHaveBeenCalled();
 		// And no queue file should have been written.
-		const queueDir = path.join(
-			projectCwd,
-			".forge",
-			"enhancement-proposals",
-			"queue",
-			"FORGE-S24",
-		);
+		const queueDir = path.join(projectCwd, ".forge", "enhancement-proposals", "queue", "FORGE-S24");
 		expect(fs.existsSync(queueDir)).toBe(false);
 	});
 });
@@ -294,10 +285,7 @@ describe("skill-curation gate / flag-on passes through to existing emit", () => 
 			signal: null,
 		} as ReturnType<typeof childProcess.spawnSync>);
 
-		const result = emitSkillUsageEvents(
-			[{ skillId: "calibrate", score: 0.5 }],
-			retrieverRuntime(),
-		);
+		const result = emitSkillUsageEvents([{ skillId: "calibrate", score: 0.5 }], retrieverRuntime());
 
 		expect(result.emitted).toBe(1);
 		expect(result.failed).toBe(0);

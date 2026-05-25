@@ -36,14 +36,21 @@ export interface RemediationResult {
 /** Map entity type to the corresponding schema's status enum values. */
 const STATUS_ENUMS: Record<string, readonly string[]> = {
 	task: [
-		"draft", "planned", "plan-approved", "implementing", "implemented",
-		"review-approved", "approved", "committed", "plan-revision-required",
-		"code-revision-required", "blocked", "escalated", "abandoned",
+		"draft",
+		"planned",
+		"plan-approved",
+		"implementing",
+		"implemented",
+		"review-approved",
+		"approved",
+		"committed",
+		"plan-revision-required",
+		"code-revision-required",
+		"blocked",
+		"escalated",
+		"abandoned",
 	],
-	sprint: [
-		"planning", "active", "completed", "retrospective-done",
-		"partially-completed", "blocked", "abandoned",
-	],
+	sprint: ["planning", "active", "completed", "retrospective-done", "partially-completed", "blocked", "abandoned"],
 	bug: ["reported", "triaged", "in-progress", "fixed"],
 	feature: ["proposed", "accepted", "in-progress", "delivered", "declined"],
 	event: [], // no status field
@@ -88,38 +95,32 @@ const STATUS_REMEDIATION: FieldRemediation = {
 
 const REQUIRED_FIELD_REMEDIATION: FieldRemediation = {
 	hint: "Add the missing field with a valid value. Use the template command to see the canonical shape.",
-	command: (entityType, _entityId) =>
-		`node "$FORGE_ROOT/tools/store-cli.cjs" template ${entityType}`,
+	command: (entityType, _entityId) => `node "$FORGE_ROOT/tools/store-cli.cjs" template ${entityType}`,
 };
 
 const UNDECLARED_FIELD_REMEDIATION: FieldRemediation = {
 	hint: "Remove the undeclared field, or check the schema for the correct property name.",
-	command: (entityType, _entityId) =>
-		`node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
+	command: (entityType, _entityId) => `node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
 };
 
 const TYPE_MISMATCH_REMEDIATION: FieldRemediation = {
 	hint: "Use the correct type for this field. Use the describe command to see the expected type.",
-	command: (entityType, _entityId) =>
-		`node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
+	command: (entityType, _entityId) => `node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
 };
 
 const PATTERN_REMEDIATION: FieldRemediation = {
 	hint: "The value must match the expected pattern (e.g. a date-time or ID format).",
-	command: (entityType, _entityId) =>
-		`node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
+	command: (entityType, _entityId) => `node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
 };
 
 const DATE_TIME_REMEDIATION: FieldRemediation = {
 	hint: "Use an ISO 8601 date-time string (e.g. 2026-05-21T12:00:00Z).",
-	command: (entityType, _entityId) =>
-		`node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
+	command: (entityType, _entityId) => `node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
 };
 
 const LENGTH_REMEDIATION: FieldRemediation = {
 	hint: "Adjust the value length to satisfy the schema constraint.",
-	command: (entityType, _entityId) =>
-		`node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
+	command: (entityType, _entityId) => `node "$FORGE_ROOT/tools/store-cli.cjs" describe ${entityType}`,
 };
 
 // ── Error-string parsers ────────────────────────────────────────────────────────
@@ -208,11 +209,7 @@ export function parseValidationError(line: string): ParsedError {
  * @param entityId   The entity ID (e.g. "FORGE-S18-T02") — used for commands.
  * @returns          RemediationResult with hint and command.
  */
-export function remediateError(
-	errorLine: string,
-	entityType: string,
-	entityId: string,
-): RemediationResult {
+export function remediateError(errorLine: string, entityType: string, entityId: string): RemediationResult {
 	const parsed = parseValidationError(errorLine);
 
 	switch (parsed.errorKind) {
@@ -335,11 +332,7 @@ export function remediateValidationOutput(
  * @param entityId   The entity ID if known.
  * @returns          Enhanced reason string with remediation hints appended.
  */
-export function enhanceBlockMessage(
-	rawReason: string,
-	entityType?: string,
-	entityId?: string,
-): string {
+export function enhanceBlockMessage(rawReason: string, entityType?: string, entityId?: string): string {
 	// Parse the raw reason into lines and try to add remediation to each error line.
 	const lines = rawReason.split("\n");
 	const enhanced: string[] = [];
@@ -350,7 +343,9 @@ export function enhanceBlockMessage(
 		// Check if this line contains a recognizable validation error pattern
 		const parsed = parseValidationError(stripped);
 		// Also match lines that contain validation error patterns not caught by parseValidationError
-		const hasKnownError = parsed.errorKind !== "other" || /\bmissing required\b|\bnot in \[|\bundeclared\b|\bexpected\b.*\bgot\b/.test(stripped);
+		const hasKnownError =
+			parsed.errorKind !== "other" ||
+			/\bmissing required\b|\bnot in \[|\bundeclared\b|\bexpected\b.*\bgot\b/.test(stripped);
 		if (hasKnownError) {
 			const type = entityType ?? "task";
 			const id = entityId ?? "unknown";

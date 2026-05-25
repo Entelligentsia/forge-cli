@@ -45,9 +45,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
-const { runForgeSubagent } = await import(
-	"../../../src/extensions/forgecli/forge-subagent.js"
-);
+const { runForgeSubagent } = await import("../../../src/extensions/forgecli/forge-subagent.js");
 
 describe("runForgeSubagent — orientation wired into systemPromptOverride", () => {
 	it("prepends buildProjectOrientation output to persona body", async () => {
@@ -91,9 +89,7 @@ describe("pi.on(before_agent_start) — main-thread orientation handler", () => 
 		// directly here, as a unit-level proof that the handler shape returns
 		// `{ systemPrompt: orientation + "\n" + existing }`. The full pi.on
 		// registration is exercised by the smoke gate.
-		const { buildProjectOrientation } = await import(
-			"../../../src/extensions/forgecli/project-orientation.js"
-		);
+		const { buildProjectOrientation } = await import("../../../src/extensions/forgecli/project-orientation.js");
 		const projectRoot = "/tmp/forge-main-thread-test";
 		const orientation = buildProjectOrientation(projectRoot);
 		const existing = "EXISTING_SYSTEM_PROMPT_SENTINEL";

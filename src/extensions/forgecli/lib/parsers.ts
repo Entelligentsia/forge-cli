@@ -199,10 +199,7 @@ export function parseFrontmatterBlock(content: string, opts: ParseOptions): Pars
 	}
 
 	if (!closed) {
-		throw new FrontmatterParseError(
-			"invalid_frontmatter",
-			"Frontmatter block opened with `---` but never closed",
-		);
+		throw new FrontmatterParseError("invalid_frontmatter", "Frontmatter block opened with `---` but never closed");
 	}
 
 	const body = lines.slice(i).join("\n");
