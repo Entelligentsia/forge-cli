@@ -3,11 +3,19 @@
 // Resolves phase artifact paths from (entityType, entityId, artifactName) tuples.
 // Validates JSON summary artifacts on write. Eliminates path derivation as a
 // failure mode for low-tier models.
+//
+// v0.19.1 (forge-cli#33): resolveEntityDir now reads the store record's `path`
+// field instead of constructing paths from the entity ID alone. Bug, sprint, and
+// task directories can include descriptive slugs (e.g.
+// engineering/bugs/BUG-001-sprint-runner-context-accumulation) that are not
+// derivable from the ID alone.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { resolveToolDir } from "./store-resolver.js";
 
 // ── Artifact catalog ────────────────────────────────────────────────────────
 
@@ -60,21 +68,82 @@ function validateSummaryJson(content: string): string | null {
 
 // ── Entity path resolution ──────────────────────────────────────────────────
 
+/**
+ * Test override for readStorePath — allows unit tests to inject a mock
+ * without touching node:child_process. Reset to {} after each test.
+ */
+export const _testOverrides: {
+	readStorePath?: ((entity: string, entityId: string, toolDir: string, projectRoot: string) => string | null) | undefined;
+} = {};
+
+/** Read a store record via store-cli and return its `path` field, or null on failure. */
+function readStorePath(entity: string, entityId: string, toolDir: string, projectRoot: string): string | null {
+	// Test injection: if a mock is set, use it directly.
+	if (_testOverrides.readStorePath) {
+		return _testOverrides.readStorePath(entity, entityId, toolDir, projectRoot);
+	}
+	const cliPath = path.join(toolDir, "store-cli.cjs");
+	try {
+		const result = execFileSync("node", [cliPath, "read", entity, entityId, "--json"], {
+			cwd: projectRoot,
+			encoding: "utf8",
+			timeout: 10_000,
+		});
+		const record = JSON.parse(result as string) as { path?: string };
+		if (typeof record.path === "string" && record.path.length > 0) {
+			return record.path;
+		}
+	} catch {
+		// Store unavailable or record not found — fall through to ID-only resolution.
+	}
+	return null;
+}
+
+/**
+ * Resolve entity directory using the store record's `path` field when available,
+ * falling back to ID-only construction for tasks (sprint dir derived from
+ * sprint record path or sprint ID) and sprints/bugs (direct ID).
+ *
+ * forge-cli#33: the store record is the canonical source for entity directory
+ * paths — slug-suffixed directories like `BUG-001-sprint-runner-context-accumulation`
+ * cannot be derived from the entity ID alone.
+ */
 function resolveEntityDir(
 	entity: string,
 	entityId: string,
 	engineeringPath: string,
+	toolDir: string,
+	projectRoot: string,
 ): string | null {
 	switch (entity) {
+		case "bug": {
+			// Read bug record's path field — canonical source for slug-suffixed dirs.
+			const storePath = readStorePath("bug", entityId, toolDir, projectRoot);
+			if (storePath) return storePath;
+			// Fallback: ID-only construction.
+			return path.join(engineeringPath, "bugs", entityId);
+		}
+		case "sprint": {
+			const storePath = readStorePath("sprint", entityId, toolDir, projectRoot);
+			if (storePath) return storePath;
+			return path.join(engineeringPath, "sprints", entityId);
+		}
 		case "task": {
+			// For tasks, the path includes the sprint directory (which may have
+			// a slug suffix). Read the task record's path field.
+			const storePath = readStorePath("task", entityId, toolDir, projectRoot);
+			if (storePath) return storePath;
+			// Fallback: derive from sprint prefix. Try sprint record for slug.
 			const match = entityId.match(/^(.+-S\d+)-T\d+$/);
 			if (!match) return null;
-			return path.join(engineeringPath, "sprints", match[1], entityId);
+			const sprintId = match[1];
+			const sprintPath = readStorePath("sprint", sprintId, toolDir, projectRoot);
+			if (sprintPath) {
+				return path.join(sprintPath, entityId);
+			}
+			// Last resort: ID-only construction.
+			return path.join(engineeringPath, "sprints", sprintId, entityId);
 		}
-		case "bug":
-			return path.join(engineeringPath, "bugs", entityId);
-		case "sprint":
-			return path.join(engineeringPath, "sprints", entityId);
 		default:
 			return null;
 	}
@@ -82,7 +151,7 @@ function resolveEntityDir(
 
 // ── Tool builder ────────────────────────────────────────────────────────────
 
-export function buildForgeArtifact(projectRoot: string, engineeringPath: string): ToolDefinition {
+export function buildForgeArtifact(projectRoot: string, engineeringPath: string, toolDir: string): ToolDefinition {
 	const artifactNameList = ARTIFACT_NAMES.join(", ");
 
 	return {
@@ -131,7 +200,7 @@ export function buildForgeArtifact(projectRoot: string, engineeringPath: string)
 				content?: string;
 			};
 
-			const entityDir = resolveEntityDir(params.entity, params.entityId, engineeringPath);
+			const entityDir = resolveEntityDir(params.entity, params.entityId, engineeringPath, toolDir, projectRoot);
 			if (!entityDir) {
 				return errResult(
 					`Cannot resolve ${params.entity} directory for "${params.entityId}". ` +

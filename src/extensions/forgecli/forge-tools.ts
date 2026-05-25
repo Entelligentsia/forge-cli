@@ -158,7 +158,7 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 		storeTemplate: buildForgeStoreTemplate(toolDir, projectRoot),
 		storeQuery: buildForgeStoreQuery(toolDir, projectRoot),
 		verifyApply: buildForgeVerifyApply(toolDir, projectRoot),
-		artifact: buildForgeArtifact(projectRoot, engineeringPath),
+		artifact: buildForgeArtifact(projectRoot, engineeringPath, toolDir),
 	};
 	for (const def of Object.values(defs)) {
 		pi.registerTool(def);
