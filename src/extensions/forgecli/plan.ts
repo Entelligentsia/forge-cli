@@ -21,6 +21,9 @@
 // prompt-injection fallback is DELETED — no FORGE_LEGACY_KICKOFF flag, no
 // markdown-stub for this command.
 //
+// FORGE-S26-T11: pipeline step guard added. Checks task status via store-cli
+// before dispatching. --force flag bypasses the guard.
+//
 // Iron Laws:
 //   IL1 — code only under forge-cli/src/extensions/forgecli/.
 //   IL4 — no JSON.stringify-into-subagent dispatch.
@@ -33,11 +36,13 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
+import { discoverForgeConfig } from "./forge-root.js";
 import { sendKickoff } from "./kickoff.js";
 // FORGE-S25-T16: extracted to lib modules. Re-exported here for backward compat
 // (plan.test.ts, bundled-base-pack-markers.test.ts, run-task.ts, run-sprint.ts,
 // fix-bug.ts all import checkMaterialization / extractPersonaNames from plan.js).
 import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+import { parseGuardArgs, runPipelineGuard } from "./lib/pipeline-guard.js";
 import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
 import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
 
@@ -129,6 +134,21 @@ export function registerPlan(pi: ExtensionAPI, options: RegisterPlanOptions = {}
 			const cwd = options.cwd ?? process.cwd();
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 
+			// Pipeline step guard (FORGE-S26-T11): check task state before dispatching.
+			const guardParsed = parseGuardArgs(args);
+			if (!guardParsed.force) {
+				const forgeConfig = discoverForgeConfig(cwd);
+				if (forgeConfig) {
+					const guard = runPipelineGuard("plan", guardParsed.taskIdHint, forgeConfig.forgeRoot, cwd);
+					if (guard.blocked) {
+						ctx.ui.notify(guard.message, "error");
+						return;
+					}
+				}
+			}
+			// Use cleanArgs (--force stripped) for workflow dispatch
+			const effectiveArgs = guardParsed.cleanArgs;
+
 			let workflowMd: string;
 			let workflowAudience: import("./parsers/workflow-loader.js").AudienceValue;
 			try {
@@ -154,7 +174,7 @@ export function registerPlan(pi: ExtensionAPI, options: RegisterPlanOptions = {}
 
 			let parsed: ParsedArgs;
 			try {
-				parsed = parsePlanArgs(args, cwd);
+				parsed = parsePlanArgs(effectiveArgs, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				ctx.ui.notify(`× forge:plan — failed to read seed: ${e.message ?? "unknown"}`, "error");

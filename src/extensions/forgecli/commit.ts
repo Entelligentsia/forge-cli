@@ -22,10 +22,12 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
+import { discoverForgeConfig } from "./forge-root.js";
 import { sendKickoff } from "./kickoff.js";
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.
 import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+import { parseGuardArgs, runPipelineGuard } from "./lib/pipeline-guard.js";
 import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
 import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
 
@@ -118,6 +120,20 @@ export function registerCommit(pi: ExtensionAPI, options: RegisterCommitOptions 
 			const cwd = options.cwd ?? process.cwd();
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 
+			// Pipeline step guard (FORGE-S26-T11): check task state before dispatching.
+			const guardParsed = parseGuardArgs(args);
+			if (!guardParsed.force) {
+				const forgeConfig = discoverForgeConfig(cwd);
+				if (forgeConfig) {
+					const guard = runPipelineGuard("commit", guardParsed.taskIdHint, forgeConfig.forgeRoot, cwd);
+					if (guard.blocked) {
+						ctx.ui.notify(guard.message, "error");
+						return;
+					}
+				}
+			}
+			const effectiveArgs = guardParsed.cleanArgs;
+
 			let workflowMd: string;
 			let workflowAudience: import("./parsers/workflow-loader.js").AudienceValue;
 			try {
@@ -143,7 +159,7 @@ export function registerCommit(pi: ExtensionAPI, options: RegisterCommitOptions 
 
 			let parsed: ParsedArgs;
 			try {
-				parsed = parseCommitArgs(args, cwd);
+				parsed = parseCommitArgs(effectiveArgs, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				ctx.ui.notify(`× forge:commit — failed to read seed: ${e.message ?? "unknown"}`, "error");

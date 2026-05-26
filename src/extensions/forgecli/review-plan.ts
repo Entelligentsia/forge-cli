@@ -11,6 +11,12 @@
 // dispatch via runForgeSubagent directly and do NOT route through this
 // handler.
 //
+// FORGE-S26-T11:
+//   - Pipeline step guard added (checks task state via store-cli; --force bypasses).
+//   - Revision loop context injected into kickoff: `### Review Loop Context` block
+//     with `Iteration: 1 of M` (user-invoked default) where M is read from config
+//     `maxReviewIterations` (default 3). Matches T07 workflow fallback spec.
+//
 // Iron Laws:
 //   IL1 — code only under forge-cli/src/extensions/forgecli/.
 //   IL4 — no JSON.stringify-into-subagent dispatch.
@@ -23,10 +29,12 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
+import { discoverForgeConfig } from "./forge-root.js";
 import { sendKickoff } from "./kickoff.js";
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.
 import { extractPersonaNames } from "./lib/frontmatter-parser.js";
+import { parseGuardArgs, runPipelineGuard } from "./lib/pipeline-guard.js";
 import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
 import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
 
@@ -66,14 +74,21 @@ export interface ComposeKickoffOpts {
 	workflowMd: string;
 	personaIdentity: string;
 	parsed: ParsedArgs;
+	/** Revision loop context block (FORGE-S26-T11). Injected before the workflow body. */
+	reviewLoopContext?: string;
 }
 
 export function composeKickoff(opts: ComposeKickoffOpts): string {
-	const { workflowMd, personaIdentity, parsed } = opts;
+	const { workflowMd, personaIdentity, parsed, reviewLoopContext } = opts;
 
 	const sections: string[] = ["# /forge:review-plan", ""];
 	if (personaIdentity.trim().length > 0) {
 		sections.push(personaIdentity.trim(), "");
+	}
+
+	// Inject review loop context before workflow body (FORGE-S26-T11 / T07).
+	if (reviewLoopContext) {
+		sections.push(reviewLoopContext.trim(), "");
 	}
 
 	sections.push(
@@ -100,6 +115,38 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 	return sections.join("\n");
 }
 
+// Iteration context builder (FORGE-S26-T11) ------------------------------------
+
+/**
+ * Build the `### Review Loop Context` block for user-invoked (non-orchestrated)
+ * review-plan calls. Matches the T07 graceful-fallback spec:
+ * "iteration 1 of M" where M is config.maxReviewIterations (default 3).
+ */
+export function buildReviewLoopContext(maxIterations: number): string {
+	return [
+		"### Review Loop Context",
+		`- Iteration: 1 of ${maxIterations}`,
+		`- Is final iteration: ${maxIterations === 1 ? "true" : "false"}`,
+	].join("\n");
+}
+
+/**
+ * Read maxReviewIterations from .forge/config.json. Returns default 3 on any
+ * error (missing file, missing field, non-integer value).
+ */
+export function readMaxReviewIterations(cwd: string): number {
+	const configPath = path.join(cwd, ".forge", "config.json");
+	try {
+		const raw = fs.readFileSync(configPath, "utf8");
+		const cfg = JSON.parse(raw) as Record<string, unknown>;
+		const v = cfg["maxReviewIterations"];
+		if (typeof v === "number" && Number.isInteger(v) && v >= 1) return v;
+	} catch {
+		// fail-open
+	}
+	return 3;
+}
+
 // Registration -------------------------------------------------------------
 
 const WORKFLOW_REL_PATH = path.join(".forge", "workflows", "review_plan.md");
@@ -118,6 +165,20 @@ export function registerReviewPlan(pi: ExtensionAPI, options: RegisterReviewPlan
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const cwd = options.cwd ?? process.cwd();
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
+
+			// Pipeline step guard (FORGE-S26-T11): check task state before dispatching.
+			const guardParsed = parseGuardArgs(args);
+			if (!guardParsed.force) {
+				const forgeConfig = discoverForgeConfig(cwd);
+				if (forgeConfig) {
+					const guard = runPipelineGuard("review-plan", guardParsed.taskIdHint, forgeConfig.forgeRoot, cwd);
+					if (guard.blocked) {
+						ctx.ui.notify(guard.message, "error");
+						return;
+					}
+				}
+			}
+			const effectiveArgs = guardParsed.cleanArgs;
 
 			let workflowMd: string;
 			let workflowAudience: import("./parsers/workflow-loader.js").AudienceValue;
@@ -144,12 +205,18 @@ export function registerReviewPlan(pi: ExtensionAPI, options: RegisterReviewPlan
 
 			let parsed: ParsedArgs;
 			try {
-				parsed = parseReviewPlanArgs(args, cwd);
+				parsed = parseReviewPlanArgs(effectiveArgs, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				ctx.ui.notify(`× forge:review-plan — failed to read seed: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
+
+			// Build revision loop context block (FORGE-S26-T11 / T07): inject iteration
+			// 1 of M for user-invoked (non-orchestrated) calls. Orchestrator uses
+			// runForgeSubagent directly and injects its own context block.
+			const maxIter = readMaxReviewIterations(cwd);
+			const reviewLoopContext = buildReviewLoopContext(maxIter);
 
 			const check = checkMaterialization(workflowPath, workflowMd);
 			if (!check.ok) {
@@ -187,6 +254,7 @@ export function registerReviewPlan(pi: ExtensionAPI, options: RegisterReviewPlan
 				workflowMd,
 				personaIdentity,
 				parsed,
+				reviewLoopContext,
 			});
 
 			sendKickoff(pi, kickoff);

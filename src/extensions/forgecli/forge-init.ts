@@ -72,6 +72,8 @@ import { emitSyntheticEvent } from "./hook-dispatcher.js";
 import { discoverProjectName } from "./init-context.js";
 import { deleteInitProgress, readInitProgress } from "./init-progress.js";
 import { execFileAsync, runTool } from "./lib/exec-helpers.js";
+// FORGE-S26-T11: registerMigrate imported to power `forge:init --migrate`
+import { registerMigrate } from "./migrate.js";
 
 // ── Bundle path resolution ─────────────────────────────────────────────────
 
@@ -164,6 +166,8 @@ function isNonInteractive(): boolean {
 interface ParsedFlags {
 	fast: boolean;
 	full: boolean;
+	/** FORGE-S26-T11: --migrate flag triggers store migration instead of full init. */
+	migrate: boolean;
 	startPhase: number | null; // 1-4 if specified, null otherwise
 	conflict: boolean;
 	invalidPhase: boolean;
@@ -173,6 +177,7 @@ function parseInitFlags(args: string): ParsedFlags {
 	const parts = args.trim().split(/\s+/).filter(Boolean);
 	const hasFast = parts.includes("--fast");
 	const hasFull = parts.includes("--full");
+	const hasMigrate = parts.includes("--migrate");
 
 	// Find trailing numeric phase arg
 	let startPhase: number | null = null;
@@ -180,7 +185,7 @@ function parseInitFlags(args: string): ParsedFlags {
 
 	for (let i = 0; i < parts.length; i++) {
 		const p = parts[i];
-		if (p === "--fast" || p === "--full") continue;
+		if (p === "--fast" || p === "--full" || p === "--migrate") continue;
 		const n = parseInt(p, 10);
 		if (!Number.isNaN(n)) {
 			if (n >= 1 && n <= 4) {
@@ -194,6 +199,7 @@ function parseInitFlags(args: string): ParsedFlags {
 	return {
 		fast: hasFast,
 		full: hasFull,
+		migrate: hasMigrate,
 		startPhase,
 		conflict: hasFast && hasFull,
 		invalidPhase,
@@ -226,6 +232,29 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 
 			// ── 1. Flag parsing ────────────────────────────────────────────────
 			const flags = parseInitFlags(args);
+
+			// FORGE-S26-T11: --migrate flag dispatches to store migration instead of init.
+			if (flags.migrate) {
+				// Strip --migrate, pass remaining args to migrate handler.
+				const migrateParts = (args ?? "").trim().split(/\s+/).filter((p) => p !== "--migrate");
+				const migrateArgs = migrateParts.join(" ");
+				let migrateHandler:
+					| ((args: string, ctx: ExtensionCommandContext) => Promise<void> | void)
+					| undefined;
+				const syntheticPi = {
+					...pi,
+					registerCommand: (name: string, def: { handler: typeof migrateHandler }) => {
+						if (name === "forge:migrate") migrateHandler = def.handler;
+					},
+				} as unknown as ExtensionAPI;
+				registerMigrate(syntheticPi);
+				if (migrateHandler) {
+					await migrateHandler(migrateArgs, ctx);
+				} else {
+					ctx.ui.notify("× forge:init --migrate — migrate handler unavailable", "error");
+				}
+				return;
+			}
 
 			if (flags.conflict) {
 				ctx.ui.notify("× Conflicting flags: --fast and --full cannot be combined.", "error");

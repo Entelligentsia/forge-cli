@@ -1,12 +1,17 @@
-// regenerate.ts — native handler for /forge:regenerate.
+// regenerate.ts — native handler for /forge:rebuild (renamed from /forge:regenerate in v1.0).
 //
 // v0 scope: re-materialize the project's .forge/ and .claude/commands/ trees
 // from the bundled forge-payload (.base-pack + substitute-placeholders.cjs).
-// This is the deterministic subset of the plugin's /forge:regenerate
+// This is the deterministic subset of the plugin's /forge:rebuild
 // behaviour — the meta-driven persona/skill/workflow fan-out (which spawns
 // generation subagents) is NOT covered here. v0 is sufficient for the
 // common dogfooding case: "I just rebundled a new plugin payload and want
 // the testbench to pick up the new workflows / commands / templates."
+//
+// FORGE-S26-T11: `--enrich` flag added. When present, skips the base-pack
+// re-materialization and dispatches to the enhance workflow (Phase 2 behavior,
+// equivalent to former /forge:enhance). Mirrors T03's absorption of enhance
+// into rebuild --enrich.
 //
 // No sub-target filtering yet; full re-materialization on every call.
 // Idempotent — re-running with no changes overwrites with identical bytes.
@@ -18,6 +23,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
+// FORGE-S26-T11: registerEnhance imported to power `forge:rebuild --enrich`
+import { registerEnhance } from "./enhance.js";
 import { getBundledPayloadRoot, getBundledToolsRoot } from "./forge-init.js";
 
 // ── Pre-write modification guard (forge-cli#26 / forge#106 / FORGE-BUG-037) ──
@@ -130,9 +137,35 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 	pi.registerCommand("forge:rebuild", {
 		description:
 			"Re-materialize .forge/ and .claude/commands/ from the bundled forge-payload " +
-			"(deterministic subset of the plugin's /forge:rebuild — runs substitute-placeholders.cjs).",
+			"(deterministic subset of the plugin's /forge:rebuild — runs substitute-placeholders.cjs). " +
+			"--enrich: trigger enhancement workflow (Phase 2) instead of base-pack re-materialization.",
 		async handler(args, ctx) {
 			const cwd = process.cwd();
+
+			// FORGE-S26-T11: --enrich flag dispatches to enhance behavior (absorbed from forge:enhance).
+			const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
+			const hasEnrich = parts.includes("--enrich");
+			if (hasEnrich) {
+				// Strip --enrich, pass remaining args to enhance handler (Phase 2 default)
+				const enhanceArgs = parts.filter((p) => p !== "--enrich").join(" ");
+				let enhanceHandler:
+					| ((args: string, ctx: ExtensionCommandContext) => Promise<void> | void)
+					| undefined;
+				const syntheticPi = {
+					...pi,
+					registerCommand: (name: string, def: { handler: typeof enhanceHandler }) => {
+						if (name === "forge:enhance") enhanceHandler = def.handler;
+					},
+				} as unknown as ExtensionAPI;
+				registerEnhance(syntheticPi);
+				if (enhanceHandler) {
+					await enhanceHandler(enhanceArgs, ctx);
+				} else {
+					ctx.ui.notify("× forge:rebuild --enrich — enhance handler unavailable", "error");
+				}
+				return;
+			}
+
 			const configPath = path.join(cwd, ".forge", "config.json");
 			if (!fs.existsSync(configPath)) {
 				ctx.ui.notify("× forge:rebuild — no .forge/config.json at cwd. Run /forge:init first.", "error");

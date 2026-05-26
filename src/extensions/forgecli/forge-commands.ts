@@ -24,6 +24,8 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+// FORGE-S26-T11: registerCalibrate imported to power `forge:health --fix`
+import { registerCalibrate } from "./calibrate.js";
 import { runHealthCheck } from "./health-check.js";
 import { runRefreshKbLinks } from "./refresh-kb-links.js";
 
@@ -106,10 +108,52 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 	});
 
 	// ── /forge:health ─────────────────────────────────────────────────────────
+	// FORGE-S26-T11: `--fix` flag detected here; dispatches to calibrate behavior.
+	// Without `--fix`, delegates to the plugin's health.md workflow (unchanged).
+	//
+	// Implementation note: we register a temporary "forge:calibrate-internal"
+	// handler backed by registerCalibrate so we can invoke its logic without
+	// re-routing through a second pi.registerCommand call. The calibrate handler
+	// is invoked via pi.registerCommand with a synthetic name; the outer health
+	// handler strips `--fix` and forwards remaining args to it.
+	//
+	// Simpler approach: registerCalibrate registers on "forge:calibrate" — since
+	// that name was redirected to a deprecation stub, we instead delegate directly
+	// by constructing a synthetic pi wrapper that only captures the "forge:calibrate"
+	// registration and calling it inline.
 	pi.registerCommand("forge:health", {
-		description: "Assess the project's SDLC knowledge base — config, KB freshness, store integrity",
+		description:
+			"Assess the project's SDLC knowledge base — config, KB freshness, store integrity. " +
+			"--fix: run drift detection + patch application (former /forge:calibrate behavior).",
 		async handler(args, ctx) {
 			if (!forgeRoot) return outsideProjectNoOp("health", ctx);
+
+			const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
+			const hasFix = parts.includes("--fix");
+
+			if (hasFix) {
+				// --fix: delegate to calibrate behavior. Strip --fix from args,
+				// pass remainder (e.g. --path <dir>) to calibrate handler.
+				const calibrateArgs = parts.filter((p) => p !== "--fix").join(" ");
+				// Build a thin synthetic pi wrapper to capture the calibrate handler
+				let calibrateHandler:
+					| ((args: string, ctx: ExtensionCommandContext) => Promise<void> | void)
+					| undefined;
+				const syntheticPi = {
+					...pi,
+					registerCommand: (name: string, def: { handler: typeof calibrateHandler }) => {
+						if (name === "forge:calibrate") calibrateHandler = def.handler;
+					},
+				} as unknown as ExtensionAPI;
+				registerCalibrate(syntheticPi);
+				if (calibrateHandler) {
+					await calibrateHandler(calibrateArgs, ctx);
+				} else {
+					ctx.ui.notify("× forge:health --fix — calibrate handler unavailable", "error");
+				}
+				return;
+			}
+
 			await delegateMarkdownCommand(pi, forgeRoot, "health", args, ctx);
 		},
 	});
