@@ -462,10 +462,49 @@ export function findPredecessorIndex(phases: PhaseDescriptor[], reviewIndex: num
 
 // ── Task body composition ─────────────────────────────────────────────────
 
-export function composeTaskBody(subWorkflowMd: string, taskId: string): string {
-	return [`Read the workflow below and follow it. Task ID: ${taskId}.`, "", "---", "", subWorkflowMd.trim()].join(
-		"\n",
-	);
+interface PhaseSummary {
+	objective?: string;
+	key_changes?: string[];
+	findings?: string[];
+	verdict?: string;
+	artifact_ref?: string;
+}
+
+// Phase ordering for summary injection — earlier phases first.
+const PHASE_ORDER: readonly string[] = ["plan", "review_plan", "implementation", "code_review", "validation"];
+
+export function buildSummariesBlock(
+	summaries: Record<string, unknown> | undefined,
+): string {
+	if (!summaries) return "";
+	const lines: string[] = [];
+	for (const key of PHASE_ORDER) {
+		const raw = summaries[key];
+		if (!raw || typeof raw !== "object") continue;
+		const s = raw as PhaseSummary;
+		const parts: string[] = [`### ${key}`];
+		if (s.objective) parts.push(`Objective: ${s.objective}`);
+		if (s.verdict) parts.push(`Verdict: ${s.verdict}`);
+		if (s.key_changes?.length) parts.push(`Key changes: ${s.key_changes.join("; ")}`);
+		if (s.findings?.length) parts.push(`Findings: ${s.findings.join("; ")}`);
+		if (s.artifact_ref) parts.push(`Full artifact: ${s.artifact_ref}`);
+		lines.push(parts.join("\n"));
+	}
+	if (lines.length === 0) return "";
+	return ["## Prior phase summaries (carry-forward)", "", ...lines].join("\n");
+}
+
+export function composeTaskBody(
+	subWorkflowMd: string,
+	taskId: string,
+	summariesBlock?: string,
+): string {
+	const parts = [`Read the workflow below and follow it. Task ID: ${taskId}.`, "", "---", ""];
+	if (summariesBlock) {
+		parts.push(summariesBlock, "", "---", "");
+	}
+	parts.push(subWorkflowMd.trim());
+	return parts.join("\n");
 }
 
 // ── Preflight gate ────────────────────────────────────────────────────────
@@ -748,7 +787,10 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 		// ── 4. Dispatch via runForgeSubagent (IL10) ───────────────────
 		// NEVER sendKickoff here — that would reproduce issue #30 (same-context inline = no fork).
-		const taskBody = composeTaskBody(subWorkflowMd, taskId);
+		// Read fresh task record to carry forward prior phase summaries (forge-cli#19).
+		const taskRecordForSummaries = currentPhaseIndex > 0 ? readTaskRecord(taskId, storeCli, cwd) : null;
+		const summariesBlock = buildSummariesBlock(taskRecordForSummaries?.summaries);
+		const taskBody = composeTaskBody(subWorkflowMd, taskId, summariesBlock || undefined);
 
 		// Resolve per-phase model from layered config (Plan 16 Slice 2).
 		// Pipeline name "default" matches the Forge plugin's shipped pipeline.

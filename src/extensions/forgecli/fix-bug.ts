@@ -61,6 +61,7 @@ import { resolveModelForPhase } from "./model-resolver.js";
 import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
 import {
 	buildPhaseEvent,
+	buildSummariesBlock,
 	drainFrictionFile,
 	emitEvent,
 	findPredecessorIndex,
@@ -353,6 +354,7 @@ export function composeBugBody(
 	bugId: string,
 	phaseRole: string,
 	bugStatusBeforePhase?: string,
+	summariesBlock?: string,
 ): string {
 	// Entity-kind override block prepended before workflow body.
 	// Conforms to forge v0.44.x meta-fix-bug contract:
@@ -406,7 +408,7 @@ export function composeBugBody(
 		);
 	}
 
-	return [
+	const parts = [
 		`Read the workflow below and follow it. Bug ID: ${bugId}.`,
 		"",
 		"---",
@@ -415,8 +417,12 @@ export function composeBugBody(
 		"",
 		"---",
 		"",
-		subWorkflowMd.trim(),
-	].join("\n");
+	];
+	if (summariesBlock) {
+		parts.push(summariesBlock, "", "---", "");
+	}
+	parts.push(subWorkflowMd.trim());
+	return parts.join("\n");
 }
 
 // ── BugId capture via tool_execution_end ──────────────────────────────────
@@ -861,7 +867,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 		// ── 4. Dispatch via runForgeSubagent (IL10) ───────────────────
 		// NEVER sendKickoff here — that would reproduce issue #30.
-		let bugBody = composeBugBody(subWorkflowMd, bugId, phase.role, bugStatusBeforePhase);
+		// Carry forward prior phase summaries (forge-cli#19).
+		const bugSummariesBlock = currentPhaseIndex > 0
+			? buildSummariesBlock(bugRecordBefore?.summaries) || undefined
+			: undefined;
+		let bugBody = composeBugBody(subWorkflowMd, bugId, phase.role, bugStatusBeforePhase, bugSummariesBlock);
 
 		// For new bugs in triage, prepend the original free-form text so the
 		// subagent knows the user-provided bug description to triage.

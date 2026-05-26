@@ -77,7 +77,7 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 
 import { spawnSync } from "node:child_process";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
-import { registerRunTask, runPreflightGate } from "../../../src/extensions/forgecli/run-task.js";
+import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
 
@@ -925,5 +925,92 @@ describe("Test 14: Fail-fast on schema-invalid forge-cli config (N-B-E)", () => 
 			(n) => n.level === "error" && (n.msg.includes("schema error") || n.msg.includes("forge-cli config")),
 		);
 		expect(schemaErrorNotify).toBeDefined();
+	});
+});
+
+// ── buildSummariesBlock + composeTaskBody (forge-cli#19) ──────────────────
+
+describe("buildSummariesBlock", () => {
+	it("returns empty string for undefined summaries", () => {
+		expect(buildSummariesBlock(undefined)).toBe("");
+	});
+
+	it("returns empty string for empty summaries object", () => {
+		expect(buildSummariesBlock({})).toBe("");
+	});
+
+	it("formats a single phase summary", () => {
+		const summaries = {
+			plan: {
+				objective: "Implement auth module",
+				key_changes: ["Add login endpoint", "Add JWT middleware"],
+				verdict: "approved",
+				artifact_ref: "engineering/sprints/S01/PLAN.md",
+				written_at: "2026-05-23T10:00:00Z",
+			},
+		};
+		const block = buildSummariesBlock(summaries);
+		expect(block).toContain("## Prior phase summaries");
+		expect(block).toContain("### plan");
+		expect(block).toContain("Objective: Implement auth module");
+		expect(block).toContain("Verdict: approved");
+		expect(block).toContain("Key changes: Add login endpoint; Add JWT middleware");
+		expect(block).toContain("Full artifact: engineering/sprints/S01/PLAN.md");
+	});
+
+	it("includes multiple phases in order", () => {
+		const summaries = {
+			implementation: { objective: "Coded it", written_at: "2026-05-23T12:00:00Z" },
+			plan: { objective: "Planned it", written_at: "2026-05-23T10:00:00Z" },
+			review_plan: { objective: "Reviewed plan", verdict: "approved", written_at: "2026-05-23T11:00:00Z" },
+		};
+		const block = buildSummariesBlock(summaries);
+		const planIdx = block.indexOf("### plan");
+		const reviewIdx = block.indexOf("### review_plan");
+		const implIdx = block.indexOf("### implementation");
+		expect(planIdx).toBeLessThan(reviewIdx);
+		expect(reviewIdx).toBeLessThan(implIdx);
+	});
+
+	it("includes findings when present", () => {
+		const summaries = {
+			code_review: {
+				objective: "Review implementation",
+				findings: ["Missing error handling in auth.ts", "Unused import"],
+				verdict: "revision",
+				written_at: "2026-05-23T13:00:00Z",
+			},
+		};
+		const block = buildSummariesBlock(summaries);
+		expect(block).toContain("Findings: Missing error handling in auth.ts; Unused import");
+	});
+
+	it("skips unknown summary keys", () => {
+		const summaries = {
+			plan: { objective: "Planned it", written_at: "2026-05-23T10:00:00Z" },
+			unknown_phase: { objective: "Should not appear", written_at: "2026-05-23T10:00:00Z" },
+		};
+		const block = buildSummariesBlock(summaries);
+		expect(block).toContain("### plan");
+		expect(block).not.toContain("unknown_phase");
+	});
+});
+
+describe("composeTaskBody", () => {
+	it("composes without summaries block", () => {
+		const body = composeTaskBody("# Workflow\nStep 1", "T01");
+		expect(body).toContain("Task ID: T01");
+		expect(body).toContain("# Workflow\nStep 1");
+		expect(body).not.toContain("Prior phase summaries");
+	});
+
+	it("injects summaries block between header and workflow", () => {
+		const body = composeTaskBody("# Workflow\nStep 1", "T01", "## Prior phase summaries\n\n### plan\nObjective: X");
+		expect(body).toContain("Task ID: T01");
+		expect(body).toContain("## Prior phase summaries");
+		expect(body).toContain("### plan");
+		const summaryIdx = body.indexOf("Prior phase summaries");
+		const workflowIdx = body.indexOf("# Workflow");
+		expect(summaryIdx).toBeLessThan(workflowIdx);
 	});
 });
