@@ -241,33 +241,24 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 
 		// registerAllForgeCommands returns the count of STUB commands registered.
 		// Real handlers in EXPLICITLY_REGISTERED_NAMES are excluded from stubs.
-		// But enhance and refresh-kb-links ARE registered by registerAllForgeCommands.
-		// registered = (fileCount - realHandlerOverlapCount) + 2 (enhance + refresh-kb-links always added)
-		// The total pi.registerCommand calls should be: registered + 2 (enhance + refresh-kb-links)
-		// Deduct commands with real handlers that have bundled .md files:
-		//   - forge:sprint-intake (FORGE-S19-T01)
-		//   - forge:sprint-plan (FORGE-S19-T02)
-		//   - forge:plan (FORGE-S20-T05)
-		//   - forge:implement (FORGE-S20-T06)
-		//   - forge:run-task (FORGE-S21-T02)
-		//   - forge:run-sprint (FORGE-S21-T03)
-		//   - forge:fix-bug (FORGE-S21-T07)
-		//   - forge:review-plan (FORGE-S21-T10)
-		//   - forge:review-code (FORGE-S21-T10)
-		//   - forge:approve (FORGE-S21-T10)
-		//   - forge:commit (FORGE-S21-T10)
-		//   - forge:validate (FORGE-S21-T10)
-		//   - forge:collate (FORGE-S21-T10)
-		//   - forge:retrospective (FORGE-S23-T06)
-		//   - forge:materialize (FORGE-S23-T09)
-		//   - forge:migrate (FORGE-S23-T09)
-		//   - forge:quiz-agent (FORGE-S23-T11) — only quiz-agent has a bundle .md file among T11's 6 commands
-		const REAL_HANDLER_CMD_FILES = 17; // +1 from T11 (only quiz-agent.md in bundle; add-task/add-pipeline/remove/report-bug/store-repair have no .md in bundle)
+		// After v1.0 (FORGE-S26-T10), ALL bundled .md command files map to EXPLICITLY_REGISTERED_NAMES.
+		// The v1.0 bundle contains 20 files; all 20 have real handlers, kickoff shims, or explicit
+		// deprecation stubs registered outside the auto-stub loop:
+		//   Real handlers: approve, collate, commit, fix-bug, implement, new-sprint, plan,
+		//     plan-sprint, retro, review-code, review-plan, run-sprint, run-task, validate
+		//   Deprecation stubs (registered in registerForgeCommands): enhance, quiz-agent,
+		//     retrospective, sprint-intake, sprint-plan
+		//   Backcompat alias (no bundle .md, was already EXPLICITLY_REGISTERED): check-agent
+		// As a result, the auto-stub loop registers 0 commands, and registerAllForgeCommands
+		// only contributes forge:refresh-kb-links (totalCalls = 1).
+		const REAL_HANDLER_CMD_FILES = 20; // v1.0: all bundle .md files are explicitly handled (FORGE-S26-T10)
 		const totalCalls = pi.registerCommand.mock.calls.length;
 
-		// Total calls = stub count + forge:refresh-kb-links + forge:enhance
-		// minus commands that have .md files but are excluded from stubs (real handlers)
+		// After v1.0: 0 auto-stubs + 1 forge:refresh-kb-links = 1 total call minimum.
+		// The ">= expectedFileCount - REAL_HANDLER_CMD_FILES" assertion still holds (>= 0),
+		// but add an explicit floor to document the post-v1.0 steady state.
 		expect(totalCalls).toBeGreaterThanOrEqual(expectedFileCount - REAL_HANDLER_CMD_FILES);
+		expect(totalCalls).toBeGreaterThanOrEqual(1); // at minimum forge:refresh-kb-links is always registered
 
 		// Verify no duplicate registrations (all names unique)
 		const names = (pi.registerCommand.mock.calls as Array<[string, unknown]>).map((c) => c[0]);

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-05-26
+
+### Breaking Changes
+
+- **v1.0 CLI command surface (FORGE-S26-T10):** 7 command renames + 6 command removals matching plugin v1.0.0.
+  Old command names emit deprecation notices and redirect to the new names.
+  - Renamed: `forge:sprint-intake` → `forge:new-sprint`, `forge:sprint-plan` → `forge:plan-sprint`, `forge:retrospective` → `forge:retro`, `forge:regenerate` → `forge:rebuild`, `forge:store-query` → `forge:search`, `forge:store-repair` → `forge:repair`, `forge:quiz-agent` → `forge:check-agent`
+  - Removed (stubs): `forge:update-tools`, `forge:materialize`, `forge:enhance`, `forge:calibrate`, `forge:migrate`
+- **Bundled forge plugin updated to v1.0.0.**
+
+### Added
+
+- **Pipeline step guards (FORGE-S26-T11):** pre-flight guards visible in `run-task`/`run-sprint`, mirrors plugin T06
+- **Revision loop visibility (FORGE-S26-T11):** iteration counter in phase announcements, mirrors plugin T07
+- **`/forge:status`** — re-exported from bundled plugin payload (mirrors plugin T09)
+- **Plugin ↔ CLI parity gate (FORGE-S26-T12):** bidirectional command surface parity check (`test/extensions/forgecli/parity-gate.test.ts`) wired into CI
+
+### Changed
+
+- All 20 bundled command `.md` files now have explicit handlers or deprecation stubs; auto-stub loop registers 0 commands (all slots in `EXPLICITLY_REGISTERED_NAMES`)
+
 ## [0.21.0] — 2026-05-26
 
 ### Added
