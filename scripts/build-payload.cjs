@@ -203,6 +203,10 @@ const TOOLS_TO_COPY = [
 	"judge-proposal.cjs",
 	"delete-candidate-detector.cjs",
 	"replay-scoring.cjs",
+	// FORGE-S26-T16: backported plugin tools — artifact.cjs and verify-apply.cjs
+	// are canonical plugin-side implementations; forge-cli shims delegate to them.
+	"artifact.cjs",
+	"verify-apply.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");

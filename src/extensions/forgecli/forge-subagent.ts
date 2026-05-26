@@ -148,6 +148,15 @@ export interface RunSubagentOptions {
 	 * to build the appropriate subset for each persona.
 	 */
 	customTools?: ToolDefinition[];
+	/**
+	 * When true, suppress extension and skill discovery in the subagent session.
+	 * Default false — subagents inherit the parent's extensions (lean-ctx,
+	 * ollama-cloud, etc.) so they get the same tool surface.
+	 *
+	 * Test harnesses should set this to true to avoid loading globally-installed
+	 * extensions (which adds latency and creates environment-dependent behavior).
+	 */
+	noExtensions?: boolean;
 }
 
 // ── Persona discovery ─────────────────────────────────────────────────────
@@ -228,13 +237,18 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		cwd: cwdAbs,
 		agentDir: getAgentDir(),
 		systemPromptOverride: () => {
-			const discipline = opts.customTools?.length ? FORGE_TOOL_DISCIPLINE : "";
-			return `${orientation}\n${persona.systemPrompt}${discipline}`;
+			return `${orientation}\n${persona.systemPrompt}${FORGE_TOOL_DISCIPLINE}`;
 		},
-		// Persona-only — suppress global pi extensions/skills/prompts to keep
-		// subagent context lean and deterministic.
-		noExtensions: true,
-		noSkills: true,
+		// By default, inherit the parent's extensions (lean-ctx, ollama-cloud,
+		// web-search, etc.) so subagents get the same tool surface. Extensions
+		// activate in-process — no heavy subprocess spawning. Context files and
+		// prompt templates are suppressed to avoid injecting CLAUDE.md /
+		// post-init tour bloat into phase prompts where persona + orientation
+		// suffice. When streamFn is set (test-only seam) or noExtensions is
+		// explicitly true, suppress discovery to avoid loading globally-installed
+		// extensions (latency + environment-dependence in test harnesses).
+		noExtensions: opts.noExtensions ?? !!opts.streamFn,
+		noSkills: opts.noExtensions ?? !!opts.streamFn,
 		noPromptTemplates: true,
 		noContextFiles: true,
 	});

@@ -41,7 +41,7 @@ import { resolveToolDir } from "./store-resolver.js";
  * @param projectRoot Directory containing .forge/ — cwd for the subprocess so
  *                    findProjectRoot() in the .cjs tool resolves correctly.
  */
-async function runCjs(
+export async function runCjs(
 	toolPath: string,
 	argv: string[],
 	signal: AbortSignal | undefined,
@@ -98,13 +98,14 @@ export interface ForgeToolDefs {
 }
 
 /**
- * Return the subset of forge tool definitions suitable for subagent injection.
- * Core store tools go to every persona; forge_collate only to the collator.
+ * Return all forge tool definitions for subagent injection.
+ *
+ * Every subagent gets the full tool surface (~2K tokens, <4% of session cost).
+ * Transcript analysis showed per-persona filtering provided no benefit — models
+ * never picked the wrong tool, and withholding tools forced bash workarounds.
  */
-export function getSubagentTools(defs: ForgeToolDefs, personaName?: string): ToolDefinition[] {
-	const tools: ToolDefinition[] = [defs.store, defs.storeDescribe, defs.storeTemplate, defs.storeQuery, defs.artifact];
-	if (personaName === "collator") tools.push(defs.collate);
-	return tools;
+export function getSubagentTools(defs: ForgeToolDefs, _personaName?: string): ToolDefinition[] {
+	return Object.values(defs);
 }
 
 /**
@@ -127,6 +128,10 @@ no agent loop. Prefer them over shelling out.
 - Use \`forge_store_query\` (nlp/query/schema) for lookups instead of grepping \`.forge/store/\`.
 - Use \`forge_collate\` to refresh the KB; \`forge_validate_store\` for integrity checks;
   \`forge_config\` for project config reads/writes.
+- Use \`forge_artifact\` to read/write/list phase artifacts (PLAN.md, PROGRESS.md, *-SUMMARY.json).
+  Never construct artifact paths manually — the tool resolves them from entity IDs.
+- Use \`forge_verify_apply\` after applying edits to confirm changes landed on disk.
+  If \`unchanged\` is non-empty, re-apply those edits.
 - Never \`bash node "$FORGE_ROOT/tools/store-cli.cjs" ...\` — use the named MCP tool instead.
   The tool is schema-validated and shorter.
 - Workflow text saying \`forge_store write sprint '<json>'\` means: call the MCP tool
@@ -165,12 +170,17 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 	for (const def of Object.values(defs)) {
 		pi.registerTool(def);
 	}
-	registerForgeToolDiscipline(pi);
+	registerForgeToolDiscipline(pi, toolDir);
 	return defs;
 }
 
 /**
  * Append the Forge tool-discipline block to every system prompt.
+ *
+ * Reads the canonical discipline text from the plugin fragment file at
+ * <toolDir>/../meta/fragments/tool-discipline.md. Falls back to the hardcoded
+ * FORGE_TOOL_DISCIPLINE constant if the fragment file is missing (graceful
+ * degradation during mixed-version states).
  *
  * Why: workflow text often refers to `forge_store ...` colloquially; without
  * this rule, models on some providers shell-bash `forge store ...`, which
@@ -179,32 +189,23 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
  * named MCP tools are still preferred (deterministic, schema-validated,
  * no subprocess overhead).
  */
-function registerForgeToolDiscipline(pi: ExtensionAPI): void {
+function registerForgeToolDiscipline(pi: ExtensionAPI, toolDir?: string): void {
 	// Guard: some test harnesses register a partial pi mock without `on`.
 	// Discipline injection is non-critical for unit tests of tool wrappers.
 	if (typeof pi.on !== "function") return;
 	pi.on("before_agent_start", async (event) => {
-		const discipline = `
-
-## Forge Tool Discipline
-
-All forge_* tools wrap local .cjs scripts via direct exec — deterministic, no LLM,
-no agent loop. Prefer them over shelling out.
-
-- Store CRUD: call \`forge_store\` (named tool). Canonical write is 2-positional:
-  \`{command:"write", args:["<entity>","<json>"]}\`. The id lives INSIDE the json
-  (e.g. \`{"sprintId":"X-S01","title":"...","status":"planning","taskIds":[],"createdAt":"..."}\`).
-  DO NOT pass id as a separate arg — \`["sprint","X-S01","<json>"]\` (3-arg) FAILS.
-- Before writing any record, call \`forge_store_template\` for the canonical shape and
-  \`forge_store_describe\` for required fields, status enums, and FK constraints.
-- Use \`forge_store_query\` (nlp/query/schema) for lookups instead of grepping \`.forge/store/\`.
-- Use \`forge_collate\` to refresh the KB; \`forge_validate_store\` for integrity checks;
-  \`forge_config\` for project config reads/writes.
-- Never \`bash forge store ...\`. The bin has a fast-path that exec's store-cli.cjs
-  directly (~50ms), but the named MCP tool is shorter, validated, and preferred.
-- Workflow text saying \`forge_store write sprint '<json>'\` means: call the MCP tool
-  \`forge_store\` with that 2-positional shape. Not a shell command.
-`;
+		let discipline: string;
+		if (toolDir) {
+			try {
+				const fragmentPath = path.join(toolDir, "..", "meta", "fragments", "tool-discipline.md");
+				discipline = "\n" + readFileSync(fragmentPath, "utf8");
+			} catch {
+				// Fragment not found (mixed-version state) — fall back to hardcoded text
+				discipline = FORGE_TOOL_DISCIPLINE;
+			}
+		} else {
+			discipline = FORGE_TOOL_DISCIPLINE;
+		}
 		const existing = event.systemPrompt ?? "";
 		return { systemPrompt: existing + discipline };
 	});
@@ -532,16 +533,11 @@ function buildForgeStoreQuery(toolDir: string, projectRoot: string): ToolDefinit
 // ── forge_verify_apply (forge-cli#31) ────────────────────────────────────────
 //
 // Detects hallucinated Edit calls — when the agent claims to have modified a
-// file but the actual on-disk content is unchanged. Background: hello testbench
-// 17:48 session showed the agent's "Files Modified" UI report claimed 5 edits
-// applied; the snap-4 archive captured by add-snapshot afterwards showed only
-// 1 of 5 files actually changed on disk. The other 4 were silent Edit-tool
-// failures (typically old_string whitespace mismatches) the agent didn't notice.
+// file but the actual on-disk content is unchanged.
 //
-// Contract: agent calls this tool AFTER applying edits, BEFORE calling
-// manage-versions add-snapshot. Tool runs generation-manifest check on each
-// claimed file and returns structured results. Agent uses the output to detect
-// its own failures, re-apply hallucinated edits, then re-verify.
+// Thin runCjs shim delegating to plugin verify-apply.cjs (FORGE-S26-T16).
+// Previously contained inline spawnSync loop; that logic now lives in the
+// plugin as the canonical implementation.
 //
 // Output schema (JSON string):
 //   {
@@ -581,46 +577,17 @@ function buildForgeVerifyApply(toolDir: string, projectRoot: string): ToolDefini
 		}),
 		async execute(_toolCallId, _params, signal) {
 			const params = _params as { claimed_paths: string[] };
-			void signal;
-			const manifestTool = path.join(toolDir, "generation-manifest.cjs");
-			if (!existsSync(manifestTool)) {
-				return errResult(`forge_verify_apply failed: generation-manifest.cjs not found at ${manifestTool}`);
+			const toolPath = path.join(toolDir, "verify-apply.cjs");
+			if (!existsSync(toolPath)) {
+				return errResult(`forge_verify_apply failed: verify-apply.cjs not found at ${toolPath}`);
 			}
-
-			const result: {
-				modified: string[];
-				unchanged: string[];
-				untracked: string[];
-				missing: string[];
-			} = { modified: [], unchanged: [], untracked: [], missing: [] };
-
-			const { spawnSync } = await import("node:child_process");
-			for (const claimedPath of params.claimed_paths) {
-				const r = spawnSync("node", [manifestTool, "check", claimedPath], {
-					cwd: projectRoot,
-					encoding: "utf8",
-					timeout: 5_000,
-				});
-				switch (r.status) {
-					case 0:
-						result.unchanged.push(claimedPath);
-						break;
-					case 1:
-						result.modified.push(claimedPath);
-						break;
-					case 2:
-						result.untracked.push(claimedPath);
-						break;
-					case 3:
-						result.missing.push(claimedPath);
-						break;
-					default:
-						// Tool error — surface as missing for safety; the agent should investigate
-						result.missing.push(claimedPath);
-				}
+			try {
+				const { stdout } = await runCjs(toolPath, params.claimed_paths, signal, 30_000, projectRoot);
+				return okResult(stdout.trim() || "{}");
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				return errResult(`forge_verify_apply failed: ${e.message ?? "unknown error"}`);
 			}
-
-			return okResult(JSON.stringify(result, null, 2));
 		},
 	};
 }
