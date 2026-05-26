@@ -249,7 +249,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 
 		if (!forgeRoot) {
 			// 2. Outside-Forge banner (AC#4, Q14)
-			ctx.ui.notify("forge — no .forge/ at cwd; run /forge:init to bootstrap", "info");
+			ctx.ui.notify("forge — no .forge/ at cwd; run /forge:init to bootstrap", "warning");
 			doneStartup();
 			return;
 		}
