@@ -65,7 +65,7 @@ export interface ComposeKickoffOpts {
 export function composeKickoff(opts: ComposeKickoffOpts): string {
 	const { workflowMd, personaIdentity, parsed } = opts;
 
-	const sections: string[] = ["# /forge:retrospective", ""];
+	const sections: string[] = ["# /forge:retro", ""];
 	if (personaIdentity.trim().length > 0) {
 		sections.push(personaIdentity.trim(), "");
 	}
@@ -108,10 +108,10 @@ export interface RegisterRetrospectiveOptions {
 }
 
 export function registerRetrospective(pi: ExtensionAPI, options: RegisterRetrospectiveOptions = {}): void {
-	pi.registerCommand("forge:retrospective", {
+	pi.registerCommand("forge:retro", {
 		description:
 			"Run the retrospective workflow for a Forge sprint. " +
-			"Usage: /forge:retrospective [FORGE-SNN | @<file> | <free-form text>]. " +
+			"Usage: /forge:retro [FORGE-SNN | @<file> | <free-form text>]. " +
 			"Empty args — the LLM will prompt you for the sprint to retrospect.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const cwd = options.cwd ?? process.cwd();
@@ -127,16 +127,16 @@ export function registerRetrospective(pi: ExtensionAPI, options: RegisterRetrosp
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:retrospective — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							`× forge:retro — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {
-						ctx.ui.notify(`× forge:retrospective — workflow load failed (${err.code}): ${err.message}`, "error");
+						ctx.ui.notify(`× forge:retro — workflow load failed (${err.code}): ${err.message}`, "error");
 					}
 					return;
 				}
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:retrospective — failed to read workflow: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:retro — failed to read workflow: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 
@@ -145,7 +145,7 @@ export function registerRetrospective(pi: ExtensionAPI, options: RegisterRetrosp
 				parsed = parseRetroArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:retrospective — failed to read seed: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:retro — failed to read seed: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 
@@ -158,13 +158,13 @@ export function registerRetrospective(pi: ExtensionAPI, options: RegisterRetrosp
 				} catch (err: unknown) {
 					if (err instanceof PersonaSkillLoaderError) {
 						ctx.ui.notify(
-							`× forge:retrospective — persona '${personas[0]}' load failed (${err.code}): ${err.message}`,
+							`× forge:retro — persona '${personas[0]}' load failed (${err.code}): ${err.message}`,
 							"error",
 						);
 						return;
 					}
 					const e = err as { message?: string };
-					ctx.ui.notify(`× forge:retrospective — persona load error: ${e.message ?? "unknown"}`, "error");
+					ctx.ui.notify(`× forge:retro — persona load error: ${e.message ?? "unknown"}`, "error");
 					return;
 				}
 			}

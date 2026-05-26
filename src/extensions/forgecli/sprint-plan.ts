@@ -31,7 +31,7 @@ interface ParsedArgs {
 export function parseSprintPlanArgs(rawArgs: string, cwd: string): ParsedArgs {
 	const trimmed = (rawArgs ?? "").trim();
 	if (!trimmed) {
-		throw new Error("sprint ID required — usage: /forge:sprint-plan <SPRINT_ID> [@<file> | <text>]");
+		throw new Error("sprint ID required — usage: /forge:plan-sprint <SPRINT_ID> [@<file> | <text>]");
 	}
 	const [sprintId, ...rest] = trimmed.split(/\s+/);
 	const tail = rest.join(" ").trim();
@@ -71,7 +71,7 @@ export function composeKickoff(
 	requirements: { path: string; content: string } | null,
 ): string {
 	const sections: string[] = [
-		"# /forge:sprint-plan",
+		"# /forge:plan-sprint",
 		"",
 		`Decompose sprint ${parsed.sprintId} into tasks. Drive the planning conversationally per the workflow below — read referenced personas/skills, validate dependencies, and write each task by calling the \`forge_store\` MCP tool with \`{command:'write', args:['task','<json>']}\` (2-positional, id INSIDE json) once you and the user agree on the shape. Call \`forge_store_template\` first for the canonical task shape. Update the sprint record (same tool, args:['sprint','<json>']) with the final task ID list. Do not return a single bulk JSON array; commit tasks one at a time so the user can interject. Do NOT bash-shell \`forge store ...\`.`,
 		"",
@@ -105,10 +105,10 @@ export function composeKickoff(
 const WORKFLOW_REL_PATH = path.join(".forge", "workflows", "architect_sprint_plan.md");
 
 export function registerSprintPlan(pi: ExtensionAPI): void {
-	pi.registerCommand("forge:sprint-plan", {
+	pi.registerCommand("forge:plan-sprint", {
 		description:
 			"Start an LLM-driven sprint task-decomposition session. " +
-			"Usage: /forge:sprint-plan <SPRINT_ID> [@<file> | <free-form text>]. " +
+			"Usage: /forge:plan-sprint <SPRINT_ID> [@<file> | <free-form text>]. " +
 			"Reads SPRINT_REQUIREMENTS.md (or REQUIREMENTS.md) from the sprint directory.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const cwd = process.cwd();
@@ -118,14 +118,14 @@ export function registerSprintPlan(pi: ExtensionAPI): void {
 				parsed = parseSprintPlanArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:sprint-plan — ${e.message ?? "argv parse failed"}`, "error");
+				ctx.ui.notify(`× forge:plan-sprint — ${e.message ?? "argv parse failed"}`, "error");
 				return;
 			}
 
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 			if (!fs.existsSync(workflowPath)) {
 				ctx.ui.notify(
-					`× forge:sprint-plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+					`× forge:plan-sprint — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 					"error",
 				);
 				return;
@@ -136,14 +136,14 @@ export function registerSprintPlan(pi: ExtensionAPI): void {
 				workflowMd = fs.readFileSync(workflowPath, "utf8");
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:sprint-plan — failed to read workflow: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:plan-sprint — failed to read workflow: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 
 			const requirements = resolveRequirements(cwd, parsed.sprintId);
 			if (!requirements) {
 				ctx.ui.notify(
-					`△ forge:sprint-plan — no SPRINT_REQUIREMENTS.md found at engineering/sprints/${parsed.sprintId}/. Continuing; LLM will ask you for context.`,
+					`△ forge:plan-sprint — no SPRINT_REQUIREMENTS.md found at engineering/sprints/${parsed.sprintId}/. Continuing; LLM will ask you for context.`,
 					"warning",
 				);
 			}

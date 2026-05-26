@@ -60,7 +60,7 @@ export interface ComposeQuizAgentKickoffOpts {
 export function composeQuizAgentKickoff(opts: ComposeQuizAgentKickoffOpts): string {
 	const { commandMd, parsed } = opts;
 
-	const sections: string[] = ["# /forge:quiz-agent", ""];
+	const sections: string[] = ["# /forge:check-agent", ""];
 	sections.push("## Dispatch", "");
 	sections.push(
 		"Run the quiz-agent workflow below to verify this agent has read and understood the project knowledge base. " +
@@ -89,16 +89,16 @@ export interface RegisterQuizAgentOptions {
 }
 
 export function registerQuizAgent(pi: ExtensionAPI, options: RegisterQuizAgentOptions): void {
-	pi.registerCommand("forge:quiz-agent", {
+	pi.registerCommand("forge:check-agent", {
 		description:
 			"Verify an agent has loaded and understood the project knowledge base — run a short factual quiz. " +
-			"Usage: /forge:quiz-agent [@<file> | <topic>]. Empty args run a full KB quiz.",
+			"Usage: /forge:check-agent [@<file> | <topic>]. Empty args run a full KB quiz.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const { forgeRoot } = options;
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify("× forge:quiz-agent — no Forge project at cwd; run /forge:init to bootstrap", "warning");
+				ctx.ui.notify("× forge:check-agent — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 
@@ -110,12 +110,12 @@ export function registerQuizAgent(pi: ExtensionAPI, options: RegisterQuizAgentOp
 				const e = err as { code?: string; message?: string };
 				if (e.code === "ENOENT") {
 					ctx.ui.notify(
-						`× forge:quiz-agent — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:regenerate first.`,
+						`× forge:check-agent — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:rebuild first.`,
 						"error",
 					);
 				} else {
 					ctx.ui.notify(
-						`× forge:quiz-agent — failed to read command file: ${e.message ?? "unknown error"}`,
+						`× forge:check-agent — failed to read command file: ${e.message ?? "unknown error"}`,
 						"error",
 					);
 				}
@@ -127,7 +127,7 @@ export function registerQuizAgent(pi: ExtensionAPI, options: RegisterQuizAgentOp
 				parsed = parseQuizAgentArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:quiz-agent — failed to parse args: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:check-agent — failed to parse args: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 

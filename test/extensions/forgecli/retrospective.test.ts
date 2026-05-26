@@ -1,4 +1,4 @@
-// Unit tests for the /forge:retrospective native kickoff handler (FORGE-S23-T06).
+// Unit tests for the /forge:retro native kickoff handler (FORGE-S23-T06, renamed FORGE-S26-T10).
 //
 // Conventions mirror plan.test.ts: tmp-dir fixtures per test via
 // fs.mkdtempSync + afterEach cleanup; absolute paths only.
@@ -127,8 +127,8 @@ function makeStub(): StubResult {
 		notifications,
 		ctx,
 		invoke: async (args: string) => {
-			const cmd = registered.find((r) => r.name === "forge:retrospective");
-			if (!cmd) throw new Error("forge:retrospective not registered");
+			const cmd = registered.find((r) => r.name === "forge:retro");
+			if (!cmd) throw new Error("forge:retro not registered");
 			await cmd.handler(args, ctx);
 		},
 	};
@@ -218,7 +218,7 @@ describe("composeKickoff", () => {
 			personaIdentity: "🗻 **Forge Architect** — identity line.",
 			parsed: { mode: "empty", sprintRef: "", sourceLabel: "(no sprint specified — will prompt)" },
 		});
-		expect(out).toContain("# /forge:retrospective");
+		expect(out).toContain("# /forge:retro");
 		expect(out).toContain("🗻 **Forge Architect** — identity line.");
 		expect(out).toContain("## Dispatch");
 		expect(out).toContain(".forge/personas/architect.md");
@@ -275,7 +275,7 @@ describe("registerRetrospective — handler integration", () => {
 		expect(opts).toEqual({ deliverAs: "steer" });
 		expect(typeof msg).toBe("string");
 		const text = msg as string;
-		expect(text).toContain("# /forge:retrospective");
+		expect(text).toContain("# /forge:retro");
 		expect(text).toContain(".forge/personas/architect.md");
 		expect(text).toContain(".forge/workflows/sprint_retrospective.md");
 		expect(text).toContain("🗻 **Forge Architect**"); // persona identity
@@ -366,11 +366,11 @@ describe("registerRetrospective — handler integration", () => {
 		).toBe(true);
 	});
 
-	it("registers with description string and forge:retrospective name", () => {
+	it("registers with description string and forge:retro name (renamed from forge:retrospective in v1.0)", () => {
 		const proj = scaffoldProject();
 		const stub = makeStub();
 		registerRetrospective(stub.pi as never, { cwd: proj });
-		const cmd = stub.registered.find((r) => r.name === "forge:retrospective");
+		const cmd = stub.registered.find((r) => r.name === "forge:retro");
 		expect(cmd).toBeDefined();
 		expect(cmd!.description).toMatch(/retrospective/i);
 	});

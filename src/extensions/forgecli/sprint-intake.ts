@@ -71,17 +71,17 @@ export function composeKickoff(workflowMd: string, parsed: ParsedArgs): string {
 const WORKFLOW_REL_PATH = path.join(".forge", "workflows", "architect_sprint_intake.md");
 
 export function registerSprintIntake(pi: ExtensionAPI): void {
-	pi.registerCommand("forge:sprint-intake", {
+	pi.registerCommand("forge:new-sprint", {
 		description:
 			"Start an LLM-driven sprint-intake interview. " +
-			"Usage: /forge:sprint-intake [@<file> | <free-form text>]. " +
+			"Usage: /forge:new-sprint [@<file> | <free-form text>]. " +
 			"Empty args start a conversational interview from scratch.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const cwd = process.cwd();
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 			if (!fs.existsSync(workflowPath)) {
 				ctx.ui.notify(
-					`forge:sprint-intake — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+					`forge:new-sprint — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 					"warning",
 				);
 				return;
@@ -92,7 +92,7 @@ export function registerSprintIntake(pi: ExtensionAPI): void {
 				parsed = parseSprintIntakeArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`forge:sprint-intake — failed to read seed: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`forge:new-sprint — failed to read seed: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 
@@ -101,7 +101,7 @@ export function registerSprintIntake(pi: ExtensionAPI): void {
 				workflowMd = fs.readFileSync(workflowPath, "utf8");
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`forge:sprint-intake — failed to read workflow: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`forge:new-sprint — failed to read workflow: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 

@@ -127,15 +127,15 @@ async function runTool(
 }
 
 export function registerRegenerate(pi: ExtensionAPI): void {
-	pi.registerCommand("forge:regenerate", {
+	pi.registerCommand("forge:rebuild", {
 		description:
 			"Re-materialize .forge/ and .claude/commands/ from the bundled forge-payload " +
-			"(deterministic subset of the plugin's /forge:regenerate — runs substitute-placeholders.cjs).",
+			"(deterministic subset of the plugin's /forge:rebuild — runs substitute-placeholders.cjs).",
 		async handler(args, ctx) {
 			const cwd = process.cwd();
 			const configPath = path.join(cwd, ".forge", "config.json");
 			if (!fs.existsSync(configPath)) {
-				ctx.ui.notify("× forge:regenerate — no .forge/config.json at cwd. Run /forge:init first.", "error");
+				ctx.ui.notify("× forge:rebuild — no .forge/config.json at cwd. Run /forge:init first.", "error");
 				return;
 			}
 
@@ -146,11 +146,11 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			const basePackDir = path.join(bundleRoot, ".base-pack");
 
 			if (!fs.existsSync(substituteTool)) {
-				ctx.ui.notify(`× forge:regenerate — substitute-placeholders.cjs missing at ${substituteTool}`, "error");
+				ctx.ui.notify(`× forge:rebuild — substitute-placeholders.cjs missing at ${substituteTool}`, "error");
 				return;
 			}
 			if (!fs.existsSync(basePackDir)) {
-				ctx.ui.notify(`× forge:regenerate — base-pack missing at ${basePackDir}`, "error");
+				ctx.ui.notify(`× forge:rebuild — base-pack missing at ${basePackDir}`, "error");
 				return;
 			}
 
@@ -189,7 +189,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 					);
 					if (!proceed) {
 						ctx.ui.notify(
-							`〇 forge:regenerate cancelled — ${divergent.length} divergent file(s) preserved.`,
+							`〇 forge:rebuild cancelled — ${divergent.length} divergent file(s) preserved.`,
 							"info",
 						);
 						return;
@@ -197,7 +197,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				}
 			}
 
-			ctx.ui.setStatus?.("forge:regenerate", "rebuilding init-context…");
+			ctx.ui.setStatus?.("forge:rebuild", "rebuilding init-context…");
 
 			// 1. Rebuild init-context.json so substitute has fresh placeholders.
 			if (fs.existsSync(buildInitContextTool)) {
@@ -223,12 +223,12 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 					30_000,
 				);
 				if (!ok) {
-					ctx.ui.setStatus?.("forge:regenerate", undefined);
+					ctx.ui.setStatus?.("forge:rebuild", undefined);
 					return;
 				}
 			}
 
-			ctx.ui.setStatus?.("forge:regenerate", "materializing .forge/ + .claude/commands/…");
+			ctx.ui.setStatus?.("forge:rebuild", "materializing .forge/ + .claude/commands/…");
 
 			// 2. Re-run substitute-placeholders against the bundled base-pack.
 			const ok = await runTool(
@@ -317,7 +317,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				}
 			}
 
-			ctx.ui.setStatus?.("forge:regenerate", undefined);
+			ctx.ui.setStatus?.("forge:rebuild", undefined);
 			if (ok) {
 				// 4. Update forgeRoot in .forge/config.json to point to the bundled payload.
 				//    Without this, projects initialized under a different runtime (e.g. Claude
@@ -336,12 +336,12 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 						}
 					} catch (e: unknown) {
 						const msg = e instanceof Error ? e.message : String(e);
-						ctx.ui.notify(`⚠ forge:regenerate — could not update forgeRoot in config.json: ${msg}`, "warning");
+						ctx.ui.notify(`⚠ forge:rebuild — could not update forgeRoot in config.json: ${msg}`, "warning");
 					}
 				}
 
 				ctx.ui.notify(
-					"〇 forge:regenerate complete — .forge/workflows, .forge/personas, .forge/skills, " +
+					"〇 forge:rebuild complete — .forge/workflows, .forge/personas, .forge/skills, " +
 						`.forge/templates, .claude/commands/ re-materialized from bundled payload; ${schemaCount} schemas refreshed.`,
 					"info",
 				);

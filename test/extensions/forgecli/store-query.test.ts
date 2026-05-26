@@ -1,11 +1,11 @@
-// Unit tests for /forge:store-query handler (FORGE-S23-T10)
+// Unit tests for /forge:search handler (FORGE-S23-T10, renamed FORGE-S26-T10)
 //
 // Tests:
 //   - runStoreQuery: "--" prefix dispatches to store-cli query branch
 //   - runStoreQuery: no "--" prefix dispatches to store-cli nlp branch
 //   - registerStoreQuery: empty args emits usage message without calling store-cli
 //   - registerStoreQuery: outside-project guard (null forgeRoot)
-//   - EXPLICITLY_REGISTERED_NAMES: "forge:store-query" present
+//   - EXPLICITLY_REGISTERED_NAMES: "forge:search" present (renamed from forge:store-query)
 
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -98,7 +98,7 @@ describe("registerStoreQuery dispatch", () => {
 		const ctx = buildCtx(messages);
 
 		registerStoreQuery(pi as any, { forgeRoot: FAKE_FORGE_ROOT });
-		const handler = handlers.get("forge:store-query");
+		const handler = handlers.get("forge:search");
 		expect(handler).toBeDefined();
 
 		await handler!("--sprint FORGE-S12 --status in-progress", ctx as any);
@@ -119,7 +119,7 @@ describe("registerStoreQuery dispatch", () => {
 		const ctx = buildCtx(messages);
 
 		registerStoreQuery(pi as any, { forgeRoot: FAKE_FORGE_ROOT });
-		const handler = handlers.get("forge:store-query");
+		const handler = handlers.get("forge:search");
 		expect(handler).toBeDefined();
 
 		await handler!("open bugs in S12", ctx as any);
@@ -136,7 +136,7 @@ describe("registerStoreQuery dispatch", () => {
 		const ctx = buildCtx(messages);
 
 		registerStoreQuery(pi as any, { forgeRoot: FAKE_FORGE_ROOT });
-		const handler = handlers.get("forge:store-query");
+		const handler = handlers.get("forge:search");
 		expect(handler).toBeDefined();
 
 		await handler!("", ctx as any);
@@ -154,7 +154,7 @@ describe("registerStoreQuery dispatch", () => {
 		const ctx = buildCtx(messages);
 
 		registerStoreQuery(pi as any, { forgeRoot: null });
-		const handler = handlers.get("forge:store-query");
+		const handler = handlers.get("forge:search");
 		expect(handler).toBeDefined();
 		await handler!("open tasks", ctx as any);
 		expect(messages.some((m) => m.severity === "error" && m.msg.includes("forge:init"))).toBe(true);
@@ -164,8 +164,10 @@ describe("registerStoreQuery dispatch", () => {
 // ── EXPLICITLY_REGISTERED_NAMES ──────────────────────────────────────────────
 
 describe("EXPLICITLY_REGISTERED_NAMES", () => {
-	it("contains forge:store-query", () => {
+	it("contains forge:search (renamed from forge:store-query in v1.0)", () => {
 		const { EXPLICITLY_REGISTERED_NAMES } = forgeCommandsTest;
+		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:search")).toBe(true);
+		// Old name should also be present as a deprecated redirect stub
 		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:store-query")).toBe(true);
 	});
 });

@@ -1,4 +1,4 @@
-// quiz-agent.test.ts — Unit tests for forge:quiz-agent kickoff shim (FORGE-S23-T11).
+// quiz-agent.test.ts — Unit tests for forge:check-agent kickoff shim (FORGE-S23-T11, renamed FORGE-S26-T10).
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -99,17 +99,17 @@ describe("registerQuizAgent", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("registers forge:quiz-agent command", () => {
+	it("registers forge:check-agent command (renamed from forge:quiz-agent in v1.0)", () => {
 		const pi = makePi();
 		registerQuizAgent(pi as never, { forgeRoot: tmpDir });
-		expect(pi.registerCommand).toHaveBeenCalledWith("forge:quiz-agent", expect.any(Object));
+		expect(pi.registerCommand).toHaveBeenCalledWith("forge:check-agent", expect.any(Object));
 	});
 
 	it("emits error notify when command file missing", async () => {
 		const pi = makePi();
 		registerQuizAgent(pi as never, { forgeRoot: tmpDir });
 		const ctx = makeCtx();
-		const handler = pi.commands.get("forge:quiz-agent")?.handler;
+		const handler = pi.commands.get("forge:check-agent")?.handler;
 		await handler!("", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
@@ -117,12 +117,12 @@ describe("registerQuizAgent", () => {
 	it("sends kickoff when command file exists", async () => {
 		const commandsDir = path.join(tmpDir, "commands");
 		fs.mkdirSync(commandsDir);
-		fs.writeFileSync(path.join(commandsDir, "quiz-agent.md"), "# /forge:quiz-agent\n\ncontent", "utf8");
+		fs.writeFileSync(path.join(commandsDir, "quiz-agent.md"), "# /forge:check-agent\n\ncontent", "utf8");
 
 		const pi = makePi();
 		registerQuizAgent(pi as never, { forgeRoot: tmpDir });
 		const ctx = makeCtx();
-		const handler = pi.commands.get("forge:quiz-agent")?.handler;
+		const handler = pi.commands.get("forge:check-agent")?.handler;
 		await handler!("entity model", ctx);
 
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(

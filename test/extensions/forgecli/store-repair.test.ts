@@ -1,4 +1,4 @@
-// store-repair.test.ts — Unit tests for forge:store-repair kickoff shim (FORGE-S23-T11).
+// store-repair.test.ts — Unit tests for forge:repair kickoff shim (FORGE-S23-T11, renamed FORGE-S26-T10).
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -104,17 +104,17 @@ describe("registerStoreRepair", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("registers forge:store-repair command", () => {
+	it("registers forge:repair command (renamed from forge:store-repair in v1.0)", () => {
 		const pi = makePi();
 		registerStoreRepair(pi as never, { forgeRoot: tmpDir });
-		expect(pi.registerCommand).toHaveBeenCalledWith("forge:store-repair", expect.any(Object));
+		expect(pi.registerCommand).toHaveBeenCalledWith("forge:repair", expect.any(Object));
 	});
 
 	it("emits error notify when command file missing", async () => {
 		const pi = makePi();
 		registerStoreRepair(pi as never, { forgeRoot: tmpDir });
 		const ctx = makeCtx();
-		const handler = pi.commands.get("forge:store-repair")?.handler;
+		const handler = pi.commands.get("forge:repair")?.handler;
 		await handler!("", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("command file not found"), "error");
 	});
@@ -122,12 +122,12 @@ describe("registerStoreRepair", () => {
 	it("sends kickoff with dry-run instruction when --dry-run provided", async () => {
 		const commandsDir = path.join(tmpDir, "commands");
 		fs.mkdirSync(commandsDir);
-		fs.writeFileSync(path.join(commandsDir, "store-repair.md"), "# /forge:store-repair\n\ncontent", "utf8");
+		fs.writeFileSync(path.join(commandsDir, "store-repair.md"), "# /forge:repair\n\ncontent", "utf8");
 
 		const pi = makePi();
 		registerStoreRepair(pi as never, { forgeRoot: tmpDir });
 		const ctx = makeCtx();
-		const handler = pi.commands.get("forge:store-repair")?.handler;
+		const handler = pi.commands.get("forge:repair")?.handler;
 		await handler!("--dry-run", ctx);
 
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(

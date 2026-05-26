@@ -80,7 +80,7 @@ export interface ComposeStoreRepairKickoffOpts {
 export function composeStoreRepairKickoff(opts: ComposeStoreRepairKickoffOpts): string {
 	const { commandMd, parsed } = opts;
 
-	const sections: string[] = ["# /forge:store-repair", ""];
+	const sections: string[] = ["# /forge:repair", ""];
 	sections.push("## Dispatch", "");
 	sections.push("Diagnose and repair the Forge JSON store. Run the repair workflow below. Specifically:");
 	sections.push("");
@@ -114,17 +114,17 @@ export interface RegisterStoreRepairOptions {
 }
 
 export function registerStoreRepair(pi: ExtensionAPI, options: RegisterStoreRepairOptions): void {
-	pi.registerCommand("forge:store-repair", {
+	pi.registerCommand("forge:repair", {
 		description:
 			"Diagnose and repair corrupted Forge store records. " +
-			"Usage: /forge:store-repair [--dry-run]. " +
+			"Usage: /forge:repair [--dry-run]. " +
 			"--dry-run shows what would be repaired without making changes.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
 			const { forgeRoot } = options;
 			const cwd = options.cwd ?? process.cwd();
 
 			if (!forgeRoot) {
-				ctx.ui.notify("× forge:store-repair — no Forge project at cwd; run /forge:init to bootstrap", "warning");
+				ctx.ui.notify("× forge:repair — no Forge project at cwd; run /forge:init to bootstrap", "warning");
 				return;
 			}
 
@@ -136,12 +136,12 @@ export function registerStoreRepair(pi: ExtensionAPI, options: RegisterStoreRepa
 				const e = err as { code?: string; message?: string };
 				if (e.code === "ENOENT") {
 					ctx.ui.notify(
-						`× forge:store-repair — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:regenerate first.`,
+						`× forge:repair — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:rebuild first.`,
 						"error",
 					);
 				} else {
 					ctx.ui.notify(
-						`× forge:store-repair — failed to read command file: ${e.message ?? "unknown error"}`,
+						`× forge:repair — failed to read command file: ${e.message ?? "unknown error"}`,
 						"error",
 					);
 				}
@@ -153,7 +153,7 @@ export function registerStoreRepair(pi: ExtensionAPI, options: RegisterStoreRepa
 				parsed = parseStoreRepairArgs(args, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:store-repair — failed to parse args: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:repair — failed to parse args: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 

@@ -20,14 +20,14 @@ const execFileAsync = promisify(execFile);
 
 // ── Usage message ─────────────────────────────────────────────────────────────
 
-const USAGE = `Usage: /forge:store-query <intent or flags>
+const USAGE = `Usage: /forge:search <intent or flags>
 
 Examples:
-  /forge:store-query open bugs in S12
-  /forge:store-query FORGE-BUG-047
-  /forge:store-query --sprint FORGE-S12 --status in-progress
-  /forge:store-query --keyword auth
-  /forge:store-query schema`;
+  /forge:search open bugs in S12
+  /forge:search FORGE-BUG-047
+  /forge:search --sprint FORGE-S12 --status in-progress
+  /forge:search --keyword auth
+  /forge:search schema`;
 
 // ── Core runner ──────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ export async function runStoreQuery(args: string, forgeRoot: string, cwd: string
  * forgeRoot is nullable — null means we're outside a Forge project.
  */
 export function registerStoreQuery(pi: ExtensionAPI, opts: { forgeRoot: string | null }): void {
-	pi.registerCommand("forge:store-query", {
+	pi.registerCommand("forge:search", {
 		description:
 			"Query the Forge store by natural language or exact flags. " +
 			"Use flags (--sprint, --task, --keyword) for exact queries; " +
@@ -101,7 +101,7 @@ export function registerStoreQuery(pi: ExtensionAPI, opts: { forgeRoot: string |
 
 			// Outside-project guard
 			if (!opts.forgeRoot) {
-				ctx.ui.notify("× forge:store-query — not inside a Forge project. Run /forge:init first.", "error");
+				ctx.ui.notify("× forge:search — not inside a Forge project. Run /forge:init first.", "error");
 				return;
 			}
 
@@ -111,14 +111,14 @@ export function registerStoreQuery(pi: ExtensionAPI, opts: { forgeRoot: string |
 				return;
 			}
 
-			ctx.ui.setStatus?.("forge:store-query", "Querying store…");
+			ctx.ui.setStatus?.("forge:search", "Querying store…");
 
 			const result = await runStoreQuery(trimmed, opts.forgeRoot, cwd);
 
-			ctx.ui.setStatus?.("forge:store-query", undefined);
+			ctx.ui.setStatus?.("forge:search", undefined);
 
 			if (!result.ok && result.errorMessage) {
-				ctx.ui.notify(`× forge:store-query — ${result.errorMessage}`, "error");
+				ctx.ui.notify(`× forge:search — ${result.errorMessage}`, "error");
 				// Still show partial stdout if available
 				if (result.stdout.trim()) {
 					ctx.ui.notify(result.stdout.trim(), "info");

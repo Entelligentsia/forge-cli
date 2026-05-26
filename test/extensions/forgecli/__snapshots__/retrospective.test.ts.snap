@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`composeKickoff > snapshot — kickoff body for empty-arg case matches snapshot 1`] = `
-"# /forge:retrospective
+"# /forge:retro
 
 🗻 **Forge Architect** — I hold the shape of the whole.
 

@@ -22,11 +22,11 @@ import { registerAddTask } from "./add-task.js";
 import { registerApprove } from "./approve.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { readProjectMeta } from "./banner.js";
-import { registerCalibrate } from "./calibrate.js";
+// calibrate.ts — registerCalibrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerCollate } from "./collate.js";
 import { registerCommit } from "./commit.js";
 import { registerConfigCommand } from "./config-command.js";
-import { registerEnhance } from "./enhance.js";
+// enhance.ts — registerEnhance removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerFixBug } from "./fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
@@ -47,8 +47,8 @@ import { registerImplement } from "./implement.js";
 import { getInputRouter } from "./input-router.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { readPkgVersionsSync } from "./lib/versions.js";
-import { registerMaterialize } from "./materialize.js";
-import { registerMigrate } from "./migrate.js";
+// materialize.ts — registerMaterialize removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
+// migrate.ts — registerMigrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
 import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
 import { registerPlan } from "./plan.js";
@@ -71,7 +71,7 @@ import { registerStoreRepair } from "./store-repair.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { triggerUpdateCheck } from "./update-check.js";
-import { registerUpdateTools } from "./update-tools.js";
+// update-tools.ts — registerUpdateTools removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerUsageHook } from "./usage-hook.js";
 import { registerValidate } from "./validate.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
@@ -164,13 +164,13 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// the banner is suppressed automatically (no extra guard needed here).
 	registerForgeInit(pi);
 
-	// ── /forge:regenerate — re-materialize .forge/ from bundled payload ────
-	// Deterministic subset of plugin's /forge:regenerate: runs
-	// substitute-placeholders.cjs against bundled .base-pack/. Useful when a
-	// new forge-cli build ships an updated payload and the project's
-	// .forge/workflows/ etc. need to be refreshed. Registered AFTER
-	// registerForgeInit and BEFORE registerAllForgeCommands so the real
-	// handler beats the auto-stub.
+	// ── /forge:rebuild — re-materialize .forge/ from bundled payload ────────
+	// Renamed from /forge:regenerate in v1.0 (FORGE-S26-T10). Deterministic
+	// subset of plugin's /forge:rebuild: runs substitute-placeholders.cjs
+	// against bundled .base-pack/. Useful when a new forge-cli build ships an
+	// updated payload and the project's .forge/workflows/ etc. need to be
+	// refreshed. Registered AFTER registerForgeInit and BEFORE
+	// registerAllForgeCommands so the real handler beats the auto-stub.
 	registerRegenerate(pi);
 
 	// ── /test-orchestrate (subagent harness e2e probe) ──────────────────────
@@ -412,23 +412,21 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		registerUsageHook(pi);
 	}
 
-	// ── /forge:sprint-intake native handler (FORGE-S19-T01) ──────────────────
+	// ── /forge:new-sprint native handler (FORGE-S19-T01, renamed FORGE-S26-T10) ──
 	// Registered before registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub generated from the command markdown file.
+	// Now registers as forge:new-sprint (renamed from forge:sprint-intake in v1.0).
 	registerSprintIntake(pi);
 
-	// ── /forge:sprint-plan native handler (FORGE-S19-T02) ────────────────────
+	// ── /forge:plan-sprint native handler (FORGE-S19-T02, renamed FORGE-S26-T10) ──
 	// Registered before registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub generated from the command markdown file.
+	// Now registers as forge:plan-sprint (renamed from forge:sprint-plan in v1.0).
 	registerSprintPlan(pi);
 
-	// ── /forge:enhance native kickoff handler (FORGE-S20-T04) ────────────────
-	// Replaces the post-S17 sentinel-writing stub. Registered unconditionally
-	// here so it takes precedence over the auto-stub registered by
-	// registerAllForgeCommands; the handler itself notifies and returns when
-	// `.forge/workflows/enhance.md` is absent (graceful no-op outside Forge
-	// project).
-	registerEnhance(pi);
+	// /forge:enhance — REMOVED in v1.0 (FORGE-S26-T10).
+	// Deprecation stub is registered by registerForgeCommands below.
+	// registerEnhance(pi) — no longer called here.
 
 	// ── /forge:plan native kickoff handler (FORGE-S20-T05) ───────────────────
 	// Replaces the auto-generated stub. Same Kickoff Shim archetype as
@@ -477,20 +475,20 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerApprove(pi);
 	registerCommit(pi);
 	registerValidate(pi);
-	registerCollate(pi);
-	registerRetrospective(pi);
-	registerCalibrate(pi, { forgeToolDefs }); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
-	registerMaterialize(pi); // FORGE-S23-T09: Atomic handler — fill missing/stubbed artifacts
-	registerMigrate(pi, { forgeToolDefs }); // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
-	registerUpdateTools(pi); // FORGE-S23-T10: Atomic handler — copy bundled schemas to .forge/schemas/
-	registerStoreQuery(pi, { forgeRoot }); // FORGE-S23-T10: Atomic handler — store-cli query/nlp dispatch
+	registerCollate(pi); // internal — used by orchestrators; not user-facing in v1.0
+	registerRetrospective(pi); // FORGE-S26-T10: now registers forge:retro
+	// forge:calibrate — REMOVED in v1.0. Deprecation stub registered by registerForgeCommands below.
+	// forge:materialize — REMOVED in v1.0. Deprecation stub registered by registerForgeCommands below.
+	// forge:migrate — REMOVED in v1.0. Deprecation stub registered by registerForgeCommands below.
+	// forge:update-tools — REMOVED in v1.0. Deprecation stub registered by registerForgeCommands below.
+	registerStoreQuery(pi, { forgeRoot }); // FORGE-S26-T10: now registers forge:search
 	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget
 	registerAddTask(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — add a task mid-sprint
 	registerAddPipeline(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — pipeline manager
-	registerQuizAgent(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — KB quiz
+	registerQuizAgent(pi, { forgeRoot }); // FORGE-S26-T10: now registers forge:check-agent
 	registerRemoveCommand(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — remove Forge artifacts
 	registerReportBug(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — file bug against Forge
-	registerStoreRepair(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — diagnose/repair store
+	registerStoreRepair(pi, { forgeRoot }); // FORGE-S26-T10: now registers forge:repair
 
 	// ── /forge:run-workflow generic workflow engine (Plan 14) ────────────────
 	// Resolution order: CWD/workflows/<id> first (user-authored workflows),
