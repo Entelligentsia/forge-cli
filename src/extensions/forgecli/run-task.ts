@@ -792,6 +792,19 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		const summariesBlock = buildSummariesBlock(taskRecordForSummaries?.summaries);
 		const taskBody = composeTaskBody(subWorkflowMd, taskId, summariesBlock || undefined);
 
+		// Log whether carry-forward summaries were injected (forge-cli#19).
+		if (summariesBlock) {
+			const debugCarryPath = path.join(cwd, ".forge", "cache", `run-task-debug-${taskId}.jsonl`);
+			try {
+				fs.mkdirSync(path.dirname(debugCarryPath), { recursive: true });
+				fs.appendFileSync(
+					debugCarryPath,
+					`${JSON.stringify({ ts: new Date().toISOString(), phase: phase.role, kind: "carry_forward_injected", summariesLength: summariesBlock.length, summariesBlock })}\n`,
+					"utf8",
+				);
+			} catch { /* best-effort debug log */ }
+		}
+
 		// Resolve per-phase model from layered config (Plan 16 Slice 2).
 		// Pipeline name "default" matches the Forge plugin's shipped pipeline.
 		// When config is absent or cascade bottoms out, resolves to inherit
