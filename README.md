@@ -43,11 +43,13 @@ Node 20 or higher. The curl installer checks prerequisites, runs the npm install
 
 ```sh
 cd your-project
-forge                  # launch (forge, forgecli, and 4ge are the same binary)
-> /forge:init          # 4 phases, ~45s, idempotent
+forge                    # launch (forge, forgecli, and 4ge are the same binary)
+> /forge:init            # generates KB, personas, workflows, commands
+> /forge:new-sprint      # start your first sprint
+> /forge:plan-sprint     # break requirements into tasks
+> /forge:run-sprint S01  # execute — plan → review → implement → approve → commit
+> /forge:retro S01       # close the sprint and feed learnings back
 ```
-
-That's it. Your `.forge/` is populated and your first sprint is ready.
 
 ## Try it on the playground
 
@@ -65,10 +67,10 @@ Three more stacks live in the testbench — TypeScript ([cartographer]), Go ([em
 ## What `/forge:init` does
 
 ```
-①  collect      5 parallel discovery scans         → .forge/config.json
-②  discover     KB docs + project-context          → .forge/project-context.json
-③  materialize  substitute placeholders            → .forge/{personas,workflows,…}
-④  register     manifest + cache + store entries   → .forge/store/, .forge/cache/
+①  collect    5 parallel discovery scans         → .forge/config.json
+②  discover   KB docs + project-context          → .forge/project-context.json
+③  generate   personas, workflows, commands       → .forge/{personas,workflows,…}
+④  register   manifest + cache + store entries   → .forge/store/, .forge/cache/
 ```
 
 Idempotent and resumable. Re-running picks up at the last checkpoint via `.forge/init-progress.json`.
@@ -77,21 +79,18 @@ Idempotent and resumable. Re-running picks up at the last checkpoint via `.forge
 
 ```
 SETUP    /forge:init          Bootstrap Forge SDLC into the project
-         /forge:regenerate    Refresh generated workflows + KB
-         /forge:materialize   Fill in stub artifacts after fast-mode init
-         /forge:migrate       Schema + structural migration of legacy stores
+         /forge:rebuild       Refresh generated workflows, KB, or tools
          /forge:update        Check for + apply forge-cli updates
-         /forge:update-tools  Refresh .forge/schemas/ to bundled version
          /forge:add-pipeline  Add or customize a pipeline interactively
          /forge:remove        Tear down the Forge install
 
 RUN      /forge:run-task      Execute one task pipeline end-to-end
          /forge:run-sprint    Orchestrate every task in a sprint
          /forge:fix-bug       Triage + fix flow
-         /forge:sprint-intake Elicit sprint requirements
-         /forge:sprint-plan   Decompose a sprint into tasks
+         /forge:new-sprint    Elicit sprint requirements
+         /forge:plan-sprint   Decompose a sprint into tasks
          /forge:add-task      Add a task to an existing sprint mid-flight
-         /forge:retrospective Produce a sprint retrospective document
+         /forge:retro         Produce a sprint retrospective document
 
 CHAIN    /forge:plan          plan
          /forge:implement     implement
@@ -105,10 +104,9 @@ ASK      /forge:health        KB freshness + store integrity
          /forge:status        Sprint + task status
          /forge:ask <q>       Ask the Tomoshibi concierge
          /forge:config        Set up AI models for your workflow
-         /forge:store-query   Query the JSON store by NLP or flags
-         /forge:store-repair  Diagnose + repair corrupted store records
-         /forge:quiz-agent    Verify an agent has loaded the KB
-         /forge:calibrate     Detect KB↔agent drift, propose patches
+         /forge:search        Query the JSON store by NLP or flags
+         /forge:repair        Diagnose + repair corrupted store records
+         /forge:check-agent   Verify an agent has loaded the KB
          /forge:report-bug    File a Forge bug as a GitHub issue
 ```
 
