@@ -1,38 +1,32 @@
 // bug-038-forge-artifact-path-resolution.test.ts
-// Regression test for forge-cli#33:
-// forge_artifact tool resolves entity directories from the store record's
-// `path` field, not just from the entity ID. Slug-suffixed directories
-// (e.g. engineering/bugs/BUG-001-sprint-runner-context-accumulation)
-// must be reachable.
+// After FORGE-S26-T16 shim conversion:
+// forge_artifact is now a thin runCjs shim delegating to artifact.cjs on the
+// plugin side. Path resolution logic has been moved there. This test verifies
+// that the shim dispatches correct argv arrays to artifact.cjs via runCjs.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildForgeArtifact } from "../../../src/extensions/forgecli/forge-artifact-tool.js";
 
-// Import the module with _testOverrides for DI-based mocking
-import { _testOverrides, buildForgeArtifact } from "../../../src/extensions/forgecli/forge-artifact-tool.js";
+// ── Mock runCjs ──────────────────────────────────────────────────────────────
 
-// ── Mock store records ────────────────────────────────────────────────────
+type RunCjsResult = { stdout: string; stderr: string };
 
-const mockStoreRecords: Record<string, Record<string, Record<string, unknown>>> = {
-	bug: {},
-	sprint: {},
-	task: {},
-};
+function makeRunCjsMock(response: RunCjsResult) {
+	return vi.fn().mockResolvedValue(response);
+}
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createTestProject(root: string, engineeringDir = "engineering") {
+function createTestProject(root: string) {
 	const configDir = path.join(root, ".forge");
 	fs.mkdirSync(configDir, { recursive: true });
 	fs.writeFileSync(
 		path.join(configDir, "config.json"),
-		JSON.stringify({ paths: { engineering: engineeringDir } }),
+		JSON.stringify({ paths: { engineering: "engineering" } }),
 		"utf8",
 	);
-	const eng = path.join(root, engineeringDir);
-	fs.mkdirSync(path.join(eng, "bugs"), { recursive: true });
-	fs.mkdirSync(path.join(eng, "sprints"), { recursive: true });
 }
 
 function rmDir(dir: string) {
@@ -41,284 +35,200 @@ function rmDir(dir: string) {
 	}
 }
 
-function mockReadStorePath(entity: string, entityId: string): string | null {
-	const record = mockStoreRecords[entity]?.[entityId];
-	if (record && typeof record.path === "string" && record.path.length > 0) {
-		return record.path;
-	}
-	return null;
-}
+// ── Tests — shim dispatch correctness ────────────────────────────────────────
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
-describe("forge_artifact path resolution (forge-cli#33)", () => {
+describe("forge_artifact shim dispatch (forge-cli#33 / FORGE-S26-T16)", () => {
 	afterEach(() => {
-		mockStoreRecords.bug = {};
-		mockStoreRecords.sprint = {};
-		mockStoreRecords.task = {};
-		_testOverrides.readStorePath = undefined;
+		vi.restoreAllMocks();
 	});
 
-	describe("bug: slug-suffixed directory from store path", () => {
-		it("resolves bug directory from store record path field", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-test-${Date.now()}`);
+	describe("list command", () => {
+		it("dispatches ['list', entity, entityId] to artifact.cjs", async () => {
+			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-shim-list-${Date.now()}`);
 			try {
 				createTestProject(tmpDir);
 
-				const bugSlugDir = path.join(
-					tmpDir,
-					"engineering",
-					"bugs",
-					"FORGE-BUG-017-preflight-gate-workflow-shadowing",
-				);
-				fs.mkdirSync(bugSlugDir, { recursive: true });
-				fs.writeFileSync(path.join(bugSlugDir, "TRIAGE.md"), "# Triage content", "utf8");
+				const mockRunCjs = makeRunCjsMock({
+					stdout: "Artifacts in engineering/sprints/FORGE-S26/FORGE-S26-T16/:\n  plan → PLAN.md\n",
+					stderr: "",
+				});
 
-				mockStoreRecords.bug["FORGE-BUG-017"] = {
-					bugId: "FORGE-BUG-017",
-					title: "Test bug",
-					path: "engineering/bugs/FORGE-BUG-017-preflight-gate-workflow-shadowing",
-				};
-				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
+				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools", mockRunCjs);
 				const result = await artifact.execute(
 					"test-call",
-					{
-						command: "list",
-						entity: "bug",
-						entityId: "FORGE-BUG-017",
-					},
+					{ command: "list", entity: "task", entityId: "FORGE-S26-T16" },
 					undefined,
-				);
-
-				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-				expect(text).toContain("TRIAGE.md");
-				expect(text).not.toContain("directory does not exist");
-			} finally {
-				rmDir(tmpDir);
-			}
-		});
-	});
-
-	describe("bug: ID-only fallback when store unavailable", () => {
-		it("falls back to ID-only path when store record not found", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-fallback-${Date.now()}`);
-			try {
-				createTestProject(tmpDir);
-
-				const bugDir = path.join(tmpDir, "engineering", "bugs", "FORGE-BUG-999");
-				fs.mkdirSync(bugDir, { recursive: true });
-				fs.writeFileSync(path.join(bugDir, "INDEX.md"), "# Index", "utf8");
-
-				// No store record → mock returns null → falls back to ID-only
-				_testOverrides.readStorePath = () => null;
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute(
-					"test-call",
-					{
-						command: "list",
-						entity: "bug",
-						entityId: "FORGE-BUG-999",
-					},
 					undefined,
+					undefined as never,
 				);
 
-				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-				expect(text).toContain("INDEX.md");
-			} finally {
-				rmDir(tmpDir);
-			}
-		});
-	});
-
-	describe("bug: empty path falls back to ID-only", () => {
-		it("falls back when store record path is empty", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-empty-${Date.now()}`);
-			try {
-				createTestProject(tmpDir);
-
-				const bugDir = path.join(tmpDir, "engineering", "bugs", "FORGE-BUG-040");
-				fs.mkdirSync(bugDir, { recursive: true });
-				fs.writeFileSync(path.join(bugDir, "TRIAGE.md"), "# Triage", "utf8");
-
-				mockStoreRecords.bug["FORGE-BUG-040"] = {
-					bugId: "FORGE-BUG-040",
-					title: "Empty path",
-					path: "",
-				};
-				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute(
-					"test-call",
-					{
-						command: "list",
-						entity: "bug",
-						entityId: "FORGE-BUG-040",
-					},
-					undefined,
-				);
-
-				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-				expect(text).toContain("TRIAGE.md");
-			} finally {
-				rmDir(tmpDir);
-			}
-		});
-	});
-
-	describe("sprint: slug-suffixed directory from store path", () => {
-		it("resolves sprint directory from store record path field", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-sprint-${Date.now()}`);
-			try {
-				createTestProject(tmpDir);
-
-				const sprintSlugDir = path.join(tmpDir, "engineering", "sprints", "FORGE-S07-store-custodian");
-				fs.mkdirSync(sprintSlugDir, { recursive: true });
-				fs.writeFileSync(path.join(sprintSlugDir, "INDEX.md"), "# Sprint Index", "utf8");
-
-				mockStoreRecords.sprint["FORGE-S07"] = {
-					sprintId: "FORGE-S07",
-					path: "engineering/sprints/FORGE-S07-store-custodian",
-				};
-				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute(
-					"test-call",
-					{
-						command: "list",
-						entity: "sprint",
-						entityId: "FORGE-S07",
-					},
-					undefined,
-				);
-
-				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-				expect(text).toContain("INDEX.md");
-				expect(text).not.toContain("directory does not exist");
-			} finally {
-				rmDir(tmpDir);
-			}
-		});
-	});
-
-	describe("task: slug-suffixed sprint in task path", () => {
-		it("resolves task directory using store record path field", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-task-${Date.now()}`);
-			try {
-				createTestProject(tmpDir);
-
-				const taskDir = path.join(
-					tmpDir,
-					"engineering",
-					"sprints",
-					"FORGE-S25-foundation-refactor",
-					"FORGE-S25-T01",
-				);
-				fs.mkdirSync(taskDir, { recursive: true });
-				fs.writeFileSync(path.join(taskDir, "PLAN.md"), "# Plan", "utf8");
-
-				mockStoreRecords.task["FORGE-S25-T01"] = {
-					taskId: "FORGE-S25-T01",
-					sprintId: "FORGE-S25",
-					path: "engineering/sprints/FORGE-S25-foundation-refactor/FORGE-S25-T01",
-				};
-				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute(
-					"test-call",
-					{
-						command: "list",
-						entity: "task",
-						entityId: "FORGE-S25-T01",
-					},
-					undefined,
-				);
+				expect(mockRunCjs).toHaveBeenCalledOnce();
+				const [toolPath, argv] = mockRunCjs.mock.calls[0];
+				expect(path.basename(toolPath)).toBe("artifact.cjs");
+				expect(argv).toEqual(["list", "task", "FORGE-S26-T16"]);
 
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
 				expect(text).toContain("PLAN.md");
-				expect(text).not.toContain("directory does not exist");
-			} finally {
-				rmDir(tmpDir);
-			}
-		});
-
-		it("falls back to sprint path when task path is empty", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-task-fb-${Date.now()}`);
-			try {
-				createTestProject(tmpDir);
-
-				const taskDir = path.join(tmpDir, "engineering", "sprints", "FORGE-S07-store-custodian", "FORGE-S07-T01");
-				fs.mkdirSync(taskDir, { recursive: true });
-				fs.writeFileSync(path.join(taskDir, "PLAN.md"), "# Plan", "utf8");
-
-				// Task has empty path — resolveEntityDir should fall back to sprint path
-				mockStoreRecords.task["FORGE-S07-T01"] = {
-					taskId: "FORGE-S07-T01",
-					sprintId: "FORGE-S07",
-					path: "",
-				};
-				mockStoreRecords.sprint["FORGE-S07"] = {
-					sprintId: "FORGE-S07",
-					path: "engineering/sprints/FORGE-S07-store-custodian",
-				};
-				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
-				const result = await artifact.execute(
-					"test-call",
-					{
-						command: "list",
-						entity: "task",
-						entityId: "FORGE-S07-T01",
-					},
-					undefined,
-				);
-
-				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-				expect(text).toContain("PLAN.md");
-				expect(text).not.toContain("directory does not exist");
 			} finally {
 				rmDir(tmpDir);
 			}
 		});
 	});
 
-	describe("regression: old BUG-NNN slug-suffixed directories", () => {
-		it("resolves BUG-001 with slug suffix from store", async () => {
-			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-bug001-${Date.now()}`);
+	describe("read command", () => {
+		it("dispatches ['read', entity, entityId, artifact] to artifact.cjs", async () => {
+			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-shim-read-${Date.now()}`);
 			try {
 				createTestProject(tmpDir);
 
-				const bugDir = path.join(tmpDir, "engineering", "bugs", "BUG-001-sprint-runner-context-accumulation");
-				fs.mkdirSync(bugDir, { recursive: true });
-				fs.writeFileSync(path.join(bugDir, "INDEX.md"), "# BUG-001 Index", "utf8");
+				const mockRunCjs = makeRunCjsMock({
+					stdout: "# My Plan\n\nSome plan content.",
+					stderr: "",
+				});
 
-				mockStoreRecords.bug["BUG-001"] = {
-					bugId: "BUG-001",
-					title: "Sprint runner accumulates context",
-					path: "engineering/bugs/BUG-001-sprint-runner-context-accumulation",
-				};
-				_testOverrides.readStorePath = (entity, entityId) => mockReadStorePath(entity, entityId);
-
-				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools");
+				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools", mockRunCjs);
 				const result = await artifact.execute(
 					"test-call",
-					{
-						command: "list",
-						entity: "bug",
-						entityId: "BUG-001",
-					},
+					{ command: "read", entity: "task", entityId: "FORGE-S26-T16", artifact: "plan" },
 					undefined,
+					undefined,
+					undefined as never,
 				);
 
+				expect(mockRunCjs).toHaveBeenCalledOnce();
+				const [toolPath, argv] = mockRunCjs.mock.calls[0];
+				expect(path.basename(toolPath)).toBe("artifact.cjs");
+				expect(argv).toEqual(["read", "task", "FORGE-S26-T16", "plan"]);
+
 				const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-				expect(text).toContain("INDEX.md");
-				expect(text).not.toContain("directory does not exist");
+				expect(text).toContain("# My Plan");
+			} finally {
+				rmDir(tmpDir);
+			}
+		});
+	});
+
+	describe("write command — inline content (<64KB)", () => {
+		it("dispatches ['write', entity, entityId, artifact, content] to artifact.cjs for small content", async () => {
+			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-shim-write-${Date.now()}`);
+			try {
+				createTestProject(tmpDir);
+
+				const mockRunCjs = makeRunCjsMock({ stdout: "Wrote 8 bytes to path/PROGRESS.md", stderr: "" });
+
+				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools", mockRunCjs);
+				await artifact.execute(
+					"test-call",
+					{
+						command: "write",
+						entity: "task",
+						entityId: "FORGE-S26-T16",
+						artifact: "progress",
+						content: "# Hello",
+					},
+					undefined,
+					undefined,
+					undefined as never,
+				);
+
+				expect(mockRunCjs).toHaveBeenCalledOnce();
+				const [toolPath, argv] = mockRunCjs.mock.calls[0];
+				expect(path.basename(toolPath)).toBe("artifact.cjs");
+				expect(argv[0]).toBe("write");
+				expect(argv[1]).toBe("task");
+				expect(argv[2]).toBe("FORGE-S26-T16");
+				expect(argv[3]).toBe("progress");
+				expect(argv[4]).toBe("# Hello"); // inline content
+			} finally {
+				rmDir(tmpDir);
+			}
+		});
+	});
+
+	describe("write command — @-file for large content (>=64KB)", () => {
+		it("dispatches @-prefixed temp file path for large content", async () => {
+			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-shim-large-${Date.now()}`);
+			try {
+				createTestProject(tmpDir);
+
+				const mockRunCjs = makeRunCjsMock({ stdout: "Wrote bytes to path/PROGRESS.md", stderr: "" });
+
+				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools", mockRunCjs);
+				const largeContent = "# Large\n" + "x".repeat(65 * 1024); // > 64KB
+				await artifact.execute(
+					"test-call",
+					{
+						command: "write",
+						entity: "task",
+						entityId: "FORGE-S26-T16",
+						artifact: "progress",
+						content: largeContent,
+					},
+					undefined,
+					undefined,
+					undefined as never,
+				);
+
+				expect(mockRunCjs).toHaveBeenCalledOnce();
+				const [, argv] = mockRunCjs.mock.calls[0];
+				expect(argv[4]).toMatch(/^@/); // @-prefixed temp file
+				const filePath = argv[4].slice(1);
+				expect(fs.existsSync(filePath)).toBe(false); // temp file cleaned up after execute
+			} finally {
+				rmDir(tmpDir);
+			}
+		});
+	});
+
+	describe("missing artifact argument", () => {
+		it("returns error when artifact is missing for read", async () => {
+			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-shim-no-art-${Date.now()}`);
+			try {
+				createTestProject(tmpDir);
+
+				const mockRunCjs = makeRunCjsMock({ stdout: "", stderr: "" });
+
+				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools", mockRunCjs);
+				const result = await artifact.execute(
+					"test-call",
+					{ command: "read", entity: "task", entityId: "FORGE-S26-T16" },
+					undefined,
+					undefined,
+					undefined as never,
+				);
+
+				// runCjs should NOT be called — error returned before dispatch
+				expect(mockRunCjs).not.toHaveBeenCalled();
+				expect((result as { isError?: boolean }).isError).toBe(true);
+			} finally {
+				rmDir(tmpDir);
+			}
+		});
+	});
+
+	describe("tool path: bug entity with slug-suffixed directory", () => {
+		it("dispatches with bug entity and ID — path resolution is delegated to plugin", async () => {
+			const tmpDir = path.join(process.env.TEMP ?? "/tmp", `forge-artifact-shim-bug-${Date.now()}`);
+			try {
+				createTestProject(tmpDir);
+
+				const mockRunCjs = makeRunCjsMock({
+					stdout: "Artifacts in engineering/bugs/FORGE-BUG-017-slug/:\n  triage → TRIAGE.md\n",
+					stderr: "",
+				});
+
+				const artifact = buildForgeArtifact(tmpDir, "engineering", "/fake/tools", mockRunCjs);
+				await artifact.execute(
+					"test-call",
+					{ command: "list", entity: "bug", entityId: "FORGE-BUG-017" },
+					undefined,
+					undefined,
+					undefined as never,
+				);
+
+				const [toolPath, argv] = mockRunCjs.mock.calls[0];
+				expect(path.basename(toolPath)).toBe("artifact.cjs");
+				expect(argv).toEqual(["list", "bug", "FORGE-BUG-017"]);
 			} finally {
 				rmDir(tmpDir);
 			}
