@@ -481,7 +481,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerRetrospective(pi);
 	registerCalibrate(pi, { forgeToolDefs }); // FORGE-S23-T08: orchestrator handler for drift detection + patch proposal
 	registerMaterialize(pi); // FORGE-S23-T09: Atomic handler — fill missing/stubbed artifacts
-	registerMigrate(pi); // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
+	registerMigrate(pi, { forgeToolDefs }); // FORGE-S23-T09: Hybrid handler — structural (subagent) + schema (runMigrations)
 	registerUpdateTools(pi); // FORGE-S23-T10: Atomic handler — copy bundled schemas to .forge/schemas/
 	registerStoreQuery(pi, { forgeRoot }); // FORGE-S23-T10: Atomic handler — store-cli query/nlp dispatch
 	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget

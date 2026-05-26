@@ -46,6 +46,7 @@ import * as path from "node:path";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { type ForgePersona, getFinalOutput, runForgeSubagent, type SubagentResult } from "./forge-subagent.js";
+import type { ForgeToolDefs } from "./forge-tools.js";
 import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ────────────────────────────────────────────────────────
@@ -341,7 +342,10 @@ export function defaultCuratorPersona(): ForgePersona {
  *   - emitting the canonical phase event AFTER this call returns,
  *     using its own captured runtime telemetry (Slice 2 contract).
  */
-export async function runSkillCurator(input: CuratorInput): Promise<CuratorResult> {
+export async function runSkillCurator(
+	input: CuratorInput,
+	forgeToolDefs?: ForgeToolDefs,
+): Promise<CuratorResult> {
 	// FORGE-S24-T12 — gated rollout. Default off ⇒ no subagent dispatch,
 	// no queue file write. Returns success with `written: 0` so the
 	// orchestrator's caller sees the same "no proposals" outcome as a
@@ -362,6 +366,7 @@ export async function runSkillCurator(input: CuratorInput): Promise<CuratorResul
 			task,
 			cwd: input.cwd,
 			exportTag: `${input.taskId}__skill-curator`,
+			customTools: forgeToolDefs ? Object.values(forgeToolDefs) : undefined,
 		});
 	} catch (err: unknown) {
 		const e = err as { message?: string };

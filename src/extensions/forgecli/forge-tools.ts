@@ -95,6 +95,8 @@ export interface ForgeToolDefs {
 	storeQuery: ToolDefinition;
 	verifyApply: ToolDefinition;
 	artifact: ToolDefinition;
+	preflight: ToolDefinition;
+	banner: ToolDefinition;
 }
 
 /**
@@ -132,6 +134,10 @@ no agent loop. Prefer them over shelling out.
   Never construct artifact paths manually — the tool resolves them from entity IDs.
 - Use \`forge_verify_apply\` after applying edits to confirm changes landed on disk.
   If \`unchanged\` is non-empty, re-apply those edits.
+- Use \`forge_preflight\` for pre-flight gate checks — do NOT shell out to preflight-gate.cjs.
+- Use \`forge_banner\` for phase banners — do NOT shell out to banners.cjs.
+- \`$FORGE_ROOT\` is already set in your environment. If you must use bash, reference
+  \`$FORGE_ROOT\` directly — do NOT resolve it via \`node -e "console.log(require(...)...)"\`.
 - Never \`bash node "$FORGE_ROOT/tools/store-cli.cjs" ...\` — use the named MCP tool instead.
   The tool is schema-validated and shorter.
 - Workflow text saying \`forge_store write sprint '<json>'\` means: call the MCP tool
@@ -166,6 +172,8 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 		storeQuery: buildForgeStoreQuery(toolDir, projectRoot),
 		verifyApply: buildForgeVerifyApply(toolDir, projectRoot),
 		artifact: buildForgeArtifact(projectRoot, engineeringPath, toolDir),
+		preflight: buildForgePreflight(toolDir, projectRoot),
+		banner: buildForgeBanner(toolDir, projectRoot),
 	};
 	for (const def of Object.values(defs)) {
 		pi.registerTool(def);
@@ -587,6 +595,81 @@ function buildForgeVerifyApply(toolDir: string, projectRoot: string): ToolDefini
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				return errResult(`forge_verify_apply failed: ${e.message ?? "unknown error"}`);
+			}
+		},
+	};
+}
+
+// ── forge_preflight ─────────────────────────────────────────────────────────
+
+function buildForgePreflight(toolDir: string, projectRoot: string): ToolDefinition {
+	return {
+		name: "forge_preflight",
+		label: "Forge Preflight Gate",
+		description:
+			"Run the pre-flight gate check for a phase. Wraps forge/tools/preflight-gate.cjs. " +
+			"Returns exit 0 if the phase is safe to proceed, exit 1 with a reason if blocked.",
+		promptSnippet:
+			"Use forge_preflight instead of shelling out to preflight-gate.cjs. " +
+			"Do NOT resolve $FORGE_ROOT manually — this tool handles it.",
+		parameters: Type.Object({
+			phase: Type.String({
+				description: "Phase name: plan, review-plan, implement, review-code, validate, approve, commit, writeback, triage.",
+			}),
+			task: Type.Optional(
+				Type.String({
+					description: "Task ID (e.g. HELLO-S01-T04). Required for task phases.",
+				}),
+			),
+			bug: Type.Optional(
+				Type.String({
+					description: "Bug ID (e.g. HELLO-B03). Required for bug phases.",
+				}),
+			),
+		}),
+		async execute(_toolCallId, _params, signal) {
+			const params = _params as { phase: string; task?: string; bug?: string };
+			const toolPath = path.join(toolDir, "preflight-gate.cjs");
+			const argv: string[] = ["--phase", params.phase];
+			if (params.task) argv.push("--task", params.task);
+			if (params.bug) argv.push("--bug", params.bug);
+
+			try {
+				const { stdout } = await runCjs(toolPath, argv, signal, 10_000, projectRoot);
+				return okResult(stdout || "Preflight passed.");
+			} catch (err: unknown) {
+				const e = err as { message?: string; stdout?: string };
+				return errResult(e.stdout || e.message || "Preflight gate failed.");
+			}
+		},
+	};
+}
+
+// ── forge_banner ────────────────────────────────────────────────────────────
+
+function buildForgeBanner(toolDir: string, projectRoot: string): ToolDefinition {
+	return {
+		name: "forge_banner",
+		label: "Forge Banner",
+		description:
+			"Display a decorative phase banner. Wraps forge/tools/banners.cjs. " +
+			"Available banners: ember, tide, oracle, rift, bloom, north, lumen, forge, drift, void, entelligentsia.",
+		promptSnippet: "Use forge_banner instead of shelling out to banners.cjs.",
+		parameters: Type.Object({
+			name: Type.String({
+				description: "Banner name (e.g. forge, ember, lumen).",
+			}),
+		}),
+		async execute(_toolCallId, _params, signal) {
+			const params = _params as { name: string };
+			const toolPath = path.join(toolDir, "banners.cjs");
+
+			try {
+				const { stdout } = await runCjs(toolPath, [params.name], signal, 5_000, projectRoot);
+				return okResult(stdout);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				return errResult(`forge_banner failed: ${e.message ?? "unknown error"}`);
 			}
 		},
 	};

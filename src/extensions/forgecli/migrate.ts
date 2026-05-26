@@ -18,6 +18,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getBundledPayloadRoot } from "./forge-init.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
 import { runHealthCheck } from "./health-check.js";
 import { runMigrations } from "./migration-engine.js";
 
@@ -89,6 +90,8 @@ function readBundledForgeVersion(bundleRoot: string): string {
 export interface RegisterMigrateOptions {
 	/** Override bundleRoot — for testing only. Production: always undefined (resolved via getBundledPayloadRoot). */
 	_testBundleRoot?: string;
+	/** Forge tool definitions for subagent injection. */
+	forgeToolDefs?: ForgeToolDefs;
 }
 
 export function registerMigrate(pi: ExtensionAPI, opts: RegisterMigrateOptions = {}): void {
@@ -137,7 +140,7 @@ export function registerMigrate(pi: ExtensionAPI, opts: RegisterMigrateOptions =
 
 			if (parsed.structural) {
 				// ── Structural branch ────────────────────────────────────────────────
-				await runStructuralMigration(cwd, forgeRoot, bundleRoot, ctx);
+				await runStructuralMigration(cwd, forgeRoot, bundleRoot, ctx, opts.forgeToolDefs);
 			} else {
 				// ── Schema branch ────────────────────────────────────────────────────
 				await runSchemaMigration(cwd, forgeRoot, bundleRoot, parsed.dryRun, ctx);
@@ -165,6 +168,7 @@ async function runStructuralMigration(
 	forgeRoot: string | undefined,
 	bundleRoot: string,
 	ctx: ExtensionCommandContext,
+	forgeToolDefs?: ForgeToolDefs,
 ): Promise<void> {
 	ctx.ui.setStatus?.("forge:migrate", "Structural migration — loading workflow…");
 
@@ -215,6 +219,7 @@ async function runStructuralMigration(
 		signal: ctx.signal,
 		forgeRoot,
 		modelRegistry: ctx.modelRegistry, // FORGE-BUG-001 followup
+		customTools: forgeToolDefs ? getSubagentTools(forgeToolDefs) : undefined,
 	});
 
 	if (result.exitCode !== 0) {
