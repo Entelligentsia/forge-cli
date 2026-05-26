@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-05-26
+
+### Added
+
+- **Task.summaries carry-forward between phases (forge-cli#19).** Each
+  downstream phase in `/forge:run-task` and `/forge:fix-bug` now receives a
+  compact "Prior phase summaries" block in its prompt, built from
+  `task.summaries` written by earlier phases. Gives downstream personas
+  the gist (objective, verdict, key changes, artifact ref) before they
+  decide whether to re-read full artifacts from disk. Verified: review
+  phases skip artifact re-reads entirely when summaries are sufficient.
+- **carry_forward_injected debug log entry.** Logs the full summaries
+  block to the per-task debug JSONL for observability and verification.
+
+### Changed
+
+- Bundled forge-plugin updated to v0.51.4 (meta-enhance rejections sidecar
+  path fix, update.md config refresh fix, manage-config backfill).
+
 ## [0.20.3] — 2026-05-25
 
 ### Fixed
