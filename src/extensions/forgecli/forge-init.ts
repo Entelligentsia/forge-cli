@@ -490,24 +490,6 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				}
 			}
 
-			// ── post-init: emit synthetic event for registered hooks (FORGE-S21-T04) ──
-			// Replaces the old sentinel-writing stub. The init-complete event is
-			// consumed by hooks/post-init-hook.ts which handles idempotency,
-			// materialization-marker checks, audience gates, and dispatch.
-			// Errors inside hooks are caught by emitSyntheticEvent — fail-open.
-			{
-				// Use configCache — valid for both full-run and resumed-init paths.
-				// configCache is populated once (after Phase 1 completes or from pre-existing
-				// config.json for resumed inits). Non-fatal if cache is empty (empty prefix
-				// causes hook to write sentinel under post-init-fired-.json).
-				let projectPrefixForHook = "";
-				const projForHook = configCache.project as Record<string, unknown> | undefined;
-				if (projForHook && typeof projForHook.prefix === "string") {
-					projectPrefixForHook = projForHook.prefix;
-				}
-				await emitSyntheticEvent({ type: "init-complete", projectPrefix: projectPrefixForHook, cwd }, ctx);
-			}
-
 			// ── Report ────────────────────────────────────────────────────────
 			// FIX BUG-020: use configCache here (populated from config.json after Phase 1
 			// or from pre-existing config.json for resumed inits starting at Phase 2+).
@@ -590,9 +572,9 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				healthSection,
 				``,
 				`Next steps:`,
-				`  1. Run /forge:sprint-intake to start your first sprint`,
-				`  2. Run /forge:health anytime to check project health`,
-				`  3. Run /forge:refresh-kb-links to update agent instruction file links`,
+				`  1. Run /forge:new-sprint to start your first sprint`,
+				`  2. Run /forge:status to see sprint and task summary`,
+				`  3. Run /forge:health anytime to check project health`,
 				``,
 				`Note: Marketplace skills auto-recommendation is Claude-Code-only.`,
 				`Pi users install extensions manually.`,
@@ -607,6 +589,19 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			].join("\n");
 
 			await sendToAgent(report);
+
+			// ── post-init: emit synthetic event for registered hooks (FORGE-S21-T04) ──
+			// Fires AFTER the report so the user sees the summary before enhancement
+			// or other hook-triggered workflows begin.
+			// Errors inside hooks are caught by emitSyntheticEvent — fail-open.
+			{
+				let projectPrefixForHook = "";
+				const projForHook = configCache.project as Record<string, unknown> | undefined;
+				if (projForHook && typeof projForHook.prefix === "string") {
+					projectPrefixForHook = projForHook.prefix;
+				}
+				await emitSyntheticEvent({ type: "init-complete", projectPrefix: projectPrefixForHook, cwd }, ctx);
+			}
 		},
 	});
 }

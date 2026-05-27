@@ -105,17 +105,14 @@ export async function runPhase1(
 	// Verify
 	let result = await verifyPhase1(cwd);
 
-	// Retry once on failure
+	// Retry once on failure (silent — first failure is expected when waitForIdle
+	// resolves before the agent finishes; no warning to avoid confusing the user)
 	if (!result.ok) {
 		const retrySteer =
 			`Phase 1 verification failed. Missing: ${result.missing.join(", ")}.\n\n` +
 			`Please fix .forge/config.json so it contains all required fields: ` +
 			`version, project.name, project.prefix, stack, commands, ` +
 			`paths.engineering, paths.store, paths.workflows.`;
-		ctx.ui.notify(
-			`△ Phase 1 deliverable incomplete: ${result.missing.join(", ")} — retrying with corrective steer.`,
-			"warning",
-		);
 		await sendToAgent(retrySteer);
 		await waitForIdle();
 		result = await verifyPhase1(cwd);
@@ -251,15 +248,12 @@ export async function runPhase2(
 	// Verify
 	let result = await verifyPhase2(cwd, kbPath);
 
-	// Retry once on failure
+	// Retry once on failure (silent — first failure is expected when waitForIdle
+	// resolves before the agent finishes; no warning to avoid confusing the user)
 	if (!result.ok) {
 		const retrySteer =
 			`Phase 2 verification failed. Missing KB docs: ${result.missing.join(", ")}.\n\n` +
 			`Please generate the missing knowledge-base documents under ${kbPath}/architecture/.`;
-		ctx.ui.notify(
-			`△ Phase 2 deliverable incomplete: ${result.missing.join(", ")} — retrying with corrective steer.`,
-			"warning",
-		);
 		await sendToAgent(retrySteer);
 		await waitForIdle();
 		result = await verifyPhase2(cwd, kbPath);
@@ -357,30 +351,18 @@ export async function runPhase3(
 	const buildOverlayTool = path.join(toolsRoot, "build-overlay.cjs");
 	const basePackDir = path.join(bundleRoot, ".base-pack");
 
-	// 3a: build-init-context.cjs first build
-	if (fs.existsSync(buildInitContextTool)) {
-		await runToolAdvisory(
-			buildInitContextTool,
-			[
-				"--config",
-				path.join(cwd, ".forge", "config.json"),
-				"--personas",
-				path.join(cwd, ".forge", "personas"),
-				"--templates",
-				path.join(cwd, ".forge", "templates"),
-				"--out",
-				path.join(cwd, ".forge", "init-context.md"),
-				"--json-out",
-				path.join(cwd, ".forge", "init-context.json"),
-			],
-			cwd,
-			ctx,
-			"build-init-context",
-			30000,
-		);
+	// Resolve KB path from config (Phase 1 wrote it)
+	let kbPath = "engineering";
+	try {
+		const cfg = JSON.parse(fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"));
+		if (cfg?.paths?.engineering) kbPath = cfg.paths.engineering;
+	} catch {
+		// fall back to default
 	}
 
-	// 3b: substitute-placeholders.cjs — base-pack materialisation
+	// 3a: substitute-placeholders.cjs — base-pack materialisation
+	// Runs first: creates .forge/personas/, .forge/skills/, .forge/workflows/,
+	// .forge/templates/ from the base-pack. Subsequent tools depend on these.
 	if (fs.existsSync(substituteTool) && fs.existsSync(basePackDir)) {
 		await runToolAdvisory(
 			substituteTool,
@@ -392,7 +374,7 @@ export async function runPhase3(
 				"--config",
 				path.join(cwd, ".forge", "config.json"),
 				"--context",
-				path.join(cwd, ".forge", "init-context.json"),
+				path.join(cwd, ".forge", "project-context.json"),
 				"--out",
 				cwd,
 			],
@@ -403,15 +385,28 @@ export async function runPhase3(
 		);
 	}
 
-	// 3c: build-overlay.cjs smoke test (exit 1 is advisory)
-	if (fs.existsSync(buildOverlayTool)) {
+	// 3b: build-init-context.cjs — needs personas/ and templates/ from 3a
+	if (fs.existsSync(buildInitContextTool)) {
 		await runToolAdvisory(
-			buildOverlayTool,
-			["--task", "INIT-SMOKE-TEST", "--format", "json"],
+			buildInitContextTool,
+			[
+				"--config",
+				path.join(cwd, ".forge", "config.json"),
+				"--personas",
+				path.join(cwd, ".forge", "personas"),
+				"--templates",
+				path.join(cwd, ".forge", "templates"),
+				"--kb",
+				path.join(cwd, kbPath),
+				"--out",
+				path.join(cwd, ".forge", "init-context.md"),
+				"--json-out",
+				path.join(cwd, ".forge", "init-context.json"),
+			],
 			cwd,
 			ctx,
-			"build-overlay smoke (advisory)",
-			15000,
+			"build-init-context",
+			30000,
 		);
 	}
 
