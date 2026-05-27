@@ -83,26 +83,14 @@ describe("registerForgeCommands", () => {
 		const pi = makePi();
 		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
 
-		// 2 real commands + 7 old-name redirects + 5 removed-command stubs = 14
-		expect(pi.registerCommand).toHaveBeenCalledTimes(14);
+		// 2 real commands + 1 removed-command stub = 3
+		expect(pi.registerCommand).toHaveBeenCalledTimes(3);
 		const names = Array.from(pi.commands.keys()).sort();
 		// Core commands
 		expect(names).toContain("forge:ask");
 		expect(names).toContain("forge:health");
-		// Old-name redirect stubs
-		expect(names).toContain("forge:sprint-intake");
-		expect(names).toContain("forge:sprint-plan");
-		expect(names).toContain("forge:retrospective");
-		expect(names).toContain("forge:regenerate");
-		expect(names).toContain("forge:store-query");
-		expect(names).toContain("forge:store-repair");
-		expect(names).toContain("forge:quiz-agent");
-		// Removed-command stubs
-		expect(names).toContain("forge:update-tools");
+		// Removed-command stub (only forge:materialize remains)
 		expect(names).toContain("forge:materialize");
-		expect(names).toContain("forge:enhance");
-		expect(names).toContain("forge:calibrate");
-		expect(names).toContain("forge:migrate");
 		expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function));
 		expect(pi.beforeAgentStart).not.toBeNull();
 	});
@@ -297,19 +285,19 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		expect(__test__.REAL_HANDLERS.has("forge:search")).toBe(true);
 		expect(__test__.REAL_HANDLERS.has("forge:repair")).toBe(true);
 		expect(__test__.REAL_HANDLERS.has("forge:check-agent")).toBe(true);
-		// v1.0 old names still present as deprecated redirect stubs
-		expect(__test__.REAL_HANDLERS.has("forge:sprint-intake")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:sprint-plan")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:retrospective")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:regenerate")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:store-query")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:store-repair")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:quiz-agent")).toBe(true);
-		// v1.0 removed commands present as stubs
-		expect(__test__.REAL_HANDLERS.has("forge:update-tools")).toBe(true);
+		// Deprecated old-name redirects removed — only forge:materialize stub remains
+		expect(__test__.REAL_HANDLERS.has("forge:sprint-intake")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:sprint-plan")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:retrospective")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:regenerate")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:store-query")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:store-repair")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:quiz-agent")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:update-tools")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:enhance")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:calibrate")).toBe(false);
+		expect(__test__.REAL_HANDLERS.has("forge:migrate")).toBe(false);
+		// forge:materialize still present as a removed-command stub
 		expect(__test__.REAL_HANDLERS.has("forge:materialize")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:enhance")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:calibrate")).toBe(true);
-		expect(__test__.REAL_HANDLERS.has("forge:migrate")).toBe(true);
 	});
 });

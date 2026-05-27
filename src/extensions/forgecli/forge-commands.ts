@@ -185,133 +185,10 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 	// registerStatusCommand (FORGE-S23-T10). Removed delegateMarkdownCommand
 	// stub. forge:status stays in EXPLICITLY_REGISTERED_NAMES below.
 
-	// ── v1.0 old-name redirect stubs (FORGE-S26-T10) ─────────────────────────
-	// Old command names emit a redirect error pointing at the new name.
-	// Registered here so they show up in /help but never conflict with
-	// the new real handlers (registered by their respective modules in index.ts).
-
-	pi.registerCommand("forge:sprint-intake", {
-		description: "Deprecated — use /forge:new-sprint",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:sprint-intake was renamed in v1.0. Use /forge:new-sprint.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:sprint-plan", {
-		description: "Deprecated — use /forge:plan-sprint",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:sprint-plan was renamed in v1.0. Use /forge:plan-sprint.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:retrospective", {
-		description: "Deprecated — use /forge:retro",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:retrospective was renamed in v1.0. Use /forge:retro.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:regenerate", {
-		description: "Deprecated — use /forge:rebuild",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:regenerate was renamed in v1.0. Use /forge:rebuild.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:store-query", {
-		description: "Deprecated — use /forge:search",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:store-query was renamed in v1.0. Use /forge:search.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:store-repair", {
-		description: "Deprecated — use /forge:repair",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:store-repair was renamed in v1.0. Use /forge:repair.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:quiz-agent", {
-		description: "Deprecated — use /forge:check-agent",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:quiz-agent was renamed in v1.0. Use /forge:check-agent.",
-				"error",
-			);
-		},
-	});
-
 	// ── v1.0 removed command stubs (FORGE-S26-T10) ───────────────────────────
 	// Commands removed in v1.0 emit a deprecation error with migration guidance.
-
-	pi.registerCommand("forge:update-tools", {
-		description: "Removed in v1.0",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:update-tools was removed in v1.0. Schema refresh is now automatic — run /forge:update.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:materialize", {
-		description: "Removed in v1.0",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:materialize was removed in v1.0. Forge now generates full artifacts on init.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:enhance", {
-		description: "Removed in v1.0",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:enhance was removed in v1.0. Use /forge:rebuild --enrich.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:calibrate", {
-		description: "Removed in v1.0",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:calibrate was removed in v1.0. Use /forge:health --fix.",
-				"error",
-			);
-		},
-	});
-
-	pi.registerCommand("forge:migrate", {
-		description: "Removed in v1.0",
-		async handler(_args, ctx) {
-			ctx.ui.notify(
-				"× /forge:migrate was removed in v1.0. Use /forge:init --migrate.",
-				"error",
-			);
-		},
-	});
+	// Deprecated rename/removal redirects fully removed — old names are now
+	// unknown commands. See docs/migration/v0-to-v1.md for the mapping.
 }
 
 // ── Phase G: registerAllForgeCommands (FORGE-S17-T02) ─────────────────────
@@ -363,20 +240,6 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:search", // FORGE-S23-T10 → renamed from forge:store-query (FORGE-S26-T10)
 	"forge:repair", // FORGE-S23-T11 → renamed from forge:store-repair (FORGE-S26-T10)
 	"forge:check-agent", // FORGE-S23-T11 → renamed from forge:quiz-agent (FORGE-S26-T10)
-	// v1.0 deprecated old names — stubs registered in registerForgeCommands (FORGE-S26-T10)
-	"forge:sprint-intake", // deprecated redirect → forge:new-sprint
-	"forge:sprint-plan", // deprecated redirect → forge:plan-sprint
-	"forge:retrospective", // deprecated redirect → forge:retro
-	"forge:regenerate", // deprecated redirect → forge:rebuild
-	"forge:store-query", // deprecated redirect → forge:search
-	"forge:store-repair", // deprecated redirect → forge:repair
-	"forge:quiz-agent", // deprecated redirect → forge:check-agent
-	// v1.0 removed commands — deprecation stubs registered in registerForgeCommands (FORGE-S26-T10)
-	"forge:update-tools", // removed in v1.0 — stub in registerForgeCommands
-	"forge:materialize", // removed in v1.0 — stub in registerForgeCommands
-	"forge:enhance", // removed in v1.0 — stub in registerForgeCommands
-	"forge:calibrate", // removed in v1.0 — stub in registerForgeCommands
-	"forge:migrate", // removed in v1.0 — stub in registerForgeCommands
 	"forge:plan", // FORGE-S20-T05: real handler registered in plan.ts
 	"forge:implement", // FORGE-S20-T06: real handler registered in implement.ts
 	"forge:read", // Real handler registered in index.ts
