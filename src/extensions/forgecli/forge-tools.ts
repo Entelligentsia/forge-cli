@@ -502,14 +502,14 @@ function buildForgeStoreQuery(toolDir: string, projectRoot: string): ToolDefinit
 		name: "forge_store_query",
 		label: "Forge Store Query",
 		description:
-			"Query the Forge store. Wraps `store-cli.cjs` query/nlp/schema dispatch (which delegates to store-query.cjs). " +
+			"Search / find / query the Forge store. Wraps `store-cli.cjs` query/nlp/schema dispatch (which delegates to store-query.cjs). " +
 			"Use `nlp` for natural-language intent (e.g. 'open bugs in S12', 'blocked tasks'); " +
 			"`query` with flag args for structured filters (--sprint, --task, --bug, --feature, --status, --keyword, " +
 			"--with-blockers, --with-blocked-tasks, --with-sprint, --with-feature, --no-excerpts, --list-sprints, --mode auto|strict|off); " +
 			"`schema` for the project schema and grammar reference (entity ID patterns, status enums, FKs, synonyms).",
 		promptSnippet:
-			'Use forge_store_query nlp "<intent>" to find tasks/bugs/sprints/features by natural language, ' +
-			"or forge_store_query schema for entity/status/FK reference, before constructing query args.",
+			'Use forge_store_query to search the store. nlp "<intent>" finds tasks/bugs/sprints/features by natural language; ' +
+			"schema returns entity/status/FK reference; query with flags for structured filters.",
 		parameters: Type.Object({
 			command: Type.Union([Type.Literal("query"), Type.Literal("nlp"), Type.Literal("schema")], {
 				description:

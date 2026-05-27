@@ -78,6 +78,7 @@ import { emitSyntheticEvent } from "./hook-dispatcher.js";
 import { discoverProjectName } from "./init-context.js";
 import { deleteInitProgress, readInitProgress } from "./init-progress.js";
 import { execFileAsync } from "./lib/exec-helpers.js";
+import { clearForgeConfigCache } from "./lib/forge-config.js";
 // FORGE-S26-T11: registerMigrate imported to power `forge:init --migrate`
 import { registerMigrate } from "./migrate.js";
 
@@ -474,6 +475,9 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				// phase4Result.kbPathFinal is used in the post-init report below
 				kbPathFinal = phase4Result.kbPathFinal;
 			}
+
+			// ── Invalidate forge-config cache so same-session commands find the new project
+			clearForgeConfigCache();
 
 			// ── Post-Phase-4: health check ────────────────────────────────────
 			ctx.ui.setStatus?.("forge:init", "Post-init: health check");
