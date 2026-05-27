@@ -76,7 +76,6 @@ export async function runPhase1(
 	cwd: string,
 	bundleRoot: string,
 	toolsRoot: string,
-	projectName: string,
 	configCache: Record<string, unknown>,
 	ctx: ExtensionCommandContext,
 	sendToAgent: (text: string) => Promise<void>,

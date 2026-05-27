@@ -371,7 +371,9 @@ function runStructuralReadinessCheck(projectRoot: string, bundledVersion: string
 // ── Registration ──────────────────────────────────────────────────────────
 
 export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: ForgeToolDefs } = {}): void {
-	const sendToAgent = (text: string) => pi.sendUserMessage(text, { deliverAs: "steer" });
+	const sendToAgent = async (text: string) => {
+		await pi.sendUserMessage(text, { deliverAs: "steer" });
+	};
 
 	pi.registerCommand("forge:calibrate", {
 		description:
@@ -571,9 +573,10 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 			for (const patch of approvedPatches) {
 				ctx.ui.notify(`  → Regenerating ${patch.target}...`, "info");
 				try {
-					// Delegate to LLM via steer channel — waitForIdle() ensures regeneration
-					// completes before we record history (F2 from plan review).
-					sendToAgent(
+					// Delegate to LLM via steer channel. sendToAgent is awaited (resolves after
+					// agent completes when idle; enqueues steer when streaming). waitForIdle covers
+					// the streaming case and is a no-op when idle (F2 from plan review).
+					await sendToAgent(
 						`Run /forge:regenerate for target: ${patch.target}\n\n` +
 							`Regenerate the Forge knowledge base target: ${patch.target}\n` +
 							`Project root: ${projectRoot}`,

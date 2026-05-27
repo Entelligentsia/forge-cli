@@ -1,9 +1,8 @@
-// forge-init/phase4-register.ts — Phase 4 Register extraction (FORGE-S25-T24, B-5)
+// forge-init/phase4-register.ts — Phase 4 Register (FORGE-S25-T24, B-5)
 //
-// Encapsulates Steps 4-1 through 4-11 from the original forge-init.ts Phase 4 block.
-// Phase 4 is heterogeneous (11 deterministic FS/tool/git steps, no LLM dispatch) and
-// is too complex for the generic LlmPhaseDescriptor runner. It is extracted as a
-// standalone async function.
+// Encapsulates Steps 4-1 through 4-11 from the init pipeline.
+// Phase 4 is heterogeneous (11 deterministic FS/tool/git steps, no LLM dispatch)
+// and is extracted as a standalone async function.
 //
 // Key contract:
 //   - Returns `Phase4Result { kbPathFinal }` on success — caller reads kbPathFinal for

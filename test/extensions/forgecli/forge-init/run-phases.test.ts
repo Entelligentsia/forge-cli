@@ -113,7 +113,7 @@ describe("runPhase1", () => {
 	it("returns 'ok' when verify passes", async () => {
 		const ctx = makeCtx();
 		const result = await runPhase1(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
+			tmpDir, tmpDir, tmpDir, {}, ctx as never,
 			sendToAgent, waitForIdle, () => true,
 		);
 		expect(result).toBe("ok");
@@ -123,7 +123,7 @@ describe("runPhase1", () => {
 		// phase-1-collect.md already created in beforeEach
 		const ctx = makeCtx();
 		await runPhase1(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
+			tmpDir, tmpDir, tmpDir, {}, ctx as never,
 			sendToAgent, waitForIdle, () => true,
 		);
 		expect(sendToAgent).toHaveBeenCalledWith(expect.stringContaining("Phase 1"));
@@ -133,7 +133,7 @@ describe("runPhase1", () => {
 		mockVerifyPhase1.mockResolvedValue({ ok: false, missing: ["version"] });
 		const ctx = makeCtx();
 		const result = await runPhase1(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
+			tmpDir, tmpDir, tmpDir, {}, ctx as never,
 			sendToAgent, waitForIdle, () => true,
 		);
 		expect(result).toBe("abort");
@@ -149,7 +149,7 @@ describe("runPhase1", () => {
 
 		const ctx = makeCtx();
 		const result = await runPhase1(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
+			tmpDir, tmpDir, tmpDir, {}, ctx as never,
 			sendToAgent, waitForIdle, () => true,
 		);
 
@@ -161,7 +161,7 @@ describe("runPhase1", () => {
 	it("calls writeInitProgress(cwd, 1) on success", async () => {
 		const ctx = makeCtx();
 		await runPhase1(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
+			tmpDir, tmpDir, tmpDir, {}, ctx as never,
 			sendToAgent, waitForIdle, () => true,
 		);
 		expect(mockWriteInitProgress).toHaveBeenCalledWith(tmpDir, 1);
@@ -173,7 +173,7 @@ describe("runPhase1", () => {
 		const emptyBundleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rp-empty-"));
 		try {
 			const result = await runPhase1(
-				tmpDir, emptyBundleRoot, emptyBundleRoot, "TestProject", {}, ctx as never,
+				tmpDir, emptyBundleRoot, emptyBundleRoot, {}, ctx as never,
 				sendToAgent, waitForIdle, () => true,
 			);
 			expect(result).toBe("abort");

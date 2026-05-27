@@ -74,7 +74,7 @@ vi.mock("../../../src/extensions/forgecli/refresh-kb-links.js", () => ({
 // writeInitProgress side-effect is NOT simulated here — bug-021 is updated below
 // to reflect that writeInitProgress(cwd, N) is called inside runPhase{N}() not forge-init.ts.
 vi.mock("../../../src/extensions/forgecli/forge-init/run-phases.js", () => ({
-	runPhase1: vi.fn(async (_cwd: string, _br: string, _tr: string, _pn: string, _cc: unknown, ctx: { ui: { notify: (m: string, l: string) => void } }) => {
+	runPhase1: vi.fn(async (_cwd: string, _br: string, _tr: string, _cc: unknown, ctx: { ui: { notify: (m: string, l: string) => void } }) => {
 		ctx.ui.notify("〇 Phase 1 complete.", "info");
 		return "ok";
 	}),
@@ -976,7 +976,7 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			// forge-init.ts must pass the real ctx to runPhase1 (which owns the KB folder confirm)
 			expect(mockRunPhase1).toHaveBeenCalled();
 			// The ctx object passed to runPhase1 should be the same ctx
-			const ctxArg = mockRunPhase1.mock.calls[0]?.[5];
+			const ctxArg = mockRunPhase1.mock.calls[0]?.[4];
 			expect(ctxArg).toBeDefined();
 			expect(typeof ctxArg?.ui?.confirm).toBe("function");
 		});
@@ -1028,7 +1028,7 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			await handler("", ctx);
 			// forge-init.ts must pass isNonInteractive() callback to runPhase1
 			expect(mockRunPhase1).toHaveBeenCalled();
-			const isNonInteractiveArg = mockRunPhase1.mock.calls[0]?.[8];
+			const isNonInteractiveArg = mockRunPhase1.mock.calls[0]?.[7];
 			expect(typeof isNonInteractiveArg).toBe("function");
 		});
 

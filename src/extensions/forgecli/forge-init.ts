@@ -8,15 +8,14 @@
 //
 // Per INIT_PARITY_SPEC.md and PLAN.md (rev 2) phases A–G.
 //
-// ── Descriptor model (FORGE-S25-T24, B-5) ────────────────────────────────
+// ── Phase model (FORGE-S26-T17) ──────────────────────────────────────────
 //
-// Phases 1–3 are driven by LlmPhaseDescriptor records (forge-init/phase-descriptors.ts).
-// All three phases use runDeterministic for explicit multi-step orchestration.
-// Phases 1–2 issue sequential sendToAgent/waitForIdle sub-steps with intermediate
-// verification. Phase 3 runs pure tool calls without LLM dispatch.
+// Phases 1–3 are standalone async functions in forge-init/run-phases.ts.
+// Each reads its phase prompt from the bundled init/phases/phase-N-*.md file,
+// dispatches via sendToAgent + waitForIdle (phases 1-2) or runs tools directly
+// (phase 3), then verifies deliverables via verify-phase.cjs.
 //
-// Phase 4 (11 deterministic steps) is too heterogeneous for the generic runner and is
-// extracted into forge-init/phase4-register.ts → runPhase4().
+// Phase 4 is in forge-init/phase4-register.ts → runPhase4().
 //
 // This file is the orchestrator: flag parsing, resume detection, configCache population
 // (between Phase 1 and Phase 2), phase loop, post-init report.
@@ -391,7 +390,6 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					cwd,
 					bundleRoot,
 					toolsRoot,
-					projectName,
 					configCache,
 					ctx,
 					sendToAgent,
