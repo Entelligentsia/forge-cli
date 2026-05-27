@@ -1,8 +1,8 @@
 // forge-init.ts — /forge:init command handler — FORGE-S17-T02
 //
 // Full 4-phase init flow:
-//   Phase 1 — Collect: 5 parallel discovery scans → .forge/config.json
-//   Phase 2 — Discover: 7 parallel KB doc generation + project-context.json
+//   Phase 1 — Collect: multi-step discovery + config.json synthesis → .forge/config.json
+//   Phase 2 — Discover: phase gate + KB doc generation + index files → engineering/
 //   Phase 3 — Materialize: substitute-placeholders → .forge/{personas,skills,workflows,templates}
 //   Phase 4 — Register: 11 deterministic steps → versioning, packs, store, Tomoshibi
 //
@@ -11,9 +11,9 @@
 // ── Descriptor model (FORGE-S25-T24, B-5) ────────────────────────────────
 //
 // Phases 1–3 are driven by LlmPhaseDescriptor records (forge-init/phase-descriptors.ts).
-// The generic runLlmPhase() runner executes the shared skeleton:
-//   banner → [LLM dispatch + waitForIdle (Phases 1–2)] | [tool calls (Phase 3)]
-//         → verify → [retry steer (Phases 1–2)] → [user confirm] → postVerify → progress
+// All three phases use runDeterministic for explicit multi-step orchestration.
+// Phases 1–2 issue sequential sendToAgent/waitForIdle sub-steps with intermediate
+// verification. Phase 3 runs pure tool calls without LLM dispatch.
 //
 // Phase 4 (11 deterministic steps) is too heterogeneous for the generic runner and is
 // extracted into forge-init/phase4-register.ts → runPhase4().
@@ -33,21 +33,28 @@
 //   #5: Tomoshibi — runRefreshKbLinks() native TS port; no shell-out
 //   #9: Health check — runHealthCheck() direct call; NOT via sendUserMessage
 //
-// ── Async/sync contract (N-B-C) ─────────────────────────────────────────────
+// ── Async/sync contract (N-B-C, revised 2026-05-26) ──────────────────────────
 //
-// `sendToAgent(text)` is SYNCHRONOUS — it wraps `pi.sendUserMessage(text, { deliverAs: "steer" })`
-// which enqueues the steer message and returns immediately. The agent does NOT start running
-// until the current handler yields (awaits).
+// `await sendToAgent(text)` sends a prompt to the agent and resolves when the agent
+// has finished processing it. It wraps `pi.sendUserMessage(text, { deliverAs: "steer" })`.
 //
-// `await ctx.waitForIdle()` is the SOLE synchronisation primitive. It suspends the handler
-// until the agent has finished processing all pending steer messages and has reached an
-// idle state. All reads of phase deliverables (e.g. `.forge/config.json` for Phase 1,
-// KB docs for Phase 2, `.forge/workflows/` for Phase 3) MUST occur AFTER a `waitForIdle`.
+// When the agent is IDLE (the common case at init start): sendUserMessage calls
+// session.prompt(), which starts a full agent turn via agent.prompt(). Awaiting it
+// blocks until that turn completes, including all tool calls and follow-ups.
+//
+// When the agent is STREAMING (mid-turn): sendUserMessage enqueues a steer message
+// and resolves quickly — the steer is picked up by the running turn's steering poll.
+// In this case `await ctx.waitForIdle()` IS needed afterwards to wait for the turn
+// (including the steer) to finish.
+//
+// Both awaits are always issued: `await sendToAgent` covers the idle-agent path;
+// `await waitForIdle` covers the streaming-agent path and is a harmless no-op when
+// the agent already completed its turn via sendToAgent.
 //
 // Pattern for every phase:
-//   sendToAgent(promptText);       // enqueue — synchronous
-//   await ctx.waitForIdle();       // suspend until agent completes — asynchronous
-//   const result = verifyPhaseN(); // read deliverable — synchronous
+//   await sendToAgent(promptText);  // dispatch + wait for completion when idle
+//   await waitForIdle();           // wait for current turn when streaming; no-op when idle
+//   const result = verifyPhaseN();  // read deliverable — agent is done
 //
 // ── Config cache boundary (B-4, N-B-A) ──────────────────────────────────────
 //
@@ -64,14 +71,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { PHASE_1, PHASE_2, PHASE_3, runLlmPhase } from "./forge-init/phase-descriptors.js";
 import { runPhase4 } from "./forge-init/phase4-register.js";
+import { runPhase1, runPhase2, runPhase3 } from "./forge-init/run-phases.js";
 import { verifyPhase1, verifyPhase3 } from "./forge-init/verifiers.js";
 import { runHealthCheck } from "./health-check.js";
 import { emitSyntheticEvent } from "./hook-dispatcher.js";
 import { discoverProjectName } from "./init-context.js";
 import { deleteInitProgress, readInitProgress } from "./init-progress.js";
-import { execFileAsync, runTool } from "./lib/exec-helpers.js";
+import { execFileAsync } from "./lib/exec-helpers.js";
 // FORGE-S26-T11: registerMigrate imported to power `forge:init --migrate`
 import { registerMigrate } from "./migrate.js";
 
@@ -212,11 +219,19 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 	// Capture pi.sendUserMessage in closure — ExtensionCommandContext does not
 	// have sendUserMessage; it is on ExtensionAPI per pi types.ts:1187.
 	//
-	// FIX BUG-017 / BUG-023: all sendUserMessage calls during a command handler
-	// execution (which is itself an active agent turn) MUST carry deliverAs: "steer"
-	// to avoid the "Agent is already processing" runtime error. The command handler
-	// runs inside a turn boundary; raw sendUserMessage() without deliverAs throws.
-	const sendToAgent = (text: string) => pi.sendUserMessage(text, { deliverAs: "steer" });
+	// sendToAgent MUST be awaited. When the agent is idle (the typical case for
+	// /forge:init), sendUserMessage starts a full agent turn and resolves when it
+	// completes. When the agent is streaming, sendUserMessage enqueues a steer and
+	// resolves quickly — waitForIdle is then needed to wait for the turn to finish.
+	//
+	// Previous bug (BUG-017/BUG-023 workaround was incomplete): sendToAgent was
+	// fire-and-forget (no await), and waitForIdle was the sole sync primitive.
+	// But waitForIdle() returns Promise.resolve() when agent.activeRun is null
+	// (no active turn), which is the state at init start — the steer hadn't been
+	// picked up yet, so everything after waitForIdle fired instantly.
+	const sendToAgent = async (text: string) => {
+		await pi.sendUserMessage(text, { deliverAs: "steer" });
+	};
 
 	pi.registerCommand("forge:init", {
 		description: "Bootstrap a new Forge SDLC project at the current working directory",
@@ -332,13 +347,12 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				const preflightSummary =
 					`Forge Init — ${projectName}\n\n` +
 					`4 phases will run in this session (~45 seconds non-interactive):\n\n` +
-					`  1   Collect      — 5 parallel discovery scans → config.json\n` +
+					`  1   Collect      — codebase discovery → config.json\n` +
 					`                     KB folder prompt (interactive)\n` +
-					`  2   Discover     — KB doc generation (LLM fan-out) + project-context.json\n` +
+					`  2   Discover     — KB doc generation + project-context.json\n` +
 					`  3   Materialize  — substitute-placeholders.cjs → fully functional workflows\n` +
 					`  4   Register     — versioning, manifest, cache, store entries, Tomoshibi\n\n` +
-					`Phase 1 is interactive (KB folder name prompt). Phases 2–4 are non-interactive\n` +
-					`and complete in under 45 seconds.`;
+					`Phase 1 is interactive (KB folder name prompt). Phases 2–4 are non-interactive.`;
 
 				// G2: skip pre-flight confirm in non-interactive mode (proceed directly to Phase 1)
 				if (!isNonInteractive()) {
@@ -367,47 +381,79 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				// File not yet present — Phase 1 will create it
 			}
 
-			// ── Phases 1–3: descriptor-driven loop ──────────────────────────────
-			// Each phase is described by an LlmPhaseDescriptor (forge-init/phase-descriptors.ts).
-			// The generic runLlmPhase() runner handles: banner, LLM dispatch / deterministic
-			// tool execution, verify, retry steer, user confirm, postVerify, writeInitProgress.
-			const PHASES = [PHASE_1, PHASE_2, PHASE_3];
-			for (const desc of PHASES) {
-				if (startPhase > desc.phaseNum) {
-					// Resume path: skip phases already completed
-					continue;
-				}
+			// ── Phases 1–3: linear phase calls ──────────────────────────────────
+			// Each phase is a standalone async function in forge-init/run-phases.ts.
+			// (FORGE-S26-T17: replaced descriptor-driven loop with explicit calls.)
 
-				const phaseResult = await runLlmPhase(
-					desc,
-					ctx,
+			// Phase 1 — Collect
+			if (startPhase <= 1) {
+				const phase1Result = await runPhase1(
 					cwd,
 					bundleRoot,
 					toolsRoot,
 					projectName,
 					configCache,
+					ctx,
 					sendToAgent,
 					() => ctx.waitForIdle(),
 					isNonInteractive,
 				);
+				if (phase1Result === "abort") return;
 
-				if (phaseResult === "abort") {
-					return;
-				}
-
-				// Refresh configCache after Phase 1 writes .forge/config.json so
-				// Phase 2, Phase 4, and the post-init report see the values the
-				// Phase-1 agent just produced.
-				if (desc.phaseNum === 1) {
-					try {
-						configCache = JSON.parse(fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8")) as Record<
-							string,
-							unknown
-						>;
-					} catch {
-						// Fall back to existing cache — all downstream reads have their own defaults
+				// Inter-phase gate: let user review before Phase 2
+				if (!isNonInteractive()) {
+					const proceed = await ctx.ui.confirm(
+						"Phase 1 complete — proceed?",
+						"Phase 1 deliverables verified. Continue to Phase 2: Discover (KB generation)?",
+					);
+					if (!proceed) {
+						ctx.ui.notify("〇 /forge:init paused after Phase 1. Re-run /forge:init to resume.", "info");
+						return;
 					}
 				}
+
+				// Refresh configCache after Phase 1 writes .forge/config.json
+				try {
+					configCache = JSON.parse(
+						fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
+					) as Record<string, unknown>;
+				} catch {
+					// Fall back to existing cache — all downstream reads have their own defaults
+				}
+			}
+
+			// Phase 2 — Discover
+			if (startPhase <= 2) {
+				const phase2Result = await runPhase2(
+					cwd,
+					bundleRoot,
+					toolsRoot,
+					projectName,
+					configCache,
+					ctx,
+					sendToAgent,
+					() => ctx.waitForIdle(),
+					isNonInteractive,
+				);
+				if (phase2Result === "abort") return;
+
+				// Inter-phase gate: let user review before Phase 3
+				if (!isNonInteractive()) {
+					const proceed = await ctx.ui.confirm(
+						"Phase 2 complete — proceed?",
+						"Phase 2 deliverables verified. Continue to Phase 3: Materialize (workflow generation)?",
+					);
+					if (!proceed) {
+						ctx.ui.notify("〇 /forge:init paused after Phase 2. Re-run /forge:init to resume.", "info");
+						return;
+					}
+				}
+			}
+
+			// Phase 3 — Materialize
+			if (startPhase <= 3) {
+				const phase3Result = await runPhase3(cwd, bundleRoot, toolsRoot, ctx);
+				if (phase3Result === "abort") return;
 			}
 
 			// ── Phase 4 — Register (runPhase4) ────────────────────────────────
@@ -510,8 +556,8 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			}
 
 			// Final cross-phase verification — banner reflects real disk state.
-			const finalP1 = verifyPhase1(cwd);
-			const finalP3 = verifyPhase3(cwd);
+			const finalP1 = await verifyPhase1(cwd);
+			const finalP3 = await verifyPhase3(cwd);
 			const fullyComplete = finalP1.ok && finalP3.ok;
 			const bannerLabel = fullyComplete
 				? `║  /forge:init complete                                        ║`
@@ -562,7 +608,7 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 					: []),
 			].join("\n");
 
-			sendToAgent(report);
+			await sendToAgent(report);
 		},
 	});
 }

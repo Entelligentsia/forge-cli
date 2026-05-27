@@ -207,6 +207,9 @@ const TOOLS_TO_COPY = [
 	// are canonical plugin-side implementations; forge-cli shims delegate to them.
 	"artifact.cjs",
 	"verify-apply.cjs",
+	// FORGE-S26-T17: init phase verification tool — called by verifiers.ts wrappers
+	// and by the phase prompt files themselves to validate phase deliverables.
+	"verify-phase.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
@@ -351,6 +354,23 @@ if (fs.existsSync(basePackSrc)) {
 	console.log(`build-payload: .base-pack/ — ${bpFileCount} files copied`);
 } else {
 	console.warn("build-payload: forge/forge/init/base-pack/ not found — skipping");
+}
+
+// 2e-pre: init/phases/ — per-phase prompt files (FORGE-S26-T17)
+// Phase prompt files are read by verifiers.ts / run-phases.ts at runtime to
+// build the prompt sent to the agent for each init phase.
+const phasesSrc = path.join(forgeRoot, "init", "phases");
+const phasesDestDir = path.join(outDir, "init", "phases");
+
+if (fs.existsSync(phasesSrc)) {
+	fs.mkdirSync(phasesDestDir, { recursive: true });
+	const phaseFiles = fs.readdirSync(phasesSrc).filter(f => f.endsWith(".md"));
+	for (const file of phaseFiles) {
+		copyFile(path.join(phasesSrc, file), path.join(phasesDestDir, file));
+	}
+	console.log(`build-payload: init/phases/ — ${phaseFiles.length} files copied`);
+} else {
+	console.warn("build-payload: forge/forge/init/phases/ not found — skipping");
 }
 
 // 2e: .schemas/ — forge/forge/schemas/*.schema.json
