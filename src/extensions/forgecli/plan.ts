@@ -159,7 +159,7 @@ export function registerPlan(pi: ExtensionAPI, options: RegisterPlanOptions = {}
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							`× forge:plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {

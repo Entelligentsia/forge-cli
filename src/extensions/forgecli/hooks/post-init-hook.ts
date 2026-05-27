@@ -1,6 +1,6 @@
 // hooks/post-init-hook.ts — Post-init enhancement auto-trigger (FORGE-S21-T04).
 //
-// Fires `/forge:enhance --phase 1 --auto` after each successful `/forge:init`
+// Fires `/forge:rebuild --enrich` after each successful `/forge:init`
 // Phase 4 closure. The handler is registered on the synthetic `init-complete`
 // event emitted by forge-init.ts.
 //
@@ -18,7 +18,7 @@
 //      notify and return without dispatching.
 //   4. Write sentinel BEFORE dispatching (fail-open: if dispatch fails, the
 //      sentinel prevents re-fire flooding).
-//   5. sendKickoff "/forge:enhance --phase 1 --auto". If this throws: catch,
+//   5. sendKickoff "/forge:rebuild --enrich". If this throws: catch,
 //      notify error, do NOT re-throw (init must still report success).
 //
 // Iron Laws:
@@ -100,7 +100,7 @@ export function createPostInitHookHandler(
 			if (err instanceof WorkflowLoaderError && err.code === "missing_file") {
 				ctx.ui.notify(
 					`× post-init hook: enhance workflow not found at ${WORKFLOW_REL_PATH}; ` +
-						"run /forge:init or /forge:regenerate first. Skipping phase-1 enhance.",
+						"run /forge:init or /forge:rebuild first. Skipping phase-1 enhance.",
 					"info",
 				);
 			} else {
@@ -130,13 +130,13 @@ export function createPostInitHookHandler(
 		// 4. Write sentinel BEFORE dispatch (fail-open on dispatch error)
 		writeSentinel(sentinel, projectPrefix);
 
-		// 5. Dispatch /forge:enhance --phase 1 --auto (best-effort, fail-open)
+		// 5. Dispatch /forge:rebuild --enrich (best-effort, fail-open)
 		try {
-			sendKickoff(pi, "/forge:enhance --phase 1 --auto");
+			sendKickoff(pi, "/forge:rebuild --enrich");
 		} catch (err: unknown) {
 			const e = err as { message?: string };
 			ctx.ui.notify(
-				`× post-init hook: failed to trigger /forge:enhance --phase 1 --auto: ${e.message ?? "unknown"}`,
+				`× post-init hook: failed to trigger /forge:rebuild --enrich: ${e.message ?? "unknown"}`,
 				"error",
 			);
 			// Do NOT re-throw — /forge:init must still report success.

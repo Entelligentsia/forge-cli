@@ -138,7 +138,7 @@ export function registerRemoveCommand(pi: ExtensionAPI, options: RegisterRemoveC
 				const e = err as { code?: string; message?: string };
 				if (e.code === "ENOENT") {
 					ctx.ui.notify(
-						`× forge:remove — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:regenerate first.`,
+						`× forge:remove — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:rebuild first.`,
 						"error",
 					);
 				} else {

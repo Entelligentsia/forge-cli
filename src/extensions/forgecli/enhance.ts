@@ -205,7 +205,7 @@ export function registerEnhance(pi: ExtensionAPI, options: RegisterEnhanceOption
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:enhance — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							`× forge:enhance — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {

@@ -549,7 +549,7 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			if (!finalP3.ok) {
 				incompleteDetail.push(`× Phase 3: ${finalP3.missing.join(", ")} (materialization missing)`);
 				incompleteDetail.push(
-					`  → Recover: \`/forge:regenerate\` (re-runs substitute-placeholders against current config), or delete .forge/init-progress.json and re-run /forge:init.`,
+					`  → Recover: \`/forge:rebuild\` (re-runs substitute-placeholders against current config), or delete .forge/init-progress.json and re-run /forge:init.`,
 				);
 			}
 

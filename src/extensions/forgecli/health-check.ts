@@ -141,7 +141,7 @@ export async function runHealthCheck(cwd: string, bundleRoot: string, forgeRoot?
 			check: "kb-freshness",
 			severity: "warning",
 			message:
-				"No calibration baseline found — run /forge:calibrate to establish one." +
+				"No calibration baseline found — run /forge:health --fix to establish one." +
 				"\n  💡 Calibration aligns the knowledge base with your current project structure." +
 				"\n  → Set FORGE_YES=1 or FORGE_NON_INTERACTIVE=1 for hands-free calibration.",
 		});
@@ -170,7 +170,7 @@ export async function runHealthCheck(cwd: string, bundleRoot: string, forgeRoot?
 
 				const driftDetail = driftedSections.length > 0 ? ` Drifted sections: ${driftedSections.join(", ")}.` : "";
 				const message =
-					`KB freshness: MASTER_INDEX.md hash has changed since last calibration — run /forge:calibrate to re-align.${driftDetail}` +
+					`KB freshness: MASTER_INDEX.md hash has changed since last calibration — run /forge:health --fix to re-align.${driftDetail}` +
 					"\n  💡 Re-calibrating keeps the knowledge base in sync with sprint/task changes." +
 					"\n  → Set FORGE_YES=1 or FORGE_NON_INTERACTIVE=1 for hands-free calibration.";
 
@@ -379,7 +379,7 @@ export function checkModifiedGeneratedFiles(cwd: string, bundleRoot: string): He
 		gaps.push({
 			check: "modified-generated-files",
 			severity: "warning",
-			message: `Generated file modified: ${line} — regeneration will warn before overwriting. Run /forge:regenerate to review.`,
+			message: `Generated file modified: ${line} — regeneration will warn before overwriting. Run /forge:rebuild to review.`,
 		});
 	}
 

@@ -144,7 +144,7 @@ export function registerValidate(pi: ExtensionAPI, options: RegisterValidateOpti
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:validate — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							`× forge:validate — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {

@@ -105,7 +105,7 @@ async function runTool(
 		let stderrBuf = "";
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
-			ctx.ui.notify(`× forge:regenerate — ${label} timed out after ${timeoutMs}ms`, "error");
+			ctx.ui.notify(`× forge:rebuild — ${label} timed out after ${timeoutMs}ms`, "error");
 			resolve(false);
 		}, timeoutMs);
 		child.stdout?.on("data", (d) => {
@@ -121,13 +121,13 @@ async function runTool(
 				resolve(true);
 			} else {
 				const msg = (stderrBuf || stdoutBuf).trim().split("\n").slice(-3).join(" | ") || "unknown error";
-				ctx.ui.notify(`× forge:regenerate — ${label} exit ${code}: ${msg}`, "error");
+				ctx.ui.notify(`× forge:rebuild — ${label} exit ${code}: ${msg}`, "error");
 				resolve(false);
 			}
 		});
 		child.on("error", (err) => {
 			clearTimeout(timer);
-			ctx.ui.notify(`× forge:regenerate — ${label} spawn failed: ${err.message}`, "error");
+			ctx.ui.notify(`× forge:rebuild — ${label} spawn failed: ${err.message}`, "error");
 			resolve(false);
 		});
 	});
@@ -294,7 +294,7 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			const manageVersionsTool = path.join(toolsRoot, "manage-versions.cjs");
 			let replayTotal = 0;
 			if (ok && !force && fs.existsSync(manageVersionsTool)) {
-				ctx.ui.setStatus?.("forge:regenerate", "replaying user enhancements…");
+				ctx.ui.setStatus?.("forge:rebuild", "replaying user enhancements…");
 				const replayCategories = ["personas", "skills", "workflows", "templates"];
 				for (const category of replayCategories) {
 					await new Promise<void>((resolve) => {

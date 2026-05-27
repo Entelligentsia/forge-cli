@@ -102,7 +102,7 @@ export interface InitCompleteEvent {
  *
  * Emitted by run-sprint.ts after the sprint's collate phase completes
  * successfully. Consumed by hooks/post-sprint-hook.ts to trigger
- * /forge:enhance --phase 2.
+ * /forge:rebuild --enrich.
  *
  * Sprint-ID shape gate: `^[A-Z]+-S\d+$` — bug IDs (FORGE-BUG-015,
  * BUG-031, etc.) are excluded so bug-fix collate runs do NOT trigger

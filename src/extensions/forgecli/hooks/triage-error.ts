@@ -32,6 +32,7 @@ export const FORGE_PATTERNS: readonly RegExp[] = [
 	/engineering\/tools\//,
 	/forge:init/,
 	/forge:health/,
+	/forge:rebuild/,
 	/forge:regenerate/,
 	/forge:update/,
 	/forge:add-pipeline/,

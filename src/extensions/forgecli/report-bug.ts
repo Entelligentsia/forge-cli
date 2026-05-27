@@ -176,7 +176,7 @@ export function registerReportBug(pi: ExtensionAPI, options: RegisterReportBugOp
 					const e = err as { code?: string; message?: string };
 					if (e.code === "ENOENT") {
 						ctx.ui.notify(
-							`× forge:report-bug — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:regenerate first.`,
+							`× forge:report-bug — command file not found at commands/${COMMAND_NAME}.md; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {

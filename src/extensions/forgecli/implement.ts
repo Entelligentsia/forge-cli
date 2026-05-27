@@ -162,7 +162,7 @@ export function registerImplement(pi: ExtensionAPI, options: RegisterImplementOp
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:implement — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							`× forge:implement — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {

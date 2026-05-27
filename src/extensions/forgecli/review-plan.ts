@@ -190,7 +190,7 @@ export function registerReviewPlan(pi: ExtensionAPI, options: RegisterReviewPlan
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:review-plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:regenerate first.`,
+							`× forge:review-plan — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {

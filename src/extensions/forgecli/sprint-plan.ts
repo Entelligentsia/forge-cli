@@ -91,7 +91,7 @@ export function composeKickoff(
 	} else {
 		sections.push(
 			"",
-			`(no requirements file found at engineering/sprints/${parsed.sprintId}/SPRINT_REQUIREMENTS.md or REQUIREMENTS.md — ask the user to confirm intent or run /forge:sprint-intake first)`,
+			`(no requirements file found at engineering/sprints/${parsed.sprintId}/SPRINT_REQUIREMENTS.md or REQUIREMENTS.md — ask the user to confirm intent or run /forge:new-sprint first)`,
 		);
 	}
 	if (parsed.seedMode !== "none") {

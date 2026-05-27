@@ -348,7 +348,7 @@ export function buildPendingMigrationMsg(configPath: string): string | null {
 
 		return (
 			`Forge update is incomplete — pending migration(s): ${pendingMigrations}. ` +
-			`Run /forge:update to continue or /forge:migrate to complete.`
+			`Run /forge:update to continue or /forge:init --migrate to complete.`
 		);
 	} catch {
 		return null;

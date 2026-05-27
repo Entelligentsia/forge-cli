@@ -416,7 +416,7 @@ export async function runPhase3(
 		ctx.ui.notify(
 			`× Phase 3 failed: ${result.missing.join(", ")}. ` +
 				`This usually means substitute-placeholders.cjs ran against an incomplete config. ` +
-				`Fix .forge/config.json and run /forge:regenerate, or restart /forge:init from scratch (delete .forge/init-progress.json).`,
+				`Fix .forge/config.json and run /forge:rebuild, or restart /forge:init from scratch (delete .forge/init-progress.json).`,
 			"error",
 		);
 		return "abort";

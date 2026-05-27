@@ -447,14 +447,14 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 			if (driftCategories.length === 0) {
 				ctx.ui.notify(
 					"△ Drift detected in MASTER_INDEX.md but no specific category changes identified. " +
-						"Run /forge:regenerate to do a full rebuild.",
+						"Run /forge:rebuild to do a full rebuild.",
 					"warning",
 				);
 				return;
 			}
 
 			// ── Step 5 — Propose patches via architect subagent ──────────────────
-			ctx.ui.setStatus?.("forge:calibrate", "Generating patch proposals...");
+			ctx.ui.setStatus?.("forge:health", "Generating patch proposals...");
 
 			let proposals: PatchProposal[] = [];
 
@@ -519,7 +519,7 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 				);
 			}
 
-			ctx.ui.setStatus?.("forge:calibrate", undefined);
+			ctx.ui.setStatus?.("forge:health", undefined);
 
 			// ── Step 6 — Approval gate ───────────────────────────────────────────
 			const driftLines: string[] = [
@@ -560,7 +560,7 @@ export function registerCalibrate(pi: ExtensionAPI, options: { forgeToolDefs?: F
 				);
 
 				if (!applyAll) {
-					ctx.ui.notify("○ Calibration patches skipped — run /forge:calibrate again to apply.", "info");
+					ctx.ui.notify("○ Calibration patches skipped — run /forge:health --fix again to apply.", "info");
 					skippedPatches.push(...proposals);
 				} else {
 					for (const p of proposals) {

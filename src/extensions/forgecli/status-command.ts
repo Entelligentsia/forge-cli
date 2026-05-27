@@ -83,7 +83,7 @@ export async function runStatus(forgeRoot: string, cwd: string): Promise<StatusR
 		return {
 			lines: [
 				"forge:status — No active sprint found.",
-				'Run /forge:init to initialise a project, or check your store with /forge:store-query "--list-sprints".',
+				'Run /forge:init to initialise a project, or check your store with /forge:search "--list-sprints".',
 			],
 			hasActiveSprint: false,
 		};
