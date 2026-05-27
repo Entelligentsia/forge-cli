@@ -8,7 +8,7 @@
 [![npm](https://img.shields.io/npm/v/@entelligentsia/forgecli?style=flat-square&color=000&label=npm)](https://www.npmjs.com/package/@entelligentsia/forgecli)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-000?style=flat-square)](#)
 [![license](https://img.shields.io/badge/license-MIT-000?style=flat-square)](#)
-[![forge plugin](https://img.shields.io/badge/forge--plugin-v0.46.1-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
+[![forge plugin](https://img.shields.io/badge/forge--plugin-v1.0.2-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
 [![pi runtime](https://img.shields.io/badge/runtime-pi--coding--agent-000?style=flat-square)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
 
 </div>
@@ -319,19 +319,19 @@ before forge-cli's extension hook runs.
 
 ## Roadmap
 
-| Up next                                            | Status              |
-|----------------------------------------------------|---------------------|
-| Full `/forge:*` surface + 4 hooks + migration runner | Shipped (0.11.0)  |
-| Pi-aligned data layout under `~/.pi/forge-cli/`    | Shipped (0.10.0)    |
-| Per-persona model routing + tiered config TUI      | Shipped (0.9.0)     |
-| 4ge brand wordmark in CLI banner + 3 themes        | Shipped (0.7.7)     |
-| Slim README + docs/ split                          | Shipped (0.7.7)     |
-| Subagent audience relaxed to advisory              | Shipped (0.7.6)     |
-| Bundled plugin command markdowns                   | Shipped (0.7.6)     |
-| `/forge:run-task`, `run-sprint`, `fix-bug`         | Shipped (0.7.5)     |
-| Atomic chain shims (`/forge:plan` … `commit`) ×6   | Shipped (0.7.5)     |
+| Next | Status |
+|------|--------|
+| `/forge:export` — portable workflow skills for Claude Code + Codex | Planned |
+| Skills-first architecture (workflows as auto-discovered skills) | Design |
+| E2E test harness with recorded LLM replay | Planned |
 
-→ Full roadmap + history: [CHANGELOG.md](CHANGELOG.md)
+| Shipped | Version |
+|---------|---------|
+| v1.0 DevX overhaul — command renames, pipeline guards, init phase decomposition, version drift detection | 1.0.0 |
+| Full `/forge:*` command surface + 4 hooks + migration runner | 0.11.0 |
+| Per-persona model routing + tiered config TUI | 0.9.0 |
+
+→ Full history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Links
 
@@ -365,6 +365,6 @@ MIT © Entelligentsia
   0.8.0 · 0.8.1 · 0.8.2 · 0.8.3 · 0.8.4 ·
   0.9.0 · 0.9.1 · 0.9.2 · 0.9.3 · 0.9.4 ·
   0.10.0 · 0.10.1 · 0.10.2 · 0.10.3 ·
-  0.11.0
+  0.11.0 · 1.0.0
 -->
 
