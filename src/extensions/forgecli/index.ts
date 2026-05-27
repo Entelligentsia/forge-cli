@@ -39,6 +39,7 @@ import {
 	buildForgeAwarenessMsg,
 	buildMultiPluginMsg,
 	buildPendingMigrationMsg,
+	buildVersionDriftMsg,
 	syncForgeRootAndRef,
 } from "./hooks/check-update.js";
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
@@ -276,6 +277,17 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			try {
 				const multiPluginMsg = buildMultiPluginMsg({ forgeRoot: forgeRoot!, configPath: forgeConfig.configPath });
 				if (multiPluginMsg) ctx.ui.notify(multiPluginMsg, "info");
+			} catch {
+				/* non-fatal */
+			}
+
+			// (6) Binary-project version drift detection (must run BEFORE forgeRef sync)
+			try {
+				const driftMsg = buildVersionDriftMsg(
+					forgeConfig.configPath,
+					PKG_VERSIONS.bundledForgeVersion ?? "",
+				);
+				if (driftMsg) ctx.ui.notify(driftMsg, "warning");
 			} catch {
 				/* non-fatal */
 			}

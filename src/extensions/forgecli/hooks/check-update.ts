@@ -354,3 +354,31 @@ export function buildPendingMigrationMsg(configPath: string): string | null {
 		return null;
 	}
 }
+
+/**
+ * Detect binary-project version drift: the bundled plugin version is newer
+ * than the project's last-migrated version, meaning `/forge:update` has
+ * pending migrations that haven't been applied yet.
+ *
+ * Returns a notification string if drift is detected, null otherwise.
+ */
+export function buildVersionDriftMsg(configPath: string, bundledVersion: string): string | null {
+	try {
+		if (!bundledVersion) return null;
+		const raw = fs.readFileSync(configPath, "utf8");
+		const cfg = JSON.parse(raw) as { paths?: { forgeRef?: string } };
+		const projectVersion = cfg.paths?.forgeRef;
+		if (!projectVersion) return null;
+		if (projectVersion === bundledVersion) return null;
+
+		if (projectVersion < bundledVersion) {
+			return (
+				`△ Project was initialized with Forge ${projectVersion} but the installed binary bundles ${bundledVersion}. ` +
+				`Run /forge:update to apply migrations and sync project artifacts.`
+			);
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
