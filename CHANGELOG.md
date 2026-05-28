@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CallerContext` extended from string union to discriminated union: `{ kind: "orchestrator" } | { kind: "subagent"; phase: PhaseRole }`. `CallerContextStore.asSubagent(phase, fn)` requires a `PhaseRole` argument — this is now the single setter of phase context for any subagent dispatch.
 - `fix-bug.ts` and `run-task.ts` phase loops wrap `runForgeSubagent(...)` in `CallerContextStore.asSubagent(phase.role, ...)`. Task-mode pipelines are protected against the same defect class.
 - `composeBugBody` triage hint trimmed — route-field requirement and Path A/B criteria now live natively in `triage.md`.
+- **Per-iteration subagent transcripts (FORGE-BUG-040 follow-up).** The per-subagent transcript filename now carries an ISO-compact timestamp prefix (`<ISO>__<entity>__<phase>.json`) so successive dispatches of the same phase during review loops (`plan → review → plan → review`) all persist instead of overwriting. Directory listings sort chronologically by default. Payload schema gains `startedAt` + `finishedAt` (replacing the prior single `timestamp` field).
+
+### Added (additional)
+
+- **Orchestrator transcript (FORGE-BUG-040 follow-up).** New JSONL log per pipeline run capturing `pipeline-start`, `phase-start`, `phase-end`, `phase-loopback`, `pipeline-end` events plus every `ctx.ui.notify` line teed from the orchestrator. Written to `.forge/transcripts/<entity>/<ISO>__<entity>__orchestrator.jsonl`. Wired into both `runBugPipeline` (`fix-bug.ts`) and `runTaskPipeline` (`run-task.ts`) with a `try/finally` so the notify wrapper is always restored. New module: `subagent/orchestrator-transcript.ts` (`OrchestratorTranscriptWriter` class + `OrchestratorEvent` discriminated union).
 
 ## [1.0.0] — 2026-05-26
 
