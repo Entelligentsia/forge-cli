@@ -325,15 +325,15 @@ import { CallerContextStore } from "../../../src/extensions/forgecli/audience-ga
 describe("Top-level audience check context regression", () => {
 	it("should allow orchestrator-only workflow from orchestrator context", () => {
 		const prev = CallerContextStore.get();
-		CallerContextStore.set("orchestrator");
+		CallerContextStore.set({ kind: "orchestrator" });
 
 		// asOrchestrator context should be "orchestrator" — not "subagent"
 		const ctxInOrchestrator = CallerContextStore.asOrchestrator(() => CallerContextStore.get());
-		expect(ctxInOrchestrator).toBe("orchestrator");
+		expect(ctxInOrchestrator.kind).toBe("orchestrator");
 
 		// asSubagent context would be "subagent" — wrong for top-level check
-		const ctxInSubagent = CallerContextStore.asSubagent(() => CallerContextStore.get());
-		expect(ctxInSubagent).toBe("subagent");
+		const ctxInSubagent = CallerContextStore.asSubagent("implement", () => CallerContextStore.get());
+		expect(ctxInSubagent.kind).toBe("subagent");
 
 		// Restore
 		CallerContextStore.set(prev);
@@ -435,5 +435,45 @@ describe("N-B-E: runBugPipeline fails-fast on schema-invalid forge-cli config", 
 			(n) => n.level === "error" && (n.msg.includes("schema error") || n.msg.includes("forge-cli config")),
 		);
 		expect(errNotify).toBeDefined();
+	});
+});
+
+// ── FORGE-BUG-040: phase-ownership guard rejection at the tool boundary ─────
+
+import {
+	assertBugStatusOwnership,
+	assertOrchestratorOnlyEmit,
+	assertPhaseOwnership,
+	PhaseOwnershipError,
+} from "../../../src/extensions/forgecli/subagent/phase-guard.js";
+
+describe("FORGE-BUG-040: phase-ownership guard at the tool boundary", () => {
+	afterEach(() => {
+		CallerContextStore.set({ kind: "orchestrator" });
+	});
+
+	it("triage subagent attempting forge_preflight --phase commit is rejected", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "triage" });
+		expect(() => assertPhaseOwnership("forge_preflight", "commit")).toThrow(PhaseOwnershipError);
+	});
+
+	it("triage subagent attempting forge_preflight --phase triage is allowed", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "triage" });
+		expect(() => assertPhaseOwnership("forge_preflight", "triage")).not.toThrow();
+	});
+
+	it("same forge_preflight --phase commit call from orchestrator context is allowed", () => {
+		CallerContextStore.set({ kind: "orchestrator" });
+		expect(() => assertPhaseOwnership("forge_preflight", "commit")).not.toThrow();
+	});
+
+	it("triage subagent cannot call forge_store update-status bug X status fixed", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "triage" });
+		expect(() => assertBugStatusOwnership("forge_store update-status bug", "fixed")).toThrow(PhaseOwnershipError);
+	});
+
+	it("triage subagent cannot call forge_store emit (orchestrator-only)", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "triage" });
+		expect(() => assertOrchestratorOnlyEmit("forge_store emit")).toThrow(PhaseOwnershipError);
 	});
 });

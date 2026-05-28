@@ -71,6 +71,7 @@
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
+    "@entelligentsia/forge-compress",
     "js-yaml"
   ],
   "dependencies": {
@@ -80,6 +81,7 @@
     "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.75.5.tgz",
     "ajv": "^8.20.0",
     "js-yaml": "^4.1.0",
+    "@entelligentsia/forge-compress": "file:../forge-compress",
     "lunr": "2.3.9",
     "typebox": "^1.1.24"
   },
@@ -97,12 +99,5 @@
   },
   "engines": {
     "node": ">=20.6.0"
-  },
-  "bundleDependencies": [
-    "@earendil-works/pi-coding-agent",
-    "@earendil-works/pi-agent-core",
-    "@earendil-works/pi-ai",
-    "@earendil-works/pi-tui",
-    "js-yaml"
-  ]
+  }
 }

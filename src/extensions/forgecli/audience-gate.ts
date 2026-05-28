@@ -51,7 +51,7 @@ export function assertAudience(input: AudienceCheckInput, ctx: ExtensionCommandC
 	if (audience === "any") return true;
 
 	// "orchestrator-only" — allowed only from orchestrator context.
-	if (audience === "orchestrator-only" && callerContext === "subagent") {
+	if (audience === "orchestrator-only" && callerContext.kind === "subagent") {
 		ctx.ui.notify(
 			`× workflow ${workflowName} is orchestrator-only; cannot run from subagent context — forge-cli internal error if you did not run it as a subagent`,
 			"error",

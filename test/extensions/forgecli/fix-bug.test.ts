@@ -6,7 +6,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 import {
 	BUG_PHASES,
@@ -124,6 +127,39 @@ describe("BUG_PHASES", () => {
 			} else {
 				expect(phase.maxIterations).toBe(1);
 			}
+		}
+	});
+
+	// FORGE-BUG-040 regression test — triage / plan-fix / implement must
+	// point at phase-scoped subagent workflows, NOT at the orchestrator-only
+	// fix_bug.md. Previously all three aliased to "fix_bug", causing the
+	// triage subagent to execute the full lifecycle.
+	it("FORGE-BUG-040: phase-scoped workflowFile values (no entry references 'fix_bug')", () => {
+		const byRole = Object.fromEntries(BUG_PHASES.map((p) => [p.role, p.workflowFile]));
+		expect(byRole["triage"]).toBe("triage");
+		expect(byRole["plan-fix"]).toBe("plan_task");
+		expect(byRole["implement"]).toBe("implement_plan");
+		for (const phase of BUG_PHASES) {
+			expect(phase.workflowFile).not.toBe("fix_bug");
+		}
+	});
+
+	// FORGE-BUG-040 cross-repo file-resolution test — every BUG_PHASES
+	// workflowFile MUST resolve to an existing .md file in the bundled
+	// plugin payload (sibling forge/ clone). This catches future BUG_PHASES
+	// typos at unit-test time instead of waiting for end-to-end manual
+	// verification.
+	it("FORGE-BUG-040: every BUG_PHASES workflowFile resolves to an existing payload .md", () => {
+		const payloadRoot = path.resolve(
+			__dirname,
+			"../../../../forge/forge/init/base-pack/workflows",
+		);
+		for (const phase of BUG_PHASES) {
+			const workflowPath = path.join(payloadRoot, `${phase.workflowFile}.md`);
+			expect(
+				fs.existsSync(workflowPath),
+				`BUG_PHASES role '${phase.role}' points at workflowFile='${phase.workflowFile}' but no .md exists at ${workflowPath}`,
+			).toBe(true);
 		}
 	});
 });
@@ -297,11 +333,17 @@ describe("composeBugBody", () => {
 		expect(commitBody).not.toContain("status approved");
 	});
 
-	it("triage phase body teaches the subagent about the route field", () => {
+	// FORGE-BUG-040: the route-field + Path A/B hint block was removed from
+	// composeBugBody — that guidance now lives in the triage.md workflow body
+	// which is read by the triage subagent. Pin the new behaviour so the
+	// hint cannot drift back in.
+	it("triage phase body does NOT prepend a route-field hint (it lives in triage.md)", () => {
 		const triageBody = composeBugBody("workflow content", "FORGE-BUG-042", "triage");
-		expect(triageBody).toContain("route");
-		expect(triageBody).toContain("Path A");
-		expect(triageBody).toContain("Path B");
+		// The 'route' string from the hint must not appear in the orchestrator-side
+		// composition. (The workflow content passed in here is just placeholder text.)
+		expect(triageBody).not.toContain("Path A (short-circuit)");
+		expect(triageBody).not.toContain("Path B (default)");
+		expect(triageBody).not.toContain("bug.summaries.triage.route");
 	});
 
 	it("should NOT reference task-specific status values", () => {

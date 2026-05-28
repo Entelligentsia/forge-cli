@@ -37,6 +37,14 @@ type SubagentEvent =
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; errorMessage?: string }
 	| { type: string; [k: string]: unknown };
 
+function extractCompression(result: unknown): { tool: string; before: number; after: number; saved: number } | undefined {
+	if (!result || typeof result !== "object") return undefined;
+	const r = result as { details?: { compression?: { tool?: string; before?: number; after?: number; saved?: number } } };
+	const c = r.details?.compression;
+	if (!c || typeof c.before !== "number" || typeof c.after !== "number") return undefined;
+	return { tool: c.tool ?? "", before: c.before, after: c.after, saved: c.saved ?? 0 };
+}
+
 export interface ViewportObserverOpts {
 	registry: SessionRegistry;
 	/** session key in the registry (taskId, bugId, or sprintId:ceremony, etc.) */
@@ -73,6 +81,7 @@ export interface AttachedObserver {
 		errCount: number;
 		lastTool: string;
 		cumUsage: UsageDelta;
+		cumCompression: { calls: number; tokensSaved: number };
 	};
 }
 
@@ -97,6 +106,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 		errCount: 0,
 		lastTool: "",
 		cumUsage: { input: 0, output: 0, cacheRead: 0 } as UsageDelta,
+		cumCompression: { calls: 0, tokensSaved: 0 },
 	};
 
 	// Per-turn tree-connector state.
@@ -250,7 +260,14 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					emitTurnLine(`⚠ ${e.toolName} failed: ${extractErrorSummary(e.result)}`, { warning: true });
 				} else {
 					const shape = resultShape(e.toolName, e.result);
-					emitTurnLine(`← ${e.toolName} ok${shape ? ` ${shape}` : ""}`);
+					const comp = extractCompression(e.result);
+					const compHint = comp ? ` ⇌${comp.saved}%` : "";
+					emitTurnLine(`← ${e.toolName} ok${shape ? ` ${shape}` : ""}${compHint}`);
+					if (comp) {
+						state.cumCompression.calls++;
+						state.cumCompression.tokensSaved += comp.before - comp.after;
+						registry.setPhaseCompression(sessionId, phaseRole, state.cumCompression);
+					}
 				}
 				break;
 			}

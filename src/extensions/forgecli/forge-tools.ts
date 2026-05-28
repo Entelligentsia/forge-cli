@@ -18,8 +18,21 @@ import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import {
+	compressStoreQuery,
+	compressEntity,
+	compressEntityList,
+	compressValidateStore,
+	countTokens,
+} from "@entelligentsia/forge-compress";
 import { buildForgeArtifact } from "./forge-artifact-tool.js";
 import { execFileAsync } from "./lib/exec-helpers.js";
+import {
+	assertBugStatusOwnership,
+	assertOrchestratorOnlyEmit,
+	assertPhaseOwnership,
+	PhaseOwnershipError,
+} from "./subagent/phase-guard.js";
 // FORGE-S25-T22 (N-C-D): adopt shared resolveToolDir from store-resolver instead of duplicating.
 // The private copy was identical to store-resolver.resolveToolDir; deleted per R2 Pass-3 scope-corrected.
 import { resolveToolDir } from "./store-resolver.js";
@@ -68,10 +81,17 @@ export async function runCjs(
 
 // ── Result helpers ───────────────────────────────────────────────────────────
 
-function okResult(text: string) {
+export interface CompressionStats {
+	tool: string;
+	before: number;
+	after: number;
+	saved: number;
+}
+
+function okResult(text: string, compression?: CompressionStats) {
 	return {
 		content: [{ type: "text" as const, text: text || "OK" }],
-		details: {} as unknown,
+		details: compression ? { compression } : ({} as unknown),
 	};
 }
 
@@ -81,6 +101,20 @@ function errResult(text: string) {
 		details: {} as unknown,
 		isError: true as const,
 	};
+}
+
+function compressWithTelemetry(
+	raw: string,
+	toolName: string,
+	compressFn: (input: string) => string,
+): { text: string; stats: CompressionStats | undefined } {
+	const before = countTokens(raw);
+	const compressed = compressFn(raw);
+	const after = countTokens(compressed);
+	if (after >= before) return { text: raw, stats: undefined };
+	const saved = Math.round((1 - after / before) * 100);
+	process.stderr.write(`\x1b[2m[forge-compress] ${toolName} ${before}→${after} tok (${saved}% saved)\x1b[0m\n`);
+	return { text: compressed, stats: { tool: toolName, before, after, saved } };
 }
 
 // ── Tool definition set ─────────────────────────────────────────────────────
@@ -311,12 +345,45 @@ function buildForgeStore(toolDir: string, projectRoot: string): ToolDefinition {
 		}),
 		async execute(_toolCallId, _params, signal) {
 			const params = _params as { command: string; args: string[]; dryRun?: boolean };
+
+			// FORGE-BUG-040: phase-ownership guards on the bug-mutating verbs.
+			// Subagent callers must call only the verb for their own phase;
+			// orchestrator callers are unaffected. Status-derived guards
+			// (update-status bug X status fixed ↔ commit phase) are encoded
+			// in assertBugStatusOwnership; phase-event emits are
+			// orchestrator-only via assertOrchestratorOnlyEmit.
+			try {
+				if (params.command === "set-bug-summary" || params.command === "set-summary") {
+					// args shape (set-bug-summary): [<id>, <phase>, <jsonFile>]
+					const namedPhase = params.args[1];
+					if (namedPhase) assertPhaseOwnership(`forge_store ${params.command}`, namedPhase);
+				} else if (params.command === "update-status") {
+					// args shape: [<entity>, <id>, <field>, <value>, ...]
+					if (params.args[0] === "bug" && params.args[2] === "status" && params.args[3]) {
+						assertBugStatusOwnership("forge_store update-status bug", params.args[3]);
+					}
+				} else if (params.command === "emit") {
+					assertOrchestratorOnlyEmit("forge_store emit");
+				}
+			} catch (err) {
+				if (err instanceof PhaseOwnershipError) return errResult(err.message);
+				throw err;
+			}
+
 			const toolPath = path.join(toolDir, "store-cli.cjs");
 			const argv: string[] = [params.command, ...params.args];
 			if (params.dryRun) argv.push("--dry-run");
 
 			try {
 				const { stdout } = await runCjs(toolPath, argv, signal, 10_000, projectRoot);
+				if (params.command === "read") {
+					const { text, stats } = compressWithTelemetry(stdout, "store:read", compressEntity);
+					return okResult(text, stats);
+				}
+				if (params.command === "list") {
+					const { text, stats } = compressWithTelemetry(stdout, "store:list", compressEntityList);
+					return okResult(text, stats);
+				}
 				return okResult(stdout);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
@@ -364,7 +431,8 @@ function buildForgeValidateStore(toolDir: string, projectRoot: string): ToolDefi
 
 			try {
 				const { stdout } = await runCjs(toolPath, argv, signal, 10_000, projectRoot);
-				return okResult(stdout);
+				const { text, stats } = compressWithTelemetry(stdout, "validate", compressValidateStore);
+				return okResult(text, stats);
 			} catch (err: unknown) {
 				const e = err as {
 					code?: number | string;
@@ -379,7 +447,8 @@ function buildForgeValidateStore(toolDir: string, projectRoot: string): ToolDefi
 				// which must still be treated as hard failures.
 				if (typeof e.code === "number" && e.code === 1) {
 					const output = [e.stdout, e.stderr].filter(Boolean).join("\n");
-					return okResult(output || "Validation errors found.");
+					const { text, stats } = compressWithTelemetry(output || "Validation errors found.", "validate", compressValidateStore);
+					return okResult(text, stats);
 				}
 				// Real failure: ENOENT, timeout, SIGKILL, etc.
 				return errResult(`forge_validate_store failed: ${e.message ?? "unknown error"}`);
@@ -529,7 +598,9 @@ function buildForgeStoreQuery(toolDir: string, projectRoot: string): ToolDefinit
 			const argv: string[] = [params.command, ...params.args];
 			try {
 				const { stdout } = await runCjs(toolPath, argv, signal, 10_000, projectRoot);
-				return okResult(stdout);
+				if (params.command === "schema") return okResult(stdout);
+				const { text, stats } = compressWithTelemetry(stdout, "query", compressStoreQuery);
+				return okResult(text, stats);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				return errResult(`forge_store_query failed: ${e.message ?? "unknown error"}`);
@@ -629,6 +700,17 @@ function buildForgePreflight(toolDir: string, projectRoot: string): ToolDefiniti
 		}),
 		async execute(_toolCallId, _params, signal) {
 			const params = _params as { phase: string; task?: string; bug?: string };
+
+			// FORGE-BUG-040: phase-ownership guard. From a subagent caller,
+			// reject any preflight whose --phase argument does not match the
+			// caller's phase tag. Orchestrator callers are unaffected.
+			try {
+				assertPhaseOwnership("forge_preflight", params.phase);
+			} catch (err) {
+				if (err instanceof PhaseOwnershipError) return errResult(err.message);
+				throw err;
+			}
+
 			const toolPath = path.join(toolDir, "preflight-gate.cjs");
 			const argv: string[] = ["--phase", params.phase];
 			if (params.task) argv.push("--task", params.task);

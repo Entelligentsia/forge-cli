@@ -16,7 +16,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { runCjs as defaultRunCjs } from "./forge-tools.js";
+import { compressMarkdown, countTokens } from "@entelligentsia/forge-compress";
+import { runCjs as defaultRunCjs, type CompressionStats } from "./forge-tools.js";
 
 type RunCjsFn = (
 	toolPath: string,
@@ -142,7 +143,18 @@ export function buildForgeArtifact(
 				if (stderr && stderr.trim()) {
 					return errResult(stderr.trim());
 				}
-				return okResult(stdout.trim() || "OK");
+				const output = stdout.trim() || "OK";
+				if (params.command === "read" && params.artifact && !params.artifact.endsWith("-summary")) {
+					const before = countTokens(output);
+					const compressed = compressMarkdown(output, { mode: "map" });
+					const after = countTokens(compressed);
+					if (after < before) {
+						const saved = Math.round((1 - after / before) * 100);
+						process.stderr.write(`\x1b[2m[forge-compress] artifact:read ${before}→${after} tok (${saved}% saved)\x1b[0m\n`);
+						return okResult(compressed, { tool: "artifact:read", before, after, saved });
+					}
+				}
+				return okResult(output);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				return errResult(`forge_artifact failed: ${e.message ?? "unknown error"}`);
@@ -161,10 +173,10 @@ export function buildForgeArtifact(
 
 // ── Result helpers ────────────────────────────────────────────────────────────
 
-function okResult(text: string) {
+function okResult(text: string, compression?: CompressionStats) {
 	return {
 		content: [{ type: "text" as const, text: text || "OK" }],
-		details: {} as unknown,
+		details: compression ? { compression } : ({} as unknown),
 	};
 }
 

@@ -60,6 +60,10 @@ export interface PhaseSummary {
 	 */
 	model?: string;
 	provider?: string;
+	compression?: {
+		calls: number;
+		tokensSaved: number;
+	};
 }
 
 export interface ToolEventRecord {
@@ -398,6 +402,28 @@ export class SessionRegistry extends EventEmitter {
 		if (s) s.updatedAt = Date.now();
 		this.emit("tail", { taskId, phaseRole });
 		this.emit("change", taskId);
+	}
+
+	setPhaseCompression(taskId: string, phaseRole: string, compression: { calls: number; tokensSaved: number }): void {
+		const p = this.findPhase(taskId, phaseRole);
+		if (!p) return;
+		p.compression = { calls: compression.calls, tokensSaved: compression.tokensSaved };
+		const s = this.sessions.get(taskId);
+		if (s) s.updatedAt = Date.now();
+		this.emit("tail", { taskId, phaseRole });
+		this.emit("change", taskId);
+	}
+
+	getAggregateCompression(): { calls: number; tokensSaved: number } {
+		const agg = { calls: 0, tokensSaved: 0 };
+		for (const s of this.sessions.values()) {
+			for (const p of s.phases) {
+				if (!p.compression) continue;
+				agg.calls += p.compression.calls;
+				agg.tokensSaved += p.compression.tokensSaved;
+			}
+		}
+		return agg;
 	}
 
 	appendTail(taskId: string, phaseRole: string, line: string, opts?: { warning?: boolean }): void {

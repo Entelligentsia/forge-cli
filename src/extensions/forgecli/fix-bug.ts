@@ -43,6 +43,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
+import type { PhaseRole } from "./subagent/caller-context.js";
 // ModelRegistry/AuthStorage no longer instantiated here — use ctx.modelRegistry
 // so extension-registered providers (registered against the live session) are
 // visible to validateModelConfig. Creating a fresh registry here would miss
@@ -90,27 +91,28 @@ import { fmtPhaseSummary } from "./viewport-renderer.js";
 // lib/catalog-helpers.ts and imported above with aliases (H-4, N-H-G).
 
 export const BUG_PHASES: PhaseDescriptor[] = [
-	{ role: "triage", workflowFile: "fix_bug", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
-	{ role: "plan-fix", workflowFile: "fix_bug", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
+	// FORGE-BUG-040: each phase points at its own phase-scoped subagent workflow.
+	// Previously triage/plan-fix/implement all pointed at fix_bug.md (the
+	// orchestrator-only body), which caused the triage subagent to execute
+	// the full lifecycle in a single invocation. plan-fix and implement reuse
+	// plan_task.md / implement_plan.md (bug-mode) per meta-fix-bug.md
+	// § Pipeline Phases — the bug-mode entity-kind detection is built into
+	// those workflows already.
+	{ role: "triage", workflowFile: "triage", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
+	{ role: "plan-fix", workflowFile: "plan_task", personaNoun: "engineer", isReview: false, maxIterations: 1 },
 	{ role: "review-plan", workflowFile: "review_plan", personaNoun: "supervisor", isReview: true, maxIterations: 3 },
-	{ role: "implement", workflowFile: "fix_bug", personaNoun: "bug-fixer", isReview: false, maxIterations: 1 },
+	{ role: "implement", workflowFile: "implement_plan", personaNoun: "engineer", isReview: false, maxIterations: 1 },
 	{ role: "review-code", workflowFile: "review_code", personaNoun: "supervisor", isReview: true, maxIterations: 3 },
 	{ role: "approve", workflowFile: "architect_approve", personaNoun: "architect", isReview: true, maxIterations: 3 },
 	{ role: "commit", workflowFile: "commit_task", personaNoun: "engineer", isReview: false, maxIterations: 1 },
 ];
 
-// Map phase.role → canonical summary key written by base-pack workflows.
-// Phases mapped to null use update-status bug instead of set-bug-summary
-// for verdict tracking (Option B).
-export const BUG_SUMMARY_KEY_BY_ROLE: Record<string, string | null> = {
-	triage: "triage",
-	"plan-fix": "plan",
-	"review-plan": "review_plan",
-	implement: "implementation",
-	"review-code": "code_review",
-	approve: "approve", // read from bug.summaries.approve (set-bug-summary)
-	commit: null, // commit transitions bug.status → fixed (terminal), no summaries entry
-};
+// FORGE-BUG-040: BUG_SUMMARY_KEY_BY_ROLE lives in
+// subagent/phase-summary-map.ts so the new phase-guard.ts can import
+// it without dragging fix-bug.ts into a forge-tools import cycle.
+// Re-exported here for backwards-compatibility with existing call sites.
+export { BUG_SUMMARY_KEY_BY_ROLE } from "./subagent/phase-summary-map.js";
+import { BUG_SUMMARY_KEY_BY_ROLE } from "./subagent/phase-summary-map.js";
 
 // Bug-event type tokens — explicit mapping per review finding #3.
 // Non-review phases always emit the pass token. Review phases select
@@ -399,14 +401,11 @@ export function composeBugBody(
 			`- Commit phase: after the git commit lands, transition bug.status from '${bugStatusBeforePhase}' to 'fixed'.`,
 		);
 	}
-	if (phaseRole === "triage") {
-		entityKindLines.push(
-			'- Triage phase: in addition to writing TRIAGE.md and TRIAGE-SUMMARY.json, the summary MUST include a `route` field set to `"A"` or `"B"`.',
-			"  Path A (short-circuit): severity == minor AND single-file fix ≤ ~20 lines AND no schema/API/migration AND regression test obvious from repro.",
-			"  Path B (default): everything else. When in doubt, choose B.",
-			"  The orchestrator reads bug.summaries.triage.route to select the downstream phase list.",
-		);
-	}
+	// FORGE-BUG-040: the triage-phase hint block previously prepended here
+	// compensated for the orchestrator-only fix_bug.md being delivered to
+	// the triage subagent. With the new phase-scoped triage.md sub-workflow,
+	// the route-field contract and Path A/B criteria are documented natively
+	// in the workflow body — no compose-time injection required.
 
 	const parts = [
 		`Read the workflow below and follow it. Bug ID: ${bugId}.`,
@@ -784,13 +783,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		}
 
 		// ── 6. Materialization-marker check ───────────────────────────
-		// N-H-E: Skip for the monolithic fix_bug.md — it is the orchestrator prose
-		// algorithm, not a sub-workflow that subagents run tool calls against.
-		// Triage/plan-fix/implement phases reference fix_bug.md for their
-		// prose body but the actual tool-use discipline (Store-Write Verification,
-		// forge_store) lives in the sub-workflows (review_plan.md, commit_task.md,
-		// etc.) which get checked when their own phases run.
-		if (phase.workflowFile !== "fix_bug") {
+		// FORGE-BUG-040: every BUG phase is now a true `audience: subagent`
+		// sub-workflow — triage / plan-fix / implement no longer alias to
+		// fix_bug.md. The marker check is therefore unconditional; a missing
+		// marker is a hard failure on the first dispatch.
+		{
 			const markerCheck = checkMaterialization(subWorkflowPath, subWorkflowMd);
 			if (!markerCheck.ok) {
 				for (const marker of markerCheck.missing) {
@@ -806,16 +803,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		}
 
 		// ── 5. Audience check ─────────────────────────────────────────
-		// fix_bug.md is orchestrator-only but the subagent doesn't "run" it as a
-		// workflow — the orchestrator reads its prose and composes the body text.
-		// Skip the audience gate for the monolithic fix_bug.md; only check the
-		// true sub-workflows (review_plan, review_code, architect_approve, commit_task)
-		// which the subagent does run directly.
-		const audienceOk =
-			phase.workflowFile === "fix_bug" ||
-			CallerContextStore.asSubagent(() =>
-				assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
-			);
+		// FORGE-BUG-040: every BUG phase is a true `audience: subagent`
+		// workflow now; the previous `fix_bug.md` audience-bypass is gone.
+		const audienceOk = CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
+			assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
+		);
 		if (!audienceOk) {
 			writeBugState(cwd, {
 				bugId,
@@ -979,7 +971,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 		let result;
 		try {
-			result = await runForgeSubagent({
+			// FORGE-BUG-040: wrap the runForgeSubagent dispatch in the phase
+			// caller context so downstream tool calls (forge_preflight,
+			// forge_store update-status / set-bug-summary / set-summary / emit)
+			// can verify the caller's phase matches the phase named in the
+			// tool's arguments. This is the single setter of phase context
+			// for the bug pipeline; the audience-test wrap above is a
+			// short-lived test, not the canonical dispatch context.
+			result = await CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
+				runForgeSubagent({
 				persona,
 				task: bugBody,
 				cwd,
@@ -997,7 +997,8 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				modelRegistry: ctx.modelRegistry,
 				signal: opts.signal,
 				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
-			});
+				}),
+			);
 		} catch (err: unknown) {
 			const e = err as { message?: string };
 			ctx.ui.notify(
@@ -1151,7 +1152,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 		{
 			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
-			const { turn, toolCount, errCount, cumUsage } = observer.state;
+			const { turn, toolCount, errCount, cumUsage, cumCompression } = observer.state;
 			ctx.ui.notify(
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
@@ -1168,6 +1169,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					usage: cumUsage,
 					model: result.model,
 					provider: result.provider,
+					compression: cumCompression.tokensSaved > 0 ? cumCompression : undefined,
 				}),
 			);
 		}

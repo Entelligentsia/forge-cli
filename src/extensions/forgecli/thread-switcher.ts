@@ -97,6 +97,7 @@ class TailViewComponent implements Component {
 		const footerText = fmtModelAndTokenFooter(
 			phase ? { provider: phase.provider, model: phase.model } : undefined,
 			phase?.usage,
+			phase?.compression,
 		);
 
 		const bodyLines =
@@ -169,7 +170,7 @@ class ViewportFooterComponent implements Component {
 		const hasActive = sessions.some((s) => s.status === "running" || s.status === "cancelling");
 		if (!hasActive) return [];
 
-		const tokens = fmtTokenFooter(this.registry.getAggregateUsage());
+		const tokens = fmtTokenFooter(this.registry.getAggregateUsage(), this.registry.getAggregateCompression());
 		const orchModel = fmtModelLabel(this.getOrchestratorModel?.());
 		if (!tokens && !orchModel) return [];
 		const left = orchModel ? `⌂ ${orchModel}` : "";

@@ -29,7 +29,7 @@ function makeCtx(): { ctx: ExtensionCommandContext; notifyCalls: Array<[string, 
 // ── Reset store after each test that mutates it ───────────────────────────
 
 afterEach(() => {
-	CallerContextStore.set("orchestrator");
+	CallerContextStore.set({ kind: "orchestrator" });
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ describe("assertAudience", () => {
 	it("allows orchestrator caller to dispatch orchestrator-only workflow", () => {
 		const { ctx, notifyCalls } = makeCtx();
 		const result = assertAudience(
-			{ workflowName: "test-workflow", audience: "orchestrator-only", callerContext: "orchestrator" },
+			{ workflowName: "test-workflow", audience: "orchestrator-only", callerContext: { kind: "orchestrator" } },
 			ctx,
 		);
 		expect(result).toBe(true);
@@ -50,7 +50,7 @@ describe("assertAudience", () => {
 	it("refuses subagent caller from dispatching orchestrator-only workflow", () => {
 		const { ctx, notifyCalls } = makeCtx();
 		const result = assertAudience(
-			{ workflowName: "enhance", audience: "orchestrator-only", callerContext: "subagent" },
+			{ workflowName: "enhance", audience: "orchestrator-only", callerContext: { kind: "subagent", phase: "implement" } },
 			ctx,
 		);
 		expect(result).toBe(false);
@@ -65,7 +65,7 @@ describe("assertAudience", () => {
 	// Test 3a: audience "any", subagent context — unrestricted
 	it("allows subagent caller when audience is 'any'", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		const result = assertAudience({ workflowName: "plan_task", audience: "any", callerContext: "subagent" }, ctx);
+		const result = assertAudience({ workflowName: "plan_task", audience: "any", callerContext: { kind: "subagent", phase: "implement" } }, ctx);
 		expect(result).toBe(true);
 		expect(notifyCalls).toHaveLength(0);
 	});
@@ -73,7 +73,7 @@ describe("assertAudience", () => {
 	// Test 3b: audience "any", orchestrator context — unrestricted
 	it("allows orchestrator caller when audience is 'any'", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		const result = assertAudience({ workflowName: "plan_task", audience: "any", callerContext: "orchestrator" }, ctx);
+		const result = assertAudience({ workflowName: "plan_task", audience: "any", callerContext: { kind: "orchestrator" } }, ctx);
 		expect(result).toBe(true);
 		expect(notifyCalls).toHaveLength(0);
 	});
@@ -84,7 +84,7 @@ describe("assertAudience", () => {
 	it("allows orchestrator caller when audience is 'subagent' (advisory)", () => {
 		const { ctx, notifyCalls } = makeCtx();
 		const result = assertAudience(
-			{ workflowName: "review_plan", audience: "subagent", callerContext: "orchestrator" },
+			{ workflowName: "review_plan", audience: "subagent", callerContext: { kind: "orchestrator" } },
 			ctx,
 		);
 		expect(result).toBe(true);
@@ -95,7 +95,7 @@ describe("assertAudience", () => {
 	it("allows subagent caller when audience is 'subagent'", () => {
 		const { ctx, notifyCalls } = makeCtx();
 		const result = assertAudience(
-			{ workflowName: "review_plan", audience: "subagent", callerContext: "subagent" },
+			{ workflowName: "review_plan", audience: "subagent", callerContext: { kind: "subagent", phase: "implement" } },
 			ctx,
 		);
 		expect(result).toBe(true);
@@ -105,7 +105,7 @@ describe("assertAudience", () => {
 	// Test 4: refusal-message format pinned (AC#3 verbatim)
 	it("refusal message exactly matches AC#3 prescribed format", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		assertAudience({ workflowName: "enhance", audience: "orchestrator-only", callerContext: "subagent" }, ctx);
+		assertAudience({ workflowName: "enhance", audience: "orchestrator-only", callerContext: { kind: "subagent", phase: "implement" } }, ctx);
 		expect(notifyCalls[0][0]).toBe(
 			"× workflow enhance is orchestrator-only; cannot run from subagent context — forge-cli internal error if you did not run it as a subagent",
 		);
@@ -114,14 +114,14 @@ describe("assertAudience", () => {
 	// Test 5: CallerContextStore defaults to "orchestrator"
 	it("CallerContextStore defaults to 'orchestrator'", () => {
 		// Ensure clean state (afterEach resets, but test is explicit).
-		CallerContextStore.set("orchestrator");
-		expect(CallerContextStore.get()).toBe("orchestrator");
+		CallerContextStore.set({ kind: "orchestrator" });
+		expect(CallerContextStore.get().kind).toBe("orchestrator");
 	});
 
 	// Test 6: assertAudience uses CallerContextStore when callerContext param absent
 	it("uses CallerContextStore when callerContext is not provided, refusing when store says subagent", () => {
 		const { ctx, notifyCalls } = makeCtx();
-		CallerContextStore.set("subagent");
+		CallerContextStore.set({ kind: "subagent", phase: "implement" });
 		// No explicit callerContext — assertAudience reads from store.
 		const result = assertAudience({ workflowName: "x", audience: "orchestrator-only" }, ctx);
 		expect(result).toBe(false);
@@ -165,26 +165,27 @@ describe("assertAudience", () => {
 
 describe("CallerContextStore", () => {
 	it("asSubagent sets context to subagent and restores on return", () => {
-		expect(CallerContextStore.get()).toBe("orchestrator");
-		const inner = CallerContextStore.asSubagent(() => CallerContextStore.get());
-		expect(inner).toBe("subagent");
-		expect(CallerContextStore.get()).toBe("orchestrator");
+		expect(CallerContextStore.get().kind).toBe("orchestrator");
+		const inner = CallerContextStore.asSubagent("implement", () => CallerContextStore.get());
+		expect(inner.kind).toBe("subagent");
+		if (inner.kind === "subagent") expect(inner.phase).toBe("implement");
+		expect(CallerContextStore.get().kind).toBe("orchestrator");
 	});
 
 	it("asOrchestrator sets context to orchestrator and restores on return", () => {
-		CallerContextStore.set("subagent");
+		CallerContextStore.set({ kind: "subagent", phase: "implement" });
 		const inner = CallerContextStore.asOrchestrator(() => CallerContextStore.get());
-		expect(inner).toBe("orchestrator");
-		expect(CallerContextStore.get()).toBe("subagent");
+		expect(inner.kind).toBe("orchestrator");
+		expect(CallerContextStore.get().kind).toBe("subagent");
 	});
 
 	it("asSubagent restores context even when fn throws", () => {
-		expect(CallerContextStore.get()).toBe("orchestrator");
+		expect(CallerContextStore.get().kind).toBe("orchestrator");
 		expect(() =>
-			CallerContextStore.asSubagent(() => {
+			CallerContextStore.asSubagent("implement", () => {
 				throw new Error("test");
 			}),
 		).toThrow("test");
-		expect(CallerContextStore.get()).toBe("orchestrator");
+		expect(CallerContextStore.get().kind).toBe("orchestrator");
 	});
 });

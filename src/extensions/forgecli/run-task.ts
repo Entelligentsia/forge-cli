@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
+import type { PhaseRole } from "./subagent/caller-context.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
@@ -738,7 +739,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		// ── 5. Audience check ─────────────────────────────────────────
 		// Wrap with CallerContextStore.asSubagent so assertAudience treats
 		// this as a subagent context (IL10: we ARE dispatching from subagent chain).
-		const audienceOk = CallerContextStore.asSubagent(() =>
+		const audienceOk = CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
 			assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
 		);
 		if (!audienceOk) {
@@ -877,7 +878,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 		let result;
 		try {
-			result = await runForgeSubagent({
+			// FORGE-BUG-040: wrap the runForgeSubagent dispatch in the phase
+			// caller context (parity with fix-bug.ts) so the phase-ownership
+			// guard can verify tool calls from the subagent. Single setter
+			// of phase context for the task pipeline.
+			result = await CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
+				runForgeSubagent({
 				persona,
 				task: taskBody,
 				cwd,
@@ -889,7 +895,8 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				modelRegistry: ctx.modelRegistry,
 				signal: opts.signal,
 				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
-			});
+				}),
+			);
 		} catch (err: unknown) {
 			const e = err as { message?: string };
 			ctx.ui.notify(
@@ -972,6 +979,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
 			);
+			const { cumCompression } = observer.state;
 			registry.appendTail(
 				taskId,
 				phase.role,
@@ -984,6 +992,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					usage: cumUsage,
 					model: result.model,
 					provider: result.provider,
+					compression: cumCompression.tokensSaved > 0 ? cumCompression : undefined,
 				}),
 			);
 		}

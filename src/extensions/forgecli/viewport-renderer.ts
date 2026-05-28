@@ -189,11 +189,13 @@ export function fmtPhaseSummary(opts: {
 	usage: UsageDelta;
 	model?: string;
 	provider?: string;
+	compression?: { calls: number; tokensSaved: number };
 }): string {
-	const { role, turns, tools, errors, wallSeconds, usage, model, provider } = opts;
+	const { role, turns, tools, errors, wallSeconds, usage, model, provider, compression } = opts;
 	const errPart = errors > 0 ? ` err=${errors}` : "";
 	const modelPart = model ? ` model=${model}${provider ? `/${provider}` : ""}` : "";
-	return `▣ ${role}: turns=${turns} tools=${tools}${errPart} ${fmtTokenMeter(usage)} wall=${fmtWall(wallSeconds)}${modelPart}`;
+	const compPart = compression && compression.tokensSaved > 0 ? ` ⇌${humanTokens(compression.tokensSaved)}` : "";
+	return `▣ ${role}: turns=${turns} tools=${tools}${errPart} ${fmtTokenMeter(usage)}${compPart} wall=${fmtWall(wallSeconds)}${modelPart}`;
 }
 
 /**
@@ -201,10 +203,14 @@ export function fmtPhaseSummary(opts: {
  * Includes cacheRead only when nonzero — most non-Anthropic providers (ollama,
  * glm, etc.) return 0 for cache fields and we don't want the noise.
  */
-export function fmtTokenFooter(usage: UsageDelta | undefined): string {
+export function fmtTokenFooter(
+	usage: UsageDelta | undefined,
+	compression?: { calls: number; tokensSaved: number },
+): string {
 	if (!usage) return "";
 	const cache = usage.cacheRead > 0 ? ` ⇪${humanTokens(usage.cacheRead)}` : "";
-	return `↑${humanTokens(usage.input)} ↓${humanTokens(usage.output)}${cache}`;
+	const comp = compression && compression.tokensSaved > 0 ? ` ⇌${humanTokens(compression.tokensSaved)}` : "";
+	return `↑${humanTokens(usage.input)} ↓${humanTokens(usage.output)}${cache}${comp}`;
 }
 
 /**
@@ -228,9 +234,10 @@ export function fmtModelLabel(info: { provider?: string; model?: string } | unde
 export function fmtModelAndTokenFooter(
 	info: { provider?: string; model?: string } | undefined,
 	usage: UsageDelta | undefined,
+	compression?: { calls: number; tokensSaved: number },
 ): string {
 	const left = fmtModelLabel(info);
-	const right = fmtTokenFooter(usage);
+	const right = fmtTokenFooter(usage, compression);
 	if (left && right) return `${left} · ${right}`;
 	return left || right;
 }
