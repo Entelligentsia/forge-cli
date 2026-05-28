@@ -77,6 +77,7 @@ import {
 	validateId,
 } from "./run-task.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { fmtPhaseSummary } from "./viewport-renderer.js";
@@ -599,6 +600,29 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		}
 	}
 
+	// ── Orchestrator transcript ──────────────────────────────────────────
+	// One JSONL file per pipeline run, ISO-prefixed in its filename so
+	// review-loop iterations (plan → review → plan → review) preserve
+	// their own logs instead of overwriting each other. Captures every
+	// ctx.ui.notify line plus structured phase-boundary events.
+	const orchTranscript = new OrchestratorTranscriptWriter({
+		cwd,
+		entityKind: "bug",
+		entityId: bugId,
+	});
+	const __origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
+	ctx.ui.notify = ((msg: string, level?: Parameters<typeof __origNotify>[1]) => {
+		__origNotify(msg, level);
+		orchTranscript.record({
+			kind: "notify",
+			ts: new Date().toISOString(),
+			level: (level ?? "info") as "info" | "warn" | "error" | "success",
+			message: typeof msg === "string" ? msg : String(msg),
+		});
+	}) as typeof ctx.ui.notify;
+	const pipelineStartMs = Date.now();
+
+	try {
 	while (currentPhaseIndex < BUG_PHASES.length) {
 		// ── Between-phase cancellation gate ────────────────────────────
 		if (opts.signal?.aborted) {
@@ -634,6 +658,16 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			`fix-bug ${bugId}: phase ${currentPhaseIndex + 1}/${BUG_PHASES.length} (${phase.role})`,
 		);
 		ctx.ui.notify(`→ ${bugId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${BUG_PHASES.length})`, "info");
+		orchTranscript.record({
+			kind: "phase-start",
+			ts: new Date().toISOString(),
+			phase: phase.role,
+			phaseIndex: currentPhaseIndex,
+			phaseCount: BUG_PHASES.length,
+			attempt: (iterationCounts[phase.role] ?? 0) + 1,
+			workflowFile: phase.workflowFile,
+			persona: phase.personaNoun,
+		});
 
 		const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
 
@@ -1157,6 +1191,18 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
 			);
+			orchTranscript.record({
+				kind: "phase-end",
+				ts: new Date().toISOString(),
+				phase: phase.role,
+				phaseIndex: currentPhaseIndex,
+				attempt: (iterationCounts[phase.role] ?? 0) + 1,
+				verdict: "n/a",
+				elapsedMs: Date.now() - phaseStart,
+				turns: turn,
+				toolCount,
+				errCount,
+			});
 			registry.appendTail(
 				bugId,
 				phase.role,
@@ -1342,6 +1388,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						`(attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
 					"info",
 				);
+				orchTranscript.record({
+					kind: "phase-loopback",
+					ts: new Date().toISOString(),
+					fromPhase: phase.role,
+					toPhase: BUG_PHASES[predIndex]?.role ?? String(predIndex),
+					fromPhaseIndex: currentPhaseIndex,
+					toPhaseIndex: predIndex,
+					reason: `${phase.role} returned revision (attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
+				});
 				writeBugState(cwd, {
 					bugId,
 					phaseIndex: predIndex,
@@ -1399,6 +1454,12 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 	// ── All phases complete ───────────────────────────────────────────
 	deleteBugState(cwd, bugId);
+	orchTranscript.record({
+		kind: "pipeline-end",
+		ts: new Date().toISOString(),
+		outcome: "complete",
+		elapsedMs: Date.now() - pipelineStartMs,
+	});
 	return {
 		status: "completed",
 		lastPhaseIndex: BUG_PHASES.length - 1,
@@ -1406,6 +1467,9 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		model: lastModel,
 		provider: lastProvider,
 	};
+	} finally {
+		ctx.ui.notify = __origNotify;
+	}
 }
 
 // ── Thin wrapper registration ────────────────────────────────────────────

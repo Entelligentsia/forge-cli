@@ -41,6 +41,7 @@ import {
 import { resolveModelForPhase } from "./model-resolver.js";
 import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
 import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";
@@ -609,6 +610,29 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	const taskRecordAtStart = readTaskRecord(taskId, storeCli, cwd);
 	const cacheSessionId = taskRecordAtStart?.sprintId ? `forge:${taskRecordAtStart.sprintId}` : `forge:task:${taskId}`;
 
+	// ── Orchestrator transcript ──────────────────────────────────────────
+	// FORGE-BUG-040 follow-up: one JSONL file per pipeline run, ISO-prefixed
+	// in its filename so review-loop iterations preserve their own logs
+	// instead of overwriting. Captures every ctx.ui.notify line plus
+	// structured phase-boundary events.
+	const orchTranscript = new OrchestratorTranscriptWriter({
+		cwd,
+		entityKind: "task",
+		entityId: taskId,
+	});
+	const __origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
+	ctx.ui.notify = ((msg: string, level?: Parameters<typeof __origNotify>[1]) => {
+		__origNotify(msg, level);
+		orchTranscript.record({
+			kind: "notify",
+			ts: new Date().toISOString(),
+			level: (level ?? "info") as "info" | "warn" | "error" | "success",
+			message: typeof msg === "string" ? msg : String(msg),
+		});
+	}) as typeof ctx.ui.notify;
+	const pipelineStartMs = Date.now();
+
+	try {
 	while (currentPhaseIndex < PHASES.length) {
 		// ── Between-phase cancellation gate ────────────────────────────
 		if (opts.signal?.aborted) {
@@ -645,6 +669,16 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			`run-task ${taskId}: phase ${currentPhaseIndex + 1}/${PHASES.length} (${phase.role})`,
 		);
 		ctx.ui.notify(`→ ${taskId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${PHASES.length})`, "info");
+		orchTranscript.record({
+			kind: "phase-start",
+			ts: new Date().toISOString(),
+			phase: phase.role,
+			phaseIndex: currentPhaseIndex,
+			phaseCount: PHASES.length,
+			attempt: (iterationCounts[phase.role] ?? 0) + 1,
+			workflowFile: phase.workflowFile,
+			persona: phase.personaNoun,
+		});
 
 		const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
 
@@ -979,6 +1013,18 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
 				"info",
 			);
+			orchTranscript.record({
+				kind: "phase-end",
+				ts: new Date().toISOString(),
+				phase: phase.role,
+				phaseIndex: currentPhaseIndex,
+				attempt: (iterationCounts[phase.role] ?? 0) + 1,
+				verdict: "n/a",
+				elapsedMs: Date.now() - phaseStart,
+				turns: turn,
+				toolCount,
+				errCount,
+			});
 			const { cumCompression } = observer.state;
 			registry.appendTail(
 				taskId,
@@ -1118,6 +1164,15 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						`(attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
 					"info",
 				);
+				orchTranscript.record({
+					kind: "phase-loopback",
+					ts: new Date().toISOString(),
+					fromPhase: phase.role,
+					toPhase: PHASES[predIndex]?.role ?? String(predIndex),
+					fromPhaseIndex: currentPhaseIndex,
+					toPhaseIndex: predIndex,
+					reason: `${phase.role} returned revision (attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
+				});
 				// Write intermediate state (not halted — still running)
 				writeState(cwd, {
 					taskId,
@@ -1147,6 +1202,12 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 	// ── All phases complete ───────────────────────────────────────────
 	deleteState(cwd, taskId);
+	orchTranscript.record({
+		kind: "pipeline-end",
+		ts: new Date().toISOString(),
+		outcome: "complete",
+		elapsedMs: Date.now() - pipelineStartMs,
+	});
 	return {
 		status: "completed",
 		lastPhaseIndex: PHASES.length - 1,
@@ -1154,6 +1215,9 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		model: lastModel,
 		provider: lastProvider,
 	};
+	} finally {
+		ctx.ui.notify = __origNotify;
+	}
 }
 
 // ── Thin wrapper registration ────────────────────────────────────────────

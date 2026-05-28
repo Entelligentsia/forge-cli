@@ -212,6 +212,10 @@ function emptyUsage(): UsageStats {
  */
 export async function runForgeSubagent(opts: RunSubagentOptions): Promise<SubagentResult> {
 	const { persona, task, cwd, signal, onEvent, forgeRoot, cacheSessionId } = opts;
+	// Captured at dispatch start so the transcript filename's ISO prefix
+	// reflects when the subagent began, not when it finished — preserves
+	// natural chronological ordering when a phase runs multiple times.
+	const startedAt = new Date();
 
 	// Set FORGE_ROOT in the process environment so the subagent's bash tool
 	// can resolve $FORGE_ROOT paths. This is critical for workflow commands
@@ -378,9 +382,10 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	}
 
 	// ── Auto-export subagent transcript ─────────────────────────────────
-	// Default-on. One file per phase — overwrites any prior run of the
-	// same phase so the latest transcript is always what the user sees.
-	// Location: .forge/transcripts/<entity>/<phase>.json
+	// Default-on. Filename is ISO-timestamp-prefixed so successive runs
+	// of the same phase (e.g. plan → review → plan → review on revision
+	// loops) all persist and sort chronologically in directory listings.
+	// Location: .forge/transcripts/<entity>/<ISO-compact>__<entity>__<phase>.json
 	// .forge/ is .gitignored by the existing .forge/ entry, so transcripts
 	// are excluded from version control by default.
 	try {
@@ -389,6 +394,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 			persona: persona.name,
 			tag: opts.exportTag,
 			result,
+			startedAt,
 		});
 	} catch (err: unknown) {
 		const e = err as { message?: string };
@@ -400,12 +406,20 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 
 // ── Transcript auto-export ───────────────────────────────────────────────
 //
-// Location: .forge/transcripts/<entity>/<phase>.json
+// Location: .forge/transcripts/<entity>/<ISO-compact>__<entity>__<phase>.json
 //
-//   run-task:   exportTag = "<taskId>__<phase>"  → transcripts/<taskId>/<phase>.json
-//   run-sprint: exportTag = "<sprintId>__ceremony" → transcripts/<sprintId>/ceremony.json
-//   fix-bug:    exportTag = "<bugId>__<phase>"    → transcripts/<bugId>/<phase>.json
-//   untagged:   (no exportTag)                    → transcripts/general/<persona>.json
+// The ISO timestamp is compact UTC (e.g. "20260528T133500Z") and prefixes
+// the filename so successive runs of the same phase (review loops) all
+// persist and sort chronologically in directory listings.
+//
+//   run-task:   exportTag = "<taskId>__<phase>"
+//     → transcripts/<taskId>/<ISO>__<taskId>__<phase>.json
+//   run-sprint: exportTag = "<sprintId>__ceremony"
+//     → transcripts/<sprintId>/<ISO>__<sprintId>__ceremony.json
+//   fix-bug:    exportTag = "<bugId>__<phase>"
+//     → transcripts/<bugId>/<ISO>__<bugId>__<phase>.json
+//   untagged:   (no exportTag)
+//     → transcripts/general/<ISO>__<persona>.json
 //
 // .forge/ is .gitignored by the existing .forge/ entry, so transcripts are
 // excluded from version control by default.
@@ -415,6 +429,7 @@ interface WriteTranscriptOptions {
 	persona: string;
 	tag?: string;
 	result: SubagentResult;
+	startedAt: Date;
 }
 
 function sanitizeForFilename(s: string): string {
@@ -424,44 +439,63 @@ function sanitizeForFilename(s: string): string {
 		.slice(0, 80);
 }
 
+/**
+ * Format a Date as a compact UTC timestamp for transcript filenames.
+ * Example: 2026-05-28T13:35:00.123Z → "20260528T133500Z" (no dashes,
+ * colons, or fractional seconds). Lexicographic sort matches chronological
+ * order, which is the property that makes `ls` show transcripts in run order.
+ */
+export function formatTranscriptTimestamp(d: Date): string {
+	const iso = d.toISOString();
+	// "2026-05-28T13:35:00.123Z" → "20260528T133500Z"
+	return iso.replace(/[-:]/g, "").replace(/\.\d+/, "");
+}
+
 /** Derive the subdirectory and filename from the export tag.
  *
  * exportTag format for tasks/bugs/sprints: "<entityId>__<role>"
  *   → dir  = <entityId>  (e.g. "FORGE-S21-T04")
- *   → file = <entityId>__<role>.json
+ *   → file = <ISO>__<entityId>__<role>.json
  *
- * Untagged / partial tag: "general" as dir, persona as filename.
+ * Untagged / partial tag: "general" as dir, "<ISO>__<persona>.json" filename.
  */
-function computeTranscriptPath(cwd: string, persona: string, tag: string | undefined): string {
+export function computeTranscriptPath(
+	cwd: string,
+	persona: string,
+	tag: string | undefined,
+	startedAt: Date,
+): string {
 	const base = path.join(cwd, ".forge", "transcripts");
+	const ts = formatTranscriptTimestamp(startedAt);
 
 	if (tag) {
 		const parts = tag.split("__");
 		if (parts.length >= 2) {
-			// "<entityId>__<role>" — dir = entityId, file = entityId__role.json
+			// "<entityId>__<role>" → dir = entityId, file = <ISO>__entityId__role.json
 			const entityId = parts[0];
 			const role = parts.slice(1).join("__");
 			const dir = path.join(base, sanitizeForFilename(entityId));
-			const filename = `${sanitizeForFilename(entityId)}__${sanitizeForFilename(role)}.json`;
+			const filename = `${ts}__${sanitizeForFilename(entityId)}__${sanitizeForFilename(role)}.json`;
 			return path.join(dir, filename);
 		}
 	}
 
 	// No tag or malformed — put in general/ with persona as filename.
 	const dir = path.join(base, "general");
-	const filename = `${sanitizeForFilename(persona)}.json`;
+	const filename = `${ts}__${sanitizeForFilename(persona)}.json`;
 	return path.join(dir, filename);
 }
 
 export function writeSubagentTranscript(opts: WriteTranscriptOptions): string {
-	const { cwd, persona, tag, result } = opts;
-	const outPath = computeTranscriptPath(cwd, persona, tag);
+	const { cwd, persona, tag, result, startedAt } = opts;
+	const outPath = computeTranscriptPath(cwd, persona, tag, startedAt);
 
 	fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
 	const payload = {
 		schema: "forge-subagent-transcript/v1",
-		timestamp: new Date().toISOString(),
+		startedAt: startedAt.toISOString(),
+		finishedAt: new Date().toISOString(),
 		cwd,
 		persona,
 		tag: tag ?? null,
