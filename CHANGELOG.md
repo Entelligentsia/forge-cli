@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-05-28
+
+### Fixed
+
+- **FORGE-BUG-040 (critical) — `/forge:fix-bug` triage subagent received the orchestrator-only `fix_bug.md` body and executed the full bug lifecycle in one phase.** `BUG_PHASES` wiring corrected: `triage → triage`, `plan-fix → plan_task`, `implement → implement_plan` (previously all three pointed at `fix_bug`). The compensating materialization-skip wrapper and audience-bypass clause are deleted; the audience gate now runs uniformly for every BUG phase. Pairs with plugin v1.0.3 (coordinated release). Closes Entelligentsia/forge#110.
+
+### Added
+
+- `subagent/phase-guard.ts` — tool-boundary phase-ownership enforcement (`assertPhaseOwnership`, `assertBugStatusOwnership`, `assertOrchestratorOnlyEmit`, `PhaseOwnershipError`). Wired into `forge_preflight` and the four bug-mutating `forge_store` verbs (`set-bug-summary`, `set-summary`, `update-status bug`, `emit`). Subagent callers attempting cross-phase calls are rejected with a structured error; orchestrator callers are unaffected.
+- `subagent/phase-summary-map.ts` — single-source `BUG_SUMMARY_KEY_BY_ROLE` (hoisted out of `fix-bug.ts` to break a `forge-tools → phase-guard → fix-bug → forge-tools` circular import). `fix-bug.ts` re-exports for backwards compatibility.
+- `@entelligentsia/forge-compress` integration (pre-approved separate work bundled in this release) — `compressWithTelemetry` wraps `forge_store` read/list, `forge_validate_store`, and `forge_store_query` results; `cumCompression` surfaced in phase summaries.
+
+### Changed
+
+- `CallerContext` extended from string union to discriminated union: `{ kind: "orchestrator" } | { kind: "subagent"; phase: PhaseRole }`. `CallerContextStore.asSubagent(phase, fn)` requires a `PhaseRole` argument — this is now the single setter of phase context for any subagent dispatch.
+- `fix-bug.ts` and `run-task.ts` phase loops wrap `runForgeSubagent(...)` in `CallerContextStore.asSubagent(phase.role, ...)`. Task-mode pipelines are protected against the same defect class.
+- `composeBugBody` triage hint trimmed — route-field requirement and Path A/B criteria now live natively in `triage.md`.
+
 ## [1.0.0] — 2026-05-26
 
 ### Breaking Changes
