@@ -85,6 +85,13 @@ const CLI_ONLY_COMMANDS = new Set<string>([
 const INTERNAL_COMMANDS = new Set<string>([
 	"forge:read", // CLI-internal file reader, not a user-facing command
 	"forge:refresh-kb-links", // admin utility — registered by registerAllForgeCommands
+	// forge:enhance was REMOVED as a command in v1.0 (FORGE-S26-T10); the plugin
+	// ships commands/enhance.md only as a deprecation tombstone pointing users at
+	// /forge:rebuild --enrich (FORGE-S26-T03). It is intentionally absent from the
+	// CLI EXPLICITLY_REGISTERED_NAMES — never re-add it. registerAllForgeCommands
+	// emits an advisory stub for the bundled file; that is not a primary command
+	// surface and is excluded from parity here.
+	"forge:enhance",
 ]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────

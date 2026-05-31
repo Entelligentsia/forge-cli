@@ -161,11 +161,12 @@ describe("FORGE-BUG-025: no .claude/commands/ output in pi runtime", () => {
 		// refresh-kb-links is registered by registerAllForgeCommands.
 		expect(registeredCommands.has("forge:refresh-kb-links")).toBe(true);
 
-		// forge:enhance: as of FORGE-S20-T04, the native kickoff handler is
-		// registered separately via registerEnhance(pi) in index.ts. It now
-		// appears in EXPLICITLY_REGISTERED_NAMES, so registerAllForgeCommands
-		// MUST NOT register it (would clobber the real handler).
-		expect(registeredCommands.has("forge:enhance")).toBe(false);
+		// forge:enhance: REMOVED as a command in v1.0 (FORGE-S26-T10). The native
+		// kickoff handler (registerEnhance) was deleted and forge:enhance is no
+		// longer in EXPLICITLY_REGISTERED_NAMES. The bundled command file is a
+		// deprecation tombstone, so registerAllForgeCommands DOES emit an advisory
+		// stub for it like any other non-real-handler command.
+		expect(registeredCommands.has("forge:enhance")).toBe(true);
 
 		// forge:plan: as of FORGE-S20-T05, the native kickoff handler is
 		// registered separately via registerPlan(pi) in index.ts. It now

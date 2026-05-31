@@ -284,8 +284,8 @@ describe("extractPatchProposals", () => {
 // ── EXPLICITLY_REGISTERED_NAMES guard ────────────────────────────────────
 
 describe("EXPLICITLY_REGISTERED_NAMES", () => {
-	it("includes forge:calibrate", () => {
-		expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:calibrate")).toBe(true);
+	it("does NOT register forge:calibrate as a command in v1.0 (removed FORGE-S26-T10; handler reused by /forge:health --fix)", () => {
+		expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:calibrate")).toBe(false);
 	});
 });
 

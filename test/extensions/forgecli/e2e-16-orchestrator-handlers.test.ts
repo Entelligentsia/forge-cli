@@ -65,8 +65,8 @@ describe("E2E-16: Orchestrator handler IL10 shape (FORGE-S23-T13)", () => {
 			expect(srcNoComments).toMatch(/runForgeSubagent\s*\(/);
 		});
 
-		it("EXPLICITLY_REGISTERED_NAMES contains 'forge:calibrate'", () => {
-			expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:calibrate")).toBe(true);
+		it("EXPLICITLY_REGISTERED_NAMES does NOT contain 'forge:calibrate' (removed v1.0; handler reused by /forge:health --fix)", () => {
+			expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:calibrate")).toBe(false);
 		});
 	});
 
@@ -84,8 +84,8 @@ describe("E2E-16: Orchestrator handler IL10 shape (FORGE-S23-T13)", () => {
 			expect(srcNoComments).toMatch(/runForgeSubagent\s*\(/);
 		});
 
-		it("EXPLICITLY_REGISTERED_NAMES contains 'forge:migrate'", () => {
-			expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:migrate")).toBe(true);
+		it("EXPLICITLY_REGISTERED_NAMES does NOT contain 'forge:migrate' (removed v1.0; handler reused by /forge:init --migrate)", () => {
+			expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:migrate")).toBe(false);
 		});
 	});
 
@@ -101,8 +101,8 @@ describe("E2E-16: Orchestrator handler IL10 shape (FORGE-S23-T13)", () => {
 			expect(srcNoComments).not.toMatch(/import.*runForgeSubagent/);
 		});
 
-		it("EXPLICITLY_REGISTERED_NAMES contains 'forge:materialize'", () => {
-			expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:materialize")).toBe(true);
+		it("EXPLICITLY_REGISTERED_NAMES does NOT contain 'forge:materialize' (removed v1.0)", () => {
+			expect(forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has("forge:materialize")).toBe(false);
 		});
 	});
 });

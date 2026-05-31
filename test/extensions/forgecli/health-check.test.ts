@@ -314,9 +314,10 @@ describe("runHealthCheck: KB freshness drift detail", () => {
 
 		const kbGap = result.gaps.find((g) => g.check === "kb-freshness");
 		if (kbGap) {
-			expect(kbGap.message).toContain("/forge:calibrate");
+			// v1.0: remediation points at /forge:health --fix (calibrate folded in — FORGE-S26-T10)
+			expect(kbGap.message).toContain("/forge:health --fix");
 			expect(kbGap.message).toContain("Drifted sections:");
-			expect(kbGap.message).toContain("FORGE_YES=1");
+			expect(kbGap.message).toContain("re-align");
 		}
 	});
 
@@ -343,9 +344,9 @@ describe("runHealthCheck: KB freshness drift detail", () => {
 
 		const kbGap = result.gaps.find((g) => g.check === "kb-freshness");
 		if (kbGap) {
-			expect(kbGap.message).toContain("/forge:calibrate");
-			expect(kbGap.message).toContain("FORGE_YES=1");
-			expect(kbGap.message).toContain("FORGE_NON_INTERACTIVE=1");
+			// v1.0: remediation points at /forge:health --fix (calibrate folded in — FORGE-S26-T10)
+			expect(kbGap.message).toContain("/forge:health --fix");
+			expect(kbGap.message).toContain("establish one");
 		}
 	});
 });

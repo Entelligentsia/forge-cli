@@ -73,24 +73,26 @@ afterEach(() => {
 });
 
 describe("registerForgeCommands", () => {
-	it("registers forge:health, forge:ask, old-name redirect stubs, and removed-command stubs", () => {
+	it("registers forge:health and forge:ask (no redirect/removed-command stubs in v1.0)", () => {
 		// Plan 16 Slice 4a: /forge:config is now registered by registerConfigCommand
 		// in index.ts, not here. The slot stays in EXPLICITLY_REGISTERED_NAMES so
 		// the auto-stub loop does not re-register a fallback.
 		// FORGE-S23-T10: /forge:status delegate stub removed — native handler
 		// registered via registerStatusCommand in index.ts.
-		// FORGE-S26-T10: 7 old-name redirect stubs + 5 removed-command stubs added.
+		// FORGE-S26-T10: deprecated rename/removal redirects fully removed — old
+		// names are now unknown commands, so registerForgeCommands registers only
+		// the two core commands (health + ask). No removed-command stubs remain.
 		const pi = makePi();
 		registerForgeCommands(pi as never, { forgeRoot: "/fake/forge", promptsRoot: "/fake/prompts" });
 
-		// 2 real commands + 1 removed-command stub = 3
-		expect(pi.registerCommand).toHaveBeenCalledTimes(3);
+		// 2 real commands (forge:health, forge:ask), no stubs
+		expect(pi.registerCommand).toHaveBeenCalledTimes(2);
 		const names = Array.from(pi.commands.keys()).sort();
 		// Core commands
 		expect(names).toContain("forge:ask");
 		expect(names).toContain("forge:health");
-		// Removed-command stub (only forge:materialize remains)
-		expect(names).toContain("forge:materialize");
+		// Removed commands get NO stub here (unknown command in v1.0)
+		expect(names).not.toContain("forge:materialize");
 		expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function));
 		expect(pi.beforeAgentStart).not.toBeNull();
 	});
@@ -297,7 +299,7 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		expect(__test__.REAL_HANDLERS.has("forge:enhance")).toBe(false);
 		expect(__test__.REAL_HANDLERS.has("forge:calibrate")).toBe(false);
 		expect(__test__.REAL_HANDLERS.has("forge:migrate")).toBe(false);
-		// forge:materialize still present as a removed-command stub
-		expect(__test__.REAL_HANDLERS.has("forge:materialize")).toBe(true);
+		// forge:materialize fully removed in v1.0 — no lingering stub
+		expect(__test__.REAL_HANDLERS.has("forge:materialize")).toBe(false);
 	});
 });

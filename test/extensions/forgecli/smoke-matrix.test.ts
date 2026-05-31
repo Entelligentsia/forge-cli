@@ -93,54 +93,66 @@ const MODEL_CLASSES = [
 // Each entry declares the command name, source file, and archetype assertions.
 // T12 is audit-only (no handler) — documented in SMOKE_MATRIX.md, not tested here.
 
+// `registered: false` marks a handler module that is NOT a registered v1.0
+// command (its command was removed in FORGE-S26-T10) but whose source is still
+// live — reused internally — and therefore must remain under the provider-lock
+// gate. The registration gate skips these; the provider-lock gate does not.
 type HandlerEntry =
 	| {
 			command: string;
 			file: string;
 			archetype: "KickoffShim";
 			task: string;
+			registered?: boolean;
 	  }
 	| {
 			command: string;
 			file: string;
 			archetype: "Atomic";
 			task: string;
+			registered?: boolean;
 	  }
 	| {
 			command: string;
 			file: string;
 			archetype: "Orchestrator" | "Hybrid";
 			task: string;
+			registered?: boolean;
 	  };
 
 const HANDLERS: HandlerEntry[] = [
 	// ── T06 ──────────────────────────────────────────────────────────────────
-	{ command: "forge:retrospective", file: "retrospective.ts", archetype: "KickoffShim", task: "T06" },
+	// FORGE-S26-T10: retrospective.ts now registers the renamed command forge:retro.
+	{ command: "forge:retro", file: "retrospective.ts", archetype: "KickoffShim", task: "T06" },
 
 	// ── T07 ──────────────────────────────────────────────────────────────────
 	// /forge:health is registered in forge-commands.ts (delegateMarkdownCommand → pi.sendUserMessage).
 	// health-check.ts exports the atomic check functions; model dispatch is not used.
 	{ command: "forge:health", file: "health-check.ts", archetype: "Atomic", task: "T07" },
 
-	// ── T08 ──────────────────────────────────────────────────────────────────
-	{ command: "forge:calibrate", file: "calibrate.ts", archetype: "Orchestrator", task: "T08" },
-
-	// ── T09 ──────────────────────────────────────────────────────────────────
-	{ command: "forge:materialize", file: "materialize.ts", archetype: "Atomic", task: "T09" },
-	{ command: "forge:migrate", file: "migrate.ts", archetype: "Hybrid", task: "T09" },
+	// ── T08–T09 ───────────────────────────────────────────────────────────────
+	// forge:calibrate, forge:materialize, forge:migrate were removed as commands in
+	// v1.0 (FORGE-S26-T10). calibrate.ts and migrate.ts remain LIVE — reused by
+	// /forge:health --fix and /forge:init --migrate respectively — so they stay
+	// under the provider-lock gate via registered:false (registration gate skips
+	// them). materialize.ts/update-tools.ts are dormant (no remaining caller) and
+	// are intentionally dropped from this matrix.
+	{ command: "forge:calibrate", file: "calibrate.ts", archetype: "Orchestrator", task: "T08", registered: false },
+	{ command: "forge:migrate", file: "migrate.ts", archetype: "Hybrid", task: "T09", registered: false },
 
 	// ── T10 ──────────────────────────────────────────────────────────────────
-	{ command: "forge:update-tools", file: "update-tools.ts", archetype: "Atomic", task: "T10" },
-	{ command: "forge:store-query", file: "store-query.ts", archetype: "Atomic", task: "T10" },
+	// forge:update-tools removed in v1.0. store-query.ts now registers forge:search.
+	{ command: "forge:search", file: "store-query.ts", archetype: "Atomic", task: "T10" },
 	{ command: "forge:status", file: "status-command.ts", archetype: "Atomic", task: "T10" },
 
 	// ── T11 ──────────────────────────────────────────────────────────────────
+	// quiz-agent.ts → forge:check-agent, store-repair.ts → forge:repair (FORGE-S26-T10).
 	{ command: "forge:add-task", file: "add-task.ts", archetype: "KickoffShim", task: "T11" },
 	{ command: "forge:add-pipeline", file: "add-pipeline.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:quiz-agent", file: "quiz-agent.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:check-agent", file: "quiz-agent.ts", archetype: "KickoffShim", task: "T11" },
 	{ command: "forge:remove", file: "remove-command.ts", archetype: "KickoffShim", task: "T11" },
 	{ command: "forge:report-bug", file: "report-bug.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:store-repair", file: "store-repair.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:repair", file: "store-repair.ts", archetype: "KickoffShim", task: "T11" },
 ];
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -151,7 +163,8 @@ for (const modelClass of MODEL_CLASSES) {
 		// Every handler MUST be in EXPLICITLY_REGISTERED_NAMES regardless of model class.
 
 		describe("Registration gate: all T06–T12 commands registered", () => {
-			for (const entry of HANDLERS) {
+			// Skip removed-command handlers retained only for provider-lock coverage.
+			for (const entry of HANDLERS.filter((e) => e.registered !== false)) {
 				it(`EXPLICITLY_REGISTERED_NAMES contains '${entry.command}' [${entry.task}]`, () => {
 					expect(
 						forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES.has(entry.command),

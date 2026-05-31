@@ -105,9 +105,10 @@ describe("post-init-hook handler", () => {
 
 		await handler(event, ctx);
 
-		// sendKickoff must have been called with enhance phase 1 --auto
+		// sendKickoff must have been called with /forge:rebuild --enrich
+		// (v1.0: /forge:enhance was removed; enrichment is now a flag on rebuild — FORGE-S26-T10)
 		expect(kickoffMessages.length).toBe(1);
-		expect(kickoffMessages[0]).toMatch(/forge:enhance\s+--phase\s+1\s+--auto/);
+		expect(kickoffMessages[0]).toMatch(/forge:rebuild\s+--enrich/);
 	});
 
 	it("2. sentinel prevents re-fire: second emit notifies 'already fired'", async () => {

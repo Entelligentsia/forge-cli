@@ -196,8 +196,8 @@ describe("registerMaterialize handler guards", () => {
 // ── EXPLICITLY_REGISTERED_NAMES ─────────────────────────────────────────────
 
 describe("EXPLICITLY_REGISTERED_NAMES", () => {
-	it("includes forge:materialize", () => {
+	it("does NOT register forge:materialize in v1.0 (removed FORGE-S26-T10)", () => {
 		const names = forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES;
-		expect(names.has("forge:materialize")).toBe(true);
+		expect(names.has("forge:materialize")).toBe(false);
 	});
 });

@@ -178,8 +178,8 @@ describe("registerUpdateTools handler guards", () => {
 // ── EXPLICITLY_REGISTERED_NAMES ──────────────────────────────────────────────
 
 describe("EXPLICITLY_REGISTERED_NAMES", () => {
-	it("contains forge:update-tools", () => {
+	it("does NOT register forge:update-tools in v1.0 (removed FORGE-S26-T10)", () => {
 		const { EXPLICITLY_REGISTERED_NAMES } = forgeCommandsTest;
-		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:update-tools")).toBe(true);
+		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:update-tools")).toBe(false);
 	});
 });

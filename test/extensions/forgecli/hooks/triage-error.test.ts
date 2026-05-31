@@ -2,7 +2,7 @@
 //
 // Coverage:
 //   isForgeRelated:
-//     1. Returns true for each of the 11 FORGE_PATTERNS (spot-checks key patterns)
+//     1. Returns true for each of the 12 FORGE_PATTERNS (spot-checks key patterns)
 //     2. Returns false for a non-Forge command
 //     3. Partial match within compound command succeeds
 //   buildTriageMessage:
@@ -19,8 +19,8 @@ import {
 } from "../../../../src/extensions/forgecli/hooks/triage-error.js";
 
 describe("FORGE_PATTERNS", () => {
-	it("exports 11 patterns", () => {
-		expect(FORGE_PATTERNS).toHaveLength(11);
+	it("exports 12 patterns", () => {
+		expect(FORGE_PATTERNS).toHaveLength(12);
 	});
 });
 

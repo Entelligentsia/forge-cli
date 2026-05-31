@@ -167,7 +167,8 @@ describe("EXPLICITLY_REGISTERED_NAMES", () => {
 	it("contains forge:search (renamed from forge:store-query in v1.0)", () => {
 		const { EXPLICITLY_REGISTERED_NAMES } = forgeCommandsTest;
 		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:search")).toBe(true);
-		// Old name should also be present as a deprecated redirect stub
-		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:store-query")).toBe(true);
+		// Old name fully removed in v1.0 — no deprecated redirect stub (FORGE-S26-T10:
+		// renames drop the old name entirely; it is now an unknown command).
+		expect(EXPLICITLY_REGISTERED_NAMES.has("forge:store-query")).toBe(false);
 	});
 });

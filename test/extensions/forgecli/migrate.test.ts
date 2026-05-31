@@ -392,8 +392,8 @@ describe("structural branch", () => {
 // ── EXPLICITLY_REGISTERED_NAMES ─────────────────────────────────────────────
 
 describe("EXPLICITLY_REGISTERED_NAMES", () => {
-	it("includes forge:migrate", () => {
+	it("does NOT register forge:migrate as a command in v1.0 (removed FORGE-S26-T10; handler reused by /forge:init --migrate)", () => {
 		const names = forgeCommandsTest.EXPLICITLY_REGISTERED_NAMES;
-		expect(names.has("forge:migrate")).toBe(true);
+		expect(names.has("forge:migrate")).toBe(false);
 	});
 });
