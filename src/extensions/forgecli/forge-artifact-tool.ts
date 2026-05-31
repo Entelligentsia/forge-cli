@@ -106,8 +106,8 @@ export function buildForgeArtifact(
 			"Use forge_artifact to read/write phase outputs (PLAN.md, PROGRESS.md, *-SUMMARY.json). " +
 			"Never construct artifact paths manually — the tool resolves them from entity IDs.",
 		parameters: Type.Object({
-			command: Type.Union([Type.Literal("read"), Type.Literal("write"), Type.Literal("list")], {
-				description: "read: fetch content. write: create/overwrite with validation. list: show existing artifacts.",
+			command: Type.Union([Type.Literal("read"), Type.Literal("write"), Type.Literal("list"), Type.Literal("exists"), Type.Literal("url"), Type.Literal("delete")], {
+				description: "read: fetch content. write: create/overwrite with validation. list: show existing artifacts. exists: true/false. url: backend URL (file:// for fs). delete: remove the artifact.",
 			}),
 			entity: Type.Union([Type.Literal("task"), Type.Literal("bug"), Type.Literal("sprint")], {
 				description: "Entity type.",
@@ -128,7 +128,7 @@ export function buildForgeArtifact(
 		}),
 		async execute(_toolCallId, _params, signal) {
 			const params = _params as {
-				command: "read" | "write" | "list";
+				command: "read" | "write" | "list" | "exists" | "url" | "delete";
 				entity: "task" | "bug" | "sprint";
 				entityId: string;
 				artifact?: string;
