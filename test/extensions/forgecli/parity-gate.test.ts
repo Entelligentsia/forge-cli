@@ -49,6 +49,13 @@ const CLI_ONLY_COMMANDS = new Set<string>([
 	"forge:validate", // pipeline validate phase (FORGE-S21-T10)
 	"forge:collate", // internal orchestrator collation — not user-facing in v1.0
 
+	// ── CLI-only overlays / widgets ───────────────────────────────────────
+	// forge:dashboard is a pi-tui overlay that visualizes the orchestrator
+	// tree (sprint > tasks > phases). It has no plugin analogue — the plugin
+	// meta lives entirely in the CLI extension. Adding a plugin command file
+	// would be misleading, since the overlay is purely a CLI concern.
+	"forge:dashboard",
+
 	// ── v1.0 renamed commands ────────────────────────────────────────────
 	// New names registered in CLI; plugin still uses old names (quiz-agent.md,
 	// retrospective.md, regenerate.md, store-query.md, store-repair.md,

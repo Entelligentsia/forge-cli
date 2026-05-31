@@ -41,6 +41,7 @@ import {
 import { resolveModelForPhase } from "./model-resolver.js";
 import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { getOrchestratorTree } from "./orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
@@ -545,6 +546,9 @@ export { extractTurnPreview } from "./viewport-renderer.js";
 export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<RunTaskPipelineResult> {
 	const { taskId, cwd, ctx, forgeRoot, storeCli, preflightGate, registry, resumeFromState, onPhaseEvent } = opts;
 
+	// Bridge: OrchestratorTree for the dashboard overlay.
+	const tree = getOrchestratorTree();
+
 	// Load per-phase model routing config once at task entry (Plan 16 Slice 2).
 	// Empty / absent config produces inherit for every phase — no behaviour change.
 	// N-B-E: surface schema errors to caller (Decision 9 — orchestrators fail-fast).
@@ -871,6 +875,16 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		});
 		registry.startPhase(taskId, phase.role, currentPhaseIndex);
 
+		// Bridge: register phase in OrchestratorTree.
+		const iteration = (opts.resumeFromState?.iterationCounts?.[phase.role] ?? 0) + 1;
+		const phaseNodeId = `${taskId}:${phase.role}:${iteration}`;
+		tree.startNode(phaseNodeId, {
+			parentId: taskId,
+			label: `${phase.role}:${iteration}`,
+			kind: "leaf",
+			promptPreview: taskBody.slice(0, 200),
+		});
+
 		// Capture the first stream-observed model on turn_end (IL10 visibility).
 		// If pi auto-substitutes or setModel silently no-ops, this line will diverge
 		// from requested_model — exactly the diagnostic signal we want.
@@ -963,6 +977,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		if (result.stopReason === "aborted" || opts.signal?.aborted) {
 			ctx.ui.notify(`⊘ forge:run-task — ${taskId} phase ${phase.role} cancelled.`, "info");
 			registry.completePhase(taskId, phase.role, "cancelled");
+			tree.completeNode(phaseNodeId, "cancelled");
 			registry.confirmCancelled(taskId);
 			// ADR-S21-01: preserve state file so cancelled runs are resumable
 			writeState(cwd, {
@@ -1190,6 +1205,9 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 		// ── Advance to next phase ─────────────────────────────────────
 		registry.completePhase(taskId, phase.role, "completed");
+		tree.completeNode(phaseNodeId, "completed");
+		tree.setNodeUsage(phaseNodeId, { input: result.usage.input, output: result.usage.output, cacheRead: result.usage.cacheRead });
+		if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
 		writeState(cwd, {
 			taskId,
 			phaseIndex: currentPhaseIndex,
@@ -1357,6 +1375,10 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			const registry = getSessionRegistry();
 			registry.startSession(taskId);
 
+			// Bridge: also register in OrchestratorTree for the dashboard overlay.
+			const tree = getOrchestratorTree();
+			tree.startNode(taskId, { label: taskId, kind: "orchestrator" });
+
 			const signal = registry.getAbortSignal(taskId);
 			const pipelineResult = await runTaskPipeline({
 				taskId,
@@ -1374,13 +1396,16 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			// ── Handle result ────────────────────────────────────────────────
 			if (pipelineResult.status === "completed") {
 				registry.completeSession(taskId, "completed");
+				tree.completeNode(taskId, "completed");
 				ctx.ui.notify(`〇 forge:run-task — ${taskId} pipeline complete (${PHASES.length} phases).`, "info");
 			} else if (pipelineResult.status === "cancelled") {
 				// confirmCancelled was already called by the pipeline, but
 				// completeSession("cancelled") ensures the session ends cleanly.
 				registry.completeSession(taskId, "cancelled");
+				tree.completeNode(taskId, "cancelled");
 			} else {
 				registry.completeSession(taskId, "failed");
+				tree.completeNode(taskId, "failed");
 			}
 
 			ctx.ui.setStatus?.(STATUS_KEY, undefined);

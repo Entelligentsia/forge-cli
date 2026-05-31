@@ -257,6 +257,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:add-pipeline", // FORGE-S23-T11: Kickoff shim registered in add-pipeline.ts
 	"forge:remove", // FORGE-S23-T11: Kickoff shim registered in remove-command.ts
 	"forge:report-bug", // FORGE-S23-T11: Kickoff shim registered in report-bug.ts
+	"forge:dashboard", // Orchestrator tree overlay; registered in dashboard/register.ts
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.

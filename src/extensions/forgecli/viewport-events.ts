@@ -14,6 +14,7 @@
 // via SessionRegistry.getAggregateUsage().
 
 import type { SessionRegistry } from "./session-registry.js";
+import { getOrchestratorTree } from "./orchestrator-tree.js";
 import {
 	extractThinkingOneLiner,
 	extractTurnPreview,
@@ -100,6 +101,29 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 	} = opts;
 	const role = displayRole ?? phaseRole;
 
+	const tree = getOrchestratorTree();
+
+	// Helper to resolve the correct active node ID in the OrchestratorTree.
+	const resolveNodeId = (): string => {
+		const exactId = `${sessionId}:${phaseRole}`;
+		const exactNode = tree.getNode(exactId);
+		if (exactNode && exactNode.status === "running") return exactId;
+
+		const parentNode = tree.getNode(sessionId);
+		if (parentNode) {
+			const prefix = `${sessionId}:${phaseRole}:`;
+			for (const cid of parentNode.children) {
+				if (cid.startsWith(prefix)) {
+					const child = tree.getNode(cid);
+					if (child && child.status === "running") {
+						return cid;
+					}
+				}
+			}
+		}
+		return exactId;
+	};
+
 	const state = {
 		turn: 0,
 		toolCount: 0,
@@ -123,6 +147,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 	const tailPrefix = () => `[${role} ${formatTime(Date.now())} t${state.turn}]`;
 	const appendTail = (line: string, opts?: { warning?: boolean }) => {
 		registry.appendTail(sessionId, phaseRole, line, opts);
+		tree.appendTail(resolveNodeId(), line, opts);
 	};
 	const extractErrorSummary = (result: unknown): string => {
 		const raw =
@@ -165,6 +190,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				toolsThisTurn = 0;
 				firstLineOfTurn = true;
 				registry.bumpTurn(sessionId);
+				tree.bumpNodeTurn(resolveNodeId());
 				break;
 			}
 			case "turn_end": {
@@ -174,6 +200,8 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				state.cumUsage.output += delta.output;
 				state.cumUsage.cacheRead += delta.cacheRead;
 				registry.setPhaseUsage(sessionId, phaseRole, state.cumUsage);
+				const nodeId = resolveNodeId();
+				tree.setNodeUsage(nodeId, state.cumUsage);
 
 				// Capture which (provider, model) actually served this turn so
 				// the per-phase tail-view footer can display it. Cheap; the
@@ -184,6 +212,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 						provider: msg.provider,
 						model: msg.model,
 					});
+					tree.setNodeModel(nodeId, msg.model ?? "", msg.provider ?? "");
 				}
 
 				const closingBodies: string[] = [];
@@ -193,6 +222,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				const preview = extractTurnPreview(e.message);
 				if (preview) {
 					registry.setTurnPreview(sessionId, preview);
+					tree.setTurnPreview(nodeId, preview);
 					if (setStatusVerbose && verboseKeys?.messageKey) {
 						setStatusVerbose(verboseKeys.messageKey, `  "${preview}"`);
 					}
@@ -237,6 +267,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					args: e.args,
 				});
 				registry.recordToolStart(sessionId, e.toolCallId, e.toolName, e.args);
+				tree.incrementNodeToolCount(resolveNodeId());
 				const riskPrefix = risky ? `${RISKY_TAG} ` : "";
 				emitTurnLine(
 					`${riskPrefix}${glyph} ${e.toolName}${hint ? ` ${hint}` : ""}`,
@@ -255,8 +286,10 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					result: e.result,
 				});
 				registry.recordToolEnd(sessionId, e.toolCallId, e.toolName, e.isError, e.result);
+				const nodeId = resolveNodeId();
 				if (e.isError) {
 					state.errCount++;
+					tree.incrementNodeErrCount(nodeId);
 					emitTurnLine(`⚠ ${e.toolName} failed: ${extractErrorSummary(e.result)}`, { warning: true });
 				} else {
 					const shape = resultShape(e.toolName, e.result);
@@ -267,6 +300,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 						state.cumCompression.calls++;
 						state.cumCompression.tokensSaved += comp.before - comp.after;
 						registry.setPhaseCompression(sessionId, phaseRole, state.cumCompression);
+						tree.setNodeCompression(nodeId, state.cumCompression);
 					}
 				}
 				break;

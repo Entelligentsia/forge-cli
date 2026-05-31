@@ -77,6 +77,7 @@ import {
 	validateId,
 } from "./run-task.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { getOrchestratorTree } from "./orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
@@ -536,6 +537,8 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		resumeFromState,
 	} = opts;
 
+	const tree = getOrchestratorTree();
+
 	// Mutable bugId — for new bugs, pre-assign a real FORGE-BUG-NNN ID
 	// before triage so the subagent never needs to create or discover one.
 	// This replaces the fragile PENDING→capture pattern where the subagent was
@@ -950,6 +953,16 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
 		registry.startPhase(bugId, phase.role, currentPhaseIndex);
 
+		// Bridge: register phase in OrchestratorTree
+		const iteration = (iterationCounts[phase.role] ?? 0) + 1;
+		const phaseNodeId = `${bugId}:${phase.role}:${iteration}`;
+		tree.startNode(phaseNodeId, {
+			parentId: bugId,
+			label: `${phase.role}:${iteration}`,
+			kind: "leaf",
+			promptPreview: bugBody.slice(0, 200),
+		});
+
 		const refreshStatus = () => {
 			if (process.env.FORGE_VERBOSE !== "1") return;
 			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
@@ -1059,6 +1072,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		if (result.stopReason === "aborted" || opts.signal?.aborted) {
 			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
 			registry.completePhase(bugId, phase.role, "cancelled");
+			tree.completeNode(phaseNodeId, "cancelled");
 			registry.confirmCancelled(bugId);
 			// ADR-S21-01: preserve state file so cancelled runs are resumable
 			writeBugState(cwd, {
@@ -1413,6 +1427,9 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 		// ── Advance to next phase ─────────────────────────────────────
 		registry.completePhase(bugId, phase.role, "completed");
+		tree.completeNode(phaseNodeId, "completed");
+		tree.setNodeUsage(phaseNodeId, { input: result.usage.input, output: result.usage.output, cacheRead: result.usage.cacheRead });
+		if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
 		writeBugState(cwd, {
 			bugId,
 			phaseIndex: currentPhaseIndex,
@@ -1705,6 +1722,10 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			// Register session
 			registry.startSession(bugId);
 
+			// Bridge: register bug in OrchestratorTree.
+			const tree = getOrchestratorTree();
+			tree.startNode(bugId, { label: `fix-bug ${bugId}`, kind: "orchestrator" });
+
 			// ── Delegate to pipeline ─────────────────────────────────────────
 			// ── Delegate to pipeline ─────────────────────────────────────────
 			const signal = registry.getAbortSignal(bugId);
@@ -1727,11 +1748,14 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			// ── Handle result ────────────────────────────────────────────────
 			if (pipelineResult.status === "completed") {
 				registry.completeSession(bugId, "completed");
+				tree.completeNode(bugId, "completed");
 				ctx.ui.notify(`〇 forge:fix-bug — ${bugId} pipeline complete (${BUG_PHASES.length} phases).`, "info");
 			} else if (pipelineResult.status === "cancelled") {
 				registry.completeSession(bugId, "cancelled");
+				tree.completeNode(bugId, "cancelled");
 			} else {
 				registry.completeSession(bugId, "failed");
+				tree.completeNode(bugId, "failed");
 			}
 
 			ctx.ui.setStatus?.(STATUS_KEY, undefined);

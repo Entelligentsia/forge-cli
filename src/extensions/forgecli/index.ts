@@ -71,6 +71,7 @@ import { registerStoreQuery } from "./store-query.js";
 import { registerStoreRepair } from "./store-repair.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
+import { registerDashboardCommand } from "./dashboard/register.js";
 import { triggerUpdateCheck } from "./update-check.js";
 // update-tools.ts — registerUpdateTools removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerUsageHook } from "./usage-hook.js";
@@ -513,6 +514,11 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// the main chat viewport (via ctx.ui.setOutputSource added in pi-mono
 	// 0.75.0), Esc snaps back to main.
 	registerThreadSwitcher(pi);
+
+	// ── /forge:dashboard overlay (parallel to chip strip) ───────────────────────
+	// Reads from OrchestratorTree; the chip strip reads from SessionRegistry.
+	// Both are written to by the same orchestrator call-sites.
+	registerDashboardCommand(pi);
 
 	// ── /forge:read native handler ───────────────────────────────────────────
 	registerReadCommand(pi, forgeRoot);

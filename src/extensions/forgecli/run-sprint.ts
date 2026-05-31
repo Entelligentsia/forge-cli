@@ -58,6 +58,7 @@ import { lookupPersonaModel } from "./model-resolver.js";
 import { validateModelConfig } from "./model-validator.js";
 import { loadWorkflow } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
+import { getOrchestratorTree } from "./orchestrator-tree.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
 import { attachViewportObserver } from "./viewport-events.js";
 
@@ -545,9 +546,13 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 
 			// ── Per-task loop (AC B-8) ────────────────────────────────────────
 			const registry = getSessionRegistry();
+			const tree = getOrchestratorTree();
 			let lastModel: string | undefined;
 			let lastProvider: string | undefined;
 			const sprintStartMs = Date.now();
+
+			// Bridge: register sprint root in OrchestratorTree.
+			tree.startNode(sprintId, { label: `wfl:run-sprint`, kind: "orchestrator" });
 
 			for (let i = startTaskIndex; i < taskIds.length; i++) {
 				const taskId = taskIds[i];
@@ -617,6 +622,9 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				// ── Session lifecycle for thread-switcher (REVIEW FIX #2) ──────
 				registry.startSession(taskId);
 
+				// Bridge: register task in OrchestratorTree under sprint root.
+				tree.startNode(taskId, { parentId: sprintId, label: `▸ wfl:run-task`, kind: "orchestrator" });
+
 				const taskSignal = registry.getAbortSignal(taskId);
 
 				const taskResult: RunTaskPipelineResult = await runTaskPipeline({
@@ -649,10 +657,12 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				if (taskResult.status === "completed") {
 					completedTaskIds.push(taskId);
 					registry.completeSession(taskId, "completed");
+					tree.completeNode(taskId, "completed");
 				} else if (taskResult.status === "cancelled") {
 					// Task was cancelled by user — mark session, persist sprint
 					// state, emit sprint-halted with cancellation detail, exit.
 					registry.completeSession(taskId, "cancelled");
+					tree.completeNode(taskId, "cancelled");
 					const cancelledEvent: Record<string, unknown> = {
 						eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
 						sprintId,
@@ -684,6 +694,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				} else {
 					// Task halted/escalated/failed: mark session failed, persist sprint state, emit sprint-halted, exit.
 					registry.completeSession(taskId, "failed");
+					tree.completeNode(taskId, "failed");
 					const haltedEvent: Record<string, unknown> = {
 						eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
 						sprintId,

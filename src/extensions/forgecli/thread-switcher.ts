@@ -43,6 +43,8 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { getInputRouter } from "./input-router.js";
+import { getOrchestratorTree } from "./orchestrator-tree.js";
+import { DashboardComponent } from "./dashboard/component.js";
 import {
 	getSessionRegistry,
 	type PhaseSummary,
@@ -194,6 +196,8 @@ class ViewportFooterComponent implements Component {
 
 class ChipStripComponent implements Component {
 	private cursorIdx = 0;
+	/** active row in the active view: 0 = chips, 1 = dashboard row. */
+	private activeRow = 0;
 	/** id of the chip whose tail is currently mirrored in the chat viewport.
 	 *  "main" = pi default (no override). */
 	private focusedChipId = "main";
@@ -270,6 +274,27 @@ class ChipStripComponent implements Component {
 			if (s.phases[i].role === chip.id) return s.phases[i];
 		}
 		return undefined;
+	}
+
+	private activeCommandInfo(session: SessionState): { name: string; description: string } {
+		const tree = getOrchestratorTree();
+		const sprintRoot = tree.getRoots().find(r => r.id.startsWith("FORGE-S") && !r.id.includes("-T"));
+		if (sprintRoot) {
+			return {
+				name: "run-sprint",
+				description: "Run all tasks in a sprint sequentially"
+			};
+		}
+		if (session.taskId.startsWith("FORGE-BUG-")) {
+			return {
+				name: "fix-bug",
+				description: "Run bug-fix pipeline (triage → plan-fix → implement → review → commit)"
+			};
+		}
+		return {
+			name: "run-task",
+			description: "Run the full task pipeline (plan → review → implement → validate → approve → commit)"
+		};
 	}
 
 	private chipGlyph(chip: ChipTarget): string {
@@ -374,7 +399,7 @@ class ChipStripComponent implements Component {
 		const bold = (s: string) => this.theme.bold(s);
 
 		const parts = chips.map((c, i) => {
-			const isCursor = i === this.cursorIdx;
+			const isCursor = (this.activeRow === 0) && (i === this.cursorIdx);
 			const glyph = this.chipGlyph(c);
 			const label = c.label;
 			const inner = `${glyph} ${label}`;
@@ -386,7 +411,7 @@ class ChipStripComponent implements Component {
 		const prefix = "";
 		// "r resume" shown only for cancelled sessions; "x cancel" for running ones.
 		const cancelWord = session.status === "cancelled" ? dim("r resume") : dim("x cancel");
-		const navHints = dim(" ←→ · enter · ↑ back · esc back+main");
+		const navHints = dim(" ←→ · enter · ↑↓ nav · esc back+main");
 		// Show status-based text for non-running sessions
 		let statusPart = "";
 		if (session.status === "cancelling") {
@@ -410,10 +435,24 @@ class ChipStripComponent implements Component {
 		const previewBudget = Math.max(0, width - fixed);
 		const preview = previewText ? dim(truncateToWidth(previewText, previewBudget)) : "";
 
-		let line = `${prefix}${chipsJoined}${spinPart}${statusPart}${preview}   ${cancelWord}  ${navHints}`;
+		let line1 = `${prefix}${chipsJoined}${spinPart}${statusPart}${preview}   ${cancelWord}  ${navHints}`;
 		// Hard cap as last-resort defence (visibleWidth is best-effort).
-		if (visibleWidth(line) > width) line = truncateToWidth(line, width);
-		return [line];
+		if (visibleWidth(line1) > width) line1 = truncateToWidth(line1, width);
+
+		// Render row 2: the dashboard activation row
+		const cmdInfo = this.activeCommandInfo(session);
+		const row2Glyph = "◯";
+		const row2Label = cmdInfo.name;
+		const row2Desc = cmdInfo.description;
+		let line2 = "";
+		if (this.activeRow === 1) {
+			line2 = accent(bold(`▸ ${row2Glyph} ${row2Label}`)) + "  " + bold(row2Desc);
+		} else {
+			line2 = dim(`  ${row2Glyph} ${row2Label}  ${row2Desc}`);
+		}
+		if (visibleWidth(line2) > width) line2 = truncateToWidth(line2, width);
+
+		return [line1, line2];
 	}
 
 	/**
@@ -457,6 +496,9 @@ class ChipStripComponent implements Component {
 	setStripActive(active: boolean): void {
 		if (this.stripActive === active) return;
 		this.stripActive = active;
+		if (!active) {
+			this.activeRow = 0;
+		}
 		this.invalidationCb?.();
 	}
 
@@ -503,6 +545,15 @@ class ChipStripComponent implements Component {
 	isCursorResumable(): boolean {
 		const session = this.activeSession();
 		return session?.status === "cancelled";
+	}
+
+	getActiveRow(): number {
+		return this.activeRow;
+	}
+
+	setActiveRow(row: number): void {
+		this.activeRow = row;
+		this.invalidationCb?.();
 	}
 
 	getStripActive(): boolean {
@@ -816,19 +867,37 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					}
 
 					if (isLeftArrow(data)) {
-						stripRef.moveCursor(-1);
+						if (stripRef.getActiveRow() === 0) {
+							stripRef.moveCursor(-1);
+						}
 						return { consume: true };
 					}
 					if (isRightArrow(data)) {
-						stripRef.moveCursor(1);
+						if (stripRef.getActiveRow() === 0) {
+							stripRef.moveCursor(1);
+						}
+						return { consume: true };
+					}
+					if (isDownArrow(data)) {
+						if (stripRef.getActiveRow() === 0) {
+							stripRef.setActiveRow(1);
+						}
 						return { consume: true };
 					}
 					if (isUpArrow(data)) {
-						stripRef.setStripActive(false);
+						if (stripRef.getActiveRow() === 1) {
+							stripRef.setActiveRow(0);
+						} else {
+							stripRef.setStripActive(false);
+						}
 						return { consume: true };
 					}
 					if (isEnter(data)) {
-						commitFocus(live);
+						if (stripRef.getActiveRow() === 1) {
+							openDashboardTui(live);
+						} else {
+							commitFocus(live);
+						}
 						return { consume: true };
 					}
 					if (isEsc(data)) {
@@ -844,6 +913,31 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			const e = err as { message?: string };
 			ctx.ui.notify(`forge:threads failed to mount: ${e.message ?? "unknown"}`, "error");
 		}
+	}
+
+	function openDashboardTui(ctx: ExtensionContext): void {
+		if (!stripRef) return;
+		stripRef.setStripActive(false);
+
+		const tree = getOrchestratorTree();
+		const router = getInputRouter();
+		router.pushOverlay();
+		ctx.ui.custom<null>(
+			(tui, theme, _kb, done) => {
+				const component = new DashboardComponent(tree, tui, theme, done);
+				return component;
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					width: "100%",
+					anchor: "center",
+					margin: 0,
+				},
+			}
+		).finally(() => {
+			router.popOverlay();
+		});
 	}
 
 	function commitFocus(ctx: ExtensionContext): void {
