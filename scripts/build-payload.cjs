@@ -206,6 +206,10 @@ const TOOLS_TO_COPY = [
 	// FORGE-S26-T16: backported plugin tools — artifact.cjs and verify-apply.cjs
 	// are canonical plugin-side implementations; forge-cli shims delegate to them.
 	"artifact.cjs",
+	// issue #111 Phase 3: artifact.cjs now require()s artifact-store.cjs (the
+	// ArtifactStore/FsArtifactImpl provider seam). REQUIRED — without it the
+	// bundled artifact.cjs crashes with "Cannot find module './artifact-store.cjs'".
+	"artifact-store.cjs",
 	"verify-apply.cjs",
 	// FORGE-S26-T17: init phase verification tool — called by verifiers.ts wrappers
 	// and by the phase prompt files themselves to validate phase deliverables.
