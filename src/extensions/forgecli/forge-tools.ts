@@ -314,8 +314,8 @@ function buildForgeStore(toolDir: string, projectRoot: string): ToolDefinition {
 			"  update-status <entity> <id> <field> <value> [--force]\n" +
 			"  emit <sprintId> '<json>' [--sidecar]              — 2-3 args. event json embeds eventId, taskId, sprintId.\n" +
 			"  validate <entity> '<json>'                        — schema check, no write.\n" +
-			"  set-summary <taskId> <phase> <jsonFile>           — phase ∈ {plan, review_plan, implementation, code_review, validation}.\n" +
-			"  set-bug-summary <bugId> <phase> <jsonFile>\n" +
+			"  set-summary <taskId> <phase> [<jsonFile>]         — phase ∈ {plan, review_plan, implementation, code_review, validation, triage, approve}. Omit jsonFile: sidecar auto-resolved from record.path.\n" +
+			"  set-bug-summary <bugId> <phase> [<jsonFile>]      — omit jsonFile: sidecar auto-resolved from record.path.\n" +
 			"  progress <sprintOrBugId> <agentName> <bannerKey> <status> [detail]\n" +
 			"  progress-clear <sprintOrBugId>\n" +
 			"  describe <entity>                                 — print JSON Schema.\n" +
