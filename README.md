@@ -8,7 +8,7 @@
 [![npm](https://img.shields.io/npm/v/@entelligentsia/forgecli?style=flat-square&color=000&label=npm)](https://www.npmjs.com/package/@entelligentsia/forgecli)
 [![node](https://img.shields.io/badge/node-%E2%89%A520-000?style=flat-square)](#)
 [![license](https://img.shields.io/badge/license-MIT-000?style=flat-square)](#)
-[![forge plugin](https://img.shields.io/badge/forge--plugin-v1.0.2-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
+[![forge plugin](https://img.shields.io/badge/forge--plugin-v1.0.10-000?style=flat-square&labelColor=fafafa)](https://github.com/Entelligentsia/forge)
 [![pi runtime](https://img.shields.io/badge/runtime-pi--coding--agent-000?style=flat-square)](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)
 
 </div>
@@ -327,6 +327,7 @@ before forge-cli's extension hook runs.
 
 | Shipped | Version |
 |---------|---------|
+| Artifact-resolution parity (issue #111) + transcript preservation; bundles forge plugin v1.0.10 | 1.0.10 |
 | v1.0 DevX overhaul — command renames, pipeline guards, init phase decomposition, version drift detection | 1.0.0 |
 | Full `/forge:*` command surface + 4 hooks + migration runner | 0.11.0 |
 | Per-persona model routing + tiered config TUI | 0.9.0 |

@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.10] — 2026-05-31
+
+Coordinated release matching forge plugin **v1.0.10** (the issue #111
+artifact-resolution line). Versions 1.0.4–1.0.9 are intentionally skipped so the
+CLI version tracks the plugin version it bundles. No `npm publish` happened
+between 1.0.3 and this release; the items below are the net delta since the
+published 1.0.3.
+
+### Fixed
+
+- **`forge.bundledVersion` corrected `0.51.1` → `1.0.10`.** This field is the
+  bundled-plugin version surfaced by `forge --version` (`forge-plugin@…`), the
+  `/forge:init` banner (`Bundle: forge v…`), and—critically—the session-start
+  **version-drift detector** (`hooks/check-update.ts`). The stale `0.51.1` value
+  made drift detection compare installed projects against the wrong baseline;
+  it now reflects the plugin actually bundled.
+- **`build-payload`** now bundles `artifact-store.cjs` (issue #111 Phase 3
+  runtime dependency that was missing from the payload).
+- **`phase-guard`** task-mode `set-summary` uses the TASK key-map instead of the
+  bug-mode map (backlog A).
+
+### Added
+
+- **`forge_artifact` verb parity with the plugin (issue #111 Phase 2–3).**
+  `exists`, `url`, and `delete` verbs added in lockstep with the plugin's
+  `artifact.cjs`; the artifact-kind list is now derived from the plugin's
+  `artifact-kinds.cjs` registry (bundled) rather than hard-coded.
+
+### Changed
+
+- **vendor-pi bumped to upstream `0.78.0`** (weekly sync).
+- **`forge_store` docs:** `set-summary` / `set-bug-summary` `jsonFile` is optional
+  (auto-resolved from `record.path`).
+
+### Tests
+
+- **Test suite aligned with the v1.0 command surface (FORGE-S26).** 35 tests
+  asserted the pre-v1.0 command set (removed `calibrate`/`materialize`/`migrate`/
+  `update-tools`; renames `store-query`→`search`, `store-repair`→`repair`,
+  `quiz-agent`→`check-agent`, `retrospective`→`retro`; `enhance` removed). Triage
+  confirmed all were stale assertions, one width-truncation test bug, or an
+  auth-gated live test — no production regressions. Fix was test-only. All four
+  CI gates green (typecheck, no-skip lint, vitest, knip).
+
 ## [1.0.3] — 2026-05-28
 
 ### Fixed
