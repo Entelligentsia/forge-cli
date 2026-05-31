@@ -78,6 +78,35 @@ describe("assertPhaseOwnership", () => {
 		CallerContextStore.set({ kind: "subagent", phase: "commit" });
 		expect(() => assertPhaseOwnership("forge_store set-bug-summary", "commit")).toThrow(PhaseOwnershipError);
 	});
+
+	// Bug A (cartographer CART-S01-T02): task-mode set-summary must use the
+	// TASK key-map, not the bug-mode one. `plan` and `validate` are task-only
+	// roles absent from BUG_SUMMARY_KEY_BY_ROLE — they were wrongly rejected as
+	// "not a recognised bug-mode phase", forcing a bash fallback every phase.
+	it("set-summary translates TASK PhaseRole to summary key (plan, validate not rejected)", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "plan" });
+		// plan → "plan" — no throw (was: thrown as not-a-bug-mode-phase)
+		expect(() => assertPhaseOwnership("forge_store set-summary", "plan")).not.toThrow();
+
+		CallerContextStore.set({ kind: "subagent", phase: "validate" });
+		// validate → "validation" — no throw
+		expect(() => assertPhaseOwnership("forge_store set-summary", "validation")).not.toThrow();
+
+		// other task phases still resolve correctly
+		CallerContextStore.set({ kind: "subagent", phase: "review-code" });
+		expect(() => assertPhaseOwnership("forge_store set-summary", "code_review")).not.toThrow();
+	});
+
+	it("set-summary still rejects a mismatched summary key for a task phase", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "plan" });
+		// plan caller naming the validation key → mismatch → throw
+		expect(() => assertPhaseOwnership("forge_store set-summary", "validation")).toThrow(PhaseOwnershipError);
+	});
+
+	it("set-summary from a no-summary task phase (commit) is forbidden", () => {
+		CallerContextStore.set({ kind: "subagent", phase: "commit" });
+		expect(() => assertPhaseOwnership("forge_store set-summary", "commit")).toThrow(PhaseOwnershipError);
+	});
 });
 
 describe("assertBugStatusOwnership", () => {

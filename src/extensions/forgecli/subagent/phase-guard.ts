@@ -29,7 +29,7 @@
 
 import type { PhaseRole } from "./caller-context.js";
 import { CallerContextStore } from "./caller-context.js";
-import { BUG_SUMMARY_KEY_BY_ROLE } from "./phase-summary-map.js";
+import { BUG_SUMMARY_KEY_BY_ROLE, TASK_SUMMARY_KEY_BY_ROLE } from "./phase-summary-map.js";
 
 /**
  * Bug-status transitions that may only be written by a specific phase
@@ -88,17 +88,27 @@ export function assertPhaseOwnership(toolName: string, namedPhase: string): void
 	// direct-name match (caller.phase === namedPhase) would falsely allow
 	// a commit-phase caller to call `set-bug-summary <bug> commit ...` even
 	// though commit writes no summary at all.
-	const isSummaryTool = toolName.includes("set-bug-summary") || toolName.includes("set-summary");
+	// set-bug-summary (bug mode) and set-summary (task mode) carry the summary
+	// KEY (e.g. "implementation") in namedPhase, not the PhaseRole. They must be
+	// resolved through the mode-appropriate map: the bug map for set-bug-summary,
+	// the task map for set-summary. Using the bug map for task summaries wrongly
+	// rejects the task-only roles `plan`/`validate` (bug A). `set-bug-summary`
+	// must be matched first — "set-summary" is NOT a substring of it.
+	const isBugSummaryTool = toolName.includes("set-bug-summary");
+	const isTaskSummaryTool = !isBugSummaryTool && toolName.includes("set-summary");
+	const isSummaryTool = isBugSummaryTool || isTaskSummaryTool;
 	if (!isSummaryTool && caller.phase === namedPhase) return;
 
 	if (isSummaryTool) {
-		const expectedKey = BUG_SUMMARY_KEY_BY_ROLE[caller.phase];
+		const keyMap = isBugSummaryTool ? BUG_SUMMARY_KEY_BY_ROLE : TASK_SUMMARY_KEY_BY_ROLE;
+		const modeLabel = isBugSummaryTool ? "bug" : "task";
+		const expectedKey = keyMap[caller.phase];
 		if (expectedKey === null) {
 			throw new PhaseOwnershipError(
 				toolName,
 				caller.phase,
 				namedPhase,
-				`phase '${caller.phase}' writes no summary — set-bug-summary is forbidden from this phase`,
+				`phase '${caller.phase}' writes no summary — ${toolName} is forbidden from this phase`,
 			);
 		}
 		if (expectedKey === undefined) {
@@ -106,7 +116,7 @@ export function assertPhaseOwnership(toolName: string, namedPhase: string): void
 				toolName,
 				caller.phase,
 				namedPhase,
-				`phase '${caller.phase}' is not a recognised bug-mode phase`,
+				`phase '${caller.phase}' is not a recognised ${modeLabel}-mode phase`,
 			);
 		}
 		if (expectedKey !== namedPhase) {
