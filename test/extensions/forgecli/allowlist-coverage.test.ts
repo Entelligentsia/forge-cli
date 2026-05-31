@@ -59,12 +59,14 @@ function extractCjsRefs(source: string): Set<string> {
 	return refs;
 }
 
-function extractToolsToCopy(scriptSource: string): Set<string> {
-	// Extract the array literal assigned to TOOLS_TO_COPY.
-	// Strategy: find the const declaration, then extract all quoted .cjs names.
-	const blockMatch = /const TOOLS_TO_COPY\s*=\s*\[([^\]]+)\]/s.exec(scriptSource);
+function extractNamedArray(scriptSource: string, constName: string, required: boolean): Set<string> {
+	// Extract quoted .cjs basenames from a `const <name> = [ ... ]` literal.
+	// Used for both TOOLS_TO_COPY (top-level tools) and LIB_ALLOWLIST (lib/ deps);
+	// a .cjs referenced from TS is "covered" if it is copied by either path.
+	const blockMatch = new RegExp(`const ${constName}\\s*=\\s*(?:new Set\\()?\\[([^\\]]+)\\]`, "s").exec(scriptSource);
 	if (!blockMatch) {
-		throw new Error("Could not locate TOOLS_TO_COPY array in build-payload.cjs");
+		if (required) throw new Error(`Could not locate ${constName} in build-payload.cjs`);
+		return new Set<string>();
 	}
 	const block = blockMatch[1];
 	const tools = new Set<string>();
@@ -72,6 +74,16 @@ function extractToolsToCopy(scriptSource: string): Set<string> {
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(block)) !== null) {
 		tools.add(m[1]);
+	}
+	return tools;
+}
+
+function extractToolsToCopy(scriptSource: string): Set<string> {
+	// A .cjs is covered if it is in TOOLS_TO_COPY (top-level tools) OR LIB_ALLOWLIST
+	// (tools/lib/ deps copied into the bundle). Both reach the payload.
+	const tools = extractNamedArray(scriptSource, "TOOLS_TO_COPY", true);
+	for (const lib of extractNamedArray(scriptSource, "LIB_ALLOWLIST", false)) {
+		tools.add(lib);
 	}
 	return tools;
 }

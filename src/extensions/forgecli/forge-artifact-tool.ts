@@ -14,6 +14,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createRequire } from "node:module";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { compressMarkdown, countTokens } from "@entelligentsia/forge-compress";
@@ -28,8 +29,13 @@ type RunCjsFn = (
 ) => Promise<{ stdout: string; stderr: string }>;
 
 // ── Artifact name list (for parameter description only — logic lives in plugin) ──
-
-const ARTIFACT_NAMES = [
+//
+// The canonical list lives in the plugin registry tools/lib/artifact-kinds.cjs
+// (ADR artifact-resolution). We load it in-process from the bundled payload so
+// the description never drifts from the registry. This array is the FALLBACK
+// when the registry module can't be loaded (e.g. an older bundled payload that
+// predates artifact-kinds.cjs, or a path-resolution miss).
+const FALLBACK_ARTIFACT_NAMES = [
 	"plan",
 	"plan-review",
 	"progress",
@@ -54,7 +60,23 @@ const ARTIFACT_NAMES = [
 	"collation-summary",
 ].sort();
 
-const ARTIFACT_NAME_LIST = ARTIFACT_NAMES.join(", ");
+// Load the canonical kind names from the plugin registry in the bundled payload.
+// Pure-data module (object literals + pure fns), so an in-process require is safe
+// and cheap — no subprocess. Falls back to the inlined list on any failure.
+function loadArtifactKindNames(toolDir: string): string[] {
+	try {
+		const require = createRequire(import.meta.url);
+		const reg = require(path.join(toolDir, "lib", "artifact-kinds.cjs")) as {
+			ARTIFACT_NAMES?: unknown;
+		};
+		if (Array.isArray(reg.ARTIFACT_NAMES) && reg.ARTIFACT_NAMES.every((n) => typeof n === "string")) {
+			return reg.ARTIFACT_NAMES as string[];
+		}
+	} catch {
+		/* registry not loadable (older payload / path miss) — use fallback */
+	}
+	return FALLBACK_ARTIFACT_NAMES;
+}
 
 const INLINE_CONTENT_LIMIT = 64 * 1024; // 64KB
 
@@ -68,6 +90,7 @@ export function buildForgeArtifact(
 ): ToolDefinition {
 	const toolPath = path.join(toolDir, "artifact.cjs");
 	const runCjs = _runCjsOverride ?? defaultRunCjs;
+	const ARTIFACT_NAME_LIST = loadArtifactKindNames(toolDir).join(", ");
 
 	return {
 		name: "forge_artifact",

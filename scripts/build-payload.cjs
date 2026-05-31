@@ -246,6 +246,10 @@ for (const toolName of TOOLS_TO_COPY) {
 //   store-{nlp,query-exec,facade}.cjs (only consumed by store-query.cjs,
 //   which is not in TOOLS_TO_COPY).
 const LIB_ALLOWLIST = new Set([
+	// Canonical artifact-kind registry (ADR artifact-resolution). REQUIRED:
+	// artifact.cjs and store-cli.cjs `require('./lib/artifact-kinds.cjs')`, so the
+	// bundled payload crashes without it.
+	"artifact-kinds.cjs",
 	"forge-root.cjs",
 	"frontmatter.cjs",
 	"fsutil.cjs",
