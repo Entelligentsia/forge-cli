@@ -226,6 +226,11 @@ async function dispatchSprintCeremony(params: {
 	registry.startSession(sessionId);
 	registry.startPhase(sessionId, "ceremony", 0);
 
+	// Bridge: register ceremony phase in OrchestratorTree so the dashboard
+	// shows the ceremony as a leaf under the sprint root.
+	const tree = getOrchestratorTree();
+	tree.startNode(sessionId, { parentId: sprintId, label: "ceremony", kind: "leaf" });
+
 	let model: string | undefined;
 	let provider: string | undefined;
 	let errorMessage: string | undefined;
@@ -281,6 +286,7 @@ async function dispatchSprintCeremony(params: {
 		errorMessage = err?.message ?? "runForgeSubagent threw";
 	} finally {
 		registry.completeSession(sessionId, errorMessage ? "failed" : "completed");
+		tree.completeNode(sessionId, errorMessage ? "failed" : "completed");
 	}
 
 	// Parse verdict from store: did the architect actually transition the sprint?
@@ -477,10 +483,12 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 								`forge:run-sprint — resuming ${sprintId} from task ${taskIds[startTaskIndex] ?? startTaskIndex}`,
 								"info",
 							);
-							// Collect halted task states for mid-task resume (REVIEW FIX #2, option b)
+							// Collect halted and cancelled task states for mid-task resume
+							// (REVIEW FIX #2, option b; ADR-S21-01: cancelled states are
+							// resumable from the beginning of the cancelled phase).
 							for (const taskId of taskIds.slice(startTaskIndex)) {
 								const taskState = readTaskState(cwd, taskId);
-								if (taskState && taskState.halted) {
+								if (taskState && (taskState.halted || taskState.status === "cancelled")) {
 									resumeTaskStates.set(taskId, taskState);
 								}
 							}
@@ -600,7 +608,8 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				ctx.ui.notify(`▶ ${sprintId}: task ${i + 1}/${taskIds.length} — ${taskId}`, "info");
 
 				// Determine resumeFromState for mid-task resume (REVIEW FIX #2).
-				// If a halted task state exists for this task, pass it to runTaskPipeline.
+				// If a halted or cancelled task state exists for this task,
+				// pass it to runTaskPipeline so it resumes from the saved phase.
 				let resumeFromState: RunTaskState | undefined = resumeTaskStates.get(taskId);
 				if (resumeFromState) {
 					// Validate the state is not corrupt
@@ -611,6 +620,15 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 						ctx.ui.notify(`⚠ forge:run-sprint — corrupt task state for ${taskId}; starting fresh.`, "warning");
 						resumeFromState = undefined;
 					}
+				}
+
+				if (resumeFromState) {
+					const resumephaseRole = resumeFromState.phaseIndex;
+					const resumeStatus = resumeFromState.status ?? (resumeFromState.halted ? "halted" : "interrupted");
+					ctx.ui.notify(
+						`▶ forge:run-sprint — resuming ${taskId} from phase ${resumephaseRole} (${resumeStatus})`,
+						"info",
+					);
 				}
 
 				// Stale task state fallback: if task state >7d, delete and start fresh
@@ -663,6 +681,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					// state, emit sprint-halted with cancellation detail, exit.
 					registry.completeSession(taskId, "cancelled");
 					tree.completeNode(taskId, "cancelled");
+					tree.completeNode(sprintId, "cancelled");
 					const cancelledEvent: Record<string, unknown> = {
 						eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
 						sprintId,
@@ -695,6 +714,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					// Task halted/escalated/failed: mark session failed, persist sprint state, emit sprint-halted, exit.
 					registry.completeSession(taskId, "failed");
 					tree.completeNode(taskId, "failed");
+					tree.completeNode(sprintId, "failed");
 					const haltedEvent: Record<string, unknown> = {
 						eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_halted`,
 						sprintId,
@@ -782,6 +802,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 						};
 						emitEvent(storeCli, cwd, sprintId, pausedEvent);
 
+						tree.completeNode(sprintId, "completed");
 						ctx.ui.notify("forge:run-sprint — sprint paused after task completion.", "info");
 						ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
 						return;
@@ -862,6 +883,12 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			}
 
 			ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+
+			// Sprint root: mark completed in the tree. "revision-required" → failed
+			// because the architect rejected the sprint; partial → completed (the
+			// sprint itself finished, the progress indicator shows N/M tasks done).
+			const sprintTreeStatus = ceremony.verdict === "revision-required" ? "failed" : "completed";
+			tree.completeNode(sprintId, sprintTreeStatus);
 
 			if (ceremony.verdict === "complete") {
 				ctx.ui.notify(

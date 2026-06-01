@@ -818,6 +818,10 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 							const target = stripRef.confirmCancel();
 							if (target?.taskId) {
 								registry.requestCancel(target.taskId);
+								// Also update OrchestratorTree for immediate visual feedback
+								// in the dashboard overlay (tree shows "cancelling" until
+								// the pipeline unwinds and marks it "cancelled").
+								getOrchestratorTree().requestCancel(target.taskId);
 							}
 							stripRef.setStripActive(false);
 							setFocusToMain(live);
