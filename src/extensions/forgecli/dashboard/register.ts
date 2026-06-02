@@ -21,7 +21,7 @@ export function registerDashboardCommand(pi: ExtensionAPI): void {
 			const tree = getOrchestratorTree();
 
 			// Nothing to show if no sessions in the tree.
-			if (tree.getRoots().length === 0) {
+			if (tree.getActiveRoots().length === 0) {
 				ctx.ui.notify("No orchestrator sessions running. Start a /forge:run-task or /forge:run-sprint first.", "info");
 				return;
 			}

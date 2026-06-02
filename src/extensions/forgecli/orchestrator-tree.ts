@@ -91,6 +91,20 @@ export class OrchestratorTree extends EventEmitter {
 			existing.startedAt = Date.now();
 			existing.endedAt = undefined;
 			existing.abortController = new AbortController();
+
+			// Reconcile parentId: if the caller specifies a different parent,
+			// reparent the node so stale root placements self-correct.
+			const newParentId = opts.parentId ?? null;
+			const oldParentId = existing.parentId;
+			if (newParentId !== oldParentId) {
+				this.reparentNode(existing, oldParentId, newParentId);
+			}
+
+			// Re-apply label/kind if caller supplies them (resume may change role).
+			if (opts.label !== undefined) existing.label = opts.label;
+			if (opts.kind !== undefined) existing.kind = opts.kind;
+			if (opts.promptPreview !== undefined) existing.promptPreview = opts.promptPreview;
+
 			this.emit("change", id);
 			this.emit("tree", id);
 			return existing;
@@ -118,7 +132,7 @@ export class OrchestratorTree extends EventEmitter {
 		// Link to parent.
 		if (node.parentId) {
 			const parent = this.nodes.get(node.parentId);
-			if (parent) {
+			if (parent && !parent.children.includes(id)) {
 				parent.children.push(id);
 			}
 		} else {
@@ -280,6 +294,76 @@ export class OrchestratorTree extends EventEmitter {
 		return [...this.roots]
 			.map((id) => this.nodes.get(id))
 			.filter((n): n is OrchestratorNode => n !== undefined);
+	}
+
+	/** Active roots: all roots if any are running/cancelling, otherwise
+	 *  only non-terminal roots. Prunes stale terminal roots that have no
+	 *  running descendants — the dashboard should not show completed sprints
+	 *  from prior invocations alongside the current one. */
+	getActiveRoots(): OrchestratorNode[] {
+		const roots = this.getRoots();
+		const hasActive = roots.some(
+			(r) => r.status === "running" || r.status === "cancelling",
+		);
+		if (!hasActive) return roots; // nothing in flight — show all
+		return roots.filter(
+			(r) =>
+				r.status === "running" ||
+				r.status === "cancelling" ||
+				r.status === "pending" ||
+			(r.kind === "orchestrator" && !this.isSubtreeTerminal(r.id)),
+		);
+	}
+
+	/** Returns true if every node in the subtree rooted at `id` has reached a
+	 *  terminal state (completed, failed, cancelled, or escalated). */
+	private isSubtreeTerminal(id: string): boolean {
+		const stack = [id];
+		while (stack.length > 0) {
+			const current = stack.pop()!;
+			const node = this.nodes.get(current);
+			if (!node) continue;
+			if (
+				node.status !== "completed" &&
+				node.status !== "failed" &&
+				node.status !== "cancelled" &&
+				node.status !== "escalated"
+			) {
+				return false;
+			}
+			stack.push(...node.children);
+		}
+		return true;
+	}
+
+	/** Re-parent a node from its current position to a new parent (or to root
+	 *  if newParentId is null). Removes from old parent's children and/or
+	 *  roots, adds to new parent's children and/or roots, and updates the
+	 *  node's parentId field. */
+	private reparentNode(node: OrchestratorNode, oldParentId: string | null, newParentId: string | null): void {
+		if (oldParentId === newParentId) return;
+
+		// Unlink from old parent (or roots).
+		if (oldParentId) {
+			const oldParent = this.nodes.get(oldParentId);
+			if (oldParent) {
+				oldParent.children = oldParent.children.filter((cid) => cid !== node.id);
+			}
+		} else {
+			this.roots.delete(node.id);
+		}
+
+		// Link to new parent (or roots).
+		if (newParentId) {
+			const newParent = this.nodes.get(newParentId);
+			if (newParent && !newParent.children.includes(node.id)) {
+				newParent.children.push(node.id);
+			}
+		} else {
+			this.roots.add(node.id);
+		}
+
+		node.parentId = newParentId;
 	}
 
 	getSubtreeUsage(id: string): UsageSnapshot {

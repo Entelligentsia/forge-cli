@@ -25,6 +25,7 @@ describe("OrchestratorTree", () => {
 			expect(node.parentId).toBeNull();
 			expect(node.children).toEqual([]);
 			expect(tree.getRoots().map((r) => r.id)).toEqual(["sprint-1"]);
+			expect(tree.getActiveRoots().map((r) => r.id)).toEqual(["sprint-1"]);
 		});
 
 		it("creates a leaf node under a parent", () => {
@@ -249,6 +250,94 @@ describe("OrchestratorTree", () => {
 			expect(signal!.aborted).toBe(false);
 			tree.requestCancel("node-1");
 			expect(signal!.aborted).toBe(true);
+		});
+	});
+
+	// ── Reparenting on resume (Bug fix: stale root placement) ────────────────
+
+	describe("reparenting on resume", () => {
+		it("reparents a node when startNode is called with a different parentId", () => {
+			// First: create task as a root (standalone run-task)
+			tree.startNode("task-1", { label: "Task 1", kind: "orchestrator" });
+			expect(tree.getRoots().map((r) => r.id)).toEqual(["task-1"]);
+			expect(tree.getNode("task-1")!.parentId).toBeNull();
+
+			// Now: create sprint root
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			expect(tree.getRoots().map((r) => r.id)).toEqual(["task-1", "sprint-1"]);
+
+			// Resume task-1 under sprint-1 (simulates sprint taking over)
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1 under sprint", kind: "orchestrator" });
+			expect(tree.getNode("task-1")!.parentId).toBe("sprint-1");
+			expect(tree.getRoots().map((r) => r.id)).toEqual(["sprint-1"]);
+			expect(tree.getNode("sprint-1")!.children).toContain("task-1");
+		});
+
+		it("moves a node from parent back to root when parentId changes to null", () => {
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1", kind: "orchestrator" });
+			expect(tree.getNode("task-1")!.parentId).toBe("sprint-1");
+
+			// Resume as root (simulates standalone re-run)
+			tree.startNode("task-1", { label: "Task 1 standalone", kind: "orchestrator" });
+			expect(tree.getNode("task-1")!.parentId).toBeNull();
+			expect(tree.getRoots().map((r) => r.id)).toEqual(["sprint-1", "task-1"]);
+			expect(tree.getNode("sprint-1")!.children).not.toContain("task-1");
+		});
+
+		it("does not add duplicate children when reparenting", () => {
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1", kind: "orchestrator" });
+			expect(tree.getNode("sprint-1")!.children).toEqual(["task-1"]);
+
+			// Resume with same parentId — no duplicate
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1", kind: "orchestrator" });
+			expect(tree.getNode("sprint-1")!.children).toEqual(["task-1"]);
+		});
+	});
+
+	// ── getActiveRoots ──────────────────────────────────────────────────────────
+
+	describe("getActiveRoots", () => {
+		it("returns all roots when nothing is running", () => {
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			tree.completeNode("sprint-1", "completed");
+			tree.startNode("sprint-2", { label: "Sprint 2", kind: "orchestrator" });
+			tree.completeNode("sprint-2", "completed");
+			// Nothing running — return all so user can inspect past runs
+			expect(tree.getActiveRoots().map((r) => r.id)).toEqual(["sprint-1", "sprint-2"]);
+		});
+
+		it("filters out fully-terminal roots when a root is running", () => {
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1", kind: "orchestrator" });
+			tree.completeNode("task-1", "completed");
+			tree.completeNode("sprint-1", "completed");
+
+			// Sprint 2 is running — sprint 1 should be filtered out
+			tree.startNode("sprint-2", { label: "Sprint 2", kind: "orchestrator" });
+			const activeRoots = tree.getActiveRoots().map((r) => r.id);
+			expect(activeRoots).toContain("sprint-2");
+			expect(activeRoots).not.toContain("sprint-1");
+		});
+
+		it("keeps running roots in getActiveRoots", () => {
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			const activeRoots = tree.getActiveRoots().map((r) => r.id);
+			expect(activeRoots).toEqual(["sprint-1"]);
+		});
+	});
+
+	// ── Children dedup ─────────────────────────────────────────────────────────
+
+	describe("children dedup", () => {
+		it("does not add duplicate children on startNode", () => {
+			tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1", kind: "orchestrator" });
+			expect(tree.getNode("sprint-1")!.children).toEqual(["task-1"]);
+			// Second startNode for same id — resume path, no duplicate push
+			tree.startNode("task-1", { parentId: "sprint-1", label: "Task 1", kind: "orchestrator" });
+			expect(tree.getNode("sprint-1")!.children).toEqual(["task-1"]);
 		});
 	});
 

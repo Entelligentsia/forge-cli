@@ -115,10 +115,9 @@ function wrapLine(line: string, maxWidth: number): string[] {
 	}
 
 	return lines.length > 0 ? lines : [line];
-}// ── Braille spinner ─────────────────────────────────────────────────────────
+}// ── Refresh timer ───────────────────────────────────────────────────────────
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL_MS = 100;
+const REFRESH_INTERVAL_MS = 1000;
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -147,8 +146,8 @@ export class DashboardController {
 
 	constructor(tree: OrchestratorTree, initialCursorId?: string) {
 		this.tree = tree;
-		// Default cursor to the first root, or empty string if tree is empty.
-		const roots = tree.getRoots();
+		// Default cursor to the first active root, or empty string if tree is empty.
+		const roots = tree.getActiveRoots();
 		const firstVisible = roots.length > 0 ? roots[0]!.id : "";
 		this.state = {
 			cursorId: initialCursorId ?? firstVisible,
@@ -182,7 +181,7 @@ export class DashboardController {
 				}
 			}
 		};
-		for (const root of this.tree.getRoots()) {
+		for (const root of this.tree.getActiveRoots()) {
 			visit(root.id);
 		}
 		return result;
@@ -393,8 +392,9 @@ export class DashboardComponent implements Component {
 	private theme: Theme;
 	private tui: TUI;
 	private done: (result: null) => void;
-	private spinnerTimer?: NodeJS.Timeout;
+	private refreshTimer?: NodeJS.Timeout;
 	private _rerender?: () => void;
+	private _onTreeChange?: (id: string) => void;
 
 	constructor(
 		tree: OrchestratorTree,
@@ -409,32 +409,39 @@ export class DashboardComponent implements Component {
 		this.controller = new DashboardController(tree);
 
 		const rerender = () => this.tui.requestRender();
+		const onTreeChange = (id: string) => {
+			// Auto-expand the parent of newly-added nodes so they are visible.
+			this.controller.autoExpandNewNode(id);
+			rerender();
+		};
 		this.tree.on("change", rerender);
 		this.tree.on("tail", rerender);
 		this.tree.on("preview", rerender);
+		this.tree.on("tree", onTreeChange);
 		this.controller.setOnInvalidate(rerender);
 
-		// Spinner timer: re-render at 100ms intervals while any node is running.
-		this.ensureSpinnerTimer();
+		// Refresh timer: re-render at 1000ms intervals to update elapsed times.
+		this.ensureRefreshTimer();
 
 		this._rerender = rerender;
+		this._onTreeChange = onTreeChange;
 	}
 
-	private ensureSpinnerTimer(): void {
-		if (this.spinnerTimer) return;
-		this.spinnerTimer = setInterval(() => {
-			const anyRunning = this.tree.getRoots().some(
+	private ensureRefreshTimer(): void {
+		if (this.refreshTimer) return;
+		this.refreshTimer = setInterval(() => {
+			const anyRunning = this.tree.getActiveRoots().some(
 				(r) => r.status === "running" || r.status === "cancelling",
 			);
 			if (!anyRunning) {
-				// One last render to settle spinner into final frame.
+				// One last render to settle final frame.
 				this.tui.requestRender();
-				if (this.spinnerTimer) clearInterval(this.spinnerTimer);
-				this.spinnerTimer = undefined;
+				if (this.refreshTimer) clearInterval(this.refreshTimer);
+				this.refreshTimer = undefined;
 				return;
 			}
 			this.tui.requestRender();
-		}, SPINNER_INTERVAL_MS);
+		}, REFRESH_INTERVAL_MS);
 	}
 
 	// ── Component interface ──────────────────────────────────────────────────
@@ -549,14 +556,17 @@ export class DashboardComponent implements Component {
 	}
 
 	dispose(): void {
-		if (this.spinnerTimer) {
-			clearInterval(this.spinnerTimer);
-			this.spinnerTimer = undefined;
+		if (this.refreshTimer) {
+			clearInterval(this.refreshTimer);
+			this.refreshTimer = undefined;
 		}
 		if (this._rerender) {
 			this.tree.off("change", this._rerender);
 			this.tree.off("tail", this._rerender);
 			this.tree.off("preview", this._rerender);
+		}
+		if (this._onTreeChange) {
+			this.tree.off("tree", this._onTreeChange);
 		}
 	}
 
@@ -617,7 +627,7 @@ export class DashboardComponent implements Component {
 			case "completed":
 				return this.theme.fg("success", "✔");
 			case "running":
-				return this.theme.fg("accent", this.spinnerFrame());
+				return this.theme.fg("accent", "●");
 			case "cancelling":
 				return this.theme.fg("warning", "⏳");
 			case "cancelled":
@@ -630,11 +640,6 @@ export class DashboardComponent implements Component {
 			default:
 				return this.theme.fg("dim", "○");
 		}
-	}
-
-	private spinnerFrame(): string {
-		const idx = Math.floor(Date.now() / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length;
-		return SPINNER_FRAMES[idx]!;
 	}
 
 	// ── Detail panel renderer ────────────────────────────────────────────────

@@ -278,7 +278,7 @@ class ChipStripComponent implements Component {
 
 	private activeCommandInfo(session: SessionState): { name: string; description: string } {
 		const tree = getOrchestratorTree();
-		const sprintRoot = tree.getRoots().find(r => r.id.startsWith("FORGE-S") && !r.id.includes("-T"));
+		const sprintRoot = tree.getActiveRoots().find(r => r.id.startsWith("FORGE-S") && !r.id.includes("-T"));
 		if (sprintRoot) {
 			return {
 				name: "run-sprint",
