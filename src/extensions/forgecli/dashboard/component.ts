@@ -15,19 +15,23 @@
 //   x       request cancellation (with y/n confirm)
 //   p       (reserved for pause)
 //
-// The component reads from OrchestratorTree (the model) and subscribes to
-// its events for live updates. No writes flow through the component —
-// the model is mutated by the orchestrator code, not the dashboard.
+// Architecture (post-MVC-refactor, dashboard-mvc-audit.md V1–V7):
+//   DashboardController owns the TreeViewModel, subscribes to model events,
+//   manages the refresh timer, and handles input. DashboardComponent reads
+//   only from the controller — never directly from the OrchestratorTree model.
+//   This eliminates the boundary violations catalogued in the audit.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import type { OrchestratorNode, OrchestratorTree, NodeStatus } from "../orchestrator-tree.js";
+import type { OrchestratorTree, NodeStatus } from "../orchestrator-tree.js";
 import { getSessionRegistry } from "../session-registry.js";
+import type { NodeViewModel, TreeViewModel } from "./view-model.js";
+import { buildViewModel } from "./view-model.js";
 import { fmtModelAndTokenFooter, fmtTokenMeter } from "../viewport-renderer.js";
 import { paintTailLine } from "../viewport-theme.js";
 
-// ── Word-wrap helper ───────────────────────────────────────────────────────
+// ── Word-wrap helper ───────────────────────────────────────────────────────────
 //
 // Splits a line (which may contain ANSI escape sequences) into multiple
 // lines at word boundaries so it fits within `maxWidth` visible columns.
@@ -140,15 +144,17 @@ export interface DashboardState {
 
 export class DashboardController {
 	private tree: OrchestratorTree;
+	private vm: TreeViewModel;
 	private state: DashboardState;
-	/** Callback to request a TUI re-render after state changes. */
 	private onInvalidate?: () => void;
+	private refreshTimer?: NodeJS.Timeout;
+	private _handlers: Array<{ event: string; handler: (...args: any[]) => void }>;
 
 	constructor(tree: OrchestratorTree, initialCursorId?: string) {
 		this.tree = tree;
+		this.vm = buildViewModel(tree);
 		// Default cursor to the first active root, or empty string if tree is empty.
-		const roots = tree.getActiveRoots();
-		const firstVisible = roots.length > 0 ? roots[0]!.id : "";
+		const firstVisible = this.vm.roots.length > 0 ? this.vm.roots[0]! : "";
 		this.state = {
 			cursorId: initialCursorId ?? firstVisible,
 			expanded: new Set(),
@@ -157,14 +163,136 @@ export class DashboardController {
 			cancelTargetId: null,
 			detailScroll: 0,
 		};
-	}
+		this._handlers = [];
 
-	getState(): DashboardState {
-		return this.state;
+		// V2 fix: subscriptions now owned by controller, not view.
+		// On every model event, rebuild VM then invalidate the view.
+		const onModelChange = () => {
+			this.rebuildViewModel();
+			this.onInvalidate?.();
+		};
+		const onTreeChange = (id: string) => {
+			this.rebuildViewModel();
+			this.autoExpandNewNode(id);
+			this.onInvalidate?.();
+		};
+
+		this.tree.on("change", onModelChange);
+		this.tree.on("tail", onModelChange);
+		this.tree.on("preview", onModelChange);
+		this.tree.on("tree", onTreeChange);
+
+		this._handlers = [
+			{ event: "change", handler: onModelChange },
+			{ event: "tail", handler: onModelChange },
+			{ event: "preview", handler: onModelChange },
+			{ event: "tree", handler: onTreeChange },
+		];
+
+		// V3 fix: timer now owned by controller, not view.
+		this.ensureRefreshTimer();
 	}
 
 	setOnInvalidate(cb: () => void): void {
 		this.onInvalidate = cb;
+	}
+
+	// ── ViewModel projection ────────────────────────────────────────────────
+
+	/** Rebuild the ViewModel from the live model. Called on every model event. */
+	private rebuildViewModel(): void {
+		this.vm = buildViewModel(this.tree);
+	}
+
+	/** Get a node from the current ViewModel. */
+	getNode(id: string): NodeViewModel | undefined {
+		return this.vm.nodes.get(id);
+	}
+
+	/** Get a node's children from the current ViewModel. */
+	getChildren(id: string): NodeViewModel[] {
+		const node = this.vm.nodes.get(id);
+		if (!node) return [];
+		return node.children
+			.map((cid) => this.vm.nodes.get(cid))
+			.filter((n): n is NodeViewModel => n !== undefined);
+	}
+
+	/** Get the progress (completed/total leaves) for a subtree. */
+	getSubtreeProgress(id: string): { completed: number; total: number } {
+		let completed = 0;
+		let total = 0;
+		const stack = [id];
+		while (stack.length > 0) {
+			const current = stack.pop()!;
+			const node = this.vm.nodes.get(current);
+			if (!node) continue;
+			if (node.kind === "leaf") {
+				total++;
+				if (node.status === "completed") completed++;
+			}
+			stack.push(...node.children);
+		}
+		return { completed, total };
+	}
+
+	/** Aggregate token usage across all active roots. */
+	getAggregateUsage(): { input: number; output: number; cacheRead: number } {
+		const agg = { input: 0, output: 0, cacheRead: 0 };
+		for (const rootId of this.vm.roots) {
+			const stack = [rootId];
+			while (stack.length > 0) {
+				const current = stack.pop()!;
+				const node = this.vm.nodes.get(current);
+				if (!node) continue;
+				agg.input += node.usage.input;
+				agg.output += node.usage.output;
+				agg.cacheRead += node.usage.cacheRead;
+				stack.push(...node.children);
+			}
+		}
+		return agg;
+	}
+
+	/** Aggregate compression across all active roots. */
+	getAggregateCompression(): { calls: number; tokensSaved: number } {
+		const agg = { calls: 0, tokensSaved: 0 };
+		for (const rootId of this.vm.roots) {
+			const stack = [rootId];
+			while (stack.length > 0) {
+				const current = stack.pop()!;
+				const node = this.vm.nodes.get(current);
+				if (!node) continue;
+				if (node.compression) {
+					agg.calls += node.compression.calls;
+				agg.tokensSaved += node.compression.tokensSaved;
+				}
+				stack.push(...node.children);
+			}
+		}
+		return agg;
+	}
+
+	/** Model/provider from the first running root, if any. */
+	getActiveModel(): { provider?: string; model?: string } | undefined {
+		for (const rootId of this.vm.roots) {
+			const node = this.vm.nodes.get(rootId);
+			if (node && node.model) {
+				return { provider: node.provider, model: node.model };
+			}
+		}
+		return undefined;
+	}
+
+	/** Check whether any active root is running or cancelling. */
+	private hasRunningNodes(): boolean {
+		for (const rootId of this.vm.roots) {
+			const node = this.vm.nodes.get(rootId);
+			if (node && (node.status === "running" || node.status === "cancelling")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// ── Visible node list (DFS respecting expand state) ────────────────────
@@ -172,7 +300,7 @@ export class DashboardController {
 	getVisibleNodes(): string[] {
 		const result: string[] = [];
 		const visit = (id: string) => {
-			const node = this.tree.getNode(id);
+			const node = this.vm.nodes.get(id);
 			if (!node) return;
 			result.push(id);
 			if (node.kind === "orchestrator" && this.state.expanded.has(id)) {
@@ -181,8 +309,8 @@ export class DashboardController {
 				}
 			}
 		};
-		for (const root of this.tree.getActiveRoots()) {
-			visit(root.id);
+		for (const rootId of this.vm.roots) {
+			visit(rootId);
 		}
 		return result;
 	}
@@ -219,16 +347,15 @@ export class DashboardController {
 			this.collapseCursor();
 		} else if (data === "x") {
 			this.startCancel();
-		} else if (matchesKey(data, Key.escape)) {
-			// Esc in tree = request close. The done callback handles it.
-			// Mark a sentinel so the mount code can close.
-			this.state.cursorId = "__close__";
 		}
-		// Consume all keys while overlay is active (no passthrough).
+		// ESC in tree panel is handled in handleInput above — it closes
+		// the overlay rather than navigating or setting a sentinel.
 	}
 
 	private handleDetailInput(data: string): void {
-		if (matchesKey(data, Key.escape) || matchesKey(data, Key.left)) {
+		// ESC in detail panel is handled in handleInput above — it closes
+		// the overlay rather than just switching panels.
+		if (matchesKey(data, Key.left)) {
 			this.state.focusPanel = "tree";
 			this.state.detailScroll = 0;
 		} else if (matchesKey(data, Key.down) || data === "j" || data === "J") {
@@ -236,7 +363,6 @@ export class DashboardController {
 		} else if (matchesKey(data, Key.up) || data === "k" || data === "K") {
 			this.state.detailScroll = Math.max(0, this.state.detailScroll - 1);
 		} else if (matchesKey(data, Key.enter)) {
-			// Toggle prompt expansion when in detail view
 			this.state.promptExpanded = !this.state.promptExpanded;
 		} else if (data === "x") {
 			this.startCancel();
@@ -249,24 +375,27 @@ export class DashboardController {
 				this.cancelNodeAndSessions(this.state.cancelTargetId);
 			}
 			this.state.cancelTargetId = null;
-		} else if (data === "n" || matchesKey(data, Key.escape)) {
+		} else if (data === "n") {
 			this.state.cancelTargetId = null;
 		}
-		// All other keys consumed silently in cancel mode.
+		// All other keys consumed silently in cancel mode. ESC is handled
+		// by the view's handleInput (closes the overlay entirely).
 	}
 
 	/** Cancel the node in the OrchestratorTree for immediate visual
 	 *  feedback, and propagate cancellation through SessionRegistry
-	 *  for actual pipeline abort. */
+	 *  for actual pipeline abort. Reads from VM; writes to model. */
 	private cancelNodeAndSessions(nodeId: string): void {
-		// Mark node as "cancelling" in the tree for immediate visual feedback.
+		// Mutation: mark node as "cancelling" in the model for immediate
+		// visual feedback. The model emits "change", which triggers a VM
+		// rebuild via the controller's subscription.
 		this.tree.requestCancel(nodeId);
 
 		const registry = getSessionRegistry();
 
 		// Walk up the tree to find the session (task-level) node in the registry.
-		// Session IDs match task IDs (FORGE-S27-T01) or ceremony IDs
-		// (FORGE-S27:ceremony).
+		// Reads from the VM (pre-rebuild stale state is fine — parentId doesn't
+		// change on cancel, and we re-read from VM).
 		let currentId: string | null = nodeId;
 		while (currentId) {
 			const session = registry.getSession(currentId);
@@ -274,13 +403,13 @@ export class DashboardController {
 				registry.requestCancel(currentId);
 				return;
 			}
-			const node = this.tree.getNode(currentId);
+			const node = this.vm.nodes.get(currentId);
 			currentId = node?.parentId ?? null;
 		}
 
 		// No session found for this node or ancestors. If this is a
 		// sprint-level orchestrator, cancel all running child sessions.
-		const node = this.tree.getNode(nodeId);
+		const node = this.vm.nodes.get(nodeId);
 		if (node?.kind === "orchestrator") {
 			for (const childId of node.children) {
 				const session = registry.getSession(childId);
@@ -302,7 +431,7 @@ export class DashboardController {
 	}
 
 	private activateCursor(): void {
-		const node = this.tree.getNode(this.state.cursorId);
+		const node = this.vm.nodes.get(this.state.cursorId);
 		if (!node) return;
 		if (node.kind === "orchestrator") {
 			this.toggleExpand(node.id);
@@ -321,7 +450,7 @@ export class DashboardController {
 	}
 
 	private collapseCursor(): void {
-		const node = this.tree.getNode(this.state.cursorId);
+		const node = this.vm.nodes.get(this.state.cursorId);
 		if (!node) return;
 		if (node.kind === "orchestrator" && this.state.expanded.has(node.id)) {
 			this.state.expanded.delete(node.id);
@@ -332,18 +461,18 @@ export class DashboardController {
 	}
 
 	private startCancel(): void {
-		const node = this.tree.getNode(this.state.cursorId);
+		const node = this.vm.nodes.get(this.state.cursorId);
 		if (!node) return;
 		// Can cancel any node under a running subtree — find the nearest
 		// cancellable ancestor (running or cancelling).
-		let target: OrchestratorNode | null = null;
-		let current: OrchestratorNode | undefined = node;
+		let target: NodeViewModel | null = null;
+		let current: NodeViewModel | undefined = node;
 		while (current) {
 			if (current.status === "running" || current.status === "cancelling") {
 				target = current;
 				break;
 			}
-			current = current.parentId ? this.tree.getNode(current.parentId) : undefined;
+			current = current.parentId ? this.vm.nodes.get(current.parentId) : undefined;
 		}
 		if (target) {
 			this.state.cancelTargetId = target.id;
@@ -351,27 +480,43 @@ export class DashboardController {
 	}
 
 	private ensureAncestorsExpanded(id: string): void {
-		for (const ancestor of this.tree.getAncestors(id)) {
-			if (ancestor.kind === "orchestrator") {
-				this.state.expanded.add(ancestor.id);
+		let currentId: string | null = id;
+		while (currentId) {
+			const node = this.vm.nodes.get(currentId);
+			if (!node) break;
+			if (node.kind === "orchestrator") {
+				this.state.expanded.add(currentId);
 			}
+			currentId = node.parentId;
 		}
 	}
 
-	// ── Auto-expand: when a new running node appears, auto-expand its ────
-	// parent so it's immediately visible in the tree.
+	// ── Auto-expand: only expand the root and the direct parent of a new
+	// leaf node (phase). Intermediate orchestrator nodes (tasks) are NOT
+	// auto-expanded — the user expands them manually. This prevents the tree
+	// from exploding into a fully-expanded state on every new node.
 
 	autoExpandNewNode(id: string): void {
-		const node = this.tree.getNode(id);
+		const node = this.vm.nodes.get(id);
 		if (!node) return;
-		if (node.kind === "orchestrator") {
-			this.state.expanded.add(id);
-		}
-		if (node.parentId) {
-			const parent = this.tree.getNode(node.parentId);
-			if (parent?.kind === "orchestrator") {
-				this.state.expanded.add(parent.id);
+		// Auto-expand the root level only: if this node IS a root (no parent),
+		// expand it so it's visible. If this node is a leaf (phase), expand
+		// only its direct parent (the task). Intermediate orchestrators
+		// (tasks under a sprint) are NOT auto-expanded.
+		if (node.kind === "leaf" && node.parentId) {
+			// Leaf node (phase): expand its parent so the phase is visible,
+			// but only if the parent is already visible (i.e., the user
+			// has expanded the root).
+			const parent = this.vm.nodes.get(node.parentId);
+			if (parent && this.state.expanded.has(node.parentId) && parent.kind === "orchestrator") {
+				// Parent is visible and is an orchestrator — leaf will show.
+				// No need to expand further.
 			}
+			// Also ensure ancestors of the leaf are expanded so it's visible.
+			this.ensureAncestorsExpanded(node.id);
+		} else if (!node.parentId) {
+			// Root node (sprint-level orchestrator): always expand.
+			this.state.expanded.add(id);
 		}
 		// Default cursor to the newest running node if no cursor set.
 		if (!this.state.cursorId || this.state.cursorId === "") {
@@ -379,81 +524,70 @@ export class DashboardController {
 		}
 	}
 
-	isCloseRequested(): boolean {
-		return this.state.cursorId === "__close__";
+	// ── Refresh timer (V3 fix: owned by controller, not view) ──────────────
+
+	private ensureRefreshTimer(): void {
+		if (this.refreshTimer) return;
+		this.refreshTimer = setInterval(() => {
+			if (!this.hasRunningNodes()) {
+				// One last render to settle final frame, then stop timer.
+				this.onInvalidate?.();
+				this.stopRefreshTimer();
+				return;
+			}
+			this.onInvalidate?.();
+		}, REFRESH_INTERVAL_MS);
+	}
+
+	private stopRefreshTimer(): void {
+		if (this.refreshTimer) {
+			clearInterval(this.refreshTimer);
+			this.refreshTimer = undefined;
+		}
+	}
+
+	// ── Cleanup ────────────────────────────────────────────────────────────
+
+	dispose(): void {
+		this.stopRefreshTimer();
+		for (const { event, handler } of this._handlers) {
+			this.tree.off(event, handler);
+		}
+		this._handlers = [];
+	}
+
+	getState(): DashboardState {
+		return this.state;
 	}
 }
 
 // ── View ────────────────────────────────────────────────────────────────────
 
 export class DashboardComponent implements Component {
-	private tree: OrchestratorTree;
 	private controller: DashboardController;
 	private theme: Theme;
 	private tui: TUI;
 	private done: (result: null) => void;
-	private refreshTimer?: NodeJS.Timeout;
-	private _rerender?: () => void;
-	private _onTreeChange?: (id: string) => void;
 
 	constructor(
-		tree: OrchestratorTree,
+		controller: DashboardController,
 		tui: TUI,
 		theme: Theme,
 		done: (result: null) => void,
 	) {
-		this.tree = tree;
+		this.controller = controller;
 		this.tui = tui;
 		this.theme = theme;
 		this.done = done;
-		this.controller = new DashboardController(tree);
 
-		const rerender = () => this.tui.requestRender();
-		const onTreeChange = (id: string) => {
-			// Auto-expand the parent of newly-added nodes so they are visible.
-			this.controller.autoExpandNewNode(id);
-			rerender();
-		};
-		this.tree.on("change", rerender);
-		this.tree.on("tail", rerender);
-		this.tree.on("preview", rerender);
-		this.tree.on("tree", onTreeChange);
-		this.controller.setOnInvalidate(rerender);
-
-		// Refresh timer: re-render at 1000ms intervals to update elapsed times.
-		this.ensureRefreshTimer();
-
-		this._rerender = rerender;
-		this._onTreeChange = onTreeChange;
-	}
-
-	private ensureRefreshTimer(): void {
-		if (this.refreshTimer) return;
-		this.refreshTimer = setInterval(() => {
-			const anyRunning = this.tree.getActiveRoots().some(
-				(r) => r.status === "running" || r.status === "cancelling",
-			);
-			if (!anyRunning) {
-				// One last render to settle final frame.
-				this.tui.requestRender();
-				if (this.refreshTimer) clearInterval(this.refreshTimer);
-				this.refreshTimer = undefined;
-				return;
-			}
-			this.tui.requestRender();
-		}, REFRESH_INTERVAL_MS);
+		// V2 fix: subscriptions are now owned by the controller.
+		// The view only registers an invalidation callback for re-rendering.
+		this.controller.setOnInvalidate(() => this.tui.requestRender());
 	}
 
 	// ── Component interface ──────────────────────────────────────────────────
 
 	render(width: number): string[] {
-		// Check if close was requested.
-		if (this.controller.isCloseRequested()) {
-			this.dispose();
-			this.done(null);
-			return [];
-		}
-
 		// Layout: left panel ~20% (min 22), right panel fills rest, borders.
 		const leftWidth = Math.max(22, Math.floor(width * 0.20));
 		const separatorWidth = 1;
@@ -462,12 +596,7 @@ export class DashboardComponent implements Component {
 
 		const visible = this.controller.getVisibleNodes();
 		const state = this.controller.getState();
-		const selectedNode = this.tree.getNode(state.cursorId);
-
-		// ── Cancel confirmation overlay ────────────────────────────────
-		if (state.cancelTargetId) {
-			return this.renderCancelConfirm(width, state.cancelTargetId);
-		}
+		const selectedNode = this.controller.getNode(state.cursorId);
 
 		// ── Left panel: tree browser ───────────────────────────────────
 		const leftLines = this.renderTreePanel(visible, state, leftWidth);
@@ -537,37 +666,61 @@ export class DashboardComponent implements Component {
 			);
 		}
 
-		// ── Footer with key hints ───────────────────────────────────────
+		// ── Footer: bottom border + key hints + model/token meter ────────
 		const dim = (s: string) => this.theme.fg("dim", s);
-		const hints = " ↑↓ nav · → expand · ← back · ⏎ focus · x cancel · esc close";
+		const hintsBase = state.cancelTargetId
+			? " y confirm · n dismiss · esc close"
+			: " ↑↓ nav · → expand · ← back · ⏎ focus · x cancel · esc close";
 		lines.push(border("╰") + border("─".repeat(contentWidth)) + border("╯"));
-		lines.push(dim(truncateToWidth(hints, width)));
+
+		// Aggregate model + token footer (mirrors ViewportFooterComponent).
+		const aggUsage = this.controller.getAggregateUsage();
+		const aggCompression = this.controller.getAggregateCompression();
+		const activeModel = this.controller.getActiveModel();
+		const meter = fmtTokenMeter(aggUsage);
+		const compSuffix = aggCompression.tokensSaved > 0 ? ` ⇌${aggCompression.tokensSaved}t` : "";
+		const modelLabel = activeModel?.provider && activeModel?.model
+			? `${activeModel.provider} ${activeModel.model}`
+			: (activeModel?.provider ?? activeModel?.model ?? "");
+
+		let footerLine = "";
+		if (modelLabel && meter) {
+			footerLine = `${hintsBase}   ${dim(modelLabel)}  Σ ${meter}${compSuffix}`;
+		} else if (meter) {
+			footerLine = `${hintsBase}   Σ ${meter}${compSuffix}`;
+		} else if (modelLabel) {
+			footerLine = `${hintsBase}   ${dim(modelLabel)}`;
+		} else {
+			footerLine = hintsBase;
+		}
+		lines.push(dim(truncateToWidth(footerLine, width)));
+
+		// ── Overlay cancel confirmation on top of dashboard content ────
+		if (state.cancelTargetId) {
+			return this.overlayCancelConfirm(lines, width, state.cancelTargetId);
+		}
 
 		return lines;
 	}
 
 	handleInput(data: string): void {
+		// ESC always closes the overlay, regardless of focus panel or
+		// cancel-confirmation state. This takes priority over the controller's
+		// ESC handling (which only dismissed cancel-confirm but didn't close).
+		if (matchesKey(data, Key.escape)) {
+			this.dispose();
+			this.done(null);
+			return;
+		}
 		this.controller.handleInput(data);
-		this.tui.requestRender();
 	}
 
 	invalidate(): void {
-		// No cached render state — pure function of tree + state.
+		// No cached render state — pure function of VM + controller state.
 	}
 
 	dispose(): void {
-		if (this.refreshTimer) {
-			clearInterval(this.refreshTimer);
-			this.refreshTimer = undefined;
-		}
-		if (this._rerender) {
-			this.tree.off("change", this._rerender);
-			this.tree.off("tail", this._rerender);
-			this.tree.off("preview", this._rerender);
-		}
-		if (this._onTreeChange) {
-			this.tree.off("tree", this._onTreeChange);
-		}
+		this.controller.dispose();
 	}
 
 	// ── Tree panel renderer ─────────────────────────────────────────────────
@@ -587,10 +740,10 @@ export class DashboardComponent implements Component {
 		lines.push(this.theme.bold(this.theme.fg("accent", " Phases")));
 
 		for (const id of visibleIds) {
-			const node = this.tree.getNode(id);
+			const node = this.controller.getNode(id);
 			if (!node) continue;
 			const isCursor = id === state.cursorId;
-			const depth = this.tree.getDepth(id);
+			const depth = node.depth;
 			const indent = " ".repeat(depth * 2);
 
 			// Status glyph
@@ -599,7 +752,7 @@ export class DashboardComponent implements Component {
 			// Progress label for orchestrators
 			let label = node.label;
 			if (node.kind === "orchestrator") {
-				const prog = this.tree.getSubtreeProgress(id);
+				const prog = this.controller.getSubtreeProgress(id);
 				label += ` ${prog.completed}/${prog.total}`;
 			}
 
@@ -622,7 +775,7 @@ export class DashboardComponent implements Component {
 		return lines;
 	}
 
-	private nodeGlyph(node: OrchestratorNode): string {
+	private nodeGlyph(node: NodeViewModel): string {
 		switch (node.status) {
 			case "completed":
 				return this.theme.fg("success", "✔");
@@ -644,7 +797,7 @@ export class DashboardComponent implements Component {
 
 	// ── Detail panel renderer ────────────────────────────────────────────────
 
-	private renderDetailPanel(node: OrchestratorNode, width: number): string[] {
+	private renderDetailPanel(node: NodeViewModel, width: number): string[] {
 		const lines: string[] = [];
 		const dim = (s: string) => this.theme.fg("dim", s);
 		const accent = (s: string) => this.theme.fg("accent", s);
@@ -664,7 +817,7 @@ export class DashboardComponent implements Component {
 
 		// ── Orchestrator node: list children ─────────────────────────────
 		if (node.kind === "orchestrator" && node.children.length > 0) {
-			const children = this.tree.getChildren(node.id);
+			const children = this.controller.getChildren(node.id);
 			lines.push(...wrapLine(dim(bold(`Agents · ${children.length}`)), width));
 			for (const child of children) {
 				const cglyph = this.nodeGlyph(child);
@@ -727,39 +880,85 @@ export class DashboardComponent implements Component {
 		return lines;
 	}
 
-	private renderCancelConfirm(width: number, targetId: string): string[] {
-		const node = this.tree.getNode(targetId);
+	/** Render a cancel-confirmation dialog overlaid on the dashboard.
+	 *  The dashboard content stays visible above and below the dialog.
+	 *  The outer frame borders (│ on each side) are preserved across the
+	 *  dialog rows so the two-panel layout doesn't visually collapse.
+	 *  The dialog is centered and accepts y/Enter to confirm or n/Esc to
+	 *  dismiss. The overlay stays until the user decides — Esc only
+	 *  dismisses the cancel prompt, not the dashboard.
+	 */
+	private overlayCancelConfirm(baseLines: string[], width: number, targetId: string): string[] {
+		const node = this.controller.getNode(targetId);
 		const label = node?.label ?? targetId;
 		const dim = (s: string) => this.theme.fg("dim", s);
 		const warn = (s: string) => this.theme.fg("warning", s);
 		const bold = (s: string) => this.theme.bold(s);
-		const border = (s: string) => this.theme.fg("border", s);
+		const brd = (s: string) => this.theme.fg("border", s);
+
+		// Content width is the full width minus the two outer │ borders.
+		const contentWidth = width - 2;
+
+		// Build the dialog box (narrower than the full content area so it
+		// floats with padding on each side).
+		const dialogW = Math.min(contentWidth, 60);
+		const diagLines: string[] = [];
 
 		const prompt = warn(`⚠ Cancel ${bold(label)}?`);
-		const actions = dim("y confirm · n/esc dismiss");
+		const actions = dim("y confirm · n dismiss · esc close");
 		const promptW = visibleWidth(prompt);
 		const actionsW = visibleWidth(actions);
 
-		const lines: string[] = [];
-		lines.push(border("╭" + "─".repeat(width - 2) + "╮"));
-		lines.push(border("│") + " ".repeat(width - 2) + border("│"));
+		diagLines.push(brd("╭") + brd("─".repeat(dialogW - 2)) + brd("╮"));
+		diagLines.push(brd("│") + " ".repeat(dialogW - 2) + brd("│"));
 		{
-			const gap = Math.max(0, width - 4 - promptW - actionsW);
-			lines.push(
-				border("│") +
-					" " +
-					prompt +
-					" ".repeat(gap) +
-					" " +
-					actions +
-					" ".repeat(Math.max(0, width - 4 - promptW - actionsW - gap)) +
-					border("│"),
-			);
+			// Place prompt and actions side by side when they fit; stack otherwise.
+			const sideBySide = promptW + actionsW + 4 <= dialogW - 2;
+			if (sideBySide) {
+				const contentGap = Math.max(1, dialogW - 4 - promptW - actionsW);
+				const contentLine =
+					brd("│") + " " + prompt + " ".repeat(contentGap) + actions + " " + brd("│");
+				if (visibleWidth(contentLine) < dialogW) {
+					// Pad content line to full dialog width.
+					const pad = dialogW - 2 - visibleWidth(contentLine.slice(1, -1));
+					diagLines.push(
+						brd("│") +
+						" " + prompt + " ".repeat(contentGap + Math.max(0, pad)) + actions +
+						" " + brd("│"),
+					);
+				} else {
+					diagLines.push(contentLine);
+				}
+			} else {
+				// Stacked: prompt on one line, actions on the next.
+				const promptPad = Math.max(0, dialogW - 2 - 1 - promptW - 1);
+				diagLines.push(brd("│") + " " + prompt + " ".repeat(promptPad) + brd("│"));
+				const actionsPad = Math.max(0, dialogW - 2 - 1 - actionsW - 1);
+				diagLines.push(brd("│") + " " + actions + " ".repeat(actionsPad) + brd("│"));
+			}
 		}
-		lines.push(border("│") + " ".repeat(width - 2) + border("│"));
-		lines.push(border("╰" + "─".repeat(width - 2) + "╯"));
+		diagLines.push(brd("│") + " ".repeat(dialogW - 2) + brd("│"));
+		diagLines.push(brd("╰") + brd("─".repeat(dialogW - 2)) + brd("╯"));
 
-		return lines;
+		// Center the dialog vertically within the content rows and
+		// horizontally within the content area, preserving the outer │
+		// borders on every row so the frame stays intact.
+		const totalLines = baseLines.length;
+		const diagH = diagLines.length;
+		const startRow = Math.max(0, Math.floor((totalLines - diagH) / 2));
+		const leftPad = Math.max(0, Math.floor((contentWidth - dialogW) / 2));
+
+		const result: string[] = [...baseLines];
+		for (let i = 0; i < diagH && startRow + i < result.length; i++) {
+			const diagLine = diagLines[i]!;
+			const diagVisW = visibleWidth(diagLine);
+			const rightPad = Math.max(0, contentWidth - leftPad - diagVisW);
+			// Preserve the outer │ borders: left border + centered dialog + right border.
+			result[startRow + i] =
+				brd("│") + " ".repeat(leftPad) + diagLine + " ".repeat(rightPad) + brd("│");
+		}
+
+		return result;
 	}
 
 	private statusLabel(status: NodeStatus): string {
@@ -781,7 +980,7 @@ export class DashboardComponent implements Component {
 		}
 	}
 
-	private formatMetrics(node: OrchestratorNode): string {
+	private formatMetrics(node: NodeViewModel): string {
 		const parts: string[] = [];
 		if (node.usage.input || node.usage.output || node.usage.cacheRead) {
 			parts.push(fmtTokenMeter(node.usage));

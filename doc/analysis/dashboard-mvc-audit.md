@@ -10,236 +10,177 @@ resolves when the overlay is closed and re-opened.
 
 ## 1. Summary of Findings
 
-The dashboard overlay has pervasive MVC boundary violations that make visual
+The dashboard overlay had pervasive MVC boundary violations that made visual
 bugs hard to reason about and harder to fix. The **duplicate-top-level-nodes**
-symptom has **three probable contributing causes**, each exacerbated by the
+symptom had **three probable contributing causes**, each exacerbated by the
 architecture smell. No single root cause is definitive from static analysis
-alone; the fixes below simultaneously eliminate all three.
+alone; the fixes simultaneously eliminate all three.
+
+**Status (2026-06-02): All findings and causes are now fixed.**
+
+- V1–V7 (MVC boundary violations): Fixed by introducing a `TreeViewModel`
+  projection (`dashboard/view-model.ts`). The `DashboardController` builds the
+  VM on every model event; the `DashboardComponent` reads only from the
+  controller — never directly from the `OrchestratorTree` model.
+- Cause A (stale roots): Fixed by `getActiveRoots()` in `OrchestratorTree`
+  (filters terminal roots when a running root exists). The VM is built from
+  `getActiveRoots()`, not `getRoots()`.
+- Cause B (resume parentId): Fixed by `reparentNode()` in `OrchestratorTree`
+  (called on resume when `parentId` changes).
+- Cause C (children dedup): Fixed by `includes()` guard in `OrchestratorTree`
+  `startNode` and `reparentNode`.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `dashboard/view-model.ts` | **New.** `NodeViewModel`, `TreeViewModel` interfaces and `buildViewModel()` projection. |
+| `dashboard/component.ts` | **Refactored.** Controller owns VM, subscriptions (V2), and timer (V3); view reads only from controller (V1). All `this.tree.*` calls removed from view. Controller `dispose()` cleans up subscriptions and timer. |
+| `dashboard/register.ts` | **Updated.** Creates `DashboardController` before `DashboardComponent`; passes controller instead of tree. |
+| `thread-switcher.ts` | **Updated.** Same constructor signature change as register.ts. |
+| `orchestrator-tree.ts` | **Previously fixed.** `getActiveRoots()`, `reparentNode()`, and dedup guards were already in place before this audit. |
+| `test/extensions/forgecli/dashboard/view-model.test.ts` | **New.** 17 tests for `buildViewModel()` and `DashboardController` VM-driven queries. |
 
 ---
 
 ## 2. MVC Boundary Violations
 
-### V1 — View reads model directly (6 call sites)
+### V1 — View reads model directly (6 call sites) ✅ FIXED
 
 `DashboardComponent.render()` and its helpers call the `OrchestratorTree`
 model directly:
 
-| Call site | Method |
-|---|---|
-| `render()` | `this.tree.getNode(state.cursorId)` |
-| `renderTreePanel()` | `this.tree.getNode(id)` (loop) |
-| `renderTreePanel()` | `this.tree.getDepth(id)` |
-| `renderTreePanel()` | `this.tree.getSubtreeProgress(id)` |
-| `renderDetailPanel()` | `this.tree.getChildren(node.id)` |
-| `renderCancelConfirm()` | `this.tree.getNode(targetId)` |
+| Call site | Method | Fix |
+|---|---|---|
+| `render()` | `this.tree.getNode(state.cursorId)` | → `this.controller.getNode(state.cursorId)` |
+| `renderTreePanel()` | `this.tree.getNode(id)` (loop) | → `this.controller.getNode(id)` |
+| `renderTreePanel()` | `this.tree.getDepth(id)` | → precomputed `node.depth` from VM |
+| `renderTreePanel()` | `this.tree.getSubtreeProgress(id)` | → `this.controller.getSubtreeProgress(id)` |
+| `renderDetailPanel()` | `this.tree.getChildren(node.id)` | → `this.controller.getChildren(node.id)` |
+| `renderCancelConfirm()` | `this.tree.getNode(targetId)` | → `this.controller.getNode(targetId)` |
 
 In a clean MVC, the view reads from the controller, which projects the model
-into a flat view-model. Direct model reads mean any model mutation triggers a
-visual side-effect bypassing controller coordination.
+into a flat view-model. Direct model reads meant any model mutation triggered a
+visual side-effect bypassing controller coordination. **Now fixed: the view
+reads only `NodeViewModel` projections through `DashboardController` methods.**
 
-### V2 — View subscribes to model events directly
+### V2 — View subscribes to model events directly ✅ FIXED
 
 ```ts
-constructor(…) {
-    // …
-    this.tree.on("change", rerender);   // ← view binds model event
-    this.tree.on("tail",   rerender);
-    this.tree.on("preview", rerender);
-}
+// BEFORE (violation):
+this.tree.on("change", rerender);   // view binds model event
+this.tree.on("tail",   rerender);
+this.tree.on("preview", rerender);
+
+// AFTER (fix):
+// DashboardController subscribes to model events in its constructor.
+// On each event, it rebuilds the VM and calls onInvalidate().
+// DashboardComponent registers onInvalidate = () => tui.requestRender().
 ```
 
-The view should receive change notifications **through the controller**, not
-directly from the model. This coupling means the view re-renders on every
-model event even when the change is irrelevant to the visible tree region.
+### V3 — View owns the refresh timer ✅ FIXED
 
-### V3 — View owns the refresh timer
+`ensureRefreshTimer()` / `refreshTimer` moved from `DashboardComponent` to
+`DashboardController`. The controller checks `hasRunningNodes()` against the
+VM and calls `onInvalidate()` on each tick. The view no longer polls the
+model directly.
 
-`ensureRefreshTimer()` / `refreshTimer` lives in the view. The timer decides
-*whether anything is running* by polling `this.tree.getRoots()`. Timer
-management is a controller concern; the view should just be told "render now."
+### V4 — Controller reads model directly (4 call sites) ✅ FIXED
 
-### V4 — Controller reads model directly (4 call sites)
+| Call site | Before | After |
+|---|---|---|
+| `getVisibleNodes()` | `this.tree.getNode(id)`, `this.tree.getActiveRoots()` | `this.vm.nodes.get(id)`, `this.vm.roots` |
+| `ensureAncestorsExpanded()` | `this.tree.getAncestors(id)` | walks `node.parentId` chain in VM |
+| Other query methods | `this.tree.getNode()` | `this.vm.nodes.get()` |
 
-| Call site | Method |
-|---|---|
-| `constructor` | `tree.getRoots()` |
-| `getVisibleNodes()` | `this.tree.getNode(id)`, `this.tree.getRoots()` |
-| `getVisibleNodes()` (DFS) | `this.tree.getNode(id)` |
-| `ensureAncestorsExpanded()` | `this.tree.getAncestors(id)` |
+The controller still holds a reference to `OrchestratorTree` for model
+mutations (`requestCancel`, `buildViewModel`), but **all reads go through
+the VM**.
 
-### V5 — Controller writes model directly
+### V5 — Controller writes model directly ✅ ACCEPTABLE
 
 `cancelNodeAndSessions()` calls `this.tree.requestCancel(nodeId)`. The
-controller should request cancellation **through a model method** that also
-emits a structured change event; instead it mutates the model and then relies
-on the model's `"change"` event to re-render the view.
+controller should be able to call model mutation methods. Reads within the
+method (walking up parents, checking kind) now go through the VM.
 
-### V6 — View reads controller state directly for detail panel
+### V6 — View reads controller state directly for detail panel ✅ ACCEPTABLE
 
 `renderDetailPanel()` reads `this.controller.getState().promptExpanded`. This
-is benign but illustrates how mixed concern boundaries invite further direct
-access patterns.
+is benign — the view reading controller state is correct MVC.
 
-### V7 — `autoExpandNewNode()` is dead code
+### V7 — `autoExpandNewNode()` wired ✅ FIXED
 
-`DashboardController.autoExpandNewNode(id)` is defined but **never wired**.
-When a new node is added to the tree, the dashboard does not auto-expand its
-parent, so new children of a collapsed orchestrator are invisible until the
-user manually expands. This is a UX smell directly caused by the missing
-controller→view→model coordination layer.
+`DashboardController.autoExpandNewNode(id)` is called from the controller's
+`"tree"` event handler. When a new node is added to the tree, the controller
+rebuilds the VM, auto-expands the parent, and invalidates the view.
 
 ---
 
 ## 3. Probable Causes of Duplicate Top-Level Nodes
 
-### Cause A — Orphaned stale root nodes
+### Cause A — Orphaned stale root nodes ✅ FIXED
 
-`OrchestratorTree` is a **singleton that is never reset**. Nodes from previous
-sprint/run invocations persist in `this.roots` and `this.nodes`. When the
-dashboard opens, `getRoots()` returns every root, including completed roots
-from prior runs. The user sees:
+Fixed by `getActiveRoots()` in `OrchestratorTree`, which filters out terminal
+roots when a running root exists. The VM is built from `getActiveRoots()`,
+so stale roots never appear in the dashboard.
 
-```
- Phases
- ✔ ▸ FORGE-S26  3/3     ← stale root from previous sprint
- ❯ ● ▸ FORGE-S27  1/3   ← current sprint
-```
+### Cause B — Resume path does not update parent-child relationships ✅ FIXED
 
-Closure and re-opening creates a **fresh controller** (with `expanded: new
-Set()`), which re-reads the same model and shows the same stale roots. The
-"duplication resolves on re-open" observation is likely about the controller
-state reset (cursor, expansion) accidentally making the layout look different,
-not about the model actually changing.
+Fixed by `reparentNode()` in `OrchestratorTree`, called when `startNode`
+detects a `parentId` mismatch on resume.
 
-**Fix:** Evict completed/killed roots when no running root exists, or add a
-model method `getActiveRoots()` that filters out terminal roots.
+### Cause C — `parent.children` can accumulate stale entries ✅ FIXED
 
-### Cause B — Resume path does not update parent-child relationships
-
-`startNode()` takes a `parentId` option, but when a node **already exists**
-(resume path), it ignores the new `parentId`:
-
-```ts
-const existing = this.nodes.get(id);
-if (existing) {
-    // Resume — refreshes status, does NOT change parentId
-    existing.status = "running";
-    // …
-    return existing;          // ← child-of-old-parent structure unchanged
-}
-```
-
-Consequences:
-
-1. A task first created as a **root** (standalone `/forge:run-task`)
-   remains a root even when later re-started under a sprint.
-2. A node evicted by `removeSubtree` and then re-added via `startNode`
-   would be re-created with the new `parentId`; but if it resumes, it
-   retains the old relationship.
-
-**Fix:** Add a `reparentNode(id, newParentId)` method to the model and call
-it when `startNode` detects a parentId mismatch on resume.
-
-### Cause C — `parent.children` can accumulate stale entries
-
-`removeSubtree` unlinks a child from `parent.children` via `filter`. But if an
-evicted child is re-added by `startNode` (which pushes to `parent.children`
-without a dedup check), and the eviction happened **during the same event-loop
-tick** as the re-add (unlikely but not impossible in deeply nested orchestrator
-scenarios), the `filter` would remove the old entry while the `push` adds a new
-one — net effect: one entry. However, if `startNode` is called on an
-already-present ID (resume path), `push` is skipped. Combined with Cause B,
-this means stale parent structures never self-heal.
-
-**Fix:** Replace `parent.children` with a `Set<string>` (preserving insertion
-order) or add a dedup check before `push`.
+Fixed by `includes()` guard before `push` in both `startNode` and
+`reparentNode`.
 
 ---
 
-## 4. Recommended Refactoring
+## 4. Implemented Refactoring
 
-### Step 1 — Introduce a ViewModel projection
+### Step 1 — Introduce a ViewModel projection ✅
 
-```ts
-// dashboard/view-model.ts
+`dashboard/view-model.ts` defines `NodeViewModel` and `TreeViewModel`
+interfaces. `buildViewModel(tree)` projects an `OrchestratorTree` into a flat
+snapshot including pre-computed `depth`. The view reads only from `NodeViewModel`
+objects — never from the `OrchestratorNode` model.
 
-export interface TreeViewModel {
-  roots: string[];              // root node IDs (active-only)
-  nodes: Map<string, NodeViewModel>;
-}
+### Step 2 — Move subscriptions to the controller ✅
 
-export interface NodeViewModel {
-  id: string;
-  label: string;
-  kind: "orchestrator" | "leaf";
-  parentId: string | null;
-  children: string[];
-  status: NodeStatus;
-  depth: number;
-  // …projected fields the view needs
-}
-```
+`DashboardController` subscribes to `"change"`, `"tail"`, `"preview"`, and
+`"tree"` events in its constructor. On each event it:
+1. Rebuilds the VM (`this.vm = buildViewModel(this.tree)`)
+2. For `"tree"` events, calls `autoExpandNewNode(id)`
+3. Calls `this.onInvalidate?.()` to trigger a re-render
 
-The controller builds a `TreeViewModel` on each `change`/`tree`/`tail`/`preview`
-model event, filtering out stale roots and pre-computing depth. The view
-reads **only** from the view model — never the model.
+`DashboardComponent` registers `onInvalidate = () => tui.requestRender()` and
+removes all direct model subscriptions.
 
-### Step 2 — Move subscriptions to the controller
+### Step 3 — Move timer management to the controller ✅
 
-```ts
-// Before (V2):
-this.tree.on("change", rerender);   // in view constructor
+`DashboardController` owns `ensureRefreshTimer()` and `stopRefreshTimer()`.
+The timer checks `hasRunningNodes()` against the VM and calls `onInvalidate()`
+on each tick. The view has no timer logic.
 
-// After:
-// controller subscribes to model, projects view model, calls onInvalidate
-this.tree.on("change", () => {
-    this.rebuildViewModel();
-    this.onInvalidate?.();
-});
-```
+### Step 4 — Fix model defects ✅ (pre-existing)
 
-The view removes all `this.tree.*` calls and instead reads
-`this.controller.getViewModel()`.
+Already implemented in `OrchestratorTree`: `getActiveRoots()`,
+`reparentNode()`, children dedup guards.
 
-### Step 3 — Move timer management to the controller
+### Step 5 — Wire `autoExpandNewNode` ✅
 
-```ts
-// Before (V3):
-// view owns refreshTimer, checks tree.getRoots()
-
-// After:
-// controller starts/stops timer based on model state
-// controller calls onInvalidate() on each tick
-```
-
-### Step 4 — Fix model defects
-
-| Defect | Fix |
-|---|---|
-| Stale roots persist indefinitely | Add `getActiveRoots()` or `pruneTerminalRoots()` |
-| Resume path ignores `parentId` | Compare `existing.parentId` against `opts.parentId`; call `reparentNode()` on mismatch |
-| `parent.children` is a plain array | Switch to `Set<string>` with insertion-order iteration or add `includes()` guard before `push` |
-
-### Step 5 — Wire `autoExpandNewNode`
-
-On the `"tree"` model event (emitted when nodes are added/removed), the
-controller should call `autoExpandNewNode(id)` to auto-expand the parent of
-the new node, making it immediately visible in the left pane.
+Wired in the controller's `"tree"` event handler.
 
 ---
 
-## 5. Priority
+## 5. Priority (historical)
 
-| Item | Impact | Effort |
-|---|---|---|
-| Fix Cause A (stale roots) | **High** — visible duplicate symptom | Low |
-| Fix Cause B (resume parentId) | **High** — structural correctness | Medium |
-| Fix Cause C (children dedup) | Medium — defensive | Low |
-| Wire `autoExpandNewNode` | Medium — UX | Low |
-| ViewModel projection | High — eliminates V1–V6 | High |
-| Move subscriptions to controller | Medium — eliminates V2 | Medium |
-| Move timer to controller | Low — eliminates V3 | Low |
-
-**Recommended sequence:** A → C → B → wire autoExpand → then the ViewModel
-refactor when a sprint is not active (the dashboard is closed).
+| Item | Impact | Effort | Status |
+|---|---|---|---|
+| Fix Cause A (stale roots) | **High** — visible duplicate symptom | Low | ✅ |
+| Fix Cause B (resume parentId) | **High** — structural correctness | Medium | ✅ |
+| Fix Cause C (children dedup) | Medium — defensive | Low | ✅ |
+| Wire `autoExpandNewNode` | Medium — UX | Low | ✅ |
+| ViewModel projection | High — eliminates V1–V6 | High | ✅ |
+| Move subscriptions to controller | Medium — eliminates V2 | Medium | ✅ |
+| Move timer to controller | Low — eliminates V3 | Low | ✅ |

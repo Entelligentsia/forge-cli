@@ -7,7 +7,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
-import { DashboardComponent } from "./component.js";
+import { DashboardComponent, DashboardController } from "./component.js";
 import { getInputRouter } from "../input-router.js";
 
 export function registerDashboardCommand(pi: ExtensionAPI): void {
@@ -26,11 +26,12 @@ export function registerDashboardCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
+			const controller = new DashboardController(tree);
 			const router = getInputRouter();
 			router.pushOverlay();
 			try {
 				await ctx.ui.custom<null>((tui, theme, _kb, done) => {
-					const component = new DashboardComponent(tree, tui, theme, done);
+					const component = new DashboardComponent(controller, tui, theme, done);
 					return component;
 				}, {
 					overlay: true,
