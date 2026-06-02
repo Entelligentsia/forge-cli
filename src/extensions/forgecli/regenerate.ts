@@ -133,6 +133,104 @@ async function runTool(
 	});
 }
 
+/**
+ * Copy bundled tools (*.cjs, *.js, lib/) from bundleToolsRoot into cwd/.forge/tools/.
+ *
+ * Atomic handler pattern: no LLM in the loop, errors surfaced via returned messages[],
+ * not throw. Accepts _testBundleToolsRoot for test isolation (defaults to getBundledToolsRoot()).
+ *
+ * When singleTool is provided (e.g. "store-cli"), only that file is copied (both .cjs
+ * variant checked first). Used by the `forge:rebuild tools <name>` sub-target.
+ *
+ * @param cwd            Project root directory (must contain .forge/)
+ * @param _testBundleToolsRoot  Override bundle tools root for tests; omit to use getBundledToolsRoot()
+ * @param singleTool     Optional: copy only this one tool by stem name (without extension)
+ */
+export function runRebuildTools(
+	cwd: string,
+	_testBundleToolsRoot?: string,
+	singleTool?: string,
+): { messages: string[] } {
+	const messages: string[] = [];
+	const toolsSrc = _testBundleToolsRoot ?? getBundledToolsRoot();
+
+	if (!fs.existsSync(toolsSrc)) {
+		messages.push(`× forge:rebuild tools — bundle tools dir not found: ${toolsSrc}`);
+		return { messages };
+	}
+
+	const toolsDest = path.join(cwd, ".forge", "tools");
+	try {
+		fs.mkdirSync(toolsDest, { recursive: true });
+	} catch (err: unknown) {
+		messages.push(`× forge:rebuild tools — could not create .forge/tools/: ${(err as Error).message ?? String(err)}`);
+		return { messages };
+	}
+
+	if (singleTool) {
+		// Single-file sub-target: copy only the named tool
+		const srcCjs = path.join(toolsSrc, `${singleTool}.cjs`);
+		const srcJs = path.join(toolsSrc, `${singleTool}.js`);
+		const resolvedSrc = fs.existsSync(srcCjs) ? srcCjs : fs.existsSync(srcJs) ? srcJs : null;
+		if (resolvedSrc) {
+			const destFile = path.join(toolsDest, path.basename(resolvedSrc));
+			try {
+				fs.copyFileSync(resolvedSrc, destFile);
+				messages.push(`〇 forge:rebuild tools — copied ${path.basename(resolvedSrc)}`);
+			} catch (err: unknown) {
+				messages.push(`× forge:rebuild tools — copy failed for ${singleTool}: ${(err as Error).message ?? String(err)}`);
+			}
+		} else {
+			messages.push(`△ forge:rebuild tools — tool not found: ${singleTool} (neither .cjs nor .js)`);
+		}
+		return { messages };
+	}
+
+	// Full copy: all .cjs and .js files
+	let copiedCount = 0;
+	try {
+		const entries = fs.readdirSync(toolsSrc, { withFileTypes: true });
+		for (const entry of entries) {
+			if (!entry.isFile()) continue;
+			if (!entry.name.endsWith(".cjs") && !entry.name.endsWith(".js")) continue;
+			try {
+				fs.copyFileSync(path.join(toolsSrc, entry.name), path.join(toolsDest, entry.name));
+				copiedCount++;
+			} catch {
+				// non-fatal per-file
+			}
+		}
+	} catch (err: unknown) {
+		messages.push(`× forge:rebuild tools — could not read bundle tools dir: ${(err as Error).message ?? String(err)}`);
+		return { messages };
+	}
+
+	// Copy lib/ subdirectory
+	const libSrc = path.join(toolsSrc, "lib");
+	const libDest = path.join(toolsDest, "lib");
+	if (fs.existsSync(libSrc)) {
+		try {
+			fs.mkdirSync(libDest, { recursive: true });
+			const libEntries = fs.readdirSync(libSrc, { withFileTypes: true });
+			for (const entry of libEntries) {
+				if (!entry.isFile()) continue;
+				if (!entry.name.endsWith(".cjs") && !entry.name.endsWith(".js")) continue;
+				try {
+					fs.copyFileSync(path.join(libSrc, entry.name), path.join(libDest, entry.name));
+					copiedCount++;
+				} catch {
+					// non-fatal per-file
+				}
+			}
+		} catch {
+			// non-fatal lib copy failure
+		}
+	}
+
+	messages.push(`〇 forge:rebuild tools — copied ${copiedCount} tool file(s) to .forge/tools/`);
+	return { messages };
+}
+
 export function registerRegenerate(pi: ExtensionAPI): void {
 	pi.registerCommand("forge:rebuild", {
 		description:
@@ -143,8 +241,20 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 			const cwd = process.cwd();
 
 			// FORGE-S26-T11: --enrich flag dispatches to enhance behavior (absorbed from forge:enhance).
+			// FORGE-S29-T05: `tools` sub-arg dispatches to runRebuildTools.
 			const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
 			const hasEnrich = parts.includes("--enrich");
+			const toolsIdx = parts.indexOf("tools");
+			if (toolsIdx !== -1) {
+				// forge:rebuild tools [<name>]
+				// Optional single tool name follows the "tools" keyword.
+				const singleTool = parts[toolsIdx + 1];
+				const result = runRebuildTools(cwd, undefined, singleTool);
+				for (const msg of result.messages) {
+					ctx.ui.notify(msg, msg.startsWith("×") ? "error" : "info");
+				}
+				return;
+			}
 			if (hasEnrich) {
 				// Strip --enrich, pass remaining args to enhance handler (Phase 2 default)
 				const enhanceArgs = parts.filter((p) => p !== "--enrich").join(" ");

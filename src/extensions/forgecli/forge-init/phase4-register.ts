@@ -283,6 +283,56 @@ export async function runPhase4(ctx4: Phase4Context): Promise<Phase4Result | "ab
 		ctx.ui.notify(`〇 Copied ${schemaFiles.length} schema files to .forge/schemas/.`, "info");
 	}
 
+	// ── Step 4-1a: tools-copy (FORGE-S29-T05) ───────────────────────────────
+	// Copy bundled tools/*.cjs and tools/lib/*.cjs into .forge/tools/ so that
+	// subagents can invoke store-cli and friends via .forge/tools/ without
+	// relying on FORGE_ROOT environment variable resolution.
+	// Mirrors the plugin T01 tools-vendoring step. Non-fatal: a missing tools
+	// dir is silently skipped (e.g. minimal test bundles).
+	{
+		const toolsSrc = path.join(getToolsRoot());
+		const toolsDest = path.join(cwd, ".forge", "tools");
+		try {
+			if (fs.existsSync(toolsSrc)) {
+				fs.mkdirSync(toolsDest, { recursive: true });
+				const toolFiles = fs.readdirSync(toolsSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
+				for (const f of toolFiles) {
+					try {
+						fs.copyFileSync(path.join(toolsSrc, f), path.join(toolsDest, f));
+					} catch {
+						// non-fatal
+					}
+				}
+				// Copy lib/ subdirectory
+				const libSrc = path.join(toolsSrc, "lib");
+				const libDest = path.join(toolsDest, "lib");
+				if (fs.existsSync(libSrc)) {
+					fs.mkdirSync(libDest, { recursive: true });
+					const libFiles = fs.readdirSync(libSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
+					for (const f of libFiles) {
+						try {
+							fs.copyFileSync(path.join(libSrc, f), path.join(libDest, f));
+						} catch {
+							// non-fatal
+						}
+					}
+				}
+				// Write .forge-tools-version marker with the bundled plugin version
+				const toolsVersion = getBundledForgeVersion(bundleRoot);
+				const markerPath = path.join(toolsDest, ".forge-tools-version");
+				try {
+					fs.writeFileSync(markerPath, JSON.stringify({ version: toolsVersion }, null, 2) + "\n", "utf8");
+				} catch {
+					// non-fatal
+				}
+				ctx.ui.notify(`〇 Copied bundled tools to .forge/tools/ (v${toolsVersion}).`, "info");
+			}
+		} catch {
+			// non-fatal — tools-copy failure does not abort Phase 4
+			ctx.ui.notify("△ Could not copy bundled tools to .forge/tools/ — non-fatal.", "warning");
+		}
+	}
+
 	// Step 4-1b: enhancement substrate
 	const enhancementsDir = path.join(cwd, ".forge", "enhancements");
 	fs.mkdirSync(enhancementsDir, { recursive: true });

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.11] — 2026-06-03
+
+Coordinated release matching forge plugin **v1.2.7** (FORGE-S29 vendored-tools
+sprint — retire FORGE_ROOT via vendored `.forge/tools/`).
+
+### Added
+
+- **`forge:rebuild tools` handler (`runRebuildTools`)** — copies bundled tools
+  (`*.cjs`, `lib/`) from the forge-cli payload into `.forge/tools/` of the
+  target project. Accepts optional `singleTool` for sub-target re-copy.
+  Tested in `test/extensions/forgecli/regenerate.test.ts`.
+- **`forge:rebuild tools` wired in `phase4-register.ts`** — `tools` category
+  registered in the rebuild handler; single-tool sub-targets pass through as
+  `singleTool`.
+- **`migration-engine.ts` `regenerate:tools`** — `applyRegenerate` now handles
+  the `tools` category by delegating to `runRebuildTools`; migrations that
+  include `regenerate:["tools"]` (introduced in plugin v1.2.3–v1.2.7) are
+  applied automatically.
+- **`project-orientation.ts` tools-version check** — `checkForgeTools` added;
+  reads `.forge/tools/.forge-tools-version` and reports stale/absent state so
+  `forge:health` can surface the vendored-tools staleness check (mirrors
+  plugin-side check introduced in v1.2.5).
+- **`tmp-smoke.sh` E2E-T05-TOOLS-VENDORED gate** — new smoke assertion
+  confirms `.forge/tools/` is populated (`.forge-tools-version` marker present)
+  after `/forge:init` runs with the v1.2.x+ plugin.
+
+### Changed
+
+- `forge-subagent.ts` — minor hardening (no observable behaviour change).
+
 ## [1.0.10] — 2026-05-31
 
 Coordinated release matching forge plugin **v1.0.10** (the issue #111

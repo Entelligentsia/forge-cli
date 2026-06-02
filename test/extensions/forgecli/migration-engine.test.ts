@@ -739,6 +739,37 @@ describe("resolveCategory", () => {
 		expect(writes[0]!.src).toContain("forge-root.cjs");
 	});
 
+	// FORGE-S29-T05: tools category copy tests
+	it("FORGE-S29-T05: resolveCategory('tools') produces copy writes for .cjs files in tools/", () => {
+		// Add store-cli.cjs to the bundle tools dir
+		const storeCliSrc = path.join(bundleRoot, "tools", "store-cli.cjs");
+		fs.writeFileSync(storeCliSrc, "module.exports = {};", "utf8");
+		const writes: Array<{ dest: string; src: string }> = [];
+		resolveCategory("tools", bundleRoot, projectRoot, writes);
+		expect(writes.length).toBeGreaterThan(0);
+		expect(writes.some((w) => w.dest.includes(path.join(".forge", "tools", "store-cli.cjs")))).toBe(true);
+	});
+
+	it("FORGE-S29-T05: resolveCategory('tools') dest is inside .forge/tools/, not .forge/schemas/", () => {
+		const storeCliSrc = path.join(bundleRoot, "tools", "store-cli.cjs");
+		fs.writeFileSync(storeCliSrc, "module.exports = {};", "utf8");
+		const writes: Array<{ dest: string; src: string }> = [];
+		resolveCategory("tools", bundleRoot, projectRoot, writes);
+		for (const w of writes) {
+			expect(w.dest).toContain(path.join(".forge", "tools"));
+			expect(w.dest).not.toContain(path.join(".forge", "schemas"));
+		}
+	});
+
+	it("FORGE-S29-T05: resolveCategory('tools:lib') copies lib files to .forge/tools/lib/", () => {
+		const writes: Array<{ dest: string; src: string }> = [];
+		resolveCategory("tools:lib/forge-root", bundleRoot, projectRoot, writes);
+		expect(writes).toHaveLength(1);
+		// Dest should be inside .forge/tools/lib/, not .forge/schemas/
+		expect(writes[0]!.dest).toContain(path.join(".forge", "tools", "lib"));
+		expect(writes[0]!.dest).not.toContain(path.join(".forge", "schemas"));
+	});
+
 	// FORGE-S25-T09: empty-fragment round-trip pinning.
 	//
 	// The TASK_PROMPT planner-callout requires "an empty-file test fixture

@@ -354,3 +354,52 @@ describe("runPhase4 — advisory non-fatal steps", () => {
 		expect(result).not.toBe("abort");
 	});
 });
+
+describe("runPhase4 — tools-copy step (FORGE-S29-T05)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = makeTmpDir();
+	});
+	afterEach(() => rmTmpDir(tmpDir));
+
+	it("copies bundled tools to .forge/tools/ during Phase 4", async () => {
+		const bundleRoot = makeBundle(tmpDir);
+		// Add tools/lib/ and a lib file to the bundle
+		fs.mkdirSync(path.join(bundleRoot, "tools", "lib"), { recursive: true });
+		fs.writeFileSync(path.join(bundleRoot, "tools", "schema-loader.cjs"), "module.exports = {};", "utf8");
+		fs.writeFileSync(path.join(bundleRoot, "tools", "lib", "forge-root.cjs"), "module.exports = {};", "utf8");
+		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
+		const ctx4 = makeCtx4(tmpDir, bundleRoot, { isPiRuntime: () => true });
+
+		await runPhase4(ctx4);
+
+		// store-cli.cjs (created by makeBundle) must be copied
+		expect(fs.existsSync(path.join(tmpDir, ".forge", "tools", "store-cli.cjs"))).toBe(true);
+		// schema-loader.cjs must be copied
+		expect(fs.existsSync(path.join(tmpDir, ".forge", "tools", "schema-loader.cjs"))).toBe(true);
+		// lib/forge-root.cjs must be copied
+		expect(fs.existsSync(path.join(tmpDir, ".forge", "tools", "lib", "forge-root.cjs"))).toBe(true);
+		// .forge-tools-version marker must exist and have a version field
+		const markerPath = path.join(tmpDir, ".forge", "tools", ".forge-tools-version");
+		expect(fs.existsSync(markerPath)).toBe(true);
+		const marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as { version?: string };
+		expect(marker).toHaveProperty("version");
+	});
+
+	it("tools-copy is non-fatal when tools source dir is absent", async () => {
+		// makeBundle does NOT create tools/lib dir — only tools/store-cli.cjs and tools/manage-config.cjs
+		const bundleRoot = makeBundle(tmpDir);
+		// Remove all tools files to simulate a stripped bundle
+		fs.rmSync(path.join(bundleRoot, "tools"), { recursive: true, force: true });
+		// Re-create the minimum needed for step 4-1 guard (store-cli.cjs check)
+		fs.mkdirSync(path.join(bundleRoot, "tools"), { recursive: true });
+		fs.writeFileSync(path.join(bundleRoot, "tools", "store-cli.cjs"), "module.exports = {};", "utf8");
+		fs.writeFileSync(path.join(bundleRoot, "tools", "manage-config.cjs"), "module.exports = {};", "utf8");
+		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
+		const ctx4 = makeCtx4(tmpDir, bundleRoot, { isPiRuntime: () => true });
+
+		// Should not throw — tools-copy is non-fatal
+		const result = await runPhase4(ctx4);
+		expect(result).not.toBe("abort");
+	});
+});

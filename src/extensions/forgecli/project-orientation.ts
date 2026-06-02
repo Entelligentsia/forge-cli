@@ -26,7 +26,8 @@ function findUpConfigJson(cwd: string): string | undefined {
 
 export function buildProjectOrientation(cwdAbs: string): string {
 	// Resolve FORGE_ROOT from .forge/config.json so subagent bash sessions
-	// get the absolute path instead of the unresolved $FORGE_ROOT variable.
+	// can use the transition-fallback $FORGE_ROOT path for un-migrated projects.
+	// Post-FORGE-S29-T05, tools are also available at .forge/tools/ (preferred path).
 	// Subagent processes do NOT inherit FORGE_ROOT from the parent environment.
 	let resolvedForgeRoot = "$FORGE_ROOT";
 	try {
@@ -54,19 +55,22 @@ export function buildProjectOrientation(cwdAbs: string): string {
 		"",
 		"## Forge Tools (canonical shapes)",
 		"",
-		`$FORGE_ROOT resolves to \`${resolvedForgeRoot}\`.`,
+		"Forge tools are available at `.forge/tools/` (preferred, project-relative) after /forge:init.",
+		"If `.forge/tools/store-cli.cjs` does not exist, run `/forge:rebuild tools` to populate it.",
+		`Backward-compat: $FORGE_ROOT resolves to \`${resolvedForgeRoot}\` (transition fallback for un-migrated projects).`,
 		"",
-		`- Store read:   \`node "${resolvedForgeRoot}/tools/store-cli.cjs" read <entity> <id>\``,
-		`- Store list:   \`node "${resolvedForgeRoot}/tools/store-cli.cjs" list <entity>\``,
-		`- Store write:  \`node "${resolvedForgeRoot}/tools/store-cli.cjs" write <entity> '<json>'\`  (id INSIDE json)`,
-		`- Update status: \`node "${resolvedForgeRoot}/tools/store-cli.cjs" update-status <entity> <id> <status>\``,
-		`- Emit event:   \`node "${resolvedForgeRoot}/tools/store-cli.cjs" emit <sprintId> '<json>' [--sidecar]\``,
-		`- Help anytime: \`node "${resolvedForgeRoot}/tools/store-cli.cjs" --help\``,
+		`- Store read:   \`node ".forge/tools/store-cli.cjs" read <entity> <id>\``,
+		`- Store list:   \`node ".forge/tools/store-cli.cjs" list <entity>\``,
+		`- Store write:  \`node ".forge/tools/store-cli.cjs" write <entity> '<json>'\`  (id INSIDE json)`,
+		`- Update status: \`node ".forge/tools/store-cli.cjs" update-status <entity> <id> <status>\``,
+		`- Emit event:   \`node ".forge/tools/store-cli.cjs" emit <sprintId> '<json>' [--sidecar]\``,
+		`- Help anytime: \`node ".forge/tools/store-cli.cjs" --help\``,
 		"",
 		"store-cli verbs: read | list | write | emit | update-status | set-summary | describe | nlp | query | delete — there is no get/set/find.",
 		"",
 		"## Forge Paths",
 		"",
+		"- Forge tools:        `.forge/tools/` (vendored at /forge:init, refreshed via /forge:rebuild tools)",
 		"- Workflow fragments: `.forge/workflows/_fragments/` (NOT `.forge/_fragments/`)",
 		"- Personas:           `.forge/personas/`",
 		"- Templates:          `.forge/templates/`",

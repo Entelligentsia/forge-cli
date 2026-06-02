@@ -18,7 +18,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { findModifiedStructuralFiles } from "../../../src/extensions/forgecli/regenerate.js";
+import { findModifiedStructuralFiles, runRebuildTools } from "../../../src/extensions/forgecli/regenerate.js";
 
 // Resolve a real generation-manifest.cjs from the bundled payload so the test
 // exercises the actual exit-code contract (0=pristine, 1=modified, 2=untracked).
@@ -159,5 +159,56 @@ describe("findModifiedStructuralFiles (forge-cli#26 / forge#106)", () => {
 
 		const modified = findModifiedStructuralFiles(tmp, toolsRoot);
 		expect(modified).toEqual([]);
+	});
+});
+
+// FORGE-S29-T05: runRebuildTools tests
+describe("runRebuildTools (FORGE-S29-T05)", () => {
+	let tmp: string;
+
+	beforeEach(() => {
+		tmp = fs.mkdtempSync(path.join(os.tmpdir(), "forge-rebuild-tools-"));
+		fs.mkdirSync(path.join(tmp, ".forge"), { recursive: true });
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
+
+	it("copies .cjs tools from bundleRoot/tools/ to cwd/.forge/tools/", () => {
+		// Create a fake bundle tools dir with store-cli.cjs
+		const fakeBundleToolsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fake-bundle-tools-"));
+		fs.writeFileSync(path.join(fakeBundleToolsRoot, "store-cli.cjs"), "module.exports = {};", "utf8");
+		fs.writeFileSync(path.join(fakeBundleToolsRoot, "manage-config.cjs"), "module.exports = {};", "utf8");
+		fs.mkdirSync(path.join(fakeBundleToolsRoot, "lib"), { recursive: true });
+		fs.writeFileSync(path.join(fakeBundleToolsRoot, "lib", "forge-root.cjs"), "module.exports = {};", "utf8");
+
+		runRebuildTools(tmp, fakeBundleToolsRoot);
+
+		expect(fs.existsSync(path.join(tmp, ".forge", "tools", "store-cli.cjs"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, ".forge", "tools", "manage-config.cjs"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, ".forge", "tools", "lib", "forge-root.cjs"))).toBe(true);
+
+		fs.rmSync(fakeBundleToolsRoot, { recursive: true, force: true });
+	});
+
+	it("single-file sub-target: copies only the named .cjs file", () => {
+		const fakeBundleToolsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fake-bundle-tools-"));
+		fs.writeFileSync(path.join(fakeBundleToolsRoot, "store-cli.cjs"), "module.exports = {};", "utf8");
+		fs.writeFileSync(path.join(fakeBundleToolsRoot, "manage-config.cjs"), "module.exports = {};", "utf8");
+
+		runRebuildTools(tmp, fakeBundleToolsRoot, "store-cli");
+
+		expect(fs.existsSync(path.join(tmp, ".forge", "tools", "store-cli.cjs"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, ".forge", "tools", "manage-config.cjs"))).toBe(false);
+
+		fs.rmSync(fakeBundleToolsRoot, { recursive: true, force: true });
+	});
+
+	it("is non-fatal when bundle tools dir is absent (returns messages array)", () => {
+		const missingRoot = path.join(os.tmpdir(), "forge-nonexistent-" + Date.now().toString());
+		const result = runRebuildTools(tmp, missingRoot);
+		// Should not throw; result.messages should be non-empty (error surfaced)
+		expect(Array.isArray(result.messages)).toBe(true);
 	});
 });

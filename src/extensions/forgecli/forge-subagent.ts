@@ -217,10 +217,12 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// natural chronological ordering when a phase runs multiple times.
 	const startedAt = new Date();
 
-	// Set FORGE_ROOT in the process environment so the subagent's bash tool
-	// can resolve $FORGE_ROOT paths. This is critical for workflow commands
-	// that cite $FORGE_ROOT/tools/store-cli.cjs etc. Without it, every
-	// subagent that shells out to store-cli fails.
+	// Transition fallback: FORGE_ROOT shim for projects not yet migrated to .forge/tools/.
+	// Post-FORGE-S29-T05, fresh /forge:init copies tools into .forge/tools/ so subagents
+	// can invoke store-cli as `node ".forge/tools/store-cli.cjs"` without env resolution.
+	// This shim is kept for projects that initialized before T05 and have NOT yet run
+	// `/forge:rebuild tools`. Remove when all live projects have run /forge:rebuild tools.
+	// See FORGE-S29-T06 for integration verification scope.
 	if (forgeRoot) {
 		process.env.FORGE_ROOT = forgeRoot;
 	}

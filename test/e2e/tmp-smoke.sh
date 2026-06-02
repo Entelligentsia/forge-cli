@@ -211,6 +211,14 @@ else
 	record FAIL "E2E-T03-INIT-FORGE-ROOT unresolved" "FORGE_ROOT=$FORGE_ROOT"
 fi
 
+# E2E-T05-TOOLS-VENDORED: .forge/tools/store-cli.cjs must exist after init (FORGE-S29-T05)
+TOOLS_DIR=".forge/tools"
+if [[ -f "$TOOLS_DIR/store-cli.cjs" ]]; then
+	record PASS "E2E-T05-TOOLS-VENDORED" "$TOOLS_DIR/store-cli.cjs"
+else
+	record FAIL "E2E-T05-TOOLS-VENDORED" ".forge/tools/store-cli.cjs missing after init"
+fi
+
 # 2. schemas/ exists with at least 3 .schema.json files.
 SCHEMA_COUNT=$(find .forge/schemas -maxdepth 1 -name "*.schema.json" 2>/dev/null | wc -l)
 if [[ "$SCHEMA_COUNT" -ge 3 ]]; then

@@ -254,8 +254,24 @@ export function resolveCategory(
 	// ── tools:* short-circuit (excluding tools:lib:*) ──────────────────────
 
 	if (category === "tools" || (category.startsWith("tools:") && !category.startsWith("tools:lib"))) {
-		// paths.forgeRoot is updated by substitute-placeholders, not by this engine directly.
-		// No file operations for tools:* categories.
+		// FORGE-S29-T05: copy all .cjs and .js files from bundle tools/ to .forge/tools/.
+		// The tools/ directory is at bundleRoot/tools/ (same level as .schemas/, .base-pack/).
+		const toolsSrc = path.join(bundleRoot, "tools");
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(toolsSrc, { withFileTypes: true });
+		} catch (err: unknown) {
+			if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw err;
+		}
+		for (const entry of entries) {
+			if (!entry.isFile()) continue;
+			if (!entry.name.endsWith(".cjs") && !entry.name.endsWith(".js")) continue;
+			writes.push({
+				src: path.join(toolsSrc, entry.name),
+				dest: safeDest(path.join("tools", entry.name)),
+			});
+		}
 		return;
 	}
 
@@ -268,25 +284,18 @@ export function resolveCategory(
 
 		const libSrc = path.join(bundleRoot, "tools", "lib");
 
-		// tools:lib files are forge-cli internal tools (bundled in dist/forge-payload/tools/lib/).
-		// They serve the forge-cli extension itself, not the user's .forge/ project tree.
-		// This engine can only write to projectRoot/.forge/ — it cannot update the installed
-		// forge-cli tools. The migration engine records which source files exist (for tracking),
-		// but cannot write them to a meaningful location within .forge/.
-		//
+		// FORGE-S29-T05: copy lib files to .forge/tools/lib/ (previously wrote a
+		// marker stub to .forge/schemas/; now writes the real file to .forge/tools/lib/).
 		// Probe .cjs first, then .js (matching LIB_ALLOWLIST entry patterns).
-		// For default-payload installs: forge-root.cjs, paths.cjs, validate.js ARE present.
 		// ENOENT on both: graceful skip (no throw).
 		const srcCjs = path.join(libSrc, `${name}.cjs`);
 		const srcJs = path.join(libSrc, `${name}.js`);
 		const resolvedSrc = fs.existsSync(srcCjs) ? srcCjs : fs.existsSync(srcJs) ? srcJs : null;
 
 		if (resolvedSrc) {
-			// Record as informational write to a .forge/schemas/ tracking file.
-			// This is a best-effort record — the actual lib file update requires npm reinstall.
 			writes.push({
 				src: resolvedSrc,
-				dest: safeDest(path.join("schemas", `.tools-lib-${name}.marker`)),
+				dest: safeDest(path.join("tools", "lib", `${name}${resolvedSrc.endsWith(".cjs") ? ".cjs" : ".js"}`)),
 			});
 		}
 		// ENOENT on both: graceful skip
