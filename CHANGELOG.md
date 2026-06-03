@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.16] — 2026-06-03
+
+Coordinated release matching forge plugin **v1.2.15**.
+
+### Fixed
+
+- **Zero-usage "husk" turns no longer corrupt phase telemetry.** Failed/retry
+  turns emit assistant messages with all-zero usage; the accumulator in
+  `forge-subagent.ts` counted them as turns and — because
+  `usage.totalTokens ?? prev` treats `0` as non-nullish — overwrote the
+  running `contextTokens` with 0, which is why every aborted phase transcript
+  reported `contextTokens: 0`. Husk turns are now excluded from `turns` and
+  the context figure only updates on a positive total.
+
+- **Incomplete (cancelled/failed) phase attempts now emit their billed
+  tokens.** The cancel and halt-on-failure branches in `run-task.ts` and
+  `fix-bug.ts` returned without emitting a phase event, so the provider-billed
+  tokens of aborted attempts never reached the store — collate's COST_REPORT
+  under-counted real spend (CART-S02-T03 baseline: 259,950 tokens invisible
+  across two aborted plan passes). New `emitIncompletePhaseEvent` helper emits
+  the canonical phase event with `verdict: "aborted"` (cancel) /
+  `"failed"` (halt) and the captured partial usage; zero-token attempts are
+  skipped (no husk noise). Pairs with forge plugin v1.2.15, whose COST_REPORT
+  gains an **Incomplete Passes** section.
+
 ## [1.0.15] — 2026-06-03
 
 ### Fixed

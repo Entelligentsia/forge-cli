@@ -66,6 +66,7 @@ import {
 	buildSummariesBlock,
 	drainFrictionFile,
 	emitEvent,
+	emitIncompletePhaseEvent,
 	findPredecessorIndex,
 	formatLocalTime,
 	isNonInteractive,
@@ -1100,6 +1101,34 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			registry.completePhase(bugId, phase.role, "cancelled");
 			tree.completeNode(phaseNodeId, "cancelled");
 			registry.confirmCancelled(bugId);
+			// Bug B parity with run-task: account billed tokens of the aborted attempt.
+			// sprintId "bugs" = routing key for bug events (matches success path).
+			// The optional `type` token is omitted — verdict carries the outcome.
+			emitIncompletePhaseEvent({
+				emitCtx: {
+					entityType: "bug",
+					bugId,
+					sprintId: "bugs",
+					phase,
+					iteration: (iterationCounts[phase.role] ?? 0) + 1,
+					startMs: phaseStart,
+					endMs: Date.now(),
+					model: result.model ?? "unknown",
+					provider: result.provider ?? "unknown",
+					usage: {
+						input: result.usage.input,
+						output: result.usage.output,
+						cacheRead: result.usage.cacheRead,
+						cacheWrite: result.usage.cacheWrite,
+					},
+					judgement: undefined,
+					storeCli,
+					cwd,
+				},
+				outcome: "aborted",
+				notes: result.errorMessage ?? result.stopReason ?? undefined,
+				onDebug: writeDebug,
+			});
 			// ADR-S21-01: preserve state file so cancelled runs are resumable
 			writeBugState(cwd, {
 				bugId,
@@ -1121,6 +1150,32 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					(result.stopReason ? ` [${result.stopReason}]` : ""),
 				"error",
 			);
+			// Bug B parity with run-task: account billed tokens of the failed attempt.
+			emitIncompletePhaseEvent({
+				emitCtx: {
+					entityType: "bug",
+					bugId,
+					sprintId: "bugs",
+					phase,
+					iteration: (iterationCounts[phase.role] ?? 0) + 1,
+					startMs: phaseStart,
+					endMs: Date.now(),
+					model: result.model ?? "unknown",
+					provider: result.provider ?? "unknown",
+					usage: {
+						input: result.usage.input,
+						output: result.usage.output,
+						cacheRead: result.usage.cacheRead,
+						cacheWrite: result.usage.cacheWrite,
+					},
+					judgement: undefined,
+					storeCli,
+					cwd,
+				},
+				outcome: "failed",
+				notes: result.errorMessage ?? result.stopReason ?? undefined,
+				onDebug: writeDebug,
+			});
 			writeBugState(cwd, {
 				bugId,
 				phaseIndex: currentPhaseIndex,

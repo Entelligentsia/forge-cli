@@ -369,15 +369,24 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 			result.messages.push(msg);
 
 			if (msg.role === "assistant") {
-				result.usage.turns++;
 				const usage = msg.usage;
-				if (usage) {
+				// Husk turns (failed/retry attempts) carry all-zero usage. Don't
+				// count them as billed turns, and never let totalTokens=0 clobber
+				// the running context figure (`??` treats 0 as non-nullish — this
+				// is why aborted phases used to report contextTokens: 0).
+				const isHusk =
+					!usage ||
+					((usage.input ?? 0) === 0 && (usage.output ?? 0) === 0 && (usage.totalTokens ?? 0) === 0);
+				if (usage && !isHusk) {
+					result.usage.turns++;
 					result.usage.input += usage.input ?? 0;
 					result.usage.output += usage.output ?? 0;
 					result.usage.cacheRead += usage.cacheRead ?? 0;
 					result.usage.cacheWrite += usage.cacheWrite ?? 0;
 					result.usage.cost += usage.cost?.total ?? 0;
-					result.usage.contextTokens = usage.totalTokens ?? result.usage.contextTokens;
+					if ((usage.totalTokens ?? 0) > 0) {
+						result.usage.contextTokens = usage.totalTokens as number;
+					}
 				}
 				if (!result.model && msg.model) result.model = msg.model;
 				if (!result.provider && msg.provider) result.provider = msg.provider;

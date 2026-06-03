@@ -12,15 +12,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mock createAgentSession ────────────────────────────────────────────────
 
-const { mockSession } = vi.hoisted(() => {
+const { mockSession, subscriberRef } = vi.hoisted(() => {
+	// Captured turn_end listener so per-test prompt impls can emit usage-bearing
+	// assistant messages mid-run (incomplete-attempt token emission tests).
+	const subscriberRef: { current: ((e: unknown) => void) | null } = { current: null };
 	const mockSession = {
-		subscribe: vi.fn(() => () => undefined),
+		subscribe: vi.fn((listener: (e: unknown) => void) => {
+			subscriberRef.current = listener;
+			return () => {
+				subscriberRef.current = null;
+			};
+		}),
 		prompt: vi.fn(() => Promise.resolve()),
 		abort: vi.fn(),
 		dispose: vi.fn(),
 		agent: { sessionId: undefined as string | undefined },
 	};
-	return { mockSession };
+	return { mockSession, subscriberRef };
 });
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
@@ -240,6 +248,157 @@ describe("runTaskPipeline — cancellation via AbortSignal", () => {
 		});
 
 		expect(result.status).toBe("cancelled");
+	});
+});
+
+// ── Incomplete-attempt token emission (bug B: aborted-pass tokens were lost) ──
+//
+// The provider bills every turn of a cancelled/failed phase attempt, but the
+// cancel and halt-on-failure branches used to return WITHOUT emitting a phase
+// event — so collate's COST_REPORT under-counted real spend (CART-S02-T03
+// baseline: 259,950 tokens across 2 aborted plan passes, invisible).
+// These tests lock the fix: token-bearing incomplete attempts emit a phase
+// event with verdict "aborted" (cancel) / "failed" (halt); zero-token
+// attempts emit nothing (no husk noise).
+
+function emitAssistantTurn(usage: { input: number; output: number; totalTokens: number }): void {
+	subscriberRef.current?.({
+		type: "turn_end",
+		message: {
+			role: "assistant",
+			model: "fake-model",
+			provider: "fake",
+			content: [{ type: "text", text: "…" }],
+			usage: {
+				input: usage.input,
+				output: usage.output,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: usage.totalTokens,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: 1,
+		},
+	});
+}
+
+/** store-cli mock: read returns a record WITH sprintId; capture emit payloads. */
+function mockStoreCliWithSprint(emitted: Array<Record<string, unknown>>): void {
+	vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+		const argArr = args as string[] | undefined;
+		if (argArr && String(argArr[0]).includes("store-cli")) {
+			if (argArr[1] === "read") {
+				const taskId = argArr[3] ?? "";
+				return {
+					status: 0,
+					stdout: Buffer.from(
+						JSON.stringify({ taskId, sprintId: "CANCEL-S01", status: "draft", summaries: {} }),
+					),
+					stderr: Buffer.from(""),
+				};
+			}
+			if (argArr[1] === "emit") {
+				emitted.push(JSON.parse(argArr[3] ?? "{}") as Record<string, unknown>);
+				return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+			}
+		}
+		return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+	});
+}
+
+describe("runTaskPipeline — incomplete-attempt token emission", () => {
+	it("emits a phase event with verdict 'aborted' + tokens when cancelled mid-phase", async () => {
+		const proj = scaffoldProject();
+		const registry = getSessionRegistry();
+		registry.startSession("CANCEL-T02");
+		const emitted: Array<Record<string, unknown>> = [];
+		mockStoreCliWithSprint(emitted);
+
+		const controller = new AbortController();
+		mockSession.prompt.mockImplementationOnce(async () => {
+			emitAssistantTurn({ input: 1234, output: 56, totalTokens: 1290 });
+			controller.abort(); // user cancels mid-phase, after a billed turn
+		});
+
+		const ctx = makeCtx();
+		const result: RunTaskPipelineResult = await runTaskPipeline({
+			taskId: "CANCEL-T02",
+			cwd: proj,
+			ctx: ctx as never,
+			forgeRoot: path.join(proj, "forge-payload"),
+			storeCli: path.join(proj, "forge-payload", "tools", "store-cli.cjs"),
+			preflightGate: path.join(proj, "forge-payload", "tools", "preflight-gate.cjs"),
+			registry,
+			signal: controller.signal,
+		});
+
+		expect(result.status).toBe("cancelled");
+		const abortEvents = emitted.filter((e) => e.verdict === "aborted");
+		expect(abortEvents).toHaveLength(1);
+		expect(abortEvents[0].taskId).toBe("CANCEL-T02");
+		expect(abortEvents[0].phase).toBe("plan");
+		expect(abortEvents[0].inputTokens).toBe(1234);
+		expect(abortEvents[0].outputTokens).toBe(56);
+		expect(abortEvents[0].tokenSource).toBe("reported");
+	});
+
+	it("emits a phase event with verdict 'failed' + tokens when the phase halts", async () => {
+		const proj = scaffoldProject();
+		const registry = getSessionRegistry();
+		registry.startSession("CANCEL-T03");
+		const emitted: Array<Record<string, unknown>> = [];
+		mockStoreCliWithSprint(emitted);
+
+		mockSession.prompt.mockImplementationOnce(async () => {
+			emitAssistantTurn({ input: 777, output: 11, totalTokens: 788 });
+			throw new Error("provider blew up");
+		});
+
+		const ctx = makeCtx();
+		const result: RunTaskPipelineResult = await runTaskPipeline({
+			taskId: "CANCEL-T03",
+			cwd: proj,
+			ctx: ctx as never,
+			forgeRoot: path.join(proj, "forge-payload"),
+			storeCli: path.join(proj, "forge-payload", "tools", "store-cli.cjs"),
+			preflightGate: path.join(proj, "forge-payload", "tools", "preflight-gate.cjs"),
+			registry,
+		});
+
+		expect(result.status).toBe("failed");
+		const failEvents = emitted.filter((e) => e.verdict === "failed");
+		expect(failEvents).toHaveLength(1);
+		expect(failEvents[0].inputTokens).toBe(777);
+		expect(failEvents[0].tokenSource).toBe("reported");
+	});
+
+	it("does NOT emit when the cancelled attempt billed zero tokens (no husk noise)", async () => {
+		const proj = scaffoldProject();
+		const registry = getSessionRegistry();
+		registry.startSession("CANCEL-T04");
+		const emitted: Array<Record<string, unknown>> = [];
+		mockStoreCliWithSprint(emitted);
+
+		const controller = new AbortController();
+		mockSession.prompt.mockImplementationOnce(async () => {
+			controller.abort(); // cancelled before any billed turn
+		});
+
+		const ctx = makeCtx();
+		const result: RunTaskPipelineResult = await runTaskPipeline({
+			taskId: "CANCEL-T04",
+			cwd: proj,
+			ctx: ctx as never,
+			forgeRoot: path.join(proj, "forge-payload"),
+			storeCli: path.join(proj, "forge-payload", "tools", "store-cli.cjs"),
+			preflightGate: path.join(proj, "forge-payload", "tools", "preflight-gate.cjs"),
+			registry,
+			signal: controller.signal,
+		});
+
+		expect(result.status).toBe("cancelled");
+		expect(emitted).toHaveLength(0);
 	});
 });
 

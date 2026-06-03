@@ -385,6 +385,56 @@ export function emitEvent(
 	return { ok: result.status === 0, stderr: typeof result.stderr === "string" ? result.stderr : "" };
 }
 
+/**
+ * Emit a phase event for an INCOMPLETE attempt (cancelled / failed) so its
+ * provider-billed tokens reach the store. Bug B: the cancel and halt-on-failure
+ * branches used to return without emitting, so collate's COST_REPORT
+ * under-counted real spend by exactly the aborted passes (CART-S02-T03
+ * baseline: 259,950 tokens across two aborted plan attempts, invisible).
+ *
+ * The event is the canonical phase event (schema-unchanged) with
+ * `verdict: "aborted" | "failed"` marking the outcome.
+ *
+ * Zero-token attempts are skipped — there is no spend to account, and a
+ * token-less event would be flagged as a husk by collate's ingestion-quality
+ * pass. Never throws: emission must not perturb the cancel/halt return paths.
+ *
+ * @param opts.decorate  Optional event mutation hook applied before emit
+ *                       (fix-bug uses it for the BUG_TYPE_TOKENS `type` field).
+ * @returns true when the event was emitted and store-cli accepted it.
+ */
+export function emitIncompletePhaseEvent(opts: {
+	emitCtx: OrchestratorEmitContext;
+	outcome: "aborted" | "failed";
+	notes?: string;
+	decorate?: (event: Record<string, unknown>) => void;
+	onDebug?: (rec: Record<string, unknown>) => void;
+}): boolean {
+	try {
+		const { emitCtx, outcome } = opts;
+		const u = emitCtx.usage;
+		if (u.input + u.output + u.cacheRead + u.cacheWrite <= 0) {
+			opts.onDebug?.({ kind: "incomplete_emit_skipped", reason: "no-tokens", outcome });
+			return false;
+		}
+		const judgement: Record<string, unknown> = { verdict: outcome };
+		if (opts.notes) judgement.notes = opts.notes;
+		const event = buildPhaseEvent({ ...emitCtx, judgement });
+		opts.decorate?.(event);
+		const res = emitEvent(emitCtx.storeCli, emitCtx.cwd, emitCtx.sprintId, event);
+		opts.onDebug?.(
+			res.ok
+				? { kind: "incomplete_emit_ok", eventId: event.eventId, outcome }
+				: { kind: "incomplete_emit_failed", stderr: res.stderr, outcome },
+		);
+		return res.ok;
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		opts.onDebug?.({ kind: "incomplete_emit_failed", stderr: msg, outcome: opts.outcome });
+		return false;
+	}
+}
+
 export function judgementFromSummary(
 	record: TaskRecord | null,
 	phaseRole: string,
@@ -1120,6 +1170,39 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			registry.completePhase(taskId, phase.role, "cancelled");
 			tree.completeNode(phaseNodeId, "cancelled");
 			registry.confirmCancelled(taskId);
+			// Bug B: account the billed tokens of this aborted attempt before returning.
+			{
+				const abortSprintId = readTaskRecord(taskId, storeCli, cwd)?.sprintId;
+				if (abortSprintId) {
+					emitIncompletePhaseEvent({
+						emitCtx: {
+							entityType: "task",
+							taskId,
+							sprintId: abortSprintId,
+							phase,
+							iteration: (iterationCounts[phase.role] ?? 0) + 1,
+							startMs: phaseStart,
+							endMs: Date.now(),
+							model: result.model ?? "unknown",
+							provider: result.provider ?? "unknown",
+							usage: {
+								input: result.usage.input,
+								output: result.usage.output,
+								cacheRead: result.usage.cacheRead,
+								cacheWrite: result.usage.cacheWrite,
+							},
+							judgement: undefined,
+							storeCli,
+							cwd,
+						},
+						outcome: "aborted",
+						notes: result.errorMessage ?? result.stopReason ?? undefined,
+						onDebug: writeDebug,
+					});
+				} else {
+					writeDebug({ kind: "incomplete_emit_skipped", reason: "no-sprintId", outcome: "aborted" });
+				}
+			}
 			// ADR-S21-01: preserve state file so cancelled runs are resumable
 			writeState(cwd, {
 				taskId,
@@ -1141,6 +1224,39 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					(result.stopReason ? ` [${result.stopReason}]` : ""),
 				"error",
 			);
+			// Bug B: account the billed tokens of this failed attempt before returning.
+			{
+				const failSprintId = readTaskRecord(taskId, storeCli, cwd)?.sprintId;
+				if (failSprintId) {
+					emitIncompletePhaseEvent({
+						emitCtx: {
+							entityType: "task",
+							taskId,
+							sprintId: failSprintId,
+							phase,
+							iteration: (iterationCounts[phase.role] ?? 0) + 1,
+							startMs: phaseStart,
+							endMs: Date.now(),
+							model: result.model ?? "unknown",
+							provider: result.provider ?? "unknown",
+							usage: {
+								input: result.usage.input,
+								output: result.usage.output,
+								cacheRead: result.usage.cacheRead,
+								cacheWrite: result.usage.cacheWrite,
+							},
+							judgement: undefined,
+							storeCli,
+							cwd,
+						},
+						outcome: "failed",
+						notes: result.errorMessage ?? result.stopReason ?? undefined,
+						onDebug: writeDebug,
+					});
+				} else {
+					writeDebug({ kind: "incomplete_emit_skipped", reason: "no-sprintId", outcome: "failed" });
+				}
+			}
 			writeState(cwd, {
 				taskId,
 				phaseIndex: currentPhaseIndex,
