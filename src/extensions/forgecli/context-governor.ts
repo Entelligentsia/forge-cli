@@ -1,4 +1,6 @@
-// Context Governor — FORGE-S30-T03 (substrate) / FORGE-S30-T04 (Mechanism A curation).
+// Context Governor — FORGE-S30-T03 (substrate) / FORGE-S30-T04 (Mechanism A curation)
+//                   / FORGE-S30-T05 (Mechanism B — context budget meter + checkpoint steer)
+//                   / FORGE-S30-T06 (Mechanism C — checkpoint-and-shed against {PHASE}-SUMMARY.json).
 // Defines the phase-policy table (keyed by persona/phase), the ContextGovernor
 // interface wired into hook-dispatcher.ts tool_result/tool_call paths, and the
 // governor factories used by T04 (live curation) and as no-op defaults.
@@ -10,11 +12,19 @@
 //   Rule 3 — Span-clamp: bash/grep/find output over toolBudget chars is truncated
 //             with "[N lines elided]" marker.
 //
+// Mechanism B (T05):
+//   Budget meter: per-turn ctx.getContextUsage() → ctx.ui.setStatus("forge:ctx-budget", "ctx: Nk / Wk (P%)")
+//   Steer: one-shot note at policy.steerThreshold, injected via steerFn (optional, injected at
+//   governor construction by registerHookDispatcher). Single-fire invariant: steerFired flag
+//   is never reset after first fire.
+//
 // Design notes:
 //   - The policy table is a TypeScript literal loaded at module init — no disk I/O,
 //     no .forge/store/ reads or writes (Pack 07 compliance).
-//   - contextWindow is resolved from ctx.model?.contextWindow first, then
-//     modelRegistry.find()?.contextWindow, then DEFAULT_CONTEXT_WINDOW (200_000).
+//   - contextWindow resolution: when ctx.getContextUsage() returns a ContextUsage value,
+//     usage.contextWindow is used directly (no registry lookup needed). Fallback chain
+//     (ctx.model?.contextWindow → modelRegistry → DEFAULT_CONTEXT_WINDOW) only applies
+//     when getContextUsage() returns undefined.
 //     No provider names, model-family strings, or tier logic appear here.
 //   - Governor methods MUST NOT throw; failures fall through to undefined (IL7).
 //   - IL10: registerHookDispatcher's public signature and orchestrator event paths
@@ -201,46 +211,109 @@ function applySpanClamp(textContent: string, budgetTokens: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Governor factory (contextWindow-aware, Mechanism A curation)
+// Mechanism C helpers (module-internal — not exported; knip-safe)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the entityId from a ToolResultEvent input payload.
+ * Returns an empty string if not present or not a string (safe fallback — IL7).
+ */
+function resolveEntityId(event: ToolResultEvent): string {
+	const input = (event as { input?: Record<string, unknown> }).input ?? {};
+	const entityId = input.entityId;
+	return typeof entityId === "string" ? entityId : "";
+}
+
+// ---------------------------------------------------------------------------
+// Mechanism B helpers (module-internal — not exported; knip-safe)
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a phaseKey to the canonical {PHASE}-SUMMARY.json filename.
+ * Returns a literal placeholder for unknown keys so steer messages always name a file.
+ */
+function phaseSummaryName(phaseKey: string): string {
+	const map: Record<string, string> = {
+		"architect/plan": "PLAN-SUMMARY.json",
+		"engineer/implement": "IMPLEMENTATION-SUMMARY.json",
+		"engineer/review": "REVIEW-SUMMARY.json",
+		"engineer/code-review": "CODE_REVIEW-SUMMARY.json",
+	};
+	return map[phaseKey] ?? "{PHASE}-SUMMARY.json";
+}
+
+/**
+ * Build the one-shot steer message injected into the agent loop when the budget
+ * threshold is reached. Names the phase summary file so the persona can act
+ * immediately. "Will not re-fire" note prevents the agent from waiting for a
+ * second prompt.
+ */
+function buildSteerMessage(phaseKey: string): string {
+	return (
+		`[Forge context governor] Budget threshold reached (${phaseKey}).\n` +
+		`Checkpoint your findings to ${phaseSummaryName(phaseKey)} before reading further.\n` +
+		`This note will not re-fire.`
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Governor factory (contextWindow-aware, Mechanism A curation + Mechanism B meter)
 // ---------------------------------------------------------------------------
 
 /**
  * Create a governor backed by the given policy table and model registry.
+ *
  * Implements Mechanism A curation rules (T04):
  *   Rule 1 — Dedup/reference-ize
  *   Rule 2 — Schema-trim (forge_store results)
  *   Rule 3 — Span-clamp (bash/grep/find/read results)
  *
+ * Implements Mechanism B (T05):
+ *   Budget meter: per-turn ctx.getContextUsage() → ctx.ui.setStatus("forge:ctx-budget", ...)
+ *   Steer: one-shot note at policy.steerThreshold, injected via steerFn
+ *
+ * Implements Mechanism C (T06):
+ *   Checkpoint-and-shed: forge_store results for summarized entities are evicted
+ *   and replaced with an eviction pointer; unsummarized material is retained.
+ *   Shed criterion: summarySentinel(phaseKey, entityId) returns true.
+ *
+ * @param table     Phase-policy table (keyed by "persona/phase").
+ * @param _modelRegistry  Model registry (fallback contextWindow resolution only).
+ * @param steerFn   Optional callback injected at construction by registerHookDispatcher.
+ *                  Receives the steer message string; called at most once per governor
+ *                  instance (single-fire invariant). Callers that omit this see no steer.
+ * @param summarySentinel  Optional read-only probe injected at construction (Mechanism C / T06).
+ *                  Receives (phaseKey, entityId); returns true when a {PHASE}-SUMMARY.json
+ *                  has been durably written for that entity. When true, the forge_store result
+ *                  is replaced with an eviction pointer. Callers that omit this param see no
+ *                  shedding (backwards-compatible; undefined default).
+ *                  The sentinel MUST NOT write to .forge/store/ or the summary itself (Pack 07).
+ *                  Errors inside the sentinel are silently caught and cause retain, not eviction (IL7).
+ *
  * contextWindow resolution order (provider-neutral):
- *   1. ctx.model?.contextWindow  — active model, resolved synchronously
- *   2. ctx.modelRegistry.find(provider, modelId)?.contextWindow — registry backup
- *   3. DEFAULT_CONTEXT_WINDOW (200_000) — conservative fallback
+ *   1. usage.contextWindow from ctx.getContextUsage() — direct, when available
+ *   2. ctx.model?.contextWindow — active model
+ *   3. ctx.modelRegistry.find(provider, modelId)?.contextWindow — registry backup
+ *   4. DEFAULT_CONTEXT_WINDOW (200_000) — conservative fallback
  */
 export function createGovernor(
 	table: PhasePolicyTable,
 	_modelRegistry: ModelRegistry,
+	steerFn?: (message: string) => void,
+	summarySentinel?: (phaseKey: string, entityId: string) => boolean,
 ): ContextGovernor {
 	// Per-governor-instance dedup registry. Maps "${toolName}:${target}" → turn number.
 	const dedupRegistry = new Map<string, number>();
 	let currentTurn = 0;
+	// Mechanism B: single-fire steer invariant
+	let steerFired = false;
 
 	return {
 		applyToolResult(event: ToolResultEvent, ctx: ExtensionContext): ToolResultEventResult | undefined {
 			try {
 				currentTurn++;
 
-				// Resolve contextWindow (seam for T05/T06 curation logic).
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				const _contextWindow =
-					ctx.model?.contextWindow ??
-					(ctx.model !== undefined
-						? ctx.modelRegistry.find(
-								(ctx.model as { provider?: string }).provider ?? "",
-								(ctx.model as { id?: string }).id ?? "",
-							)?.contextWindow
-						: undefined) ??
-					DEFAULT_CONTEXT_WINDOW;
-
+				// Resolve phase key and policy (shared by Mechanism B meter and Mechanism A curation)
 				const phaseKey = resolvePhaseKey(ctx);
 				const policy = table[phaseKey] ??
 					table["default"] ?? {
@@ -248,6 +321,37 @@ export function createGovernor(
 						toolBudgets: {},
 						steerThreshold: 0.9,
 					};
+
+				// ------------------------------------------------------------------
+				// Mechanism B — budget meter + steer (prefix, before Mechanism A)
+				// Wrapped in its own try/catch so any failure (e.g. missing ctx method
+				// in older mock environments) falls through silently and Mechanism A
+				// curation continues unaffected (IL7).
+				// ------------------------------------------------------------------
+				try {
+					const statusKey = "forge:ctx-budget";
+					const usage = ctx.getContextUsage();
+					if (usage && usage.tokens !== null) {
+						const fraction = usage.tokens / usage.contextWindow;
+						const N = Math.round(usage.tokens / 1000);
+						const W = Math.round(usage.contextWindow / 1000);
+						const P = usage.percent ?? Math.round(fraction * 100);
+						ctx.ui.setStatus(statusKey, `ctx: ${N}k / ${W}k (${P}%)`);
+
+						if (fraction >= policy.steerThreshold && !steerFired && steerFn) {
+							steerFired = true;
+							steerFn(buildSteerMessage(phaseKey));
+						}
+					} else {
+						ctx.ui.setStatus(statusKey, undefined);
+					}
+				} catch {
+					// IL7: Mechanism B failures are silent; Mechanism A continues.
+				}
+
+				// ------------------------------------------------------------------
+				// Mechanism A — curation (dedup / schema-trim / span-clamp)
+				// ------------------------------------------------------------------
 
 				// Rule 1 — Dedup/reference-ize
 				const key = dedupKey(event);
@@ -266,6 +370,32 @@ export function createGovernor(
 					}
 					// Register first occurrence
 					dedupRegistry.set(key, currentTurn);
+				}
+
+				// ------------------------------------------------------------------
+				// Mechanism C — checkpoint-and-shed (T06)
+				// Runs AFTER Rule 1 dedup registration so the first-occurrence key
+				// is always recorded. Only fires for forge_store events.
+				// Wrapped in its own try/catch (IL7): sentinel errors cause retain.
+				// The sentinel is a read-only probe — never writes .forge/store/ (Pack 07).
+				// ------------------------------------------------------------------
+				if (summarySentinel !== undefined && event.toolName === "forge_store") {
+					try {
+						const phaseKey = resolvePhaseKey(ctx);
+						const entityId = resolveEntityId(event);
+						if (entityId && summarySentinel(phaseKey, entityId)) {
+							return {
+								content: [
+									{
+										type: "text",
+										text: `[summarized — see ${phaseSummaryName(phaseKey)} for ${entityId}]`,
+									},
+								],
+							};
+						}
+					} catch {
+						// IL7: sentinel errors are silent; continue to Mechanism A.
+					}
 				}
 
 				// Extract text content for Rules 2 and 3
@@ -310,7 +440,9 @@ export function createGovernor(
 		},
 
 		applyToolCall(event: ToolCallEvent, ctx: ExtensionContext): void {
-			// T03/T04: no-op body for tool_call. T05/T06 will extend this.
+			// T03/T04/T05/T06: no-op body for tool_call.
+			// T06 Mechanism C shed gate is implemented in applyToolResult above;
+			// applyToolCall remains no-op for Mechanism C.
 			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			const _contextWindow =
 				ctx.model?.contextWindow ??
