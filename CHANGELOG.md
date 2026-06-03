@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.14] — 2026-06-03
+
+Coordinated release matching forge plugin **v1.2.14**.
+
+### Fixed
+
+- **A missing verdict now routes through the halt-recovery advisor instead of a
+  bare escalation.** In `run-task.ts` (and `fix-bug.ts`) the review-phase
+  `verdict === "missing"` branch early-returned `status:"failed"` with a raw
+  *"Escalating"* notify **before** reaching the postflight-gate → `runHaltAdvisor`
+  hand-off — so a subagent that completed but failed to write its phase summary
+  surfaced as an undiagnosed halt. Review-phase workflows declare no `outputs`
+  block, so the postflight gate is a pass-through for them and the `readVerdict`
+  check is the effective gate. The branch now synthesizes a `GateFailureData`
+  (`reasonCode: "verdict-missing"`) and invokes `runHaltAdvisor` (the same path
+  the gate-failure branches use), returning `"halted"`, so the strongest
+  configured model diagnoses the missing-summary cause. Best-effort, non-fatal.
+  Regression test added (`run-task.test.ts` Test 1d).
+
 ## [1.0.11] — 2026-06-03
 
 Coordinated release matching forge plugin **v1.2.7** (FORGE-S29 vendored-tools

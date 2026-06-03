@@ -1234,7 +1234,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			if (verdict === "missing") {
 				ctx.ui.notify(
 					`× forge:run-task — verdict missing for phase ${phase.role} after subagent completed. ` +
-						"Subagent may have crashed or failed to write summaries. Escalating.",
+						"Subagent may have crashed or failed to write summaries. Halting for advisory.",
 					"error",
 				);
 				writeState(cwd, {
@@ -1245,8 +1245,40 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					lastError: `verdict missing for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
+				// A missing verdict IS a postflight-outputs failure: the canonical
+				// phase summary the subagent must write (e.g. summaries.code_review)
+				// was never recorded, so there is no verdict to route on. review-phase
+				// workflows declare no `outputs` block, so runPostflightGate is a
+				// pass-through here — this readVerdict check is the effective gate.
+				// Route it through the halt-recovery advisor (FORGE-S26-T18), the same
+				// hand-off the postflight-gate-unsatisfied branch uses, instead of a
+				// bare escalation — so the strongest configured model can diagnose the
+				// missing-summary cause. Best-effort, non-fatal (FORGE-S26-T19 parity).
+				const gateFailure: GateFailureData = {
+					phase: phase.role,
+					reasonCode: "verdict-missing",
+					detail:
+						`Phase '${phase.role}' completed but no verdict was found in the store. ` +
+						"The canonical phase summary was not written, so the orchestrator has no verdict to route on.",
+					remediation:
+						"Re-run the phase and ensure the subagent's forge_store set-summary call " +
+						'uses args:["<recordId>", "<phaseKey>"] with the literal phase key as args[1] ' +
+						"(e.g. code_review), and that the call exits zero before the subagent returns.",
+				};
+				const advisorModel = resolveAdvisorModel(
+					modelRoutingConfig.advisorModel,
+					ctx.modelRegistry as any,
+				);
+				void runHaltAdvisor({
+					gateFailure,
+					advisorModel,
+					taskId,
+					cwd,
+					ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+					forgeRoot,
+				});
 				return {
-					status: "failed",
+					status: "halted",
 					lastPhaseIndex: currentPhaseIndex,
 					iterationCounts,
 					lastError: `verdict missing for ${phase.role}`,

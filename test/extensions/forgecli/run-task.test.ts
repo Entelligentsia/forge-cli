@@ -75,8 +75,17 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
 }));
 
+// Mock the halt-recovery advisor so the verdict-missing path can be asserted
+// without spawning a real advisor subagent. Both exports are replaced; the
+// advisor itself is covered by halt-advisor.test.ts.
+vi.mock("../../../src/extensions/forgecli/lib/halt-advisor.js", () => ({
+	resolveAdvisorModel: vi.fn(() => undefined),
+	runHaltAdvisor: vi.fn(() => Promise.resolve()),
+}));
+
 import { spawnSync } from "node:child_process";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
+import { runHaltAdvisor } from "../../../src/extensions/forgecli/lib/halt-advisor.js";
 import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate, runPostflightGate } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
@@ -420,6 +429,39 @@ describe("Test 1b: readVerdict resolves canonical workflow keys (forge#85-follow
 			(n) => n.level === "info" && (n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
 		);
 		expect(completionNotify).toBeDefined();
+	});
+});
+
+describe("Test 1d: verdict missing routes through halt-recovery advisor (advisory ordering fix)", () => {
+	// Regression: before the fix, a missing verdict at a review phase emitted a
+	// bare "Escalating" error and returned status:"failed" WITHOUT invoking the
+	// halt-recovery advisor (FORGE-S26-T18) — the advisor lived only in the
+	// later postflight-gate branch, which the verdict-missing early-return
+	// bypassed. A missing verdict IS a missing-output condition, so it must now
+	// hand off to the advisor. Live symptom: CART-S02-T03 review-code.
+	it("invokes runHaltAdvisor with the failing phase instead of a bare escalation", async () => {
+		const { proj, taskId } = scaffoldProject();
+		// review-plan approves so the chain advances to review-code; review-code
+		// has NO code_review summary → readVerdict returns "missing".
+		mockStoreCliVerdict({ review_plan: "approved" });
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		vi.mocked(runHaltAdvisor).mockClear();
+		await invokeRunTask(pi, ctx, taskId);
+
+		// Diagnostic notify is still emitted (now "Halting for advisory").
+		const missingNotify = ctx.notifications.find((n) => n.msg.includes("verdict missing"));
+		expect(missingNotify).toBeDefined();
+
+		// And it now hands off to the advisor with a structured gate failure.
+		expect(runHaltAdvisor).toHaveBeenCalledTimes(1);
+		const opts = vi.mocked(runHaltAdvisor).mock.calls[0]![0];
+		expect(opts.gateFailure.phase).toBe("review-code");
+		expect(opts.gateFailure.reasonCode).toBe("verdict-missing");
+		expect(opts.taskId).toBe(taskId);
 	});
 });
 

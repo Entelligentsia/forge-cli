@@ -1356,7 +1356,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 			if (verdict === "missing") {
 				ctx.ui.notify(
-					`× forge:fix-bug — verdict missing for phase ${phase.role} after subagent completed. Escalating.`,
+					`× forge:fix-bug — verdict missing for phase ${phase.role} after subagent completed. Halting for advisory.`,
 					"error",
 				);
 				writeBugState(cwd, {
@@ -1367,8 +1367,36 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `verdict missing for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
+				// A missing verdict IS a postflight-outputs failure: the canonical
+				// phase summary the subagent must write (e.g. summaries.code_review,
+				// linked via set-bug-summary) was never recorded, so there is no
+				// verdict to route on. Route it through the halt-recovery advisor
+				// (FORGE-S26-T18) — the same hand-off the preflight/postflight gate
+				// failures use — instead of a bare escalation. Best-effort, non-fatal.
+				const advisorModel = resolveAdvisorModel(
+					modelRoutingConfig.advisorModel,
+					ctx.modelRegistry as any,
+				);
+				void runHaltAdvisor({
+					gateFailure: {
+						phase: phase.role,
+						reasonCode: "verdict-missing",
+						detail:
+							`Phase '${phase.role}' completed but no verdict was found in the store. ` +
+							"The canonical phase summary was not written, so the orchestrator has no verdict to route on.",
+						remediation:
+							"Re-run the phase and ensure the subagent's forge_store set-bug-summary call " +
+							'uses args:["<bugId>", "<phaseKey>"] with the literal phase key as args[1] ' +
+							"(e.g. code_review), and that the call exits zero before the subagent returns.",
+					},
+					advisorModel,
+					taskId: bugId,
+					cwd,
+					ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+					forgeRoot,
+				});
 				return {
-					status: "failed",
+					status: "halted",
 					lastPhaseIndex: currentPhaseIndex,
 					iterationCounts,
 					lastError: `verdict missing for ${phase.role}`,
