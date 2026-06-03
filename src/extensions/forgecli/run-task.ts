@@ -30,6 +30,7 @@ import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
 import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "./lib/halt-advisor.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
 import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
 import {
@@ -514,6 +515,21 @@ export function composeTaskBody(
 
 export type PreflightResult = "proceed" | "halt" | "escalate";
 
+/** Structured gate failure shape emitted by preflight-gate.cjs on stdout (exit 1). */
+export interface GateFailureData {
+	phase: string;
+	reasonCode: string;
+	detail: string;
+	remediation: string;
+}
+
+/** Extended result carrying the structured failure alongside the status enum. */
+export interface PreflightOutcome {
+	result: PreflightResult;
+	/** Parsed structured failure from stdout, or null on pass / escalate. */
+	gateFailure: GateFailureData | null;
+}
+
 export function runPreflightGate(
 	preflightGate: string,
 	role: string,
@@ -521,11 +537,39 @@ export function runPreflightGate(
 	cwd: string,
 	entityType?: "task" | "bug",
 ): PreflightResult {
+	const outcome = runPreflightGateWithData(preflightGate, role, taskId, cwd, entityType);
+	return outcome.result;
+}
+
+/**
+ * Upgraded variant that returns structured failure data alongside the status enum.
+ * Callers that need the advisory data should use this function directly.
+ */
+export function runPreflightGateWithData(
+	preflightGate: string,
+	role: string,
+	taskId: string,
+	cwd: string,
+	entityType?: "task" | "bug",
+): PreflightOutcome {
 	const entityFlag = entityType === "bug" ? "--bug" : "--task";
-	const result = spawnSync("node", [preflightGate, "--phase", role, entityFlag, taskId], { cwd });
-	if (result.status === 0) return "proceed";
-	if (result.status === 2) return "escalate";
-	return "halt";
+	const spawnResult = spawnSync("node", [preflightGate, "--phase", role, entityFlag, taskId], { cwd, encoding: "utf8" });
+	if (spawnResult.status === 0) return { result: "proceed", gateFailure: null };
+	if (spawnResult.status === 2) return { result: "escalate", gateFailure: null };
+	// Exit 1: parse structured JSON from stdout
+	let gateFailure: GateFailureData | null = null;
+	try {
+		const stdout = typeof spawnResult.stdout === "string" ? spawnResult.stdout.trim() : "";
+		if (stdout) {
+			const parsed = JSON.parse(stdout) as GateFailureData;
+			if (parsed && typeof parsed.reasonCode === "string") {
+				gateFailure = parsed;
+			}
+		}
+	} catch {
+		// stdout not valid JSON — gate failure but no structured data
+	}
+	return { result: "halt", gateFailure };
 }
 
 // ── Per-task orchestrator pipeline (FORGE-S21-T03 extracted) ──────────────
@@ -717,12 +761,21 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 		// ── 6a. Preflight gate ────────────────────────────────────────
 		if (fs.existsSync(preflightGate)) {
-			const preflightResult = runPreflightGate(preflightGate, phase.role, taskId, cwd);
-			if (preflightResult === "halt") {
-				ctx.ui.notify(
-					`× forge:run-task — preflight gate failed for phase ${phase.role} (exit 1); halting.`,
-					"error",
-				);
+			const preflightOutcome = runPreflightGateWithData(preflightGate, phase.role, taskId, cwd);
+			if (preflightOutcome.result === "halt") {
+				// Render structured failure reason if available.
+				if (preflightOutcome.gateFailure) {
+					ctx.ui.notify(
+						`× forge:run-task — preflight gate failed for phase ${phase.role} ` +
+						`[${preflightOutcome.gateFailure.reasonCode}]: ${preflightOutcome.gateFailure.detail}`,
+						"error",
+					);
+				} else {
+					ctx.ui.notify(
+						`× forge:run-task — preflight gate failed for phase ${phase.role} (exit 1); halting.`,
+						"error",
+					);
+				}
 				writeState(cwd, {
 					taskId,
 					phaseIndex: currentPhaseIndex,
@@ -731,6 +784,21 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					lastError: `preflight gate exit 1 for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
+				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
+				if (preflightOutcome.gateFailure) {
+					const advisorModel = resolveAdvisorModel(
+						modelRoutingConfig.advisorModel,
+						ctx.modelRegistry as any,
+					);
+					void runHaltAdvisor({
+						gateFailure: preflightOutcome.gateFailure,
+						advisorModel,
+						taskId,
+						cwd,
+						ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+						forgeRoot,
+					});
+				}
 				return {
 					status: "halted",
 					lastPhaseIndex: currentPhaseIndex,
@@ -738,7 +806,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					lastError: `preflight gate exit 1 for ${phase.role}`,
 				};
 			}
-			if (preflightResult === "escalate") {
+			if (preflightOutcome.result === "escalate") {
 				ctx.ui.notify(
 					`× forge:run-task — preflight gate escalated for phase ${phase.role} (exit 2); manual intervention required.`,
 					"error",

@@ -56,6 +56,7 @@ import {
 	readPipelineNames as readPipelineNamesBug,
 } from "./lib/catalog-helpers.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "./lib/halt-advisor.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
 import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
 import { resolveModelForPhase } from "./model-resolver.js";
@@ -74,6 +75,7 @@ import {
 	type PhaseDescriptor,
 	type PreflightResult,
 	runPreflightGate,
+	runPreflightGateWithData,
 	validateId,
 } from "./run-task.js";
 import { getSessionRegistry } from "./session-registry.js";
@@ -776,12 +778,21 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		const pendingBugId = bugId.startsWith("PENDING-");
 		const bugAlreadyFixed = bugNow?.status === "fixed" && phase.isReview;
 		if (!pendingBugId && !bugAlreadyFixed && fs.existsSync(preflightGate)) {
-			const preflightResult = runPreflightGate(preflightGate, phase.role, bugId, cwd, "bug");
-			if (preflightResult === "halt") {
-				ctx.ui.notify(
-					`× forge:fix-bug — preflight gate failed for phase ${phase.role} (exit 1); halting.`,
-					"error",
-				);
+			const preflightOutcome = runPreflightGateWithData(preflightGate, phase.role, bugId, cwd, "bug");
+			if (preflightOutcome.result === "halt") {
+				// Render structured failure reason if available.
+				if (preflightOutcome.gateFailure) {
+					ctx.ui.notify(
+						`× forge:fix-bug — preflight gate failed for phase ${phase.role} ` +
+						`[${preflightOutcome.gateFailure.reasonCode}]: ${preflightOutcome.gateFailure.detail}`,
+						"error",
+					);
+				} else {
+					ctx.ui.notify(
+						`× forge:fix-bug — preflight gate failed for phase ${phase.role} (exit 1); halting.`,
+						"error",
+					);
+				}
 				writeBugState(cwd, {
 					bugId,
 					phaseIndex: currentPhaseIndex,
@@ -790,6 +801,21 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `preflight gate exit 1 for ${phase.role}`,
 					savedAt: new Date().toISOString(),
 				});
+				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
+				if (preflightOutcome.gateFailure) {
+					const advisorModel = resolveAdvisorModel(
+						modelRoutingConfig.advisorModel,
+						ctx.modelRegistry as any,
+					);
+					void runHaltAdvisor({
+						gateFailure: preflightOutcome.gateFailure,
+						advisorModel,
+						taskId: bugId,
+						cwd,
+						ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+						forgeRoot,
+					});
+				}
 				return {
 					status: "halted",
 					lastPhaseIndex: currentPhaseIndex,
@@ -797,7 +823,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `preflight gate exit 1 for ${phase.role}`,
 				};
 			}
-			if (preflightResult === "escalate") {
+			if (preflightOutcome.result === "escalate") {
 				ctx.ui.notify(
 					`× forge:fix-bug — preflight gate escalated for phase ${phase.role} (exit 2); manual intervention required.`,
 					"error",
