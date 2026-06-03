@@ -1,0 +1,66 @@
+{
+  "description": "Static multi-turn fixture for Mechanism A integration test. Contains three heavy tool results: fat forge_store read, repeated read, and long bash output. Auth-free — no LLM calls.",
+  "phaseKey": "architect/plan",
+  "turns": [
+    {
+      "turn": 1,
+      "toolName": "forge_store",
+      "toolCallId": "tc-store-001",
+      "input": { "entityId": "FORGE-S30-T04" },
+      "content": {
+        "taskId": "FORGE-S30-T04",
+        "sprintId": "FORGE-S30",
+        "title": "Mechanism A — tool-result curation",
+        "status": "plan-approved",
+        "description": "Curate heavy results as they land. Schema-trim forge_store results to phase-declared fields (preserved fields byte-identical); dedup/reference-ize repeated (tool,target) reads to a pointer; span-clamp bash/grep/find over budget with [N lines elided]. Respect T02 cache-timing constraint. Per-rule unit tests + transcript-fixture integration test asserting token reduction with zero loss of preserved fields. If T01 verdict is FAIL, re-scope to tool_call-block + CompactionSettings strategy first.",
+        "dependencies": ["FORGE-S30-T03", "FORGE-S30-T02"],
+        "estimate": "L",
+        "path": "engineering/sprints/FORGE-S30/FORGE-S30-T04",
+        "assignee": null,
+        "createdAt": "2026-06-01T00:00:00Z",
+        "updatedAt": "2026-06-03T00:00:00Z",
+        "tags": ["mechanism-a", "context-governance", "sprint-30"],
+        "metadata": {
+          "estimatedEffort": "large",
+          "riskLevel": "medium",
+          "reviewRequired": true,
+          "approvedBy": "architect",
+          "approvalTimestamp": "2026-06-03T10:55:00Z"
+        },
+        "summaries": {
+          "plan": {
+            "objective": "Implement three Mechanism A curation rules in context-governor.ts",
+            "verdict": "n/a",
+            "written_at": "2026-06-03T10:52:00Z"
+          },
+          "review_plan": {
+            "objective": "Reviewed implementation plan for Mechanism A",
+            "verdict": "approved",
+            "written_at": "2026-06-03T10:55:00Z"
+          }
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "toolName": "read",
+      "toolCallId": "tc-read-001",
+      "input": { "file_path": "/home/user/project/src/context-governor.ts" },
+      "content": "// context-governor.ts — first read\nexport interface ContextGovernor {\n  applyToolResult(event: ToolResultEvent, ctx: ExtensionContext): ToolResultEventResult | undefined;\n  applyToolCall(event: ToolCallEvent, ctx: ExtensionContext): ToolCallEventResult | void;\n}\n\nexport function createGovernor(\n  table: PhasePolicyTable,\n  _modelRegistry: ModelRegistry,\n): ContextGovernor {\n  const dedupRegistry = new Map<string, number>();\n  let currentTurn = 0;\n  return {\n    applyToolResult(event, ctx) {\n      // ... curation logic ...\n      return undefined;\n    },\n    applyToolCall(event, ctx) {\n      return undefined;\n    },\n  };\n}\n"
+    },
+    {
+      "turn": 3,
+      "toolName": "bash",
+      "toolCallId": "tc-bash-001",
+      "input": { "cmd": "find /home/user/project -name '*.ts' | head -600" },
+      "content": "line-001: /home/user/project/src/extensions/forgecli/context-governor.ts\nline-002: /home/user/project/src/extensions/forgecli/hook-dispatcher.ts\nline-003: /home/user/project/src/extensions/forgecli/store-validator.ts\nline-004: /home/user/project/src/extensions/forgecli/transition-guard.ts\nline-005: /home/user/project/src/extensions/forgecli/index.ts\nline-006: /home/user/project/src/extensions/forgecli/commands/forge-init.ts\nline-007: /home/user/project/src/extensions/forgecli/commands/forge-plan.ts\nline-008: /home/user/project/src/extensions/forgecli/commands/forge-implement.ts\nline-009: /home/user/project/src/extensions/forgecli/commands/forge-review.ts\nline-010: /home/user/project/src/extensions/forgecli/commands/forge-approve.ts\nline-011: /home/user/project/src/extensions/forgecli/commands/forge-health.ts\nline-012: /home/user/project/src/extensions/forgecli/commands/forge-status.ts\nline-013: /home/user/project/src/extensions/forgecli/commands/forge-config.ts\nline-014: /home/user/project/src/extensions/forgecli/commands/forge-update.ts\nline-015: /home/user/project/src/extensions/forgecli/commands/forge-run-task.ts\nline-016: /home/user/project/src/extensions/forgecli/commands/forge-run-sprint.ts\nline-017: /home/user/project/src/extensions/forgecli/commands/forge-fix-bug.ts\nline-018: /home/user/project/src/extensions/forgecli/commands/forge-new-sprint.ts\nline-019: /home/user/project/src/extensions/forgecli/lib/catalog-types.ts\nline-020: /home/user/project/src/extensions/forgecli/lib/build-overlay.ts\nline-021: /home/user/project/src/extensions/forgecli/lib/model-registry.ts\nline-022: /home/user/project/src/extensions/forgecli/lib/model-resolver.ts\nline-023: /home/user/project/src/extensions/forgecli/lib/model-routing-dispatch.ts\nline-024: /home/user/project/src/extensions/forgecli/lib/session-registry.ts\nline-025: /home/user/project/src/extensions/forgecli/lib/store-error-remediation.ts\nline-026: /home/user/project/src/extensions/forgecli/lib/store-resolver.ts\nline-027: /home/user/project/src/extensions/forgecli/lib/phase-guard.ts\nline-028: /home/user/project/src/extensions/forgecli/lib/pipeline-guard.ts\nline-029: /home/user/project/src/extensions/forgecli/lib/material-tracker.ts\nline-030: /home/user/project/src/extensions/forgecli/lib/subagent-context.ts\nline-031: /home/user/project/src/extensions/forgecli/lib/subagent-spawn.ts\nline-032: /home/user/project/src/extensions/forgecli/lib/subagent-output.ts\nline-033: /home/user/project/src/extensions/forgecli/lib/thread-cancellation.ts\nline-034: /home/user/project/src/extensions/forgecli/lib/usage-hook.ts\nline-035: /home/user/project/src/extensions/forgecli/lib/halt-advisor.ts\nline-036: /home/user/project/src/extensions/forgecli/lib/friction-emit.ts\nline-037: /home/user/project/src/extensions/forgecli/lib/update-check.ts\nline-038: /home/user/project/src/extensions/forgecli/lib/skill-retriever.ts\nline-039: /home/user/project/src/extensions/forgecli/lib/skill-curation.ts\nline-040: /home/user/project/src/extensions/forgecli/lib/skill-usage-tracker.ts\nline-041: /home/user/project/src/extensions/forgecli/lib/skill-curator-subagent.ts\nline-042: /home/user/project/src/extensions/forgecli/lib/audience-gate.ts\nline-043: /home/user/project/src/extensions/forgecli/lib/ask-user-tool.ts\nline-044: /home/user/project/src/extensions/forgecli/lib/verify-apply-shim.ts\nline-045: /home/user/project/src/extensions/forgecli/lib/chain-shims.ts\nline-046: /home/user/project/src/extensions/forgecli/lib/config-command.ts\nline-047: /home/user/project/src/extensions/forgecli/lib/config-layer.ts\nline-048: /home/user/project/src/extensions/forgecli/lib/config-writer.ts\nline-049: /home/user/project/src/extensions/forgecli/lib/config-tui-component.ts\nline-050: /home/user/project/src/extensions/forgecli/lib/config-tui-handler.ts\nline-051: /home/user/project/src/extensions/forgecli/lib/config-tui-phase3.ts\nline-052: /home/user/project/src/extensions/forgecli/lib/config-tui-screens.ts\nline-053: /home/user/project/src/extensions/forgecli/lib/config-tui-state.ts\nline-054: /home/user/project/src/extensions/forgecli/lib/config-tui-tier-flow.ts\nline-055: /home/user/project/src/extensions/forgecli/lib/config-tui-tier-meta.ts\nline-056: /home/user/project/src/extensions/forgecli/lib/format-local-time.ts\nline-057: /home/user/project/src/extensions/forgecli/lib/extract-turn-preview.ts\nline-058: /home/user/project/src/extensions/forgecli/lib/orchestrator-tree.ts\nline-059: /home/user/project/src/extensions/forgecli/lib/plugin-config-reader.ts\nline-060: /home/user/project/src/extensions/forgecli/lib/project-orientation.ts\nline-061: /home/user/project/test/extensions/forgecli/context-governor.test.ts\nline-062: /home/user/project/test/extensions/forgecli/context-governor-mechanism-a.test.ts\nline-063: /home/user/project/test/extensions/forgecli/hook-dispatcher.test.ts\nline-064: /home/user/project/test/extensions/forgecli/store-validator.test.ts\nline-065: /home/user/project/test/extensions/forgecli/transition-guard.test.ts\nline-066: /home/user/project/test/extensions/forgecli/model-registry.test.ts\nline-067: /home/user/project/test/extensions/forgecli/model-resolver.test.ts\nline-068: /home/user/project/test/extensions/forgecli/model-routing-dispatch.test.ts\nline-069: /home/user/project/test/extensions/forgecli/model-validator.test.ts\nline-070: /home/user/project/test/extensions/forgecli/forge-init.test.ts\nline-071: /home/user/project/test/extensions/forgecli/forge-subagent.test.ts\nline-072: /home/user/project/test/extensions/forgecli/forge-tools.test.ts\nline-073: /home/user/project/test/extensions/forgecli/forge-commands.test.ts\nline-074: /home/user/project/test/extensions/forgecli/plan.test.ts\nline-075: /home/user/project/test/extensions/forgecli/implement.test.ts\nline-076: /home/user/project/test/extensions/forgecli/retrospective.test.ts\nline-077: /home/user/project/test/extensions/forgecli/run-task.test.ts\nline-078: /home/user/project/test/extensions/forgecli/run-sprint.test.ts\nline-079: /home/user/project/test/extensions/forgecli/calibrate.test.ts\nline-080: /home/user/project/test/extensions/forgecli/health-check.test.ts\nline-081: /home/user/project/test/extensions/forgecli/allowlist-coverage.test.ts\nline-082: /home/user/project/test/extensions/forgecli/banner.test.ts\nline-083: /home/user/project/test/extensions/forgecli/audience-gate.test.ts\nline-084: /home/user/project/test/extensions/forgecli/skill-retriever.test.ts\nline-085: /home/user/project/test/extensions/forgecli/skill-curation-flag.test.ts\nline-086: /home/user/project/test/extensions/forgecli/skill-usage-tracker.test.ts\nline-087: /home/user/project/test/extensions/forgecli/skill-curator-subagent.test.ts\nline-088: /home/user/project/test/extensions/forgecli/phase-guard.test.ts\nline-089: /home/user/project/test/extensions/forgecli/pipeline-guard-handlers.test.ts\nline-090: /home/user/project/test/extensions/forgecli/store-resolver.test.ts\nline-091: /home/user/project/test/extensions/forgecli/store-query.test.ts\nline-092: /home/user/project/test/extensions/forgecli/store-repair.test.ts\nline-093: /home/user/project/test/extensions/forgecli/store-friction-regression.test.ts\nline-094: /home/user/project/test/extensions/forgecli/store-error-remediation.test.ts\nline-095: /home/user/project/test/extensions/forgecli/load-skills.test.ts\nline-096: /home/user/project/test/extensions/forgecli/materialize.test.ts\nline-097: /home/user/project/test/extensions/forgecli/config-command.test.ts\nline-098: /home/user/project/test/extensions/forgecli/config-layer.test.ts\nline-099: /home/user/project/test/extensions/forgecli/config-writer.test.ts\nline-100: /home/user/project/test/extensions/forgecli/config-tui-component.test.ts"
+    },
+    {
+      "turn": 4,
+      "toolName": "read",
+      "toolCallId": "tc-read-002",
+      "input": { "file_path": "/home/user/project/src/context-governor.ts" },
+      "content": "// context-governor.ts — second read (same file, same content)\nexport interface ContextGovernor {\n  applyToolResult(event: ToolResultEvent, ctx: ExtensionContext): ToolResultEventResult | undefined;\n  applyToolCall(event: ToolCallEvent, ctx: ExtensionContext): ToolCallEventResult | void;\n}\n"
+    }
+  ]
+}

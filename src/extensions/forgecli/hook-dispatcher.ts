@@ -1,4 +1,4 @@
-// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04 / FORGE-S23-T02 / FORGE-S23-T03
+// Pi-runtime hook adapter — FORGE-S18-T02 / FORGE-S18-T03 / FORGE-S21-T04 / FORGE-S23-T02 / FORGE-S23-T03 / FORGE-S30-T03
 //
 // Wires Forge's hook semantics onto pi's tool_call / tool_result events.
 // T02: Provides audit-only observation scaffolding.
@@ -13,6 +13,9 @@
 //      .forge/config.json against Forge JSON schemas. Composed after two-layer-guard.
 // T03 (S23): Adds triage-error hook — on Bash tool_result with isError=true and a
 //      Forge-related command, injects ctx.ui.notify suggesting /forge:report-bug.
+// T03 (S30): Adds ContextGovernor substrate — optional third arg to
+//      registerHookDispatcher; no-op by default; called at the tail of both
+//      tool_result and tool_call chains (T04/T05/T06 extend the governor body).
 //
 // Audit logging: set FORGE_HOOK_AUDIT=1 to write to .forge/logs/hooks.log.
 // In enforcement mode (default): violations are blocked.
@@ -64,6 +67,7 @@ import type {
 	ToolCallEventResult,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
+import type { ToolResultEventResult } from "./context-governor.js";
 import { isBashToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { matchForgePermission } from "./hooks/forge-permissions.js";
 import { buildTriageMessage, isForgeRelated } from "./hooks/triage-error.js";
@@ -71,6 +75,7 @@ import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { applyPiEdits, checkWriteGuard } from "./hooks/write-guard.js";
 import { validateStoreCLIPayload } from "./store-validator.js";
 import { checkTransition } from "./transition-guard.js";
+import { type ContextGovernor, createNoOpGovernor } from "./context-governor.js";
 
 // ── Synthetic event taxonomy (FORGE-S21-T04) ─────────────────────────────────
 //
@@ -366,12 +371,14 @@ function tokeniseShellCommand(command: string): string[] {
  * AC#2: write calls validated via store-validator; blocked on schema violation.
  * AC#3: update-status calls checked via transition-guard; blocked on illegal transition.
  * AC#4: FORGE_HOOK_AUDIT=1 — all decisions logged, nothing blocked.
+ * AC#5 (S30-T03): optional governor arg; no-op by default; called at tail of both chains.
  */
-export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): void {
+export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string, governor?: ContextGovernor): void {
+	const _governor: ContextGovernor = governor ?? createNoOpGovernor();
 	const logsDir = path.join(process.cwd(), ".forge", "logs");
 
 	// ── tool_call: fires before any tool executes ─────────────────────────────
-	pi.on("tool_call", (event: ToolCallEvent): ToolCallEventResult | void => {
+	pi.on("tool_call", (event: ToolCallEvent, ctx: ExtensionContext): ToolCallEventResult | void => {
 		appendAudit(logsDir, `[tool_call] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
 
 		// ── Forge-permission auto-allow (FORGE-S23-T04) ───────────────────────
@@ -539,11 +546,26 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 			}
 		}
 
+		// ── Context governor (FORGE-S30-T03) — tail of tool_call chain ─────────
+		// All upstream guards have already fired. The governor is last so it never
+		// sees events that were blocked by forge-permissions / two-layer-guard /
+		// write-guard / store-cli-intercept (those return before reaching here).
+		// In T03 the no-op governor returns undefined, preserving all existing paths.
+		try {
+			const governorResult = _governor.applyToolCall(event, ctx);
+			if (governorResult !== undefined && governorResult !== null) {
+				return governorResult;
+			}
+		} catch {
+			// IL7: governor failures must never throw out of the handler chain.
+		}
+
 		return undefined;
 	});
 
 	// ── tool_result: fires after any tool completes ───────────────────────────
-	pi.on("tool_result", (event: ToolResultEvent, ctx: ExtensionContext): void => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	pi.on("tool_result", (event: ToolResultEvent, ctx: ExtensionContext): any => {
 		appendAudit(logsDir, `[tool_result] toolName=${event.toolName} toolCallId=${event.toolCallId}`);
 
 		// ── Triage-error: post-Bash-failure context injection (FORGE-S23-T03) ──
@@ -562,6 +584,18 @@ export function registerHookDispatcher(pi: ExtensionAPI, forgeRoot: string): voi
 					.trim();
 				ctx.ui.notify(buildTriageMessage(command, snippet), "warning");
 			}
+		}
+
+		// ── Context governor (FORGE-S30-T04) — tail of tool_result chain ────────
+		// Triage-error fires first (preserving the user notification path).
+		// The governor applies Mechanism A curation (dedup, schema-trim, span-clamp).
+		// If the governor returns a non-undefined result, propagate it to pi so the
+		// curated content replaces the original in context.messages (R-CG1 fix).
+		try {
+			const curatedResult = _governor.applyToolResult(event, ctx);
+			if (curatedResult !== undefined) return curatedResult;
+		} catch {
+			// IL7: governor failures must never propagate out of the handler.
 		}
 	});
 }
