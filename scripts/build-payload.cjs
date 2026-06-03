@@ -183,6 +183,7 @@ const TOOLS_TO_COPY = [
 	// via "$FORGE_ROOT/tools/<tool>.cjs" and by run-task.ts. Missing any of
 	// these breaks the plan/review/validate phases at the bash boundary.
 	"preflight-gate.cjs",
+	"postflight-gate.cjs",
 	"read-verdict.cjs",
 	"parse-gates.cjs",
 	// Plan-11 / Slice 2: friction recorder (subagent) and provider backfill helper.

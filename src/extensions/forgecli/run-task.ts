@@ -542,6 +542,45 @@ export function runPreflightGate(
 }
 
 /**
+ * Run postflight-gate.cjs after a phase subagent returns, before FSM advance.
+ * Mirrors runPreflightGateWithData — same argv-array discipline, same structured-JSON
+ * parsing from stdout on exit 1.
+ *
+ * Returns:
+ *   "ok"          — gate passed (or no outputs block for this phase); advance may proceed.
+ *   "unsatisfied" — gate failed; do NOT advance FSM; halt and call runHaltAdvisor.
+ *   "error"       — gate binary missing or parse error; treat as pass-through (additive).
+ */
+export function runPostflightGate(
+	postflightGate: string,
+	role: string,
+	taskId: string,
+	cwd: string,
+): { result: "ok" | "unsatisfied" | "error"; gateFailure: GateFailureData | null } {
+	if (!fs.existsSync(postflightGate)) {
+		// postflight-gate.cjs not present in this forgeRoot — pass through (additive).
+		return { result: "ok", gateFailure: null };
+	}
+	const spawnResult = spawnSync("node", [postflightGate, "--phase", role, "--task", taskId], { cwd, encoding: "utf8" });
+	if (spawnResult.status === 0) return { result: "ok", gateFailure: null };
+	if (spawnResult.status === 2) return { result: "error", gateFailure: null };
+	// Exit 1: parse structured JSON from stdout
+	let gateFailure: GateFailureData | null = null;
+	try {
+		const stdout = typeof spawnResult.stdout === "string" ? spawnResult.stdout.trim() : "";
+		if (stdout) {
+			const parsed = JSON.parse(stdout) as GateFailureData;
+			if (parsed && typeof parsed.reasonCode === "string") {
+				gateFailure = parsed;
+			}
+		}
+	} catch {
+		// stdout not valid JSON — gate failure but no structured data
+	}
+	return { result: "unsatisfied", gateFailure };
+}
+
+/**
  * Upgraded variant that returns structured failure data alongside the status enum.
  * Callers that need the advisory data should use this function directly.
  */
@@ -1269,6 +1308,60 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			}
 
 			// verdict === "approved": fall through to advance
+		}
+
+		// Postflight gate: evaluate `outputs` block after subagent returns,
+		// before FSM status advance (FORGE-S26-T19). Hard enforcement in forge-cli;
+		// plugin LLM route treats postflight as advisory. On UNSATISFIED: do not
+		// advance currentPhaseIndex, halt, hand off to existing runHaltAdvisor.
+		{
+			const postflightGatePath = preflightGate.replace("preflight-gate.cjs", "postflight-gate.cjs");
+			const postflightOutcome = runPostflightGate(postflightGatePath, phase.role, taskId, cwd);
+			if (postflightOutcome.result === "unsatisfied") {
+				if (postflightOutcome.gateFailure) {
+					ctx.ui.notify(
+						`× forge:run-task — postflight gate failed for phase ${phase.role} ` +
+							`[${postflightOutcome.gateFailure.reasonCode}]: ${postflightOutcome.gateFailure.detail}`,
+						"error",
+					);
+				} else {
+					ctx.ui.notify(
+						`× forge:run-task — postflight gate failed for phase ${phase.role}; halting.`,
+						"error",
+					);
+				}
+				// Do NOT advance FSM — write state at current phaseIndex (halted)
+				writeState(cwd, {
+					taskId,
+					phaseIndex: currentPhaseIndex,
+					iterationCounts,
+					halted: true,
+					lastError: `postflight gate exit 1 for ${phase.role}`,
+					savedAt: new Date().toISOString(),
+				});
+				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
+				if (postflightOutcome.gateFailure) {
+					const advisorModel = resolveAdvisorModel(
+						modelRoutingConfig.advisorModel,
+						ctx.modelRegistry as any,
+					);
+					void runHaltAdvisor({
+						gateFailure: postflightOutcome.gateFailure,
+						advisorModel,
+						taskId,
+						cwd,
+						ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+						forgeRoot,
+					});
+				}
+				return {
+					status: "halted",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `postflight gate exit 1 for ${phase.role}`,
+				};
+			}
+			// "ok" or "error" — proceed to advance
 		}
 
 		// ── Advance to next phase ─────────────────────────────────────

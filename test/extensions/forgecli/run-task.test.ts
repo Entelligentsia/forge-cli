@@ -77,7 +77,7 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 
 import { spawnSync } from "node:child_process";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
-import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate } from "../../../src/extensions/forgecli/run-task.js";
+import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate, runPostflightGate } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
 
@@ -220,11 +220,13 @@ function scaffoldProject(opts: ScaffoldOpts = {}): { proj: string; taskId: strin
 		}
 	}
 
-	// Write fake forgeRoot with preflight-gate.cjs
+	// Write fake forgeRoot with gate stubs (spawnSync is mocked — these files just need to exist
+	// so fs.existsSync() passes and the gate path is used correctly in runPostflightGate)
 	const forgePayload = path.join(proj, "forge-payload");
 	fs.mkdirSync(path.join(forgePayload, "tools"), { recursive: true });
-	// Create a minimal preflight-gate stub (won't actually run — spawnSync is mocked)
+	// Create minimal stubs (won't actually run — spawnSync is mocked)
 	fs.writeFileSync(path.join(forgePayload, "tools", "preflight-gate.cjs"), "process.exit(0);", "utf8");
+	fs.writeFileSync(path.join(forgePayload, "tools", "postflight-gate.cjs"), "process.exit(0);", "utf8");
 	fs.writeFileSync(path.join(forgePayload, "tools", "store-cli.cjs"), "process.exit(0);", "utf8");
 
 	// Write cached state if needed
@@ -925,6 +927,144 @@ describe("Test 14: Fail-fast on schema-invalid forge-cli config (N-B-E)", () => 
 			(n) => n.level === "error" && (n.msg.includes("schema error") || n.msg.includes("forge-cli config")),
 		);
 		expect(schemaErrorNotify).toBeDefined();
+	});
+});
+
+// ── Postflight gate (FORGE-S26-T19) ──────────────────────────────────────
+
+describe("Test 15: Postflight gate — FSM does not advance on output-missing failure", () => {
+	it("halts and does not advance FSM when postflight gate returns exit 1", async () => {
+		const { proj, taskId } = scaffoldProject();
+		mockStoreCliVerdict({});
+
+		// Postflight gate fails for first phase after subagent returns
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+			const argArr = args as string[] | undefined;
+			if (argArr && String(argArr[0]).includes("postflight-gate")) {
+				const failure = JSON.stringify({
+					phase: "plan",
+					reasonCode: "output-missing",
+					detail: "output-missing: artifact absent: engineering/sprints/FORGE-S26/FORGE-S26-T19/PLAN.md",
+					remediation: "Re-run the phase that produces this artifact, then retry.",
+				});
+				return { status: 1, stdout: Buffer.from(failure), stderr: Buffer.from("Postflight guard failed") };
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// Should have emitted an error notification
+		const errorNotify = ctx.notifications.find((n) => n.level === "error");
+		expect(errorNotify).toBeDefined();
+
+		// State should be persisted as halted
+		const cacheFile = path.join(proj, ".forge", "cache", `run-task-state-${taskId}.json`);
+		expect(fs.existsSync(cacheFile)).toBe(true);
+		const state = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as { halted: boolean; phaseIndex: number };
+		expect(state.halted).toBe(true);
+		// phaseIndex should NOT have advanced past the first phase
+		expect(state.phaseIndex).toBe(0);
+	});
+});
+
+describe("Test 15b: Postflight gate passes → FSM advances normally", () => {
+	it("advances FSM when postflight gate returns exit 0", async () => {
+		const { proj, taskId } = scaffoldProject();
+		mockStoreCliVerdict({
+			"review-plan": "approved",
+			"review-code": "approved",
+			validate: "approved",
+			approve: "approved",
+		});
+
+		// All spawnSync calls pass (postflight gate also passes — default mock returns 0)
+		// No additional mock needed — mockStoreCliVerdict already returns status 0 for non-store calls
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// Should have completed all phases (8 createAgentSession calls)
+		const spawnCount = vi.mocked(createAgentSession).mock.calls.length;
+		expect(spawnCount).toBe(8);
+
+		// Should notify completion
+		const completionNotify = ctx.notifications.find(
+			(n) => n.level === "info" && (n.msg.includes("done") || n.msg.includes("complete") || n.msg.includes("〇")),
+		);
+		expect(completionNotify).toBeDefined();
+	});
+});
+
+describe("Test 15c: Postflight gate unsatisfied → error notification emitted", () => {
+	it("emits error notification when postflight returns output-missing", async () => {
+		const { proj, taskId } = scaffoldProject();
+		mockStoreCliVerdict({});
+
+		const failure = JSON.stringify({
+			phase: "plan",
+			reasonCode: "output-missing",
+			detail: "output-missing: artifact absent: engineering/sprints/FORGE-S26/FORGE-S26-T19/PLAN.md",
+			remediation: "Re-run the phase.",
+		});
+
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+			const argArr = args as string[] | undefined;
+			if (argArr && String(argArr[0]).includes("postflight-gate")) {
+				return { status: 1, stdout: Buffer.from(failure), stderr: Buffer.from("") };
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// Should emit error notification
+		const errorNotify = ctx.notifications.find((n) => n.level === "error");
+		expect(errorNotify).toBeDefined();
+	});
+});
+
+describe("Test 15d: Postflight gate failure → pipeline halts at first phase", () => {
+	it("does not advance to next phase when postflight fails", async () => {
+		const { proj, taskId } = scaffoldProject();
+		mockStoreCliVerdict({});
+
+		const failure = JSON.stringify({
+			phase: "plan",
+			reasonCode: "output-missing",
+			detail: "output-missing: artifact absent: engineering/sprints/FORGE-S26/FORGE-S26-T19/PLAN.md",
+			remediation: "Re-run the phase.",
+		});
+
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+			const argArr = args as string[] | undefined;
+			if (argArr && String(argArr[0]).includes("postflight-gate")) {
+				return { status: 1, stdout: Buffer.from(failure), stderr: Buffer.from("") };
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// Pipeline halted — createAgentSession called at most once (plan phase)
+		// The second phase (review-plan) must NOT have been started
+		const sessionCallCount = vi.mocked(createAgentSession).mock.calls.length;
+		expect(sessionCallCount).toBeLessThanOrEqual(1);
 	});
 });
 
