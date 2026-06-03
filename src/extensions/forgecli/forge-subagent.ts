@@ -25,6 +25,7 @@ import {
 	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
+	type ExtensionFactory,
 	getAgentDir,
 	ModelRegistry,
 	type ModelRegistry as ModelRegistryType,
@@ -157,6 +158,25 @@ export interface RunSubagentOptions {
 	 * extensions (which adds latency and creates environment-dependent behavior).
 	 */
 	noExtensions?: boolean;
+	/**
+	 * Extension factories to inject into the subagent session via
+	 * DefaultResourceLoader({ extensionFactories }). When provided, the
+	 * factories are registered on the subagent's ExtensionRunner.
+	 * Used by Mechanism E (T09) to wire the Forge-aware compaction handler
+	 * into specific subagent sessions.
+	 *
+	 * These factories fire even when noExtensions=true — explicitly-passed
+	 * factories are separate from globally-discovered extensions and are not
+	 * suppressed by the noExtensions flag. This matches the pattern proven in
+	 * spike-r-cg3 (T08) and is the correct production behavior: callers that
+	 * want the governor's compaction handler can pass it explicitly regardless
+	 * of the global extension discovery flag.
+	 *
+	 * Best-effort: factory errors must be caught by the factory itself
+	 * (pi requirement). Callers must not pass factories that can throw at
+	 * registration time.
+	 */
+	extensionFactories?: ExtensionFactory[];
 }
 
 // ── Persona discovery ─────────────────────────────────────────────────────
@@ -257,6 +277,12 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		noSkills: opts.noExtensions ?? !!opts.streamFn,
 		noPromptTemplates: true,
 		noContextFiles: true,
+		// Mechanism E (T09): explicitly-passed extension factories are forwarded
+		// unconditionally — they are separate from globally-discovered extensions
+		// and fire even when noExtensions=true. This enables callers to inject
+		// the Forge-aware compaction handler (buildForgeCompactionFactory) into
+		// specific subagent sessions without enabling the full extension discovery.
+		extensionFactories: opts.extensionFactories,
 	});
 	await loader.reload();
 

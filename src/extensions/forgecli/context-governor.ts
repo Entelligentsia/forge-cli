@@ -1,6 +1,7 @@
 // Context Governor — FORGE-S30-T03 (substrate) / FORGE-S30-T04 (Mechanism A curation)
 //                   / FORGE-S30-T05 (Mechanism B — context budget meter + checkpoint steer)
-//                   / FORGE-S30-T06 (Mechanism C — checkpoint-and-shed against {PHASE}-SUMMARY.json).
+//                   / FORGE-S30-T06 (Mechanism C — checkpoint-and-shed against {PHASE}-SUMMARY.json)
+//                   / FORGE-S30-T09 (Mechanism E — proactive compactFn trigger at budget threshold).
 // Defines the phase-policy table (keyed by persona/phase), the ContextGovernor
 // interface wired into hook-dispatcher.ts tool_result/tool_call paths, and the
 // governor factories used by T04 (live curation) and as no-op defaults.
@@ -295,18 +296,28 @@ function buildSteerMessage(phaseKey: string): string {
  *   2. ctx.model?.contextWindow — active model
  *   3. ctx.modelRegistry.find(provider, modelId)?.contextWindow — registry backup
  *   4. DEFAULT_CONTEXT_WINDOW (200_000) — conservative fallback
+ * @param compactFn  opt callback injected at construction (Mechanism E / T09).
+ *                  Called proactively once when fraction >= policy.steerThreshold,
+ *                  via a single-fire `compactFired` flag distinct from `steerFired`.
+ *                  Callers pass `compactFn = () => session.compact()`. Errors inside
+ *                  compactFn are caught and written to stderr (IL7). Omitting this
+ *                  param is backwards-compatible — no compact trigger fires.
  */
 export function createGovernor(
 	table: PhasePolicyTable,
 	_modelRegistry: ModelRegistry,
 	steerFn?: (message: string) => void,
 	summarySentinel?: (phaseKey: string, entityId: string) => boolean,
+	compactFn?: () => void,
 ): ContextGovernor {
 	// Per-governor-instance dedup registry. Maps "${toolName}:${target}" → turn number.
 	const dedupRegistry = new Map<string, number>();
 	let currentTurn = 0;
 	// Mechanism B: single-fire steer invariant
 	let steerFired = false;
+	// Mechanism E (T09): single-fire compact trigger — distinct from steerFired so
+	// proactive compact and steer can be enabled independently.
+	let compactFired = false;
 
 	return {
 		applyToolResult(event: ToolResultEvent, ctx: ExtensionContext): ToolResultEventResult | undefined {
@@ -341,6 +352,16 @@ export function createGovernor(
 						if (fraction >= policy.steerThreshold && !steerFired && steerFn) {
 							steerFired = true;
 							steerFn(buildSteerMessage(phaseKey));
+						}
+						// Mechanism E (T09): proactive compact trigger — single-fire, independent of steer.
+						if (fraction >= policy.steerThreshold && !compactFired && compactFn) {
+							compactFired = true;
+							try {
+								compactFn();
+							} catch (compactErr: unknown) {
+								const msg = compactErr instanceof Error ? compactErr.message : String(compactErr);
+								process.stderr.write(`[context-governor] compactFn error (non-fatal): ${msg}\n`);
+							}
 						}
 					} else {
 						ctx.ui.setStatus(statusKey, undefined);
