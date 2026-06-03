@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **forge-compress savings prints no longer corrupt the `/forge:dashboard`
+  TUI.** `compressWithTelemetry` (forge-tools.ts) and the `forge_artifact`
+  read path wrote dim `[forge-compress] N→M tok (X% saved)` lines straight to
+  stderr — raw ANSI under an active TUI overlay garbles the screen. The prints
+  were redundant: the same stats already flow through tool-result
+  `details.compression` → viewport-events → session-registry/orchestrator-tree
+  → the dashboard's aggregate `⇌Nt` savings suffix. Removed both stderr writes;
+  the dashboard remains the single surface for compression savings.
+
 - **Context governor was dormant in production — Mechanisms A–D never reached
   phase subagent sessions.** Benchmarking CART-S02-T03 under
   `FORGE_CTX_GOVERNOR=1` showed zero curation markers and no token reduction.

@@ -173,7 +173,8 @@ export function buildForgeArtifact(
 					const after = countTokens(compressed);
 					if (after < before) {
 						const saved = Math.round((1 - after / before) * 100);
-						process.stderr.write(`\x1b[2m[forge-compress] artifact:read ${before}→${after} tok (${saved}% saved)\x1b[0m\n`);
+						// No stderr print: raw writes corrupt active TUI overlays (/forge:dashboard).
+						// Savings surface via details.compression → dashboard "⇌Nt" suffix.
 						return okResult(compressed, { tool: "artifact:read", before, after, saved });
 					}
 				}
