@@ -40,7 +40,6 @@ import {
 	createNoOpGovernor,
 	loadDefaultPolicyTable,
 } from "./context-governor.js";
-import { buildForgeCompactionFactory } from "./context-governor-compaction.js";
 import {
 	buildForgeAwarenessMsg,
 	buildMultiPluginMsg,
@@ -482,30 +481,26 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// fallback DELETED per T06 AC#4.
 	registerImplement(pi);
 
-	// FORGE-S30-T07: Mechanism E factory for subagent sessions, flag-gated.
-	// When FORGE_CTX_GOVERNOR=1, inject the Forge-aware compaction handler into
-	// every subagent session via extensionFactories (runForgeSubagent → T09 path).
-	// IL7: wrapped in try/catch so factory construction failures never block registration.
-	// Pack 07: factory is read-only; never writes .forge/store/.
-	let subagentExtensionFactories;
-	try {
-		subagentExtensionFactories =
-			process.env.FORGE_CTX_GOVERNOR === "1" ? [buildForgeCompactionFactory()] : undefined;
-	} catch {
-		subagentExtensionFactories = undefined;
-	}
+	// FORGE-S30-T07 (revised): governor + compaction factories are now built
+	// PER-PHASE inside run-task.ts under FORGE_CTX_GOVERNOR=1 — only the
+	// pipeline knows the `${personaNoun}/${role}` phase key, and the previous
+	// global buildForgeCompactionFactory() threading from here carried no
+	// path opts (warm-tier dead) while Mechanisms A–D never reached subagent
+	// sessions at all (dormant-governor defect, CART-S02-T03 benchmark).
+	// The extensionFactories option on registerRunTask/registerRunSprint
+	// remains as a test seam.
 
 	// ── /forge:run-task native Orchestrator handler (FORGE-S21-T02) ──────────
 	// Full TS-driven Orchestrator-archetype handler. Chains 8 phases via
 	// runForgeSubagent (IL10). Registered BEFORE registerAllForgeCommands so
 	// the real handler takes precedence over the auto-stub from the command .md.
-	registerRunTask(pi, { forgeToolDefs, extensionFactories: subagentExtensionFactories });
+	registerRunTask(pi, { forgeToolDefs });
 
 	// ── /forge:run-sprint native Orchestrator handler (FORGE-S21-T03) ────────
 	// Sprint-level orchestrator: iterates sprint tasks via runTaskPipeline.
 	// Registered BEFORE registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub from the command .md.
-	registerRunSprint(pi, { forgeToolDefs, extensionFactories: subagentExtensionFactories });
+	registerRunSprint(pi, { forgeToolDefs });
 
 	// ── /forge:fix-bug native Orchestrator handler (FORGE-S21-T07) ────
 	// Bug-level orchestrator: chains triage → plan-fix → review-plan →

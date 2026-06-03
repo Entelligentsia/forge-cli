@@ -31,8 +31,12 @@
 //   - IL10: registerHookDispatcher's public signature and orchestrator event paths
 //     are untouched. The third arg is optional; all existing callers unaffected.
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type {
+	ExtensionAPI,
 	ExtensionContext,
+	ExtensionFactory,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
@@ -134,6 +138,12 @@ export const DEFAULT_CONTEXT_WINDOW = 200_000;
  * Resolve the policy key from the extension context.
  * Probes ctx for persona/phase fields (not formally in ExtensionContext; best-effort).
  * Falls back to "default" if not present — safe fallback per IL7 principle.
+ *
+ * NOTE: pi never populates persona/phase on ExtensionContext in production —
+ * this probe only matches in test harnesses. Production paths MUST inject the
+ * phaseKey at construction time (createGovernor's `phaseKey` param via
+ * buildGovernorFactory); this fallback resolving to "default" was the dormant-
+ * governor defect found benchmarking CART-S02-T03.
  */
 function resolvePhaseKey(ctx: ExtensionContext): string {
 	const persona = (ctx as { persona?: string }).persona ?? "";
@@ -235,13 +245,34 @@ function resolveEntityId(event: ToolResultEvent): string {
  */
 function phaseSummaryName(phaseKey: string): string {
 	const map: Record<string, string> = {
-		"architect/plan": "PLAN-SUMMARY.json",
+		// Real run-task PHASE_PIPELINE keys (`${personaNoun}/${role}`):
+		"engineer/plan": "PLAN-SUMMARY.json",
+		"supervisor/review-plan": "REVIEW_PLAN-SUMMARY.json",
 		"engineer/implement": "IMPLEMENTATION-SUMMARY.json",
+		"supervisor/review-code": "CODE_REVIEW-SUMMARY.json",
+		"qa-engineer/validate": "VALIDATION-SUMMARY.json",
+		"architect/approve": "APPROVE-SUMMARY.json",
+		// Legacy design-time keys (kept for test fixtures; not produced by the pipeline):
+		"architect/plan": "PLAN-SUMMARY.json",
 		"engineer/review": "REVIEW-SUMMARY.json",
 		"engineer/code-review": "CODE_REVIEW-SUMMARY.json",
 	};
 	return map[phaseKey] ?? "{PHASE}-SUMMARY.json";
 }
+
+/**
+ * Map a real pipeline phaseKey to the store record `summaries` key written by
+ * `store-cli set-summary` (kind names — e.g. "implementation", not "implement").
+ * Used by buildGovernorFactory's summary sentinel (Mechanism C).
+ */
+const PHASE_SUMMARY_KEYS: Record<string, string> = {
+	"engineer/plan": "plan",
+	"supervisor/review-plan": "review_plan",
+	"engineer/implement": "implementation",
+	"supervisor/review-code": "code_review",
+	"qa-engineer/validate": "validation",
+	"architect/approve": "approve",
+};
 
 /**
  * Build the one-shot steer message injected into the agent loop when the budget
@@ -302,6 +333,11 @@ function buildSteerMessage(phaseKey: string): string {
  *                  Callers pass `compactFn = () => session.compact()`. Errors inside
  *                  compactFn are caught and written to stderr (IL7). Omitting this
  *                  param is backwards-compatible — no compact trigger fires.
+ * @param phaseKey  opt construction-time phase key override ("persona/role").
+ *                  Production paths MUST pass this (via buildGovernorFactory) —
+ *                  pi never populates persona/phase on ExtensionContext, so the
+ *                  ctx probe always resolves "default" at runtime. Omitting it
+ *                  preserves the legacy ctx-probe behaviour (test harnesses).
  */
 export function createGovernor(
 	table: PhasePolicyTable,
@@ -309,6 +345,7 @@ export function createGovernor(
 	steerFn?: (message: string) => void,
 	summarySentinel?: (phaseKey: string, entityId: string) => boolean,
 	compactFn?: () => void,
+	phaseKey?: string,
 ): ContextGovernor {
 	// Per-governor-instance dedup registry. Maps "${toolName}:${target}" → turn number.
 	const dedupRegistry = new Map<string, number>();
@@ -324,9 +361,10 @@ export function createGovernor(
 			try {
 				currentTurn++;
 
-				// Resolve phase key and policy (shared by Mechanism B meter and Mechanism A curation)
-				const phaseKey = resolvePhaseKey(ctx);
-				const policy = table[phaseKey] ??
+				// Resolve phase key and policy (shared by Mechanism B meter and Mechanism A curation).
+				// Construction-time override wins — pi never sets persona/phase on ctx.
+				const resolvedPhaseKey = phaseKey ?? resolvePhaseKey(ctx);
+				const policy = table[resolvedPhaseKey] ??
 					table["default"] ?? {
 						residentFields: [],
 						toolBudgets: {},
@@ -351,7 +389,7 @@ export function createGovernor(
 
 						if (fraction >= policy.steerThreshold && !steerFired && steerFn) {
 							steerFired = true;
-							steerFn(buildSteerMessage(phaseKey));
+							steerFn(buildSteerMessage(resolvedPhaseKey));
 						}
 						// Mechanism E (T09): proactive compact trigger — single-fire, independent of steer.
 						if (fraction >= policy.steerThreshold && !compactFired && compactFn) {
@@ -402,14 +440,13 @@ export function createGovernor(
 				// ------------------------------------------------------------------
 				if (summarySentinel !== undefined && event.toolName === "forge_store") {
 					try {
-						const phaseKey = resolvePhaseKey(ctx);
 						const entityId = resolveEntityId(event);
-						if (entityId && summarySentinel(phaseKey, entityId)) {
+						if (entityId && summarySentinel(resolvedPhaseKey, entityId)) {
 							return {
 								content: [
 									{
 										type: "text",
-										text: `[summarized — see ${phaseSummaryName(phaseKey)} for ${entityId}]`,
+										text: `[summarized — see ${phaseSummaryName(resolvedPhaseKey)} for ${entityId}]`,
 									},
 								],
 							};
@@ -488,16 +525,58 @@ export function createGovernor(
 /**
  * Load the built-in phase-policy table.
  *
- * Ships entries for at least two phases (AC#2):
- *   "architect/plan"   — planning phase policy
- *   "engineer/review"  — review phase policy
- *   "default"          — safe fallback for any unlisted persona/phase
+ * Ships an entry for every governed run-task PHASE_PIPELINE key
+ * (`${personaNoun}/${role}` — engineer/plan, supervisor/review-plan,
+ * engineer/implement, supervisor/review-code, qa-engineer/validate,
+ * architect/approve) plus "default" for any unlisted persona/phase.
+ * writeback/commit intentionally stay on "default" — small phases whose
+ * git/store output must not be clamped.
+ *
+ * `read` budgets are deliberately more generous than `bash` — clamping file
+ * reads too tightly degrades implement/review quality (the agent cannot see
+ * whole files), while bash output (store-cli reads, test logs, greps) is the
+ * dominant context bloat observed in the CART-S02-T03 baseline.
+ *
+ * Legacy design-time keys ("architect/plan", "engineer/review") are retained
+ * for existing test fixtures; the pipeline never produces them.
  *
  * Values are conservative design-time decisions; a future task can promote
  * specific fields to project config once per-project tuning evidence exists.
  */
 export function loadDefaultPolicyTable(): PhasePolicyTable {
 	return {
+		// ── Real run-task PHASE_PIPELINE keys ──────────────────────────────
+		"engineer/plan": {
+			residentFields: ["status", "title", "dependencies", "description"],
+			toolBudgets: { forge_store: 2000, bash: 1000, read: 3000 },
+			steerThreshold: 0.8,
+		},
+		"supervisor/review-plan": {
+			residentFields: ["status", "summaries", "acceptanceCriteria"],
+			toolBudgets: { forge_store: 1500, bash: 800, read: 3000 },
+			steerThreshold: 0.75,
+		},
+		"engineer/implement": {
+			residentFields: ["status", "title", "description", "summaries"],
+			toolBudgets: { forge_store: 2000, bash: 1500, read: 4000 },
+			steerThreshold: 0.8,
+		},
+		"supervisor/review-code": {
+			residentFields: ["status", "summaries", "acceptanceCriteria"],
+			toolBudgets: { forge_store: 1500, bash: 800, read: 3000 },
+			steerThreshold: 0.75,
+		},
+		"qa-engineer/validate": {
+			residentFields: ["status", "summaries", "acceptanceCriteria"],
+			toolBudgets: { forge_store: 1500, bash: 2000, read: 3000 },
+			steerThreshold: 0.75,
+		},
+		"architect/approve": {
+			residentFields: ["status", "summaries", "acceptanceCriteria"],
+			toolBudgets: { forge_store: 1500, bash: 1000, read: 3000 },
+			steerThreshold: 0.75,
+		},
+		// ── Legacy design-time keys (test fixtures only) ───────────────────
 		"architect/plan": {
 			residentFields: ["status", "title", "dependencies", "description"],
 			toolBudgets: { forge_store: 2000, bash: 1000 },
@@ -513,5 +592,116 @@ export function loadDefaultPolicyTable(): PhasePolicyTable {
 			toolBudgets: {},
 			steerThreshold: 0.9,
 		},
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Per-subagent governor factory (production wiring — completes FORGE-S30-T07)
+// ---------------------------------------------------------------------------
+
+/** Options for buildGovernorFactory. */
+export interface GovernorFactoryOptions {
+	/**
+	 * Pipeline phase key, `${personaNoun}/${role}` (e.g. "supervisor/review-code").
+	 * Known to run-task.ts at dispatch time; injected here because pi never
+	 * populates persona/phase on ExtensionContext.
+	 */
+	phaseKey: string;
+	/** Project cwd — root containing `.forge/store/` (sentinel reads only). */
+	cwd: string;
+}
+
+/**
+ * Read-only Mechanism C sentinel: true when the store record for entityId
+ * already carries a summary for the given phase. Reads
+ * `.forge/store/{tasks,bugs}/<entityId>.json` directly (never writes — Pack 07).
+ * Any failure returns false → retain, never evict (IL7).
+ */
+function storeSummarySentinel(cwd: string, phaseKey: string, entityId: string): boolean {
+	const summaryKey = PHASE_SUMMARY_KEYS[phaseKey];
+	if (!summaryKey) return false;
+	for (const kind of ["tasks", "bugs"]) {
+		try {
+			const recordPath = path.join(cwd, ".forge", "store", kind, `${entityId}.json`);
+			const raw = fs.readFileSync(recordPath, "utf8");
+			const record = JSON.parse(raw) as { summaries?: Record<string, unknown> };
+			const summary = record.summaries?.[summaryKey];
+			if (summary !== undefined && summary !== null) return true;
+		} catch {
+			// missing file / parse failure → try next kind, default retain (IL7)
+		}
+	}
+	return false;
+}
+
+/**
+ * Build an ExtensionFactory that registers a fully-wired context governor in a
+ * subagent session. Constructed per-phase by run-task.ts (which knows the
+ * persona/role) and passed via RunSubagentOptions.extensionFactories —
+ * the same injection channel as buildForgeCompactionFactory (Mechanism E).
+ *
+ * This is the production wiring the original FORGE-S30-T07 integration missed:
+ * registerHookDispatcher(pi, …, governor) in index.ts only governs the PARENT
+ * session, while every phase runs in an isolated createAgentSession subagent
+ * that the parent's hooks never see. The CART-S02-T03 benchmark confirmed the
+ * result: zero curation markers across a full FORGE_CTX_GOVERNOR=1 phase.
+ *
+ * Wiring supplied here:
+ *   phaseKey        — construction-time (Mechanism D policies finally reachable)
+ *   steerFn         — pi.sendUserMessage(msg, { deliverAs: "steer" }) (Mechanism B)
+ *   summarySentinel — storeSummarySentinel against .forge/store/ (Mechanism C)
+ *   compactFn       — ctx.compact() proactive trigger (Mechanism E)
+ *
+ * steer uses the session-scoped ExtensionAPI directly; compact rides the
+ * ExtensionContext captured at the start of each handler invocation — it only
+ * fires synchronously inside applyToolResult, so the captured ctx is always
+ * the live one. All callbacks are guarded: failures fall through silently
+ * (IL7); the factory never writes to .forge/store/ (Pack 07).
+ */
+export function buildGovernorFactory(opts: GovernorFactoryOptions): ExtensionFactory {
+	const { phaseKey, cwd } = opts;
+	return (pi: ExtensionAPI): void => {
+		let currentCtx: ExtensionContext | undefined;
+
+		const steerFn = (message: string): void => {
+			try {
+				pi.sendUserMessage(message, { deliverAs: "steer" });
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				process.stderr.write(`[context-governor] steerFn error (non-fatal): ${msg}\n`);
+			}
+		};
+		// createGovernor already wraps compactFn invocations in try/catch (IL7).
+		const compactFn = (): void => {
+			currentCtx?.compact();
+		};
+		const summarySentinel = (pk: string, entityId: string): boolean =>
+			storeSummarySentinel(cwd, pk, entityId);
+
+		// Registration-time stub; per-turn contextWindow resolution uses
+		// ctx.getContextUsage()/ctx.modelRegistry inside the handler chain.
+		const stubRegistry = { find: () => undefined } as unknown as ModelRegistry;
+		const governor = createGovernor(
+			loadDefaultPolicyTable(),
+			stubRegistry,
+			steerFn,
+			summarySentinel,
+			compactFn,
+			phaseKey,
+		);
+
+		// Return types mirror hook-dispatcher.ts's registrations: pi's typed
+		// on() overloads expect its internal result types; the governor's
+		// structurally-equivalent locals satisfy them at runtime.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		pi.on("tool_call", (event: ToolCallEvent, ctx: ExtensionContext): any => {
+			currentCtx = ctx;
+			return governor.applyToolCall(event, ctx);
+		});
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		pi.on("tool_result", (event: ToolResultEvent, ctx: ExtensionContext): any => {
+			currentCtx = ctx;
+			return governor.applyToolResult(event, ctx);
+		});
 	};
 }

@@ -26,6 +26,8 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@e
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import type { PhaseRole } from "./subagent/caller-context.js";
 import { loadLayeredConfig } from "./config-layer.js";
+import { buildGovernorFactory } from "./context-governor.js";
+import { buildForgeCompactionFactory } from "./context-governor-compaction.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
 import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
@@ -1037,6 +1039,31 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			afterEach: refreshStatus,
 		});
 
+		// ── Context governor injection (completes FORGE-S30-T07) ──────
+		// Per-phase factories built HERE because only the pipeline knows the
+		// `${personaNoun}/${role}` phase key — pi never sets persona/phase on
+		// ExtensionContext, and the parent session's registerHookDispatcher
+		// governor never sees subagent tool traffic (dormant-governor defect,
+		// CART-S02-T03 benchmark). Flag-gated: FORGE_CTX_GOVERNOR=1.
+		//   buildGovernorFactory        — Mechanisms A/B/C/D in the subagent
+		//   buildForgeCompactionFactory — Mechanism E with warm-tier path opts
+		//     (previously injected from index.ts with NO opts → warm-tier dead)
+		const phaseKey = `${phase.personaNoun}/${phase.role}`;
+		const sprintIdForSummaries = /^(.*)-T\d+$/.exec(taskId)?.[1];
+		const governorFactories: ExtensionFactory[] =
+			process.env.FORGE_CTX_GOVERNOR === "1"
+				? [
+						buildGovernorFactory({ phaseKey, cwd }),
+						buildForgeCompactionFactory({
+							cwd,
+							phaseKey,
+							entityId: taskId,
+							sprintId: sprintIdForSummaries,
+						}),
+					]
+				: [];
+		const phaseExtensionFactories = [...(opts.extensionFactories ?? []), ...governorFactories];
+
 		let result;
 		try {
 			// FORGE-BUG-040: wrap the runForgeSubagent dispatch in the phase
@@ -1056,7 +1083,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				modelRegistry: ctx.modelRegistry,
 				signal: opts.signal,
 				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
-				extensionFactories: opts.extensionFactories,
+				extensionFactories: phaseExtensionFactories.length > 0 ? phaseExtensionFactories : undefined,
 				}),
 			);
 		} catch (err: unknown) {

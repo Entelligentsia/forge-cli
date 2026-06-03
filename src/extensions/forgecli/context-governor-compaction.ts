@@ -232,8 +232,15 @@ function extractTextContent(msg: unknown): string[] {
 /** Map phase key to canonical {PHASE}-SUMMARY.json filename. */
 function phaseSummaryFilename(phaseKey: string): string {
 	const map: Record<string, string> = {
-		"architect/plan": "PLAN-SUMMARY.json",
+		// Real run-task PHASE_PIPELINE keys (`${personaNoun}/${role}`):
+		"engineer/plan": "PLAN-SUMMARY.json",
+		"supervisor/review-plan": "REVIEW_PLAN-SUMMARY.json",
 		"engineer/implement": "IMPLEMENTATION-SUMMARY.json",
+		"supervisor/review-code": "CODE_REVIEW-SUMMARY.json",
+		"qa-engineer/validate": "VALIDATION-SUMMARY.json",
+		"architect/approve": "APPROVE-SUMMARY.json",
+		// Legacy design-time keys (test fixtures only):
+		"architect/plan": "PLAN-SUMMARY.json",
 		"engineer/review": "REVIEW-SUMMARY.json",
 		"engineer/code-review": "CODE_REVIEW-SUMMARY.json",
 	};

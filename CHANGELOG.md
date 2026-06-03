@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.15] — 2026-06-03
+
+### Fixed
+
+- **Context governor was dormant in production — Mechanisms A–D never reached
+  phase subagent sessions.** Benchmarking CART-S02-T03 under
+  `FORGE_CTX_GOVERNOR=1` showed zero curation markers and no token reduction.
+  Three wiring defects, all in the FORGE-S30-T07 integration layer (the
+  mechanisms themselves were correct):
+  1. `registerHookDispatcher(pi, …, governor)` in `index.ts` only governs the
+     **parent** session; every phase runs in an isolated `createAgentSession`
+     subagent the parent's hooks never see.
+  2. `resolvePhaseKey` probed `ctx.persona`/`ctx.phase`, which pi never
+     populates (and `FORGE_PHASE_KEY` is read but never set) — so every phase
+     resolved the inert `default` policy.
+  3. The policy table only shipped `architect/plan` and `engineer/review`,
+     matching **no** real `${personaNoun}/${role}` pipeline key; and
+     `createGovernor` was constructed without `steerFn`/`summarySentinel`/
+     `compactFn`, leaving Mechanism B steer, Mechanism C shed, and the
+     Mechanism E proactive trigger unreachable.
+
+  Fix: new `buildGovernorFactory({ phaseKey, cwd })` (`context-governor.ts`)
+  is constructed **per phase** by `run-task.ts` — which knows the
+  `${personaNoun}/${role}` key — and injected into each subagent session via
+  `extensionFactories`, alongside a `buildForgeCompactionFactory` now carrying
+  warm-tier path opts (`cwd`/`phaseKey`/`entityId`/`sprintId` — previously
+  threaded from `index.ts` with no opts, so warm-tier merge was dead). The
+  factory wires `steerFn` → `pi.sendUserMessage(…, { deliverAs: "steer" })`,
+  `summarySentinel` → read-only `.forge/store/{tasks,bugs}/<id>.json`
+  `summaries[<phase>]` probe, and `compactFn` → `ctx.compact()`. The policy
+  table now ships entries for all six governed pipeline keys (`engineer/plan`,
+  `supervisor/review-plan`, `engineer/implement`, `supervisor/review-code`,
+  `qa-engineer/validate`, `architect/approve`) with `read` budgets kept more
+  generous than `bash` so file reads aren't over-clamped; `writeback`/`commit`
+  stay on `default`. Flag-gating is unchanged (`FORGE_CTX_GOVERNOR=1`), and
+  `registerRunTask`/`registerRunSprint` keep `extensionFactories` as a test
+  seam.
+
 ## [1.0.14] — 2026-06-03
 
 Coordinated release matching forge plugin **v1.2.14**.
