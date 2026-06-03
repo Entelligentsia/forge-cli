@@ -41,7 +41,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 // ModelRegistry/AuthStorage no longer instantiated here — see fix-bug.ts note
 // (FORGE-BUG-001). Use ctx.modelRegistry so session-registered providers are
 // honored by validateModelConfig.
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { assertAudience } from "./audience-gate.js";
 import { loadLayeredConfig } from "./config-layer.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
@@ -329,6 +329,8 @@ export interface RegisterRunSprintOptions {
 	 */
 	streamFnFactory?: SprintStreamFnFactory;
 	forgeToolDefs?: ForgeToolDefs;
+	/** Extension factories forwarded to each task's subagent sessions (see RunTaskPipelineOptions). */
+	extensionFactories?: ExtensionFactory[];
 }
 
 const SPRINT_STATUS_KEY = "forge:run-sprint";
@@ -656,6 +658,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					resumeFromState,
 					signal: taskSignal,
 					forgeToolDefs: options.forgeToolDefs,
+					extensionFactories: options.extensionFactories,
 					streamFnFactory: options.streamFnFactory
 						? (c) =>
 								options.streamFnFactory?.({

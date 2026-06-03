@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 // ModelRegistry/AuthStorage no longer instantiated here — see fix-bug.ts note
 // (FORGE-BUG-001). Use ctx.modelRegistry so session-registered providers are
 // honored by validateModelConfig.
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience, CallerContextStore } from "./audience-gate.js";
 import type { PhaseRole } from "./subagent/caller-context.js";
@@ -210,6 +210,12 @@ export interface RunTaskPipelineOptions {
 	 */
 	signal?: AbortSignal;
 	forgeToolDefs?: ForgeToolDefs;
+	/**
+	 * Extension factories forwarded to each subagent session via runForgeSubagent.
+	 * Used by Mechanism E (FORGE-S30-T07) to inject the Forge-aware compaction
+	 * handler when FORGE_CTX_GOVERNOR=1. No-op when undefined (default path unchanged).
+	 */
+	extensionFactories?: ExtensionFactory[];
 }
 
 export type RunTaskPipelineStatus = "completed" | "halted" | "escalated" | "failed" | "cancelled";
@@ -1050,6 +1056,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				modelRegistry: ctx.modelRegistry,
 				signal: opts.signal,
 				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
+				extensionFactories: opts.extensionFactories,
 				}),
 			);
 		} catch (err: unknown) {
@@ -1436,6 +1443,8 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 export interface RegisterRunTaskOptions {
 	cwd?: string;
 	forgeToolDefs?: ForgeToolDefs;
+	/** Extension factories forwarded to each subagent (see RunTaskPipelineOptions). */
+	extensionFactories?: ExtensionFactory[];
 }
 
 export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOptions = {}): void {
@@ -1584,6 +1593,7 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 				resumeFromState,
 				signal,
 				forgeToolDefs: options.forgeToolDefs,
+				extensionFactories: options.extensionFactories,
 			});
 
 			// ── Handle result ────────────────────────────────────────────────

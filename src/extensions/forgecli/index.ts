@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { type LoadSkillsResult, loadSkillsFromDir, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { registerAddPipeline } from "./add-pipeline.js";
 import { registerAddTask } from "./add-task.js";
@@ -35,6 +35,12 @@ import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
+import {
+	createGovernor,
+	createNoOpGovernor,
+	loadDefaultPolicyTable,
+} from "./context-governor.js";
+import { buildForgeCompactionFactory } from "./context-governor-compaction.js";
 import {
 	buildForgeAwarenessMsg,
 	buildMultiPluginMsg,
@@ -416,7 +422,28 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			console.warn("[forge-cli] bundled skills directory not found — skipping skill load (dev mode?)");
 		}
 		// T05 → T02 (FORGE-S18-T02): hook dispatcher wired — audit-only, no blocking.
-		registerHookDispatcher(pi, forgeRoot);
+		// FORGE-S30-T07: governor wired under FORGE_CTX_GOVERNOR=1 (flag-gated rollout).
+		// When the flag is absent, falls back to no-op governor — no behaviour change.
+		// IL7: try/catch wraps governor construction; any factory error falls back
+		// to no-op silently so the hook dispatcher never throws at registration time.
+		// Pack 07: governor reads store but never writes; all paths are read-only.
+		let governor;
+		try {
+			if (process.env.FORGE_CTX_GOVERNOR === "1") {
+				const table = loadDefaultPolicyTable();
+				// The _modelRegistry parameter is a contextWindow fallback only;
+				// the live registry is accessed from ctx.modelRegistry inside the
+				// governor's handler chain. Pass a no-op stub here — sufficient for
+				// registration time. The actual per-turn model lookup uses ctx.modelRegistry.
+				const stubRegistry = { find: () => undefined } as unknown as ModelRegistry;
+				governor = createGovernor(table, stubRegistry);
+			} else {
+				governor = createNoOpGovernor();
+			}
+		} catch {
+			governor = createNoOpGovernor();
+		}
+		registerHookDispatcher(pi, forgeRoot, governor);
 		// T04 (FORGE-S18-T04): forge:ask_user interactive prompt tool.
 		registerAskUserTool(pi);
 		// T03 (FORGE-S19-T03): pi-runtime token telemetry hook.
@@ -455,17 +482,30 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// fallback DELETED per T06 AC#4.
 	registerImplement(pi);
 
+	// FORGE-S30-T07: Mechanism E factory for subagent sessions, flag-gated.
+	// When FORGE_CTX_GOVERNOR=1, inject the Forge-aware compaction handler into
+	// every subagent session via extensionFactories (runForgeSubagent → T09 path).
+	// IL7: wrapped in try/catch so factory construction failures never block registration.
+	// Pack 07: factory is read-only; never writes .forge/store/.
+	let subagentExtensionFactories;
+	try {
+		subagentExtensionFactories =
+			process.env.FORGE_CTX_GOVERNOR === "1" ? [buildForgeCompactionFactory()] : undefined;
+	} catch {
+		subagentExtensionFactories = undefined;
+	}
+
 	// ── /forge:run-task native Orchestrator handler (FORGE-S21-T02) ──────────
 	// Full TS-driven Orchestrator-archetype handler. Chains 8 phases via
 	// runForgeSubagent (IL10). Registered BEFORE registerAllForgeCommands so
 	// the real handler takes precedence over the auto-stub from the command .md.
-	registerRunTask(pi, { forgeToolDefs });
+	registerRunTask(pi, { forgeToolDefs, extensionFactories: subagentExtensionFactories });
 
 	// ── /forge:run-sprint native Orchestrator handler (FORGE-S21-T03) ────────
 	// Sprint-level orchestrator: iterates sprint tasks via runTaskPipeline.
 	// Registered BEFORE registerAllForgeCommands so the real handler takes
 	// precedence over the auto-stub from the command .md.
-	registerRunSprint(pi, { forgeToolDefs });
+	registerRunSprint(pi, { forgeToolDefs, extensionFactories: subagentExtensionFactories });
 
 	// ── /forge:fix-bug native Orchestrator handler (FORGE-S21-T07) ────
 	// Bug-level orchestrator: chains triage → plan-fix → review-plan →
