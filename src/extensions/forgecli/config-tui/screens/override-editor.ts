@@ -4,7 +4,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import { resolveModelForPhase } from "../../model-resolver.js";
+import { resolveModelForPhase } from "../../config/model-resolver.js";
 import { CANONICAL_PHASES } from "../state/constants.js";
 import type { ConfigTuiState } from "../state/model.js";
 import { getActiveView, listResolvedPersonas, uniqueProviders } from "../state/selectors.js";

@@ -21,7 +21,7 @@ import {
 	lookupPersonaModel,
 	type MergedConfig,
 	resolveModelForPhase,
-} from "../../../src/extensions/forgecli/model-resolver.js";
+} from "../../../src/extensions/forgecli/config/model-resolver.js";
 
 // Helper to build a MergedConfig from pieces
 function merged(opts: {

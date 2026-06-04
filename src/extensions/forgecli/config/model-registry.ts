@@ -45,7 +45,7 @@ export interface SeedOptions {
 	now?: () => number;
 }
 
-const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const BUNDLED_PATH = path.join(PKG_ROOT, "registry", "models.json");
 
 function resolveRegistryPath(opts: LoadOptions): string {

@@ -2,7 +2,7 @@
 // Plan 16 Slice 4b — Plan 16.
 
 import { describe, expect, it } from "vitest";
-import type { GlobalConfig, ProjectConfig } from "../../../src/extensions/forgecli/config-layer.js";
+import type { GlobalConfig, ProjectConfig } from "../../../src/extensions/forgecli/config/config-layer.js";
 import {
 	type ConfigTuiAction,
 	type ConfigTuiState,

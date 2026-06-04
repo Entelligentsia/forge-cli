@@ -15,12 +15,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadLayeredConfig } from "../../../src/extensions/forgecli/config-layer.js";
+import { loadLayeredConfig } from "../../../src/extensions/forgecli/config/config-layer.js";
 import {
 	type RoutingConfigBuffer,
 	resolveTargetPath,
 	writeRoutingConfig,
-} from "../../../src/extensions/forgecli/config-writer.js";
+} from "../../../src/extensions/forgecli/config/config-writer.js";
 
 // Post-FORGE-S20-T11 (v0.10.0): the writer resolves the global config
 // path via paths/paths.ts at $FORGE_CLI_HOME (no longer under

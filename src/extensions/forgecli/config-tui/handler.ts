@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseConfigArgs, runConfigDispatch, runConfigShow } from "../../../bin/config.js";
-import { loadLayeredConfig } from "../config-layer.js";
+import { loadLayeredConfig } from "../config/config-layer.js";
 import type { AvailableModel, InitOptions } from "./state.js";
 
 export type ConfigTuiRoute =

@@ -17,8 +17,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import AjvModule from "ajv";
 import type { PersonaModelsMap, PipelineConfig } from "./config-layer.js";
-import schema from "./forge-cli-schema.json" with { type: "json" };
-import { getGlobalConfigPath, getProjectConfigPath } from "./paths/paths.js";
+import schema from "../forge-cli-schema.json" with { type: "json" };
+import { getGlobalConfigPath, getProjectConfigPath } from "../paths/paths.js";
 
 // Ajv v8 ESM interop: default export is a namespace holder;
 // the actual constructor lives at .Ajv or .default.Ajv.

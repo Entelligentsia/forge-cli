@@ -82,7 +82,7 @@ const config: KnipConfig = {
 		// lib/state-helpers.ts base interfaces consumed by extending classes.
 		"src/extensions/forgecli/lib/state-helpers.ts": ["types"],
 		// Public API types in model-registry.ts and skill-curator-subagent.ts.
-		"src/extensions/forgecli/model-registry.ts": ["types"],
+		"src/extensions/forgecli/config/model-registry.ts": ["types"],
 		"src/extensions/forgecli/skill-curation/skill-curator-subagent.ts": ["types"],
 		// status-command.ts helper exported for potential external CLI integrations.
 		"src/extensions/forgecli/commands/status-command.ts": ["exports"],

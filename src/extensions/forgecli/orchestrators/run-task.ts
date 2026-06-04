@@ -25,7 +25,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@e
 
 import { assertAudience, CallerContextStore } from "../audience-gate.js";
 import type { PhaseRole } from "../subagent/caller-context.js";
-import { loadLayeredConfig } from "../config-layer.js";
+import { loadLayeredConfig } from "../config/config-layer.js";
 import { buildGovernorFactory } from "../context-governor.js";
 import { buildForgeCompactionFactory } from "../context-governor-compaction.js";
 import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
@@ -41,7 +41,7 @@ import {
 	taskStateFilePath,
 	writeJsonState,
 } from "../lib/state-helpers.js";
-import { resolveModelForPhase } from "../model-resolver.js";
+import { resolveModelForPhase } from "../config/model-resolver.js";
 import { type AudienceValue, loadWorkflow } from "../parsers/workflow-loader.js";
 import { getSessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";

@@ -3,7 +3,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import type { ConfigLayer } from "../../config-writer.js";
+import type { ConfigLayer } from "../../config/config-writer.js";
 import type { ConfigTuiState, View } from "../state/model.js";
 import { getActiveView, listResolvedPersonas, personaSourceLabel } from "../state/selectors.js";
 import { accentBold, cursor, dirtyMarker, muted, padRight, warning } from "../theme.js";

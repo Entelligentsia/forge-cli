@@ -31,7 +31,7 @@ function makeCtx(notifications: Array<{ msg: string; level: string }> = []) {
 // (the validator only errors on unknown names when names are present in merged config).
 const EMPTY_PERSONA_CATALOGUE: string[] = [];
 const EMPTY_PIPELINE_CATALOGUE: string[] | null = null;
-const EMPTY_MODEL_ROUTING_CONFIG = {} as import("../../../src/extensions/forgecli/config-layer.js").MergedConfig;
+const EMPTY_MODEL_ROUTING_CONFIG = {} as import("../../../src/extensions/forgecli/config/config-layer.js").MergedConfig;
 
 describe("runOrchestratorPreflight — mode=task", () => {
 	it("returns { proceed: true } when no errors or warnings", () => {
@@ -63,7 +63,7 @@ describe("runOrchestratorPreflight — mode=task", () => {
 				},
 			},
 			_project: null,
-		} as unknown as import("../../../src/extensions/forgecli/config-layer.js").MergedConfig;
+		} as unknown as import("../../../src/extensions/forgecli/config/config-layer.js").MergedConfig;
 
 		const notifications: Array<{ msg: string; level: string }> = [];
 		const ctx = makeCtx(notifications);
@@ -100,7 +100,7 @@ describe("runOrchestratorPreflight — mode=task", () => {
 					},
 				},
 				_project: null,
-			} as unknown as import("../../../src/extensions/forgecli/config-layer.js").MergedConfig;
+			} as unknown as import("../../../src/extensions/forgecli/config/config-layer.js").MergedConfig;
 
 			const notifications: Array<{ msg: string; level: string }> = [];
 			const ctx = makeCtx(notifications);
@@ -143,7 +143,7 @@ describe("runOrchestratorPreflight — mode=ceremony", () => {
 				},
 			},
 			_project: null,
-		} as unknown as import("../../../src/extensions/forgecli/config-layer.js").MergedConfig;
+		} as unknown as import("../../../src/extensions/forgecli/config/config-layer.js").MergedConfig;
 
 		const origStrict = process.env.FORGE_STRICT_MODELS;
 		process.env.FORGE_STRICT_MODELS = "1";
@@ -200,7 +200,7 @@ describe("runOrchestratorPreflight regression — run-task.ts delegation", () =>
 			notifyPrefix: "forge:run-task",
 			personaCatalogue: [],
 			pipelineCatalogue: null,
-			modelRoutingConfig: {} as import("../../../src/extensions/forgecli/config-layer.js").MergedConfig,
+			modelRoutingConfig: {} as import("../../../src/extensions/forgecli/config/config-layer.js").MergedConfig,
 			availableModels: [],
 		});
 		// Empty config → no errors → proceed

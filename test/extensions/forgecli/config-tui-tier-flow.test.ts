@@ -8,7 +8,7 @@
 // - Pick all three → 9 entries; verify schema-valid
 
 import { describe, expect, it } from "vitest";
-import type { ConfigLayer } from "../../../src/extensions/forgecli/config-layer.js";
+import type { ConfigLayer } from "../../../src/extensions/forgecli/config/config-layer.js";
 import {
 	type ConfigTuiState,
 	getAllTierAssignments,

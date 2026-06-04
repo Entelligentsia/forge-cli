@@ -55,7 +55,7 @@ import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { readPkgVersionsSync } from "./lib/versions.js";
 // materialize.ts — registerMaterialize removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 // migrate.ts — registerMigrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
-import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
+import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./config/model-registry.js";
 import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
 import { registerPlan } from "./commands/plan.js";
 import { buildProjectOrientation } from "./project-orientation.js";

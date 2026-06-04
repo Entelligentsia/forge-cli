@@ -43,7 +43,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 // honored by validateModelConfig.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { assertAudience } from "../audience-gate.js";
-import { loadLayeredConfig } from "../config-layer.js";
+import { loadLayeredConfig } from "../config/config-layer.js";
 import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
 import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "../hook-dispatcher.js";
@@ -54,8 +54,8 @@ import {
 import { discoverForgeConfigCached } from "../lib/forge-config.js";
 import { checkMaterialization } from "../lib/manifest-checker.js";
 import { readJsonState, sprintStateFilePath, writeJsonState } from "../lib/state-helpers.js";
-import { lookupPersonaModel } from "../model-resolver.js";
-import { validateModelConfig } from "../model-validator.js";
+import { lookupPersonaModel } from "../config/model-resolver.js";
+import { validateModelConfig } from "../config/model-validator.js";
 import { loadWorkflow } from "../parsers/workflow-loader.js";
 import { getSessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";

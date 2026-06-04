@@ -48,7 +48,7 @@ import type { PhaseRole } from "../subagent/caller-context.js";
 // so extension-registered providers (registered against the live session) are
 // visible to validateModelConfig. Creating a fresh registry here would miss
 // them and produce spurious MODEL_UNAVAILABLE warnings (FORGE-BUG-001).
-import { loadLayeredConfig } from "../config-layer.js";
+import { loadLayeredConfig } from "../config/config-layer.js";
 import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
 import {
@@ -59,7 +59,7 @@ import { discoverForgeConfigCached } from "../lib/forge-config.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
 import { checkMaterialization } from "../lib/manifest-checker.js";
 import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
-import { resolveModelForPhase } from "../model-resolver.js";
+import { resolveModelForPhase } from "../config/model-resolver.js";
 import { type AudienceValue, loadWorkflow } from "../parsers/workflow-loader.js";
 import {
 	buildPhaseEvent,

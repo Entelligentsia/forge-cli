@@ -1,7 +1,7 @@
 // Config TUI type definitions — View, Action, State, Buffer shapes.
 // Split from state.ts (Phase 1: file split, no behavior change).
 
-import type { GlobalConfig, PersonaModel, PipelineConfig, ProjectConfig } from "../../config-layer.js";
+import type { GlobalConfig, PersonaModel, PipelineConfig, ProjectConfig } from "../../config/config-layer.js";
 import type { Tier } from "../tier-meta.js";
 
 // L4 phase override is either a persona-models key (string) or an inline {provider, model}.

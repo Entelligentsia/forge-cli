@@ -27,7 +27,7 @@
 //          This function only reads `.project`/`.global` layers; its resilience
 //          to absent layers is intentional — missing means "no opinion".
 
-import { loadLayeredConfig } from "../config-layer.js";
+import { loadLayeredConfig } from "../config/config-layer.js";
 
 const ENV_FLAG = "FORGE_CLI_SKILL_CURATION_ENABLED";
 
