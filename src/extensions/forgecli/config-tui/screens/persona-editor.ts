@@ -4,7 +4,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import type { ConfigLayer } from "../../config-writer.js";
+import type { ConfigLayer } from "../../config/config-writer.js";
 import { getGlobalConfigPath, getProjectConfigPath, shortenPath } from "../../paths/paths.js";
 import type { ConfigTuiState } from "../state/model.js";
 import { getActiveView, uniqueProviders } from "../state/selectors.js";

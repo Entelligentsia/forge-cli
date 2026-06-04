@@ -13,7 +13,7 @@ import {
 	type InstallMethod,
 	isUpgrade,
 	runUpgrade,
-} from "../extensions/forgecli/forge-update-command.js";
+} from "../extensions/forgecli/update/forge-update-command.js";
 
 const PKG_NAME = "@entelligentsia/forgecli";
 

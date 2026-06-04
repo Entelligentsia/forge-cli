@@ -32,7 +32,7 @@ import {
 	emitSkillUsageEvents,
 	type RetrievableSkill,
 	retrieveTopK,
-} from "../../../src/extensions/forgecli/skill-retriever.js";
+} from "../../../src/extensions/forgecli/skill-curation/skill-retriever.js";
 
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 

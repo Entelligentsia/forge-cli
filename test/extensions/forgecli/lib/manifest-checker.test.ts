@@ -5,15 +5,15 @@
 // implement.ts, and enhance.ts (these are all consumed by bundled-base-pack-markers.test.ts).
 
 import { describe, expect, it } from "vitest";
-import { checkMaterialization as checkFromEnhance } from "../../../../src/extensions/forgecli/enhance.js";
-import { checkMaterialization as checkFromImplement } from "../../../../src/extensions/forgecli/implement.js";
+import { checkMaterialization as checkFromEnhance } from "../../../../src/extensions/forgecli/commands/enhance.js";
+import { checkMaterialization as checkFromImplement } from "../../../../src/extensions/forgecli/commands/implement.js";
 import {
 	checkMaterialization,
 	type MaterializationCheck,
 } from "../../../../src/extensions/forgecli/lib/manifest-checker.js";
 // Regression imports: these kickoff shims re-export checkMaterialization from lib.
 // The tests below verify the re-export chains.
-import { checkMaterialization as checkFromPlan } from "../../../../src/extensions/forgecli/plan.js";
+import { checkMaterialization as checkFromPlan } from "../../../../src/extensions/forgecli/commands/plan.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

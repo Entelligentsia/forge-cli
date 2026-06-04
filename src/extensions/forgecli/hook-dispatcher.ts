@@ -73,8 +73,8 @@ import { matchForgePermission } from "./hooks/forge-permissions.js";
 import { buildTriageMessage, isForgeRelated } from "./hooks/triage-error.js";
 import { checkTwoLayerBoundary } from "./hooks/two-layer-guard.js";
 import { applyPiEdits, checkWriteGuard } from "./hooks/write-guard.js";
-import { validateStoreCLIPayload } from "./store-validator.js";
-import { checkTransition } from "./transition-guard.js";
+import { validateStoreCLIPayload } from "./store/store-validator.js";
+import { checkTransition } from "./store/transition-guard.js";
 import { type ContextGovernor, createNoOpGovernor } from "./context-governor.js";
 
 // ── Synthetic event taxonomy (FORGE-S21-T04) ─────────────────────────────────

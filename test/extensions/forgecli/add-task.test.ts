@@ -15,7 +15,7 @@ import {
 	type ParsedAddTaskArgs,
 	parseAddTaskArgs,
 	registerAddTask,
-} from "../../../src/extensions/forgecli/add-task.js";
+} from "../../../src/extensions/forgecli/commands/add-task.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

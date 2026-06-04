@@ -15,13 +15,13 @@ import {
 	buildReviewLoopContext,
 	composeKickoff as composeReviewPlanKickoff,
 	readMaxReviewIterations,
-} from "../../../src/extensions/forgecli/review-plan.js";
+} from "../../../src/extensions/forgecli/commands/review-plan.js";
 
 import {
 	buildReviewLoopContext as buildRCLoopContext,
 	composeKickoff as composeReviewCodeKickoff,
 	readMaxReviewIterations as readRCMaxIterations,
-} from "../../../src/extensions/forgecli/review-code.js";
+} from "../../../src/extensions/forgecli/commands/review-code.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

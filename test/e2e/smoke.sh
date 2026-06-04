@@ -215,7 +215,7 @@ fi
 
 echo "▶ smoke gate — IL10 enforcement on run-task.ts (E2E-16)"
 
-RUN_TASK_SRC="$PKG_DIR/src/extensions/forgecli/run-task.ts"
+RUN_TASK_SRC="$PKG_DIR/src/extensions/forgecli/orchestrators/run-task.ts"
 if [[ -f "$RUN_TASK_SRC" ]]; then
 	if grep -q "runForgeSubagent" "$RUN_TASK_SRC"; then
 		record PASS "E2E-16: runForgeSubagent present in run-task.ts" ""
@@ -340,8 +340,8 @@ fi
 
 echo "▶ smoke gate — run-sprint.ts orchestrator enforcement (E2E-18)"
 
-RUN_SPRINT_SRC="$PKG_DIR/src/extensions/forgecli/run-sprint.ts"
-RUN_TASK_SRC="$PKG_DIR/src/extensions/forgecli/run-task.ts"
+RUN_SPRINT_SRC="$PKG_DIR/src/extensions/forgecli/orchestrators/run-sprint.ts"
+RUN_TASK_SRC="$PKG_DIR/src/extensions/forgecli/orchestrators/run-task.ts"
 
 if [[ -f "$RUN_SPRINT_SRC" ]]; then
 	record PASS "E2E-18: run-sprint.ts present" ""
@@ -381,7 +381,7 @@ fi
 
 # ── E2E-19: fix-bug.ts orchestrator enforcement (FORGE-S21-T07) ──────────
 
-FIX_BUG_SRC="$PKG_DIR/dist/extensions/forgecli/fix-bug.js"
+FIX_BUG_SRC="$PKG_DIR/dist/extensions/forgecli/orchestrators/fix-bug.js"
 echo "▶ smoke gate — fix-bug.ts orchestrator enforcement (E2E-19)"
 
 if [[ -f "$FIX_BUG_SRC" ]]; then
@@ -432,25 +432,22 @@ else
 fi
 
 # E2E-19.6: Correct module boundaries (imports from actual sources)
-RUN_TASK_SRC="$PKG_DIR/dist/extensions/forgecli/run-task.js"
+RUN_TASK_SRC="$PKG_DIR/dist/extensions/forgecli/orchestrators/run-task.js"
 FORGE_SUBAGENT_SRC="$PKG_DIR/dist/extensions/forgecli/forge-subagent.js"
 AUDIENCE_GATE_SRC="$PKG_DIR/dist/extensions/forgecli/audience-gate.js"
-PLAN_SRC="$PKG_DIR/dist/extensions/forgecli/plan.js"
 
 # Check imports from correct modules
 MODULE_BOUNDARY_PASS=true
-if ! grep -q '"./forge-subagent.js"' "$FIX_BUG_SRC" 2>/dev/null; then
-	record FAIL "E2E-19: forge-subagent import missing" "must import from ./forge-subagent.js"
+if ! grep -q '"../forge-subagent.js"' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: forge-subagent import missing" "must import from ../forge-subagent.js"
 	MODULE_BOUNDARY_PASS=false
 fi
-if ! grep -q '"./audience-gate.js"' "$FIX_BUG_SRC" 2>/dev/null; then
-	record FAIL "E2E-19: audience-gate import missing" "must import from ./audience-gate.js"
+if ! grep -q '"../audience-gate.js"' "$FIX_BUG_SRC" 2>/dev/null; then
+	record FAIL "E2E-19: audience-gate import missing" "must import from ../audience-gate.js"
 	MODULE_BOUNDARY_PASS=false
 fi
-if ! grep -q '"./plan.js"' "$FIX_BUG_SRC" 2>/dev/null; then
-	record FAIL "E2E-19: plan import missing" "must import from ./plan.js"
-	MODULE_BOUNDARY_PASS=false
-fi
+# (plan.js import assertion removed: b5a0314 / FORGE-S25-T16 extracted those
+# helpers into lib/, so fix-bug no longer imports plan directly.)
 if ! grep -q '"./run-task.js"' "$FIX_BUG_SRC" 2>/dev/null; then
 	record FAIL "E2E-19: run-task import missing" "must import helpers from ./run-task.js"
 	MODULE_BOUNDARY_PASS=false

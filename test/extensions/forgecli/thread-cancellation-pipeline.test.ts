@@ -58,8 +58,8 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawnSync } from "node:child_process";
-import { type RunBugPipelineResult, runBugPipeline } from "../../../src/extensions/forgecli/fix-bug.js";
-import { type RunTaskPipelineResult, runTaskPipeline } from "../../../src/extensions/forgecli/run-task.js";
+import { type RunBugPipelineResult, runBugPipeline } from "../../../src/extensions/forgecli/orchestrators/fix-bug.js";
+import { type RunTaskPipelineResult, runTaskPipeline } from "../../../src/extensions/forgecli/orchestrators/run-task.js";
 import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 
 // ── Setup / teardown ──────────────────────────────────────────────────────

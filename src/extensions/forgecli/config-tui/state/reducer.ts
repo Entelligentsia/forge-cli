@@ -1,7 +1,7 @@
 // Config TUI reducer — pure (state, action) → state. No I/O.
 // Split from state.ts (Phase 1).
 
-import type { PersonaModel } from "../../config-layer.js";
+import type { PersonaModel } from "../../config/config-layer.js";
 import type { Tier } from "../tier-meta.js";
 import {
 	clearPhaseOverride,
@@ -144,7 +144,7 @@ export function reducer(state: ConfigTuiState, action: ConfigTuiAction): ConfigT
 			const top = state.view[state.view.length - 1];
 			if (top.kind !== "persona-editor") return state;
 			if (!top.provider || !top.model) return state;
-			const entry: import("../../config-layer.js").PersonaModel = { provider: top.provider, model: top.model };
+			const entry: import("../../config/config-layer.js").PersonaModel = { provider: top.provider, model: top.model };
 			const buffer = writePersonaEntry(state.buffer, action.layer, top.persona, entry);
 			return {
 				...state,

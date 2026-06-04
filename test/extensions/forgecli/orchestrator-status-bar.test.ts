@@ -3,7 +3,7 @@
 // Verifies IL7 (timer unmount-safety) and IL1 (spinner theming).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { OrchestratorStatusBar } from "../../../src/extensions/forgecli/orchestrator-status-bar.js";
+import { OrchestratorStatusBar } from "../../../src/extensions/forgecli/tui/orchestrator-status-bar.js";
 import { OrchestratorTree } from "../../../src/extensions/forgecli/orchestrator-tree.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 

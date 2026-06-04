@@ -1,7 +1,7 @@
 // Config TUI selectors — read-only derived data from state.
 // Split from state.ts (Phase 1).
 
-import type { ConfigLayer } from "../../config-writer.js";
+import type { ConfigLayer } from "../../config/config-writer.js";
 import { PERSONA_META, TIER_PERSONAS, TIERS, type Tier } from "../tier-meta.js";
 import type {
 	ConfigTuiState,
@@ -77,7 +77,7 @@ export function getPhaseOverride(
 
 // ── Phase table selector ────────────────────────────────────────────────────
 
-import { type ResolveSource, resolveModelForPhase } from "../../model-resolver.js";
+import { type ResolveSource, resolveModelForPhase } from "../../config/model-resolver.js";
 import { PHASE_PERSONA_TABLE, TIER_LABELS } from "../tier-meta.js";
 
 /** A row in the phase table (Screen 3 — "Show what runs at each step"). */

@@ -9,7 +9,7 @@
 // need `LayeredConfig` must call `loadLayeredConfig()` directly; this module
 // optimises only the walk-up discovery phase.
 
-import { discoverForgeConfig, type ForgeConfig } from "../forge-root.js";
+import { discoverForgeConfig, type ForgeConfig } from "./forge-root.js";
 
 /** Module-level cache keyed by the `cwd` argument (or `""` for the default). */
 const cache = new Map<string, ForgeConfig | null>();

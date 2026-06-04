@@ -29,7 +29,7 @@ import {
 	fetchChangelog,
 	isUpgrade,
 	registerForgeUpdateCommand,
-} from "../../../src/extensions/forgecli/forge-update-command.js";
+} from "../../../src/extensions/forgecli/update/forge-update-command.js";
 
 function tmpCacheDir(): string {
 	return path.join(os.tmpdir(), `forgecli-update-cmd-test-${crypto.randomBytes(6).toString("hex")}`);

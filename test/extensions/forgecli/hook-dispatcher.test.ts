@@ -102,7 +102,7 @@ const { validatorMockState, guardMockState } = vi.hoisted(() => {
 	};
 });
 
-vi.mock("../../../src/extensions/forgecli/store-validator.js", async () => {
+vi.mock("../../../src/extensions/forgecli/store/store-validator.js", async () => {
 	return {
 		validateStoreCLIPayload: vi.fn((_entity: string, _payload: unknown, _forgeRoot: string) => ({
 			ok: validatorMockState.ok,
@@ -111,7 +111,7 @@ vi.mock("../../../src/extensions/forgecli/store-validator.js", async () => {
 	};
 });
 
-vi.mock("../../../src/extensions/forgecli/transition-guard.js", async () => {
+vi.mock("../../../src/extensions/forgecli/store/transition-guard.js", async () => {
 	return {
 		checkTransition: vi.fn((_input: { entity: string; entityId: string; toStatus: string }, _forgeRoot: string) => ({
 			allowed: guardMockState.allowed,

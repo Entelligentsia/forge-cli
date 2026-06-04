@@ -76,13 +76,13 @@ vi.mock("node:child_process", () => ({
 
 // Mock store-resolver so resolveToCanonicalId passes through canonical IDs unchanged
 // (tests use canonical sprint IDs like "FORGE-S22" which don't need resolution).
-vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+vi.mock("../../../src/extensions/forgecli/store/store-resolver.js", () => ({
 	resolveToCanonicalId: vi.fn(async (arg: string) => arg),
 	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
 }));
 
 // Mock runTaskPipeline to return controlled results for sprint coordination tests
-vi.mock("../../../src/extensions/forgecli/run-task.js", async (importOriginal) => {
+vi.mock("../../../src/extensions/forgecli/orchestrators/run-task.js", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
 	return {
 		...actual,
@@ -124,7 +124,7 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", async (importOrigi
 
 import { spawnSync } from "node:child_process";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
-import { registerRunSprint } from "../../../src/extensions/forgecli/run-sprint.js";
+import { registerRunSprint } from "../../../src/extensions/forgecli/orchestrators/run-sprint.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
 
@@ -606,7 +606,7 @@ describe("Test 5: Audience refusal — orchestrator-only workflow from subagent 
 		// The CallerContextStore defaults to 'orchestrator', so orchestrator-only
 		// workflows pass from the default context.
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/run-sprint.ts");
+		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-sprint.ts");
 		const source = fs.readFileSync(runSprintPath, "utf8");
 		expect(source).toMatch(/assertAudience/);
 	});
@@ -705,7 +705,7 @@ describe("Test 9: Materialization marker missing → refusal", () => {
 describe("Test 11: IL10 enforcement - runTaskPipeline used, no sendKickoff", () => {
 	it("run-sprint.ts source has zero sendKickoff and uses runTaskPipeline", () => {
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/run-sprint.ts");
+		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-sprint.ts");
 		expect(fs.existsSync(runSprintPath), `run-sprint.ts must exist at ${runSprintPath}`).toBe(true);
 
 		const source = fs.readFileSync(runSprintPath, "utf8");
@@ -720,7 +720,7 @@ describe("Test 11: IL10 enforcement - runTaskPipeline used, no sendKickoff", () 
 
 	it("run-sprint.ts source has registry.startSession and registry.completeSession per task", () => {
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/run-sprint.ts");
+		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-sprint.ts");
 		const source = fs.readFileSync(runSprintPath, "utf8");
 
 		expect(source).toMatch(/registry\.startSession\(taskId\)/);
@@ -930,7 +930,7 @@ describe("Test 17: Sprint wall-time bracketing", () => {
 	it("captures startTimestamp before first task and endTimestamp after last task", async () => {
 		// Structural test: verify startTimestamp/endTimestamp capture in source
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/run-sprint.ts");
+		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-sprint.ts");
 		const source = fs.readFileSync(runSprintPath, "utf8");
 
 		expect(source).toMatch(/sprintStartMs/);
@@ -1000,7 +1000,7 @@ describe("Test 10: Slice-2 emit smoke — sprint-complete event structure (Plan 
 	it("sprint-complete event has required fields", async () => {
 		// Structural test: verify the event shape in run-sprint.ts source
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/run-sprint.ts");
+		const runSprintPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-sprint.ts");
 		const source = fs.readFileSync(runSprintPath, "utf8");
 
 		// Verify sprint-complete event emission includes key fields (Plan 12 §4.2)

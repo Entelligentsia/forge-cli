@@ -5,7 +5,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { resolveModelForPhase } from "../../model-resolver.js";
+import { resolveModelForPhase } from "../../config/model-resolver.js";
 import type { ConfigTuiState } from "../state/model.js";
 import { getActiveView, getPhaseTable, type PhaseTableRow } from "../state/selectors.js";
 import { accentBold, cursor, muted, padRight } from "../theme.js";

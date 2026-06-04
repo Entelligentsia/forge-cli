@@ -26,7 +26,7 @@ import {
 	countTokens,
 } from "@entelligentsia/forge-compress";
 import { buildForgeArtifact } from "./forge-artifact-tool.js";
-import { execFileAsync } from "./lib/exec-helpers.js";
+import { runCjs, type CompressionStats } from "./lib/run-cjs.js";
 import {
 	assertBugStatusOwnership,
 	assertOrchestratorOnlyEmit,
@@ -35,58 +35,12 @@ import {
 } from "./subagent/phase-guard.js";
 // FORGE-S25-T22 (N-C-D): adopt shared resolveToolDir from store-resolver instead of duplicating.
 // The private copy was identical to store-resolver.resolveToolDir; deleted per R2 Pass-3 scope-corrected.
-import { resolveToolDir } from "./store-resolver.js";
-
-// ── Shared helper ────────────────────────────────────────────────────────────
-
-/**
- * runCjs — shared execFileAsync wrapper for all four .cjs tool invocations.
- *
- * Implements DRY: AbortSignal propagation, timeout, cwd binding, and
- * stdout/stderr capture are applied consistently across all tools.
- *
- * Timeout guidance: collate 30s (large stores); store/validate 10s; config 5s.
- *
- * @param toolPath    Absolute path to the .cjs tool.
- * @param argv        Arguments to pass after "node <toolPath>".
- * @param signal      AbortSignal from tool execute — propagated to subprocess.
- * @param timeoutMs   Subprocess timeout in milliseconds.
- * @param projectRoot Directory containing .forge/ — cwd for the subprocess so
- *                    findProjectRoot() in the .cjs tool resolves correctly.
- */
-export async function runCjs(
-	toolPath: string,
-	argv: string[],
-	signal: AbortSignal | undefined,
-	timeoutMs: number,
-	projectRoot: string,
-): Promise<{ stdout: string; stderr: string }> {
-	const opts: Parameters<typeof execFileAsync>[2] = {
-		cwd: projectRoot,
-		encoding: "utf8",
-		timeout: timeoutMs,
-	};
-	// AbortSignal is optional — only pass when defined (execFile rejects if
-	// signal is undefined and the type expects AbortSignal | undefined).
-	if (signal !== undefined) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(opts as any).signal = signal;
-	}
-	const result = await execFileAsync("node", [toolPath, ...argv], opts);
-	return {
-		stdout: typeof result.stdout === "string" ? result.stdout : result.stdout.toString("utf8"),
-		stderr: typeof result.stderr === "string" ? result.stderr : result.stderr.toString("utf8"),
-	};
-}
+import { resolveToolDir } from "./store/store-resolver.js";
 
 // ── Result helpers ───────────────────────────────────────────────────────────
 
-export interface CompressionStats {
-	tool: string;
-	before: number;
-	after: number;
-	saved: number;
-}
+// runCjs + CompressionStats live in lib/run-cjs.ts (extracted to break the
+// forge-tools ↔ forge-artifact-tool import cycle).
 
 function okResult(text: string, compression?: CompressionStats) {
 	return {
@@ -115,7 +69,7 @@ function compressWithTelemetry(
 	const saved = Math.round((1 - after / before) * 100);
 	// No stderr print here: raw writes corrupt active TUI overlays (/forge:dashboard).
 	// Savings surface through the returned stats → tool-result details.compression →
-	// viewport-events → session-registry/orchestrator-tree → dashboard "⇌Nt" suffix.
+	// viewport/events → session-registry/orchestrator-tree → dashboard "⇌Nt" suffix.
 	return { text: compressed, stats: { tool: toolName, before, after, saved } };
 }
 

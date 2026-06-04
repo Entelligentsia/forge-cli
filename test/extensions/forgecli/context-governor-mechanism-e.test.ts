@@ -547,3 +547,79 @@ describe("extensionFactories integration: factory fires on session_before_compac
 		expect((capturedSummary ?? "").length).toBeGreaterThan(0);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Warm-tier filename resolution — FORGE-BUG-043 PR 1 (catalog contract)
+// ---------------------------------------------------------------------------
+
+describe("Mechanism E: warm-tier summary filename resolves from the plugin catalog", () => {
+	/**
+	 * Capturing summaryReader: records every filePath it is asked to read.
+	 * Returning null keeps the handler on the no-warm-tier path (irrelevant here —
+	 * we only assert the RESOLVED PATH, which previously used invented
+	 * REVIEW_PLAN-SUMMARY.json / CODE_REVIEW-SUMMARY.json spellings that never
+	 * exist on disk; catalog names are REVIEW-PLAN-SUMMARY.json /
+	 * REVIEW-CODE-SUMMARY.json per forge/tools/lib/artifact-kinds.cjs).
+	 */
+	function capturingReader(): { reader: (p: string) => null; paths: string[] } {
+		const paths: string[] = [];
+		return {
+			reader: (p: string) => {
+				paths.push(p);
+				return null;
+			},
+			paths,
+		};
+	}
+
+	function fireHandler(opts: Parameters<typeof buildForgeCompactionFactory>[0]): void {
+		const stub = makeStubPiForCompaction();
+		const factory = buildForgeCompactionFactory(opts);
+		factory(stub.pi as never);
+		const handler = stub.handlers.find((h) => h.event === "session_before_compact")?.handler;
+		expect(handler).toBeDefined();
+		handler?.({ preparation: makeMinimalPreparation("entry-1", 1000, [makeMsg("text")]) });
+	}
+
+	it("Test 16: supervisor/review-plan warm-tier path uses REVIEW-PLAN-SUMMARY.json", () => {
+		const { reader, paths } = capturingReader();
+		fireHandler({
+			cwd: "/proj",
+			phaseKey: "supervisor/review-plan",
+			entityId: "FORGE-S30-T05",
+			sprintId: "FORGE-S30",
+			summaryReader: reader,
+		});
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toContain("REVIEW-PLAN-SUMMARY.json");
+		expect(paths[0]).not.toContain("REVIEW_PLAN-SUMMARY.json");
+	});
+
+	it("Test 17: supervisor/review-code warm-tier path uses REVIEW-CODE-SUMMARY.json", () => {
+		const { reader, paths } = capturingReader();
+		fireHandler({
+			cwd: "/proj",
+			phaseKey: "supervisor/review-code",
+			entityId: "FORGE-S30-T06",
+			sprintId: "FORGE-S30",
+			summaryReader: reader,
+		});
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toContain("REVIEW-CODE-SUMMARY.json");
+		expect(paths[0]).not.toContain("CODE_REVIEW-SUMMARY.json");
+	});
+
+	it("Test 18: unknown phaseKey skips warm-tier read entirely (no placeholder path)", () => {
+		// Previously resolved to a literal "{PHASE}-SUMMARY.json" path and
+		// attempted to read it. Unknown keys must skip the warm-tier read.
+		const { reader, paths } = capturingReader();
+		fireHandler({
+			cwd: "/proj",
+			phaseKey: "custom-persona/custom-phase",
+			entityId: "FORGE-S99-T01",
+			sprintId: "FORGE-S99",
+			summaryReader: reader,
+		});
+		expect(paths).toHaveLength(0);
+	});
+});

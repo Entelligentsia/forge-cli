@@ -13,7 +13,7 @@ import {
 	extractPersonaNames,
 	parseRetroArgs,
 	registerRetrospective,
-} from "../../../src/extensions/forgecli/retrospective.js";
+} from "../../../src/extensions/forgecli/commands/retrospective.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────
 

@@ -17,22 +17,22 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { type LoadSkillsResult, loadSkillsFromDir, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
-import { registerAddPipeline } from "./add-pipeline.js";
-import { registerAddTask } from "./add-task.js";
-import { registerApprove } from "./approve.js";
+import { registerAddPipeline } from "./commands/add-pipeline.js";
+import { registerAddTask } from "./commands/add-task.js";
+import { registerApprove } from "./commands/approve.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
-import { readProjectMeta } from "./banner.js";
+import { readProjectMeta } from "./tui/banner.js";
 // calibrate.ts — registerCalibrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
-import { registerCollate } from "./collate.js";
-import { registerCommit } from "./commit.js";
-import { registerConfigCommand } from "./config-command.js";
+import { registerCollate } from "./commands/collate.js";
+import { registerCommit } from "./commands/commit.js";
+import { registerConfigCommand } from "./commands/config-command.js";
 // enhance.ts — registerEnhance removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
-import { registerFixBug } from "./fix-bug.js";
+import { registerFixBug } from "./orchestrators/fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
-import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
-import { registerForgeInit } from "./forge-init.js";
+import { createForgeHeader, type ForgeHeader } from "./tui/forge-header.js";
+import { registerForgeInit } from "./forge-init/forge-init.js";
 import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
-import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
+import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
 import {
@@ -49,40 +49,40 @@ import {
 } from "./hooks/check-update.js";
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
 import { registerPostSprintHook } from "./hooks/post-sprint-hook.js";
-import { registerImplement } from "./implement.js";
-import { getInputRouter } from "./input-router.js";
+import { registerImplement } from "./commands/implement.js";
+import { getInputRouter } from "./tui/input-router.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { readPkgVersionsSync } from "./lib/versions.js";
 // materialize.ts — registerMaterialize removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 // migrate.ts — registerMigrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
-import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./model-registry.js";
+import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./config/model-registry.js";
 import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
-import { registerPlan } from "./plan.js";
+import { registerPlan } from "./commands/plan.js";
 import { buildProjectOrientation } from "./project-orientation.js";
-import { registerQuizAgent } from "./quiz-agent.js";
-import { registerReadCommand } from "./read-command.js";
-import { registerRegenerate } from "./regenerate.js";
-import { registerRemoveCommand } from "./remove-command.js";
-import { registerReportBug } from "./report-bug.js";
-import { registerRetrospective } from "./retrospective.js";
-import { registerReviewCode } from "./review-code.js";
-import { registerReviewPlan } from "./review-plan.js";
-import { registerRunSprint } from "./run-sprint.js";
-import { registerRunTask } from "./run-task.js";
-import { registerSprintIntake } from "./sprint-intake.js";
-import { registerSprintPlan } from "./sprint-plan.js";
-import { registerStatusCommand } from "./status-command.js";
-import { registerStoreQuery } from "./store-query.js";
-import { registerStoreRepair } from "./store-repair.js";
-import { registerTestOrchestrate } from "./test-orchestrate.js";
-import { registerThreadSwitcher } from "./thread-switcher.js";
+import { registerQuizAgent } from "./commands/quiz-agent.js";
+import { registerReadCommand } from "./commands/read-command.js";
+import { registerRegenerate } from "./commands/regenerate.js";
+import { registerRemoveCommand } from "./commands/remove-command.js";
+import { registerReportBug } from "./commands/report-bug.js";
+import { registerRetrospective } from "./commands/retrospective.js";
+import { registerReviewCode } from "./commands/review-code.js";
+import { registerReviewPlan } from "./commands/review-plan.js";
+import { registerRunSprint } from "./orchestrators/run-sprint.js";
+import { registerRunTask } from "./orchestrators/run-task.js";
+import { registerSprintIntake } from "./commands/sprint-intake.js";
+import { registerSprintPlan } from "./commands/sprint-plan.js";
+import { registerStatusCommand } from "./commands/status-command.js";
+import { registerStoreQuery } from "./commands/store-query.js";
+import { registerStoreRepair } from "./commands/store-repair.js";
+import { registerTestOrchestrate } from "./commands/test-orchestrate.js";
+import { registerThreadSwitcher } from "./tui/thread-switcher.js";
 import { registerDashboardCommand } from "./dashboard/register.js";
-import { triggerUpdateCheck } from "./update-check.js";
+import { triggerUpdateCheck } from "./update/update-check.js";
 // update-tools.ts — registerUpdateTools removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerUsageHook } from "./usage-hook.js";
-import { registerValidate } from "./validate.js";
+import { registerValidate } from "./commands/validate.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
-import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./whats-new-widget.js";
+import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./update/whats-new-widget.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels

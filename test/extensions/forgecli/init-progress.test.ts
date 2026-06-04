@@ -14,7 +14,7 @@ import {
 	deleteInitProgress,
 	readInitProgress,
 	writeInitProgress,
-} from "../../../src/extensions/forgecli/init-progress.js";
+} from "../../../src/extensions/forgecli/forge-init/init-progress.js";
 
 describe("readInitProgress", () => {
 	beforeEach(() => {

@@ -50,7 +50,7 @@ describe("E2E-16: Orchestrator handler IL10 shape (FORGE-S23-T13)", () => {
 	// ── calibrate.ts — Orchestrator archetype ────────────────────────────────
 
 	describe("calibrate.ts — Orchestrator archetype", () => {
-		const src = readSrc("calibrate.ts");
+		const src = readSrc("orchestrators/calibrate.ts");
 		const srcNoComments = stripComments(src);
 
 		it("imports runForgeSubagent", () => {
@@ -73,7 +73,7 @@ describe("E2E-16: Orchestrator handler IL10 shape (FORGE-S23-T13)", () => {
 	// ── migrate.ts — Hybrid archetype (structural branch uses runForgeSubagent) ─
 
 	describe("migrate.ts — Hybrid archetype (structural branch)", () => {
-		const src = readSrc("migrate.ts");
+		const src = readSrc("orchestrators/migrate.ts");
 		const srcNoComments = stripComments(src);
 
 		it("imports runForgeSubagent", () => {
@@ -92,7 +92,7 @@ describe("E2E-16: Orchestrator handler IL10 shape (FORGE-S23-T13)", () => {
 	// ── materialize.ts — Atomic archetype (no runForgeSubagent — correct) ────
 
 	describe("materialize.ts — Atomic archetype", () => {
-		const src = readSrc("materialize.ts");
+		const src = readSrc("orchestrators/materialize.ts");
 		const srcNoComments = stripComments(src);
 
 		it("does NOT import runForgeSubagent (atomic handler: uses spawn argv-arrays per IL6)", () => {

@@ -1,0 +1,86 @@
+// Native /forge:config handler — replaces the LLM-backed delegateMarkdownCommand
+// stub that previously lived in forge-commands.ts.
+//
+// Plan 16 Slice 4a + 4b. The handler delegates to runConfigTui which is the
+// same entry point used by the `forge config` bin subcommand — single source
+// of truth for the routing config TUI / show flow. The wrapper supplies a
+// `mountConfigTui` callback that uses ctx.ui.custom() to overlay the TUI.
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createConfigTuiComponent } from "../config-tui/component.js";
+import { runConfigTui } from "../config-tui/handler.js";
+import type { InitOptions } from "../config-tui/state.js";
+import { getInputRouter } from "../tui/input-router.js";
+
+export interface RegisterConfigCommandOptions {
+	/** When null, /forge:config is registered but only the routing-config bits
+	 *  are reachable — plugin-config display is hidden (no .forge to read).
+	 */
+	forgeRoot: string | null;
+}
+
+export function registerConfigCommand(pi: ExtensionAPI, _opts: RegisterConfigCommandOptions): void {
+	pi.registerCommand("forge:config", {
+		description:
+			"Inspect or change forge-cli routing config (persona-models, pipeline overrides) and view Forge project config",
+		async handler(args, ctx) {
+			const argv = args.trim().length === 0 ? [] : args.trim().split(/\s+/);
+
+			const mountConfigTui = async (init: InitOptions): Promise<number> => {
+				// Mark overlay active so forge-input-router suppresses arrow-activator
+				// listeners (thread-switcher's ↓, whats-new's ↓) while the TUI owns
+				// input focus.
+				const router = getInputRouter();
+				router.pushOverlay();
+				try {
+					const exitCode = await ctx.ui.custom<number>(
+						(tui, theme, _kb, done) => {
+							// Component drives done() on q or successful confirm-quit.
+							// Pi TUI key rule 3: call tui.requestRender() after state changes.
+							const component = createConfigTuiComponent({
+								...init,
+								onExit: (code) => done(code),
+								onSaved: (target) => ctx.ui.notify(`forge config: saved → ${target}`, "info"),
+								onError: (msg) => ctx.ui.notify(`forge config: ${msg}`, "error"),
+								requestRender: () => tui.requestRender(),
+								theme,
+							});
+							return component;
+						},
+						{
+							overlay: true,
+							overlayOptions: {
+								width: "100%",
+								anchor: "center",
+								margin: 0,
+							},
+						},
+					);
+					return exitCode;
+				} finally {
+					router.popOverlay();
+				}
+			};
+
+			const exitCode = await runConfigTui(argv, process.cwd(), {
+				write: () => {},
+				writeErr: (s) => ctx.ui.notify(s, "error"),
+				ctx: {
+					notify: (msg, level) => {
+						const lvl = (level === "warning" || level === "error" ? level : "info") as
+							| "info"
+							| "warning"
+							| "error";
+						ctx.ui.notify(msg, lvl);
+					},
+					mountConfigTui,
+					modelRegistry: ctx.modelRegistry,
+				},
+			});
+
+			if (exitCode !== 0) {
+				ctx.ui.notify(`forge:config exited with code ${exitCode}`, "warning");
+			}
+		},
+	});
+}

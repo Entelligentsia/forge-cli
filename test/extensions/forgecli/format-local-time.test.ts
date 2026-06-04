@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatLocalTime } from "../../../src/extensions/forgecli/run-task.js";
+import { formatLocalTime } from "../../../src/extensions/forgecli/orchestrators/run-task.js";
 
 describe("formatLocalTime", () => {
 	it("returns a non-empty string for a valid ISO timestamp", () => {

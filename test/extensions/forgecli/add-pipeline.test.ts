@@ -10,7 +10,7 @@ import {
 	type ParsedAddPipelineArgs,
 	parseAddPipelineArgs,
 	registerAddPipeline,
-} from "../../../src/extensions/forgecli/add-pipeline.js";
+} from "../../../src/extensions/forgecli/commands/add-pipeline.js";
 
 function makePi() {
 	const commands = new Map<string, { handler: (a: string, ctx: unknown) => Promise<void> }>();

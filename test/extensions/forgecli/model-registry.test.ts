@@ -11,7 +11,7 @@ import {
 	detectMissingCredentials,
 	loadRegistry,
 	seedEnabledModels,
-} from "../../../src/extensions/forgecli/model-registry.js";
+} from "../../../src/extensions/forgecli/config/model-registry.js";
 
 function freshTmp(prefix: string): string {
 	return path.join(os.tmpdir(), `forgecli-${prefix}-${crypto.randomBytes(6).toString("hex")}`);

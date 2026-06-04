@@ -5,7 +5,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import type { ConfigLayer } from "../../config-writer.js";
+import type { ConfigLayer } from "../../config/config-writer.js";
 import type { ConfigTuiState, View } from "../state/model.js";
 import { getActiveView, getAllScopedTierAssignments, type ScopedTierAssignment } from "../state/selectors.js";
 import { accent, accentBold, cursor, dirtyMarker, muted, padRight, error as themedError, warning } from "../theme.js";

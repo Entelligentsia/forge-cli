@@ -18,7 +18,7 @@ const execFileMock = vi.hoisted(() => ({
 }));
 
 // Mock store-resolver to control resolveToolDir
-vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+vi.mock("../../../src/extensions/forgecli/store/store-resolver.js", () => ({
 	resolveToolDir: vi.fn((forgeRoot: string) => path.join(forgeRoot, "tools")),
 	ENTITY_TYPES: new Set(["task", "sprint", "bug", "feature"]),
 	ID_PATTERNS: {},
@@ -51,7 +51,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
-import { registerStatusCommand, runStatus } from "../../../src/extensions/forgecli/status-command.js";
+import { registerStatusCommand, runStatus } from "../../../src/extensions/forgecli/commands/status-command.js";
 
 const FAKE_FORGE_ROOT = "/fake/forge";
 

@@ -25,7 +25,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 // FORGE-S26-T11: registerCalibrate imported to power `forge:health --fix`
-import { registerCalibrate } from "./calibrate.js";
+import { registerCalibrate } from "./orchestrators/calibrate.js";
 import { runHealthCheck } from "./health-check.js";
 import { runRefreshKbLinks } from "./refresh-kb-links.js";
 

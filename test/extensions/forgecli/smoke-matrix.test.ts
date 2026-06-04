@@ -123,7 +123,7 @@ type HandlerEntry =
 const HANDLERS: HandlerEntry[] = [
 	// ── T06 ──────────────────────────────────────────────────────────────────
 	// FORGE-S26-T10: retrospective.ts now registers the renamed command forge:retro.
-	{ command: "forge:retro", file: "retrospective.ts", archetype: "KickoffShim", task: "T06" },
+	{ command: "forge:retro", file: "commands/retrospective.ts", archetype: "KickoffShim", task: "T06" },
 
 	// ── T07 ──────────────────────────────────────────────────────────────────
 	// /forge:health is registered in forge-commands.ts (delegateMarkdownCommand → pi.sendUserMessage).
@@ -137,22 +137,22 @@ const HANDLERS: HandlerEntry[] = [
 	// under the provider-lock gate via registered:false (registration gate skips
 	// them). materialize.ts/update-tools.ts are dormant (no remaining caller) and
 	// are intentionally dropped from this matrix.
-	{ command: "forge:calibrate", file: "calibrate.ts", archetype: "Orchestrator", task: "T08", registered: false },
-	{ command: "forge:migrate", file: "migrate.ts", archetype: "Hybrid", task: "T09", registered: false },
+	{ command: "forge:calibrate", file: "orchestrators/calibrate.ts", archetype: "Orchestrator", task: "T08", registered: false },
+	{ command: "forge:migrate", file: "orchestrators/migrate.ts", archetype: "Hybrid", task: "T09", registered: false },
 
 	// ── T10 ──────────────────────────────────────────────────────────────────
 	// forge:update-tools removed in v1.0. store-query.ts now registers forge:search.
-	{ command: "forge:search", file: "store-query.ts", archetype: "Atomic", task: "T10" },
-	{ command: "forge:status", file: "status-command.ts", archetype: "Atomic", task: "T10" },
+	{ command: "forge:search", file: "commands/store-query.ts", archetype: "Atomic", task: "T10" },
+	{ command: "forge:status", file: "commands/status-command.ts", archetype: "Atomic", task: "T10" },
 
 	// ── T11 ──────────────────────────────────────────────────────────────────
 	// quiz-agent.ts → forge:check-agent, store-repair.ts → forge:repair (FORGE-S26-T10).
-	{ command: "forge:add-task", file: "add-task.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:add-pipeline", file: "add-pipeline.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:check-agent", file: "quiz-agent.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:remove", file: "remove-command.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:report-bug", file: "report-bug.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:repair", file: "store-repair.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:add-task", file: "commands/add-task.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:add-pipeline", file: "commands/add-pipeline.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:check-agent", file: "commands/quiz-agent.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:remove", file: "commands/remove-command.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:report-bug", file: "commands/report-bug.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:repair", file: "commands/store-repair.ts", archetype: "KickoffShim", task: "T11" },
 ];
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

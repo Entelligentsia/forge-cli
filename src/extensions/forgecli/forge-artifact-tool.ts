@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { compressMarkdown, countTokens } from "@entelligentsia/forge-compress";
-import { runCjs as defaultRunCjs, type CompressionStats } from "./forge-tools.js";
+import { runCjs as defaultRunCjs, type CompressionStats } from "./lib/run-cjs.js";
 
 type RunCjsFn = (
 	toolPath: string,

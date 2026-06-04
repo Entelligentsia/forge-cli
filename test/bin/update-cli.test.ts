@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runUpdate } from "../../src/bin/update-cli.js";
-import type { UpgradeResult } from "../../src/extensions/forgecli/forge-update-command.js";
+import type { UpgradeResult } from "../../src/extensions/forgecli/update/forge-update-command.js";
 
 const GLOBAL_ROOT = "/usr/local/lib/node_modules";
 const PKG_ROOT = `${GLOBAL_ROOT}/@entelligentsia/forgecli`;

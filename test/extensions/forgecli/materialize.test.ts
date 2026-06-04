@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock forge-init.js before importing handler (hoisting constraint)
-vi.mock("../../../src/extensions/forgecli/forge-init.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/forge-init.js", () => ({
 	getBundledPayloadRoot: vi.fn(() => "/mock-bundle-root"),
 	getBundledToolsRoot: vi.fn(() => "/mock-tools-root"),
 	isPiRuntime: vi.fn(() => true),
@@ -46,7 +46,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
-import { parseMaterializeArgs, registerMaterialize } from "../../../src/extensions/forgecli/materialize.js";
+import { parseMaterializeArgs, registerMaterialize } from "../../../src/extensions/forgecli/orchestrators/materialize.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 

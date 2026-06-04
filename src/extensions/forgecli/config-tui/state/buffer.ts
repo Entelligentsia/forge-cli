@@ -1,8 +1,8 @@
 // Config TUI buffer mutation helpers — pure functions, no I/O.
 // Split from state.ts (Phase 1).
 
-import type { PersonaModel, PipelineConfig } from "../../config-layer.js";
-import type { ConfigLayer } from "../../config-writer.js";
+import type { PersonaModel, PipelineConfig } from "../../config/config-layer.js";
+import type { ConfigLayer } from "../../config/config-writer.js";
 import type { Tier } from "../tier-meta.js";
 import { TIER_PERSONAS } from "../tier-meta.js";
 import type { ConfigBuffer, PhaseOverride } from "./model.js";

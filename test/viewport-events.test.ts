@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SessionRegistry } from "../src/extensions/forgecli/session-registry.js";
-import { attachViewportObserver } from "../src/extensions/forgecli/viewport-events.js";
+import { attachViewportObserver } from "../src/extensions/forgecli/viewport/events.js";
 
 function makeAssistantMessage(opts: {
 	input: number;

@@ -357,7 +357,7 @@ describe("layout detection", () => {
 		// We re-mock store-resolver.ts to get its REAL implementation (not the hoisted mock in
 		// store-resolver.test.ts — this is a separate test module so no mock is active here).
 		const { resolveToolDir: storeResolverResolveToolDir } = await import(
-			"../../../src/extensions/forgecli/store-resolver.js"
+			"../../../src/extensions/forgecli/store/store-resolver.js"
 		);
 
 		const tmp = fs.mkdtempSync(pathMod.join(os.tmpdir(), "forge-ncd-"));

@@ -15,7 +15,7 @@ const { mockResolveToCanonicalId } = vi.hoisted(() => ({
 	mockResolveToCanonicalId: vi.fn(),
 }));
 
-vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+vi.mock("../../../src/extensions/forgecli/store/store-resolver.js", () => ({
 	resolveToCanonicalId: mockResolveToCanonicalId,
 	resolveEntityRef: vi.fn(),
 	resolveToolDir: vi.fn(() => "/fake/tools"),
@@ -27,7 +27,7 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 
 // ── Import after mocks ──────────────────────────────────────────────────────
 
-import { resolveToCanonicalId } from "../../../src/extensions/forgecli/store-resolver.js";
+import { resolveToCanonicalId } from "../../../src/extensions/forgecli/store/store-resolver.js";
 
 function makeCtx() {
 	const notifications: { msg: string; level: string }[] = [];

@@ -6,12 +6,12 @@
 
 import { describe, expect, it } from "vitest";
 // Also verify the implement.ts re-export chain (used by bundled-base-pack-markers.test.ts).
-import { extractPersonaNames as extractFromImplement } from "../../../../src/extensions/forgecli/implement.js";
+import { extractPersonaNames as extractFromImplement } from "../../../../src/extensions/forgecli/commands/implement.js";
 import { extractPersonaNames } from "../../../../src/extensions/forgecli/lib/frontmatter-parser.js";
 // Regression import: plan.ts re-exports from lib. Importing from plan.js
 // verifies the re-export chain is intact. This test fails if plan.ts's
 // re-export is broken.
-import { extractPersonaNames as extractFromPlan } from "../../../../src/extensions/forgecli/plan.js";
+import { extractPersonaNames as extractFromPlan } from "../../../../src/extensions/forgecli/commands/plan.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

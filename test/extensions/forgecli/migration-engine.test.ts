@@ -35,7 +35,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __test__, type MigrationResult, runMigrations } from "../../../src/extensions/forgecli/migration-engine.js";
+import { __test__, type MigrationResult, runMigrations } from "../../../src/extensions/forgecli/update/migration-engine.js";
 
 const { semverCompare, filterMigrationEntries, resolveCategory } = __test__;
 

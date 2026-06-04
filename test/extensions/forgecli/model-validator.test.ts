@@ -15,8 +15,8 @@
 // 12. Multiple issues at once: collects all, doesn't short-circuit
 
 import { describe, expect, it } from "vitest";
-import type { MergedConfig } from "../../../src/extensions/forgecli/config-layer.js";
-import { type ValidationReport, validateModelConfig } from "../../../src/extensions/forgecli/model-validator.js";
+import type { MergedConfig } from "../../../src/extensions/forgecli/config/config-layer.js";
+import { type ValidationReport, validateModelConfig } from "../../../src/extensions/forgecli/config/model-validator.js";
 
 type AvailableModel = { provider: string; id: string };
 

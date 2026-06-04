@@ -5,7 +5,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import type { GlobalConfig } from "../../../src/extensions/forgecli/config-layer.js";
+import type { GlobalConfig } from "../../../src/extensions/forgecli/config/config-layer.js";
 import { renderTierMenu } from "../../../src/extensions/forgecli/config-tui/screens.js";
 import {
 	type AvailableModel,

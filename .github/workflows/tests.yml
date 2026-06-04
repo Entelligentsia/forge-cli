@@ -58,6 +58,25 @@ jobs:
       - name: No skipped or focused tests
         run: npm run lint:no-skip
 
+      - name: Import-layering gate
+        # lib/ depends only downward; see tools/check-import-layering.cjs header.
+        run: npm run lint:layering
+
+      - name: Sync forge plugin source
+        # The vitest suite includes payload-dependent tests (catalog-loader,
+        # bundled-base-pack-markers, parity-gate, …) that read
+        # dist/forge-payload. build-payload.cjs expects the Forge plugin
+        # checkout as a sibling at ../forge (same pattern as smoke.yml).
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').forge.bundledVersion")
+          echo "Cloning Entelligentsia/forge@v${VERSION} into ../forge"
+          git clone --depth 1 --branch "v${VERSION}" https://github.com/Entelligentsia/forge.git ../forge
+
+      - name: Build payload bundle
+        # Vitest needs dist/forge-payload; full tsc emit comes along with it.
+        run: npm run build
+
       - name: Vitest
         run: npm test
 

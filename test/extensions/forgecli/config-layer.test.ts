@@ -21,7 +21,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type LayeredConfig, loadLayeredConfig } from "../../../src/extensions/forgecli/config-layer.js";
+import { type LayeredConfig, loadLayeredConfig } from "../../../src/extensions/forgecli/config/config-layer.js";
 
 const PRIOR_ENV = { ...process.env };
 

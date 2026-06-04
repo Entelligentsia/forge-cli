@@ -21,12 +21,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerApprove } from "../../../src/extensions/forgecli/approve.js";
-import { registerCollate } from "../../../src/extensions/forgecli/collate.js";
-import { registerCommit } from "../../../src/extensions/forgecli/commit.js";
-import { registerReviewCode } from "../../../src/extensions/forgecli/review-code.js";
-import { registerReviewPlan } from "../../../src/extensions/forgecli/review-plan.js";
-import { registerValidate } from "../../../src/extensions/forgecli/validate.js";
+import { registerApprove } from "../../../src/extensions/forgecli/commands/approve.js";
+import { registerCollate } from "../../../src/extensions/forgecli/commands/collate.js";
+import { registerCommit } from "../../../src/extensions/forgecli/commands/commit.js";
+import { registerReviewCode } from "../../../src/extensions/forgecli/commands/review-code.js";
+import { registerReviewPlan } from "../../../src/extensions/forgecli/commands/review-plan.js";
+import { registerValidate } from "../../../src/extensions/forgecli/commands/validate.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 

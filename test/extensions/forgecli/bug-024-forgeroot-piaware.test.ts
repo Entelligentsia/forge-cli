@@ -27,7 +27,7 @@ import {
 	getBundledPayloadRoot,
 	isPiRuntime,
 	resolveBundleToolsRoot,
-} from "../../../src/extensions/forgecli/forge-init.js";
+} from "../../../src/extensions/forgecli/forge-init/forge-init.js";
 
 // ── Direct helper tests ───────────────────────────────────────────────────────
 
@@ -83,13 +83,13 @@ vi.mock("node:util", () => ({
 	}),
 }));
 
-vi.mock("../../../src/extensions/forgecli/init-progress.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/init-progress.js", () => ({
 	readInitProgress: vi.fn(() => ({ kind: "none" })),
 	writeInitProgress: vi.fn(),
 	deleteInitProgress: vi.fn(),
 }));
 
-vi.mock("../../../src/extensions/forgecli/init-context.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/init-context.js", () => ({
 	discoverProjectName: vi.fn(() => "test-project"),
 	buildProjectContext: vi.fn(() => ({
 		project: { name: "test-project", prefix: "TP" },
@@ -118,7 +118,7 @@ vi.mock("../../../src/extensions/forgecli/refresh-kb-links.js", () => ({
 	),
 }));
 
-import { registerForgeInit } from "../../../src/extensions/forgecli/forge-init.js";
+import { registerForgeInit } from "../../../src/extensions/forgecli/forge-init/forge-init.js";
 
 function buildMockPi(): {
 	registerCommand: ReturnType<typeof vi.fn>;

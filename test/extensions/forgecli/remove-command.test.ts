@@ -10,7 +10,7 @@ import {
 	type ParsedRemoveArgs,
 	parseRemoveArgs,
 	registerRemoveCommand,
-} from "../../../src/extensions/forgecli/remove-command.js";
+} from "../../../src/extensions/forgecli/commands/remove-command.js";
 
 function makePi() {
 	const commands = new Map<string, { handler: (a: string, ctx: unknown) => Promise<void> }>();

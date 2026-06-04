@@ -14,7 +14,7 @@ import {
 	extractPersonaNames,
 	parsePlanArgs,
 	registerPlan,
-} from "../../../src/extensions/forgecli/plan.js";
+} from "../../../src/extensions/forgecli/commands/plan.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────
 
