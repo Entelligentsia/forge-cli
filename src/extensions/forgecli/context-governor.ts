@@ -153,17 +153,45 @@ function resolvePhaseKey(ctx: ExtensionContext): string {
 }
 
 /**
+ * Read-like forge_store / forge_artifact commands eligible for dedup.
+ * Anything else (set-summary, write, update-status, emit, …) is a MUTATION —
+ * its result is a confirmation/failure report that must reach the agent
+ * verbatim. CART-S02-T04 friction: a forge_artifact WRITE confirmation was
+ * replaced by a pointer registered by an earlier READ of the same path; a
+ * failed write would have been silently masked (Iron Law 5 violation).
+ */
+const DEDUP_READ_COMMANDS = new Set([
+	"read",
+	"get",
+	"get-task",
+	"get-bug",
+	"get-sprint",
+	"get-summary",
+	"get-bug-summary",
+	"list",
+	"describe",
+	"template",
+]);
+
+/**
  * Compute the dedup key for a tool result event.
- * Returns null if dedup does not apply to this tool.
+ * Returns null if dedup does not apply to this tool — including any
+ * forge_store/forge_artifact MUTATION command (reads-only rule).
+ * The command participates in the key so e.g. read vs list of the same
+ * entity never conflate. A missing command (legacy/test event shapes)
+ * is treated as read-like.
  */
 function dedupKey(event: ToolResultEvent): string | null {
 	const input = (event as { input?: Record<string, unknown> }).input ?? {};
 	if (event.toolName === "forge_store" || event.toolName === "forge_artifact") {
+		const command = typeof input.command === "string" ? input.command : "";
+		if (command && !DEDUP_READ_COMMANDS.has(command)) return null; // mutation — never dedup
 		const target =
 			(input.entityId as string | undefined) ??
 			(input.path as string | undefined) ??
+			(input.artifact as string | undefined) ??
 			"";
-		return `${event.toolName}:${target}`;
+		return `${event.toolName}:${command}:${target}`;
 	}
 	if (event.toolName === "read") {
 		const target = (input.file_path as string | undefined) ?? "";
@@ -347,8 +375,14 @@ export function createGovernor(
 	compactFn?: () => void,
 	phaseKey?: string,
 ): ContextGovernor {
-	// Per-governor-instance dedup registry. Maps "${toolName}:${target}" → turn number.
-	const dedupRegistry = new Map<string, number>();
+	// Per-governor-instance dedup registry.
+	// Maps "${toolName}:${command}:${target}" → { turn, pointerServed }.
+	// pointerServed implements pointer ALTERNATION: serve the pointer at most
+	// once in a row per key, then honour the next identical call with full
+	// content (CART-S02-T04 friction: "re-query if needed" was impossible by
+	// construction — every re-query returned another pointer, driving agents
+	// to bash-cat workarounds).
+	const dedupRegistry = new Map<string, { turn: number; pointerServed: boolean }>();
 	let currentTurn = 0;
 	// Mechanism B: single-fire steer invariant
 	let steerFired = false;
@@ -412,23 +446,40 @@ export function createGovernor(
 				// Mechanism A — curation (dedup / schema-trim / span-clamp)
 				// ------------------------------------------------------------------
 
-				// Rule 1 — Dedup/reference-ize
+				// Error results bypass ALL curation: they are small, must reach the
+				// agent verbatim, and must never register or serve dedup pointers
+				// (CART-S02-T04 friction: pointers were served on errored re-reads,
+				// and errored first-reads poisoned the registry).
+				if ((event as { isError?: boolean }).isError) {
+					return undefined;
+				}
+
+				// Rule 1 — Dedup/reference-ize (reads-only; pointer alternation)
 				const key = dedupKey(event);
 				if (key !== null) {
-					const prevTurn = dedupRegistry.get(key);
-					if (prevTurn !== undefined) {
-						// Repeated (tool, target) — return pointer
-						return {
-							content: [
-								{
-									type: "text",
-									text: `[unchanged since turn ${prevTurn} — re-query if needed]`,
-								},
-							],
-						};
+					const entry = dedupRegistry.get(key);
+					if (entry !== undefined) {
+						if (!entry.pointerServed) {
+							// Repeated read — replace with pointer (at most once in a row)
+							entry.pointerServed = true;
+							return {
+								content: [
+									{
+										type: "text",
+										text: `[unchanged since turn ${entry.turn} — call again to re-fetch]`,
+									},
+								],
+							};
+						}
+						// Agent called again right after a pointer — honour the re-fetch:
+						// re-arm the pointer for later repeats and FALL THROUGH so the
+						// re-fetched content still receives Mechanism C / Rules 2–3
+						// curation (shed/trim/clamp), exactly like a first occurrence.
+						entry.pointerServed = false;
+					} else {
+						// Register first occurrence
+						dedupRegistry.set(key, { turn: currentTurn, pointerServed: false });
 					}
-					// Register first occurrence
-					dedupRegistry.set(key, currentTurn);
 				}
 
 				// ------------------------------------------------------------------

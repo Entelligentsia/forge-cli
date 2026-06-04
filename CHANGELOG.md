@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.17] — 2026-06-04
+
+### Fixed
+
+- **Context-governor dedup hardening — reads-only, error-aware, re-queryable.**
+  CART-S02-T04 transcripts surfaced three Rule-1 defects:
+  1. *Write masking (serious):* the dedup key carried no read/write
+     distinction, so a `forge_artifact` WRITE confirmation was replaced by a
+     pointer registered by an earlier READ of the same path — a failed write
+     would have been silently masked. Dedup now applies only to read-like
+     commands (`read`/`get*`/`list`/`describe`/`template`); every mutation
+     result passes through verbatim, and the command participates in the key
+     (read vs list never conflate).
+  2. *Impossible re-query:* the pointer said "re-query if needed", but every
+     re-query of the same key returned another pointer — agents responded by
+     switching to bash `cat` workarounds (wasted turns, path-guess errors).
+     Pointers now ALTERNATE: served at most once in a row, the immediately
+     repeated call is honoured with full (still trimmed/clamped) content.
+     Wording updated to "call again to re-fetch".
+  3. *Error interaction:* errored results were registered and replaced by
+     pointers. Error results now bypass all curation — never registered,
+     never replaced, always verbatim.
+
 ## [1.0.16] — 2026-06-03
 
 Coordinated release matching forge plugin **v1.2.15**.

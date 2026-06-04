@@ -129,7 +129,7 @@ describe("AC1: E2E token reduction — governor-enabled vs governor-disabled", (
 			passATotal += effectiveA.length;
 
 			// Markers
-			if (effectiveA.match(/\[unchanged since turn \d+ — re-query if needed\]/)) {
+			if (effectiveA.match(/\[unchanged since turn \d+ — call again to re-fetch\]/)) {
 				dedupPointerFound = true;
 			}
 			if (effectiveA.match(/\[\d+ lines elided\]/)) {

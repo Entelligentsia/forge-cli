@@ -112,7 +112,7 @@ describe("Mechanism A transcript integration", () => {
 			curatedTotal += effectiveText.length;
 
 			// Check for dedup pointer (repeated read)
-			if (effectiveText.match(/\[unchanged since turn \d+ — re-query if needed\]/)) {
+			if (effectiveText.match(/\[unchanged since turn \d+ — call again to re-fetch\]/)) {
 				dedupPointerFound = true;
 			}
 

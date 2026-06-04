@@ -222,7 +222,7 @@ describe("Rule 1: dedup/reference-ize", () => {
 		const r2 = gov.applyToolResult(event2, ctx) as ToolResultEventResult | undefined;
 		expect(r2).toBeDefined();
 		const text = (r2?.content?.[0] as { type: string; text: string } | undefined)?.text ?? "";
-		expect(text).toMatch(/\[unchanged since turn \d+ — re-query if needed\]/);
+		expect(text).toMatch(/\[unchanged since turn \d+ — call again to re-fetch\]/);
 	});
 
 	it("Test 7: first occurrence of a (tool, target) is NOT replaced", () => {
@@ -363,5 +363,142 @@ describe("IL7 safety: governor never throws", () => {
 		expect(() => {
 			gov.applyToolResult(event, ctx);
 		}).not.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Rule 1 hardening — reads-only, error-aware, re-queryable
+// (CART-S02-T04 friction findings: dedup replaced a WRITE confirmation with a
+// pointer ("Good, the artifact was written" — over a pointer); served pointers
+// on errored results; and made the pointer's own "re-query" advice impossible,
+// driving agents to bash-cat workarounds.)
+// ---------------------------------------------------------------------------
+
+describe("Rule 1 hardening: write commands are never deduped", () => {
+	function makeStoreCmdEvent(command: string, content: string, toolCallId: string): ToolResultEvent {
+		return {
+			type: "tool_result",
+			toolName: "forge_store",
+			toolCallId,
+			content: [{ type: "text", text: content }],
+			input: { command, entityId: "HARD-T01", args: ["HARD-T01"] },
+			isError: false,
+		} as unknown as ToolResultEvent;
+	}
+
+	it("Test 15: a write result after a read of the same entity is NOT replaced by a pointer", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+
+		// read registers the entity…
+		gov.applyToolResult(makeStoreCmdEvent("read", '{"taskId":"HARD-T01"}', "tc-h15a"), ctx);
+		// …the WRITE confirmation for the same entity must pass through verbatim
+		const writeResult = gov.applyToolResult(
+			makeStoreCmdEvent("set-summary", "Summary written OK", "tc-h15b"),
+			ctx,
+		);
+		const text =
+			writeResult === undefined
+				? ""
+				: ((writeResult.content?.[0] as { text?: string } | undefined)?.text ?? "");
+		expect(text).not.toMatch(/unchanged since turn/);
+	});
+
+	it("Test 16: repeated write commands are not deduped against each other", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+
+		gov.applyToolResult(makeStoreCmdEvent("set-summary", "first write OK", "tc-h16a"), ctx);
+		const second = gov.applyToolResult(
+			makeStoreCmdEvent("set-summary", "second write OK", "tc-h16b"),
+			ctx,
+		);
+		const text =
+			second === undefined ? "" : ((second.content?.[0] as { text?: string } | undefined)?.text ?? "");
+		expect(text).not.toMatch(/unchanged since turn/);
+	});
+
+	it("Test 17: read vs list of the same entity are separate dedup keys", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+
+		gov.applyToolResult(makeStoreCmdEvent("read", '{"taskId":"HARD-T01"}', "tc-h17a"), ctx);
+		// First LIST of the same entity must not be pointered by the prior READ
+		const list = gov.applyToolResult(makeStoreCmdEvent("list", "[…list…]", "tc-h17b"), ctx);
+		const text =
+			list === undefined ? "" : ((list.content?.[0] as { text?: string } | undefined)?.text ?? "");
+		expect(text).not.toMatch(/unchanged since turn/);
+	});
+});
+
+describe("Rule 1 hardening: error results bypass curation entirely", () => {
+	it("Test 18: an errored repeat read is NOT replaced by a pointer", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+
+		gov.applyToolResult(makeReadEvent("/err/file.ts", "good content"), ctx);
+		const erroredRepeat = {
+			...makeReadEvent("/err/file.ts", "ENOENT: no such file"),
+			isError: true,
+		} as unknown as ToolResultEvent;
+		const result = gov.applyToolResult(erroredRepeat, ctx);
+		// error must pass through verbatim (undefined = unmodified)
+		expect(result).toBeUndefined();
+	});
+
+	it("Test 19: an errored first read does not register — the successful retry passes through full", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+
+		const erroredFirst = {
+			...makeReadEvent("/retry/file.ts", "EACCES: permission denied"),
+			isError: true,
+		} as unknown as ToolResultEvent;
+		gov.applyToolResult(erroredFirst, ctx);
+		// successful retry is the FIRST registered occurrence → full content
+		const retry = gov.applyToolResult(makeReadEvent("/retry/file.ts", "real content"), ctx);
+		expect(retry).toBeUndefined();
+		// …and only the repeat AFTER that gets the pointer
+		const repeat = gov.applyToolResult(makeReadEvent("/retry/file.ts", "real content"), ctx);
+		expect(repeat).toBeDefined();
+	});
+});
+
+describe("Rule 1 hardening: pointer alternation — re-fetch is actually possible", () => {
+	it("Test 20: full → pointer → full → pointer on consecutive identical reads", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+		const read = () => gov.applyToolResult(makeReadEvent("/alt/file.ts", "content"), ctx);
+
+		expect(read()).toBeUndefined(); // 1st: full content
+		const second = read();
+		expect(second).toBeDefined(); // 2nd: pointer
+		expect(read()).toBeUndefined(); // 3rd: re-fetch honoured — full content
+		expect(read()).toBeDefined(); // 4th: pointer again
+	});
+
+	it("Test 21: pointer wording tells the agent how to re-fetch (no impossible advice)", () => {
+		const gov = createGovernor(loadDefaultPolicyTable(), {
+			find: () => undefined,
+		} as unknown as ModelRegistry);
+		const ctx = makeCtx();
+
+		gov.applyToolResult(makeReadEvent("/word/file.ts", "content"), ctx);
+		const pointer = gov.applyToolResult(makeReadEvent("/word/file.ts", "content"), ctx);
+		const text = (pointer?.content?.[0] as { text?: string } | undefined)?.text ?? "";
+		expect(text).toMatch(/\[unchanged since turn \d+ — call again to re-fetch\]/);
+		expect(text).not.toMatch(/re-query if needed/);
 	});
 });
