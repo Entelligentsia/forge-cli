@@ -82,7 +82,7 @@
     "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.78.0.tgz",
     "ajv": "^8.20.0",
     "js-yaml": "^4.1.0",
-    "@entelligentsia/forge-compress": "file:../forge-compress",
+    "@entelligentsia/forge-compress": "0.1.0",
     "lunr": "2.3.9",
     "typebox": "^1.1.24"
   },
