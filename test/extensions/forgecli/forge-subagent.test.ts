@@ -1,28 +1,26 @@
-// Unit + live tests for the forge-subagent harness (FORGE-S21 redo foundation).
+// Unit tests for the forge-subagent harness (FORGE-S21 redo foundation).
 //
 // Auth-free:
 //   - loadForgePersona reads .md, parses frontmatter, applies defaults
 //   - missing tools/model/description → expected fallbacks
 //   - frontmatter `tools:` → string[] split by comma
 //
-// Auth-gated (ANTHROPIC_API_KEY required):
-//   - runForgeSubagent spawns real AgentSession with persona system prompt,
-//     runs trivial task, returns exitCode=0 with at least one assistant message
-//   - AbortSignal terminates session
+// NO live-provider tests. Unit tests must never call a live LLM provider —
+// no API spend, no network dependency, no provider bias. (The previous
+// live block, gated on ANTHROPIC_API_KEY, silently routed to Anthropic
+// because a bare runForgeSubagent without modelRegistry falls back to
+// "first provider with valid API key" — see RunSubagentOptions.modelRegistry
+// doc in forge-subagent.ts. A local-Ollama replacement was attempted and
+// dropped: ollama 0.20.x hangs on stream:true + tools, which pi always
+// sends.) Live coverage of runForgeSubagent belongs in the e2e smoke
+// driver, not in vitest.
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-	type ForgePersona,
-	getFinalOutput,
-	loadForgePersona,
-	runForgeSubagent,
-} from "../../../src/extensions/forgecli/forge-subagent.js";
-
-const SKIP_LIVE = !process.env.ANTHROPIC_API_KEY;
+import { loadForgePersona } from "../../../src/extensions/forgecli/forge-subagent.js";
 
 let tmpRoot: string;
 
@@ -34,8 +32,6 @@ beforeEach(() => {
 afterEach(() => {
 	fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
-
-// ── loadForgePersona — auth-free ──────────────────────────────────────────
 
 describe("loadForgePersona", () => {
 	it("reads .forge/personas/<name>.md and uses body as system prompt when no frontmatter", () => {
@@ -86,60 +82,4 @@ describe("loadForgePersona", () => {
 	it("throws when persona file does not exist", () => {
 		expect(() => loadForgePersona("missing", tmpRoot)).toThrow();
 	});
-});
-
-// ── runForgeSubagent — live, auth-gated ──────────────────────────────────
-
-describe.skipIf(SKIP_LIVE)("runForgeSubagent — live AgentSession", () => {
-	it("runs a trivial task with a minimal persona and returns exitCode=0 with assistant output", async () => {
-		const persona: ForgePersona = {
-			name: "scribe",
-			description: "Tiny test persona",
-			systemPrompt:
-				"You are a terse assistant. Always reply in fewer than 20 words. " +
-				"For arithmetic questions, give just the number.",
-			filePath: path.join(tmpRoot, ".forge", "personas", "scribe.md"),
-		};
-		fs.writeFileSync(persona.filePath, persona.systemPrompt, "utf-8");
-
-		const result = await runForgeSubagent({
-			persona,
-			task: "What is 7 + 5? Reply with just the number.",
-			cwd: tmpRoot,
-		});
-
-		expect(result.exitCode).toBe(0);
-		expect(result.messages.length).toBeGreaterThan(0);
-		expect(result.usage.turns).toBeGreaterThan(0);
-		expect(result.usage.input).toBeGreaterThan(0);
-		expect(result.usage.output).toBeGreaterThan(0);
-
-		const finalOutput = getFinalOutput(result.messages);
-		expect(finalOutput).toContain("12");
-	}, 60_000);
-
-	it("AbortSignal terminates the session and returns exitCode=1 with stopReason=aborted", async () => {
-		const persona: ForgePersona = {
-			name: "slow",
-			description: "Slow persona for abort test",
-			systemPrompt: "You are an assistant. Provide thorough multi-paragraph answers.",
-			filePath: path.join(tmpRoot, ".forge", "personas", "slow.md"),
-		};
-		fs.writeFileSync(persona.filePath, persona.systemPrompt, "utf-8");
-
-		const ac = new AbortController();
-		// Abort after 200ms — well before any LLM completes
-		setTimeout(() => ac.abort(), 200);
-
-		const result = await runForgeSubagent({
-			persona,
-			task: "Write a 5-paragraph essay on the history of typesetting.",
-			cwd: tmpRoot,
-			signal: ac.signal,
-		});
-
-		expect(result.exitCode).toBe(1);
-		// stopReason may be "aborted" or undefined depending on cancellation timing;
-		// the binding is exitCode → 1 on abort.
-	}, 30_000);
 });
