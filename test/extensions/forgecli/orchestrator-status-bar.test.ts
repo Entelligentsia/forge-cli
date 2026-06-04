@@ -141,4 +141,43 @@ describe("OrchestratorStatusBar render", () => {
 
 		bar.dispose();
 	});
+
+	it("uses filled ● for running state and outline ○ for completed state", () => {
+		const tree = new OrchestratorTree();
+		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+
+		const glyphCalls: Array<{ color: string; text: string }> = [];
+		const spyTheme: Theme = {
+			...mockTheme,
+			fg: (color: string, text: string) => {
+				glyphCalls.push({ color, text });
+				return text;
+			},
+		} as unknown as Theme;
+
+		const bar = new OrchestratorStatusBar(tree, spyTheme);
+		bar.setInvalidationCallback(vi.fn());
+
+		// Running state should use filled ●
+		bar.render(120);
+		const runningGlyphCall = glyphCalls.find(
+			(c) => c.text === "●" || c.text === "○",
+		);
+		expect(runningGlyphCall).toBeDefined();
+		expect(runningGlyphCall!.text).toBe("●");
+		expect(runningGlyphCall!.color).toBe("accent");
+		glyphCalls.length = 0;
+
+		// Complete the node
+		tree.completeNode("sprint-1", "completed");
+		bar.render(120);
+		const completedGlyphCall = glyphCalls.find(
+			(c) => c.text === "●" || c.text === "○",
+		);
+		expect(completedGlyphCall).toBeDefined();
+		expect(completedGlyphCall!.text).toBe("○");
+		expect(completedGlyphCall!.color).toBe("success");
+
+		bar.dispose();
+	});
 });

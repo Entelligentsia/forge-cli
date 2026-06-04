@@ -172,12 +172,11 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 			(data) => {
 				if (!statusBarRef || !statusBarTui) return undefined;
 
-				// Only process when an orchestration is active.
+				// Allow ↓ navigation whenever orchestration roots are visible —
+				// this includes completed/failed/escalated roots so the user
+				// can review results even after execution ends.
 				const activeRoots = tree.getActiveRoots();
-				const anyActive = activeRoots.some(
-					(r) => r.status === "running" || r.status === "cancelling",
-				);
-				if (!anyActive) return undefined;
+				if (activeRoots.length === 0) return undefined;
 
 				// ↓ focuses the status bar (makes it active).
 				if (isDownArrow(data)) {

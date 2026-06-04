@@ -14,6 +14,10 @@
 //     Cursor glyph highlights the bar. Enter opens the dashboard overlay.
 //     Esc returns focus to the editor.
 //
+// Glyphs: filled ● for active states (running, cancelling), outline ○ for
+// terminal/idle states (completed, failed, escalated, cancelled, pending).
+// This makes the bar scannable: filled = still going, outline = done.
+//
 // The dashboard overlay (/forge:dashboard) remains the detailed view.
 //
 // Iron Laws conformance:
@@ -34,23 +38,29 @@ const SPINNER_INTERVAL_MS = 100;
 
 // ── Status glyph for a node ────────────────────────────────────────────────
 
+// ── Status glyph for a node (status bar) ───────────────────────────────────
+//
+// Uses filled ● for active states (running, cancelling) and outline ○ for
+// terminal/idle states so the bar is scannable at a glance: filled = still
+// going, outline = done. Per-status colouring conveys the outcome.
+
 function nodeGlyph(status: NodeStatus, theme: Theme): string {
 	switch (status) {
-		case "completed":
-			return theme.fg("success", "✓");
 		case "running":
-			return theme.fg("accent", "●");
+			return theme.fg("accent", "●");   // filled — active
 		case "cancelling":
-			return theme.fg("warning", "⏳");
-		case "cancelled":
-			return theme.fg("muted", "⊘");
+			return theme.fg("warning", "●");  // filled — winding down
+		case "completed":
+			return theme.fg("success", "○");  // outline — done
 		case "failed":
-			return theme.fg("error", "✗");
+			return theme.fg("error", "○");     // outline — error
 		case "escalated":
-			return theme.fg("error", "▲");
+			return theme.fg("error", "○");     // outline — escalated
+		case "cancelled":
+			return theme.fg("muted", "○");    // outline — stopped
 		case "pending":
 		default:
-			return theme.fg("dim", "○");
+			return theme.fg("dim", "○");       // outline — waiting
 	}
 }
 
