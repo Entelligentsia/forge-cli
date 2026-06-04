@@ -80,9 +80,9 @@
     "@earendil-works/pi-ai": "file:./vendor-pi/earendil-works-pi-ai-0.78.0.tgz",
     "@earendil-works/pi-coding-agent": "file:./vendor-pi/earendil-works-pi-coding-agent-0.78.0-forge.1.tgz",
     "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.78.0.tgz",
+    "@entelligentsia/forge-compress": "0.1.0",
     "ajv": "^8.20.0",
     "js-yaml": "^4.1.0",
-    "@entelligentsia/forge-compress": "0.1.0",
     "lunr": "2.3.9",
     "typebox": "^1.1.24"
   },
