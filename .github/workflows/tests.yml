@@ -58,6 +58,10 @@ jobs:
       - name: No skipped or focused tests
         run: npm run lint:no-skip
 
+      - name: Import-layering gate
+        # lib/ depends only downward; see tools/check-import-layering.cjs header.
+        run: npm run lint:layering
+
       - name: Vitest
         run: npm test
 

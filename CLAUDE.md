@@ -95,7 +95,7 @@ Two GitHub Actions workflows. Sibling, independent, both gate PRs to `main`:
 |----------|------|-------|
 | `.github/workflows/smoke.yml` (FORGE-S16-T11) | full build + e2e | `npm ci` → sibling-forge clone → `npm run build` → `./test/e2e/smoke.sh` |
 | `.github/workflows/smoke.yml :: tmp-smoke` (FORGE-S25-T03) | fresh tmp project gate | same install + `./test/e2e/tmp-smoke.sh` after `smoke` |
-| `.github/workflows/tests.yml` (FORGE-S25-T02) | fast gates | `npm ci` → `npm run typecheck` → `npm run lint:no-skip` → `npm test` |
+| `.github/workflows/tests.yml` (FORGE-S25-T02) | fast gates | `npm ci` → `npm run typecheck` → `npm run lint:no-skip` → `npm run lint:layering` → `npm test` |
 
 The `tests.yml` workflow does **not** invoke `npm run build` or
 `./test/e2e/smoke.sh` — those remain owned by `smoke.yml`. Workflow
@@ -133,13 +133,14 @@ at the in-tree plugin source.
 
 ## CI Gates
 
-Four gates run on every push/PR to `main` via
+Five gates run on every push/PR to `main` via
 `.github/workflows/tests.yml` (`tests-and-skip-gate` job):
 
 | Gate | Command | What it checks |
 |------|---------|----------------|
 | Typecheck | `npm run typecheck` | `tsc --noEmit` — no TypeScript errors |
 | No skipped or focused tests | `npm run lint:no-skip` | No `it.skip`, `test.skip`, `describe.skip`, `it.only`, `describe.only`, `test.only`, `xit`, `xdescribe` in committed tests |
+| Import-layering gate | `npm run lint:layering` | `src/extensions/forgecli/lib/` and `paths/` relative-import only within themselves; `parsers/` only within itself or into `lib/`. Rules live in `tools/check-import-layering.cjs` (`LAYER_RULES`) |
 | Vitest | `npm test` | All unit tests under `test/*.test.ts`, `test/bin/**/*.test.ts`, `test/extensions/forgecli/**/*.test.ts` pass |
 | Dead-code gate (knip) | `npm run dead-code` | No unused exports or dead files in `src/`; configuration in `knip.config.ts` |
 

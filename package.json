@@ -63,6 +63,7 @@
     "smoke:tmp": "bash test/e2e/tmp-smoke.sh",
     "lint": "biome check src test",
     "lint:no-skip": "node tools/check-no-skipped-tests.cjs",
+    "lint:layering": "node tools/check-import-layering.cjs",
     "sync-forge": "node scripts/sync-forge.cjs",
     "dead-code": "knip"
   },
