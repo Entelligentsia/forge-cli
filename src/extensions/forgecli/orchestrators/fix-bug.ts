@@ -581,6 +581,15 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	let bugId = initialBugId;
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
 	const iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
+
+	// Per-role dispatch counter for OrchestratorTree node identity. Distinct
+	// from iterationCounts (which only tracks review-verdict revisions): every
+	// dispatch of a role — including a plan-fix re-run after a review
+	// loopback — gets its own `<bugId>:<role>:<attempt>` node, so the
+	// dashboard renders one leaf per run in dispatch order instead of merging
+	// attempts into one node (CART-BUG-003 dashboard regression). Seeded from
+	// resume state so resumed runs continue numbering past prior attempts.
+	const dispatchCounts: Record<string, number> = { ...(resumeFromState?.iterationCounts ?? {}) };
 	let lastModel: string | undefined;
 	let lastProvider: string | undefined;
 
@@ -1009,8 +1018,10 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 			writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
 			registry.startPhase(bugId, phase.role, currentPhaseIndex);
 
-			// Bridge: register phase in OrchestratorTree
-			const iteration = (iterationCounts[phase.role] ?? 0) + 1;
+			// Bridge: register phase in OrchestratorTree. Node identity is
+			// per-dispatch (see dispatchCounts above) — never reuse an ID for
+			// a re-dispatched role.
+			const iteration = (dispatchCounts[phase.role] = (dispatchCounts[phase.role] ?? 0) + 1);
 			const phaseNodeId = `${bugId}:${phase.role}:${iteration}`;
 			tree.startNode(phaseNodeId, {
 				parentId: bugId,
@@ -1033,6 +1044,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				registry,
 				sessionId: bugId,
 				phaseRole: phase.role,
+				nodeId: phaseNodeId,
 				beginHeader: `─── phase ${phase.role} begin ───`,
 				writeDebug,
 				notify: (msg, level) => ctx.ui.notify(msg, level),
@@ -1108,6 +1120,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					`× forge:fix-bug — runForgeSubagent threw for phase ${phase.role}: ${e.message ?? "unknown"}`,
 					"error",
 				);
+				tree.completeNode(phaseNodeId, "failed");
 				writeBugState(cwd, {
 					bugId,
 					phaseIndex: currentPhaseIndex,
@@ -1123,6 +1136,21 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 				};
 			}
+
+			// Close this dispatch's tree node with final usage/model — MUST be
+			// called on every exit path below (failure, halt, escalation,
+			// loopback, advance). A node left `running` keeps a live spinner
+			// in the dashboard forever AND absorbs the next same-role
+			// dispatch's telemetry via the observer's legacy role-prefix scan.
+			const finishPhaseNode = (status: "completed" | "failed" | "escalated"): void => {
+				tree.setNodeUsage(phaseNodeId, {
+					input: result.usage.input,
+					output: result.usage.output,
+					cacheRead: result.usage.cacheRead,
+				});
+				if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
+				tree.completeNode(phaseNodeId, status);
+			};
 
 			// ── Post-subagent abort detection ─────────────────────────────────
 			if (result.stopReason === "aborted" || opts.signal?.aborted) {
@@ -1179,6 +1207,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						(result.stopReason ? ` [${result.stopReason}]` : ""),
 					"error",
 				);
+				finishPhaseNode("failed");
 				// Bug B parity with run-task: account billed tokens of the failed attempt.
 				emitIncompletePhaseEvent({
 					emitCtx: {
@@ -1443,6 +1472,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						`× forge:fix-bug — verdict missing for phase ${phase.role} after subagent completed. Halting for advisory.`,
 						"error",
 					);
+					finishPhaseNode("failed");
 					writeBugState(cwd, {
 						bugId,
 						phaseIndex: currentPhaseIndex,
@@ -1493,6 +1523,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 								`(${iterationCounts[phase.role]}/${phase.maxIterations} iterations). Escalating.`,
 							"error",
 						);
+						finishPhaseNode("escalated");
 						writeBugState(cwd, {
 							bugId,
 							phaseIndex: currentPhaseIndex,
@@ -1531,6 +1562,11 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						}
 					}
 
+					// The review subagent itself finished cleanly — `revision`
+					// is its verdict, not a failure — so its node closes as
+					// completed before the predecessor re-dispatches under a
+					// fresh node ID.
+					finishPhaseNode("completed");
 					const predIndex = findPredecessorIndex(BUG_PHASES, currentPhaseIndex);
 					ctx.ui.notify(
 						`⟳ forge:fix-bug — ${phase.role} returned revision; looping to ${BUG_PHASES[predIndex]?.role ?? predIndex} ` +
@@ -1562,13 +1598,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 
 			// ── Advance to next phase ─────────────────────────────────────
 			registry.completePhase(bugId, phase.role, "completed");
-			tree.completeNode(phaseNodeId, "completed");
-			tree.setNodeUsage(phaseNodeId, {
-				input: result.usage.input,
-				output: result.usage.output,
-				cacheRead: result.usage.cacheRead,
-			});
-			if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
+			finishPhaseNode("completed");
 			writeBugState(cwd, {
 				bugId,
 				phaseIndex: currentPhaseIndex,

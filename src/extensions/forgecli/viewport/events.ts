@@ -52,6 +52,14 @@ export interface ViewportObserverOpts {
 	sessionId: string;
 	/** phase scope for tail buffer and per-phase usage */
 	phaseRole: string;
+	/** Exact OrchestratorTree node ID for this dispatch. Orchestrators know
+	 * the node they started (`<sessionId>:<role>:<attempt>`) — passing it pins
+	 * every telemetry event to that node. Without it the observer falls back
+	 * to a role-prefix scan for the first *running* match, which misattributes
+	 * telemetry whenever an earlier same-role node is still open (the
+	 * CART-BUG-003 dashboard regression: review-plan:2's logs accumulated on a
+	 * leaked review-plan:1). */
+	nodeId?: string;
 	/** displayed in the per-line prefix `[<displayRole> HH:MM:SS tN]`. Usually same
 	 * as `phaseRole` but kept separate so callers like run-sprint ceremony can
 	 * show a friendlier role label without changing the registry key. */
@@ -98,13 +106,18 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 		notify,
 		verboseKeys,
 		afterEach,
+		nodeId: pinnedNodeId,
 	} = opts;
 	const role = displayRole ?? phaseRole;
 
 	const tree = getOrchestratorTree();
 
 	// Helper to resolve the correct active node ID in the OrchestratorTree.
+	// When the caller pins the dispatch node, attribution is fixed — never
+	// re-resolved by scan (node-per-dispatch contract). The scan below is the
+	// legacy fallback for callers that don't pass nodeId.
 	const resolveNodeId = (): string => {
+		if (pinnedNodeId) return pinnedNodeId;
 		const exactId = `${sessionId}:${phaseRole}`;
 		const exactNode = tree.getNode(exactId);
 		if (exactNode && exactNode.status === "running") return exactId;

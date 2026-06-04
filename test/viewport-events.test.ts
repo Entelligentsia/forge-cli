@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { getOrchestratorTree } from "../src/extensions/forgecli/orchestrator-tree.js";
 import { SessionRegistry } from "../src/extensions/forgecli/session-registry.js";
 import { attachViewportObserver } from "../src/extensions/forgecli/viewport/events.js";
 
@@ -195,6 +196,106 @@ describe("attachViewportObserver", () => {
 		});
 		const phase = registry.getSession("T1")?.phases.find((p) => p.role === "plan");
 		expect(phase?.unreadWarnings ?? 0).toBeGreaterThan(0);
+	});
+});
+
+describe("attachViewportObserver — node-per-dispatch telemetry routing", () => {
+	// Dashboard MVC contract: each leaf node renders once per dispatch, and
+	// the telemetry of THAT dispatch attaches to THAT node. The CART-BUG-003
+	// regression: a leaked `running` review-plan:1 node absorbed review-plan:2's
+	// live telemetry because resolveNodeId() scanned for the first running
+	// role-prefix match instead of using the dispatch node the orchestrator
+	// already knows.
+
+	function makeAssistant(input: number, output: number, text: string): any {
+		return {
+			role: "assistant",
+			content: [{ type: "text", text }],
+			usage: { input, output, cacheRead: 0 },
+		};
+	}
+
+	it("routes telemetry to the explicit nodeId even when an older running same-role node exists", () => {
+		const tree = getOrchestratorTree();
+		const sessionId = "VPN-BUG-001";
+		tree.startNode(sessionId, { kind: "orchestrator", label: sessionId });
+		// Iteration 1 leaked as running (the defect being defended against).
+		tree.startNode(`${sessionId}:review-plan:1`, { parentId: sessionId, label: "review-plan:1" });
+		// Iteration 2 is the actual dispatch.
+		tree.startNode(`${sessionId}:review-plan:2`, { parentId: sessionId, label: "review-plan:2" });
+
+		const registry = new SessionRegistry();
+		registry.startSession(sessionId);
+		registry.startPhase(sessionId, "review-plan", 0);
+		const observer = attachViewportObserver({
+			registry,
+			sessionId,
+			phaseRole: "review-plan",
+			nodeId: `${sessionId}:review-plan:2`,
+		});
+
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({ type: "tool_execution_start", toolCallId: "c1", toolName: "read", args: { path: "/x" } });
+		observer.onEvent({ type: "tool_execution_end", toolCallId: "c1", toolName: "read", isError: false, result: "" });
+		observer.onEvent({ type: "turn_end", message: makeAssistant(1000, 50, "reviewing the revised plan") });
+
+		const stale = tree.getNode(`${sessionId}:review-plan:1`)!;
+		const target = tree.getNode(`${sessionId}:review-plan:2`)!;
+
+		// All live telemetry lands on the dispatch node…
+		expect(target.metrics.turn).toBe(1);
+		expect(target.metrics.toolCount).toBe(1);
+		expect(target.usage).toEqual({ input: 1000, output: 50, cacheRead: 0 });
+		expect(target.tailBuffer.length).toBeGreaterThan(0);
+		expect(target.lastTurnPreview).toBe("reviewing the revised plan");
+
+		// …and NONE leaks onto the stale running sibling.
+		expect(stale.metrics.turn).toBe(0);
+		expect(stale.metrics.toolCount).toBe(0);
+		expect(stale.usage).toEqual({ input: 0, output: 0, cacheRead: 0 });
+		expect(stale.tailBuffer.length).toBe(0);
+		expect(stale.lastTurnPreview).toBeUndefined();
+	});
+
+	it("routes to the explicit nodeId even after the node reaches a terminal state (late events)", () => {
+		const tree = getOrchestratorTree();
+		const sessionId = "VPN-BUG-002";
+		tree.startNode(sessionId, { kind: "orchestrator", label: sessionId });
+		tree.startNode(`${sessionId}:implement:1`, { parentId: sessionId, label: "implement:1" });
+
+		const registry = new SessionRegistry();
+		registry.startSession(sessionId);
+		registry.startPhase(sessionId, "implement", 0);
+		const observer = attachViewportObserver({
+			registry,
+			sessionId,
+			phaseRole: "implement",
+			nodeId: `${sessionId}:implement:1`,
+		});
+
+		tree.completeNode(`${sessionId}:implement:1`, "completed");
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({ type: "turn_end", message: makeAssistant(10, 5, "tail flush") });
+
+		// Attribution stays with the dispatch node — never re-resolved by scan.
+		expect(tree.getNode(`${sessionId}:implement:1`)!.metrics.turn).toBe(1);
+	});
+
+	it("falls back to the role-prefix scan when nodeId is not provided (legacy callers)", () => {
+		const tree = getOrchestratorTree();
+		const sessionId = "VPN-BUG-003";
+		tree.startNode(sessionId, { kind: "orchestrator", label: sessionId });
+		tree.startNode(`${sessionId}:plan:1`, { parentId: sessionId, label: "plan:1" });
+
+		const registry = new SessionRegistry();
+		registry.startSession(sessionId);
+		registry.startPhase(sessionId, "plan", 0);
+		const observer = attachViewportObserver({ registry, sessionId, phaseRole: "plan" });
+
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({ type: "turn_end", message: makeAssistant(100, 10, "planning") });
+
+		expect(tree.getNode(`${sessionId}:plan:1`)!.metrics.turn).toBe(1);
 	});
 });
 

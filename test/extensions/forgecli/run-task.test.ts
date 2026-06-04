@@ -793,6 +793,85 @@ describe("Test 10: Verdict `revision` loops to predecessor; cap 3 → escalate",
 	});
 });
 
+describe("Dashboard node-per-dispatch: each leaf renders once per run, no leaked running nodes", () => {
+	// CART-BUG-003 dashboard regression: (a) revision loopback left the review
+	// node `running` forever (stuck spinner, ticking timer); (b) re-dispatched
+	// predecessor phases reused the same node ID so attempts merged into one
+	// node. Contract: one tree node per dispatch, sequential :N suffixes, and
+	// every node reaches a terminal state on every pipeline exit path.
+
+	it("revision loop creates one node per dispatch and closes all of them", async () => {
+		const { proj, taskId } = scaffoldProject({ taskId: "FORGE-S21-T77" });
+
+		// review-plan ALWAYS returns revision → loop plan↔review-plan until the
+		// cap (3) escalates. Dispatch sequence: plan:1, review-plan:1, plan:2,
+		// review-plan:2, plan:3, review-plan:3 (escalates).
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+			const argArr = args as string[] | undefined;
+			if (argArr && String(argArr[0]).includes("store-cli") && argArr?.[1] === "read") {
+				const summaries = { "review-plan": { verdict: "revision" } };
+				return {
+					status: 0,
+					stdout: Buffer.from(JSON.stringify({ taskId, sprintId: "FORGE-S21", summaries })),
+					stderr: Buffer.from(""),
+				};
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+		await invokeRunTask(pi, ctx, taskId);
+
+		const { getOrchestratorTree } = await import("../../../src/extensions/forgecli/orchestrator-tree.js");
+		const tree = getOrchestratorTree();
+
+		// One node per dispatch, sequential suffixes — re-dispatches do NOT merge.
+		for (const id of [`${taskId}:plan:1`, `${taskId}:plan:2`, `${taskId}:plan:3`]) {
+			expect(tree.getNode(id), `${id} must exist as its own node`).toBeDefined();
+			expect(tree.getNode(id)!.status).toBe("completed");
+		}
+		// Review dispatches: 1 and 2 finished cleanly (their verdict was
+		// revision — an orchestration outcome, not a subagent failure); 3 hit
+		// the cap and escalated.
+		expect(tree.getNode(`${taskId}:review-plan:1`)?.status).toBe("completed");
+		expect(tree.getNode(`${taskId}:review-plan:2`)?.status).toBe("completed");
+		expect(tree.getNode(`${taskId}:review-plan:3`)?.status).toBe("escalated");
+
+		// No dispatch beyond the escalation point.
+		expect(tree.getNode(`${taskId}:plan:4`)).toBeUndefined();
+		expect(tree.getNode(`${taskId}:implement:1`)).toBeUndefined();
+
+		// THE invariant: no leaked running leaves anywhere under this task.
+		for (const suffix of ["plan:1", "plan:2", "plan:3", "review-plan:1", "review-plan:2", "review-plan:3"]) {
+			const node = tree.getNode(`${taskId}:${suffix}`);
+			expect(node?.status, `${suffix} must not be left running`).not.toBe("running");
+		}
+	});
+
+	it("phase failure (exitCode !== 0) closes the phase node as failed", async () => {
+		const { proj, taskId } = scaffoldProject({ taskId: "FORGE-S21-T78" });
+		mockStoreCliVerdict({});
+
+		// First subagent (plan) fails.
+		vi.mocked(createAgentSession).mockImplementationOnce(async () => {
+			throw new Error("boom: provider stream died");
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+		await invokeRunTask(pi, ctx, taskId);
+
+		const { getOrchestratorTree } = await import("../../../src/extensions/forgecli/orchestrator-tree.js");
+		const tree = getOrchestratorTree();
+		const node = tree.getNode(`${taskId}:plan:1`);
+		expect(node).toBeDefined();
+		expect(node!.status).toBe("failed");
+	});
+});
+
 describe("Test 11: Persona loaded per phase via loadForgePersona", () => {
 	it("different persona names are passed to loadForgePersona for each phase", async () => {
 		// Verify personas by checking which .forge/personas/*.md files are read.

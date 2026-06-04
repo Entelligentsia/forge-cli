@@ -744,6 +744,15 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
 	const iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
 
+	// Per-role dispatch counter for OrchestratorTree node identity. Distinct
+	// from iterationCounts (which only tracks review-verdict revisions): every
+	// dispatch of a role — including a plan re-run after a review loopback —
+	// gets its own `<taskId>:<role>:<attempt>` node, so the dashboard renders
+	// one leaf per run in dispatch order instead of merging attempts into one
+	// node (CART-BUG-003 dashboard regression). Seeded from resume state so
+	// resumed runs continue numbering past prior attempts.
+	const dispatchCounts: Record<string, number> = { ...(resumeFromState?.iterationCounts ?? {}) };
+
 	// Track model/provider from last successful subagent result (REVIEW FIX #1).
 	let lastModel: string | undefined;
 	let lastProvider: string | undefined;
@@ -1041,8 +1050,10 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		});
 		registry.startPhase(taskId, phase.role, currentPhaseIndex);
 
-		// Bridge: register phase in OrchestratorTree.
-		const iteration = (opts.resumeFromState?.iterationCounts?.[phase.role] ?? 0) + 1;
+		// Bridge: register phase in OrchestratorTree. Node identity is
+		// per-dispatch (see dispatchCounts above) — never reuse an ID for a
+		// re-dispatched role.
+		const iteration = (dispatchCounts[phase.role] = (dispatchCounts[phase.role] ?? 0) + 1);
 		const phaseNodeId = `${taskId}:${phase.role}:${iteration}`;
 		tree.startNode(phaseNodeId, {
 			parentId: taskId,
@@ -1082,6 +1093,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			registry,
 			sessionId: taskId,
 			phaseRole: phase.role,
+			nodeId: phaseNodeId,
 			beginHeader: `─── phase ${currentPhaseIndex + 1}/${PHASES.length} ${phase.role} begin · ${taskId} ───`,
 			writeDebug,
 			notify: (msg, level) => ctx.ui.notify(msg, level),
@@ -1146,6 +1158,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				`× forge:run-task — runForgeSubagent threw for phase ${phase.role}: ${e.message ?? "unknown"}`,
 				"error",
 			);
+			tree.completeNode(phaseNodeId, "failed");
 			writeState(cwd, {
 				taskId,
 				phaseIndex: currentPhaseIndex,
@@ -1161,6 +1174,21 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 			};
 		}
+
+		// Close this dispatch's tree node with final usage/model — MUST be
+		// called on every exit path below (failure, halt, escalation,
+		// loopback, advance). A node left `running` keeps a live spinner in
+		// the dashboard forever AND absorbs the next same-role dispatch's
+		// telemetry via the observer's legacy role-prefix scan.
+		const finishPhaseNode = (status: "completed" | "failed" | "escalated"): void => {
+			tree.setNodeUsage(phaseNodeId, {
+				input: result.usage.input,
+				output: result.usage.output,
+				cacheRead: result.usage.cacheRead,
+			});
+			if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
+			tree.completeNode(phaseNodeId, status);
+		};
 
 		// ── Post-subagent abort detection ─────────────────────────────────
 		// If the abort signal fired during the subagent run, treat it as
@@ -1228,6 +1256,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					(result.stopReason ? ` [${result.stopReason}]` : ""),
 				"error",
 			);
+			finishPhaseNode("failed");
 			// Bug B: account the billed tokens of this failed attempt before returning.
 			{
 				const failSprintId = readTaskRecord(taskId, storeCli, cwd)?.sprintId;
@@ -1391,6 +1420,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						"Subagent may have crashed or failed to write summaries. Halting for advisory.",
 					"error",
 				);
+				finishPhaseNode("failed");
 				writeState(cwd, {
 					taskId,
 					phaseIndex: currentPhaseIndex,
@@ -1449,6 +1479,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 							`(${iterationCounts[phase.role]}/${phase.maxIterations} iterations). Escalating.`,
 						"error",
 					);
+					finishPhaseNode("escalated");
 					writeState(cwd, {
 						taskId,
 						phaseIndex: currentPhaseIndex,
@@ -1465,7 +1496,11 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					};
 				}
 
-				// Loop back to predecessor non-review phase
+				// Loop back to predecessor non-review phase. The review
+				// subagent itself finished cleanly — `revision` is its verdict,
+				// not a failure — so its node closes as completed before the
+				// predecessor re-dispatches under a fresh node ID.
+				finishPhaseNode("completed");
 				const predIndex = findPredecessorIndex(PHASES, currentPhaseIndex);
 				ctx.ui.notify(
 					`⟳ forge:run-task — ${phase.role} returned revision; looping to ${PHASES[predIndex]?.role ?? predIndex} ` +
@@ -1504,6 +1539,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			const postflightGatePath = preflightGate.replace("preflight-gate.cjs", "postflight-gate.cjs");
 			const postflightOutcome = runPostflightGate(postflightGatePath, phase.role, taskId, cwd);
 			if (postflightOutcome.result === "unsatisfied") {
+				finishPhaseNode("failed");
 				if (postflightOutcome.gateFailure) {
 					ctx.ui.notify(
 						`× forge:run-task — postflight gate failed for phase ${phase.role} ` +
@@ -1552,9 +1588,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 
 		// ── Advance to next phase ─────────────────────────────────────
 		registry.completePhase(taskId, phase.role, "completed");
-		tree.completeNode(phaseNodeId, "completed");
-		tree.setNodeUsage(phaseNodeId, { input: result.usage.input, output: result.usage.output, cacheRead: result.usage.cacheRead });
-		if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
+		finishPhaseNode("completed");
 		writeState(cwd, {
 			taskId,
 			phaseIndex: currentPhaseIndex,
