@@ -82,7 +82,10 @@ export class OrchestratorStatusBar implements Component {
 		this.theme = theme;
 
 		const onChange = () => {
-			if (!this.disposed) this.invalidationCb?.();
+			if (!this.disposed) {
+				this.ensureSpinnerTimer(); // restart spinner if roots became active
+				this.invalidationCb?.();
+			}
 		};
 		this.tree.on("change", onChange);
 		this.tree.on("tree", onChange);
@@ -104,7 +107,10 @@ export class OrchestratorStatusBar implements Component {
 
 	setActive(active: boolean): void {
 		this.active = active;
-		if (!this.disposed) this.invalidationCb?.();
+		if (!this.disposed) {
+			this.ensureSpinnerTimer(); // restart spinner if needed
+			this.invalidationCb?.();
+		}
 	}
 
 	isActive(): boolean {
@@ -113,6 +119,11 @@ export class OrchestratorStatusBar implements Component {
 
 	private ensureSpinnerTimer(): void {
 		if (this.spinnerTimer) return;
+		// Only start the timer when there are running/cancelling roots to animate.
+		const anyActive = this.tree.getActiveRoots().some(
+			(r) => r.status === "running" || r.status === "cancelling",
+		);
+		if (!anyActive) return; // no spinner needed yet
 		this.spinnerTimer = setInterval(() => {
 			// IL7: guard against firing after dispose.
 			if (this.disposed) {

@@ -48,17 +48,34 @@ describe("OrchestratorStatusBar timer unmount-safety", () => {
 		expect(invalidateSpy).not.toHaveBeenCalled();
 	});
 
-	it("does not call invalidationCb after dispose even when event handlers fire", () => {
-		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+	it("restarts spinner timer when roots become active after initial idle", () => {
+		// Simulate the real bug: bar is constructed before any roots exist,
+		// then roots are added via tree events. The timer should restart.
+		vi.useFakeTimers();
+		const tree = new OrchestratorTree();
 		const bar = new OrchestratorStatusBar(tree, mockTheme);
 		const invalidateSpy = vi.fn();
 		bar.setInvalidationCallback(invalidateSpy);
 
-		bar.dispose();
+		// No roots yet — timer should NOT be running (anyActive check in ensureSpinnerTimer).
+		vi.advanceTimersByTime(500);
+		expect(invalidateSpy).not.toHaveBeenCalled(); // no invalidation
 
-		// Model events after dispose should not trigger invalidation.
-		tree.completeNode("sprint-1", "completed");
-		expect(invalidateSpy).not.toHaveBeenCalled();
+		// Now add a running root — tree emits "change", which calls ensureSpinnerTimer.
+		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+
+		// The onChange callback should have restarted the timer.
+		vi.advanceTimersByTime(200);
+		expect(invalidateSpy).toHaveBeenCalled();
+
+		// Verify the spinner index advances.
+		const idx0 = (bar as any).spinnerIdx;
+		vi.advanceTimersByTime(200);
+		const idx1 = (bar as any).spinnerIdx;
+		expect(idx1).not.toBe(idx0); // spinner is animating
+
+		bar.dispose();
+		vi.useRealTimers();
 	});
 });
 
@@ -74,6 +91,20 @@ describe("OrchestratorStatusBar dispose", () => {
 		bar.dispose();
 		// Second dispose should not throw.
 		expect(() => bar.dispose()).not.toThrow();
+	});
+
+	it("does not call invalidationCb from tree events after dispose", () => {
+		const tree = new OrchestratorTree();
+		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+		const bar = new OrchestratorStatusBar(tree, mockTheme);
+		const invalidateSpy = vi.fn();
+		bar.setInvalidationCallback(invalidateSpy);
+
+		bar.dispose();
+
+		// Model events after dispose should not trigger invalidation.
+		tree.completeNode("sprint-1", "completed");
+		expect(invalidateSpy).not.toHaveBeenCalled();
 	});
 });
 
