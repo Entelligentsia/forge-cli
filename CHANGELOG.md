@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.20] — 2026-06-04
+
+Release roll-up of the post-S30 stabilization train (1.0.15–1.0.19) plus the
+dashboard/status-bar TUI pass. Pairs with forge plugin **v1.2.17**.
+
+### Fixed
+
+- **Status-bar/dashboard TUI pass** (Iron-Laws compliance follow-ups):
+  Focusable/theming/width-safety/timer guards and consolidated entry;
+  ↑/Esc deactivation via the input router with ○ focus indicator;
+  ○/● colour carries node status (accent=running, success=completed,
+  error=failed); spinner shows activity without a redundant node glyph.
+
 ## [1.0.19] — 2026-06-04
 
 ### Changed
