@@ -1,32 +1,29 @@
 // orchestrator-status-bar.ts — One-line status bar for running orchestrations.
 //
-// Two render modes:
+// Two render modes, distinguished by focus indicator:
 //
-//   INACTIVE (default):
-//     [HELLO-S01-T01 ● plan ⠋] "preview…"  ↓ dashboard
+//   INACTIVE (outline ○ prefix — navigation hint):
+//     ○ [HELLO-S01-T01 ● plan ⠋] "preview…"  ↓ dashboard
 //
-//     Shows a compact summary with status, spinner, and a ↓ hint.
-//     Press ↓ to focus the status bar.
+//     Press ↓ to focus the status bar. ○ signals "you can navigate here".
 //
-//   ACTIVE (user pressed ↓):
+//   ACTIVE (accent ▸ prefix — focus confirmation):
 //     ▸ [HELLO-S01-T01 ● plan ⠋] "preview…"  ⏎ open · esc back
 //
-//     Cursor glyph highlights the bar. Enter opens the dashboard overlay.
-//     Esc returns focus to the editor.
+//     ↑ / Esc returns focus to the prompt. Enter opens the dashboard.
 //
-// Glyphs: filled ● for active states (running, cancelling), outline ○ for
-// terminal/idle states (completed, failed, escalated, cancelled, pending).
-// This makes the bar scannable: filled = still going, outline = done.
-//
-// The dashboard overlay (/forge:dashboard) remains the detailed view.
+// Focus lifecycle:  ↓ activates → ↑/Esc deactivates → prompt gets focus.
+// All activation/deactivation is handled by the ForgeInputRouter listener
+// in thread-switcher.ts (not by this widget's handleInput, which is dead
+// code for setWidget components since pi-tui routes input to the prompt
+// editor before setWidget components).
 //
 // Iron Laws conformance:
 //   IL1 — All visible strings route through theme.fg()/bg()/bold(). No raw glyphs.
 //   IL7 — Spinner timer guarded by disposed flag to prevent stale callbacks.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { matchesKey, Key } from "@earendil-works/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 import type { OrchestratorTree, NodeStatus } from "./orchestrator-tree.js";
 import { fmtTokenMeter } from "./viewport-renderer.js";
@@ -187,8 +184,9 @@ export class OrchestratorStatusBar implements Component {
 			? dim(" ⏎ open · esc back")
 			: dim(" ↓ dashboard");
 
-		// IL1: ▸ cursor glyph themed via accent().
-		const prefix = this.active ? accent("▸") + " " : "";
+		// Focus indicator: outline ○ when inactive (navigation hint),
+		// accent ▸ when active (focus confirmation).
+		const prefix = this.active ? accent("▸") + " " : dim("○") + " ";
 		const joined = segments.join(dim(" │ "));
 		const line = `${prefix}${joined}${hint}`;
 
@@ -199,16 +197,11 @@ export class OrchestratorStatusBar implements Component {
 		// Re-render driven by external invalidationCb → tui.requestRender().
 	}
 
-	handleInput(data: string): void {
-		if (!this.active) return;
-		if (matchesKey(data, Key.enter)) {
-			this.active = false;
-			this.onAction?.(); // open dashboard
-		} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.up)) {
-			this.active = false; // deactivate, return to editor
-		}
-		if (!this.disposed) this.invalidationCb?.();
-	}
+	// Note: handleInput is dead code for setWidget("belowEditor") components —
+	// pi-tui routes input to the prompt editor, not to belowEditor widgets.
+	// All key handling (↓ focus, ↑/Esc unfocus, Enter open dashboard) is in
+	// the ForgeInputRouter listener in thread-switcher.ts.
+	// Keeping the method for Component interface conformance; it does nothing.
 
 	dispose(): void {
 		this.disposed = true; // IL7: set before clearing timer so callback sees it

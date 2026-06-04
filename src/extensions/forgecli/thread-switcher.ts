@@ -184,6 +184,12 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 					return { consume: true };
 				}
 
+				// When the status bar is focused, ↑ / Esc return focus to the prompt.
+				if (statusBarRef.isActive() && (matchesKey(data, Key.up) || matchesKey(data, Key.escape))) {
+					statusBarRef.setActive(false);
+					return { consume: true };
+				}
+
 				// When the status bar is focused, Enter opens the dashboard.
 				if (statusBarRef.isActive() && matchesKey(data, Key.enter)) {
 					statusBarRef.setActive(false);

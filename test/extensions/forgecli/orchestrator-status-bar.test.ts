@@ -180,4 +180,37 @@ describe("OrchestratorStatusBar render", () => {
 
 		bar.dispose();
 	});
+
+	it("shows outline ○ focus indicator when inactive and accent ▸ when active", () => {
+		const tree = new OrchestratorTree();
+		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
+
+		const prefixCalls: Array<{ color: string; text: string }> = [];
+		const spyTheme: Theme = {
+			...mockTheme,
+			fg: (color: string, text: string) => {
+				prefixCalls.push({ color, text });
+				return text;
+			},
+		} as unknown as Theme;
+
+		const bar = new OrchestratorStatusBar(tree, spyTheme);
+		bar.setInvalidationCallback(vi.fn());
+
+		// Inactive bar should show ○ prefix (dim)
+		bar.render(120);
+		const inactivePrefix = prefixCalls.find((c) => c.text === "○");
+		expect(inactivePrefix).toBeDefined();
+		expect(inactivePrefix!.color).toBe("dim");
+		prefixCalls.length = 0;
+
+		// Active bar should show ▸ prefix (accent)
+		bar.setActive(true);
+		bar.render(120);
+		const activePrefix = prefixCalls.find((c) => c.text === "▸");
+		expect(activePrefix).toBeDefined();
+		expect(activePrefix!.color).toBe("accent");
+
+		bar.dispose();
+	});
 });
