@@ -58,11 +58,11 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 // store-validator: returns ok=true by default
-vi.mock("../../../../src/extensions/forgecli/store-validator.js", () => ({
+vi.mock("../../../../src/extensions/forgecli/store/store-validator.js", () => ({
 	validateStoreCLIPayload: vi.fn(() => ({ ok: true, reason: "" })),
 }));
 
-vi.mock("../../../../src/extensions/forgecli/transition-guard.js", () => ({
+vi.mock("../../../../src/extensions/forgecli/store/transition-guard.js", () => ({
 	checkTransition: vi.fn(() => ({ allowed: true, reason: "" })),
 }));
 

@@ -7,8 +7,8 @@
 
 import * as path from "node:path";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { execFileAsync } from "./lib/exec-helpers.js";
-import { isDirectory } from "./lib/shared-fs-utils.js";
+import { execFileAsync } from "../lib/exec-helpers.js";
+import { isDirectory } from "../lib/shared-fs-utils.js";
 
 export const ENTITY_TYPES = new Set(["task", "sprint", "bug", "feature"]);
 

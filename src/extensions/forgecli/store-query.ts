@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { resolveToolDir } from "./store-resolver.js";
+import { resolveToolDir } from "./store/store-resolver.js";
 
 const execFileAsync = promisify(execFile);
 

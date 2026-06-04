@@ -21,7 +21,7 @@ import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { remediateValidationOutput } from "./store-error-remediation.js";
+import { remediateValidationOutput } from "./store/store-error-remediation.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 

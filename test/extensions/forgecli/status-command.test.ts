@@ -18,7 +18,7 @@ const execFileMock = vi.hoisted(() => ({
 }));
 
 // Mock store-resolver to control resolveToolDir
-vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+vi.mock("../../../src/extensions/forgecli/store/store-resolver.js", () => ({
 	resolveToolDir: vi.fn((forgeRoot: string) => path.join(forgeRoot, "tools")),
 	ENTITY_TYPES: new Set(["task", "sprint", "bug", "feature"]),
 	ID_PATTERNS: {},

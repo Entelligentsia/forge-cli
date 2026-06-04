@@ -50,10 +50,10 @@ vi.mock("node:fs", async (importOriginal) => {
 
 // store-validator and transition-guard are not exercised by these tests, but
 // hook-dispatcher imports them — stub to no-op so the module loads cleanly.
-vi.mock("../../../../src/extensions/forgecli/store-validator.js", () => ({
+vi.mock("../../../../src/extensions/forgecli/store/store-validator.js", () => ({
 	validateStoreCLIPayload: vi.fn(() => ({ ok: true, reason: "" })),
 }));
-vi.mock("../../../../src/extensions/forgecli/transition-guard.js", () => ({
+vi.mock("../../../../src/extensions/forgecli/store/transition-guard.js", () => ({
 	checkTransition: vi.fn(() => ({ allowed: true, reason: "" })),
 }));
 

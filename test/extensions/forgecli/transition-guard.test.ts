@@ -20,7 +20,7 @@ vi.mock("../../../src/extensions/forgecli/lib/spawn-store-cli.js", () => ({
 	spawnStoreCliRead: (...args: unknown[]) => mockSpawnStoreCliRead(...args),
 }));
 
-import { checkTransition } from "../../../src/extensions/forgecli/transition-guard.js";
+import { checkTransition } from "../../../src/extensions/forgecli/store/transition-guard.js";
 
 beforeEach(() => {
 	mockSpawnStoreCliRead.mockReset();

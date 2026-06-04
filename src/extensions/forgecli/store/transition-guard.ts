@@ -17,8 +17,8 @@
 //   Closes finding N-E-2 (forge-cli side), round-2-validation.md findings 36, 40.
 
 import * as path from "node:path";
-import { BUG_TRANSITIONS, SPRINT_TRANSITIONS, TASK_TRANSITIONS } from "./lib/catalog-loader.js";
-import { spawnStoreCliRead } from "./lib/spawn-store-cli.js";
+import { BUG_TRANSITIONS, SPRINT_TRANSITIONS, TASK_TRANSITIONS } from "../lib/catalog-loader.js";
+import { spawnStoreCliRead } from "../lib/spawn-store-cli.js";
 
 export interface TransitionGuardResult {
 	allowed: boolean;

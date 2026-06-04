@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { startReviewServer } from "./review-server.js";
-import { resolveEntityRef, resolveToolDir } from "./store-resolver.js";
+import { resolveEntityRef, resolveToolDir } from "./store/store-resolver.js";
 
 function isNonInteractive(): boolean {
 	return process.env.FORGE_YES === "1" || process.env.FORGE_NON_INTERACTIVE === "1";

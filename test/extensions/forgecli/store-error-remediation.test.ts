@@ -13,7 +13,7 @@ import {
 	parseValidationError,
 	remediateError,
 	remediateValidationOutput,
-} from "../../../src/extensions/forgecli/store-error-remediation.js";
+} from "../../../src/extensions/forgecli/store/store-error-remediation.js";
 
 // ── parseValidationError ────────────────────────────────────────────────────────
 

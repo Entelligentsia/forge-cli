@@ -59,7 +59,7 @@ import { validateModelConfig } from "./model-validator.js";
 import { loadWorkflow } from "./parsers/workflow-loader.js";
 import { getSessionRegistry } from "./session-registry.js";
 import { getOrchestratorTree } from "./orchestrator-tree.js";
-import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
+import { resolveToCanonicalId, resolveToolDir } from "./store/store-resolver.js";
 import { attachViewportObserver } from "./viewport/events.js";
 
 /**

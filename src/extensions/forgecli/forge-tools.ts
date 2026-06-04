@@ -35,7 +35,7 @@ import {
 } from "./subagent/phase-guard.js";
 // FORGE-S25-T22 (N-C-D): adopt shared resolveToolDir from store-resolver instead of duplicating.
 // The private copy was identical to store-resolver.resolveToolDir; deleted per R2 Pass-3 scope-corrected.
-import { resolveToolDir } from "./store-resolver.js";
+import { resolveToolDir } from "./store/store-resolver.js";
 
 // ── Result helpers ───────────────────────────────────────────────────────────
 

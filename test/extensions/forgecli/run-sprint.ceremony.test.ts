@@ -24,7 +24,7 @@ import { buildSprintFixture, realForgeRoot, type SprintFixture } from "../../fix
 
 // Mock store-resolver so resolveToCanonicalId passes through canonical sprint IDs unchanged.
 // The ceremony tests use real canonical IDs (e.g. "FORGE-S22") that don't need resolution.
-vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
+vi.mock("../../../src/extensions/forgecli/store/store-resolver.js", () => ({
 	resolveToCanonicalId: vi.fn(async (arg: string) => arg),
 	resolveToolDir: vi.fn((forgeRoot: string) => forgeRoot + "/tools"),
 }));
