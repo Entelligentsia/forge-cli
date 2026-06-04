@@ -20,6 +20,7 @@ import {
 	computeNextBugId,
 	deleteBugState,
 	extractBugIdFromEvents,
+	extractBugIdFromReportText,
 	isBugStateStale,
 	type RunBugState,
 	readBugRecord,
@@ -596,6 +597,37 @@ describe("prefix-aware bug IDs (CART regression)", () => {
 		const events = [{ toolName: "forge_store", result: "wrote FORGE-BUG-042" }];
 		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-042");
 		expect(extractBugIdFromEvents(events as any, "CART")).toBeNull();
+	});
+
+	// /forge:fix-bug @BUG_REPORT.md is the primary intake notation. When the
+	// report references a canonical <PREFIX>-BUG-NNN that already exists in
+	// the store, fix-bug must operate on THAT record instead of minting a
+	// duplicate (the CART incident created FORGE-BUG-001 while BUG_REPORT.md
+	// said "Bug ID: CART-BUG-001" in its header).
+	describe("extractBugIdFromReportText", () => {
+		it("finds the project-prefixed bug ID in a report header", () => {
+			const report = "# Bug Report: export broken\n\n**Bug ID**: CART-BUG-001\n**Severity**: Major\n";
+			expect(extractBugIdFromReportText(report, "CART")).toBe("CART-BUG-001");
+		});
+
+		it("returns the FIRST id when several are referenced", () => {
+			const report = "Relates to CART-BUG-002, regression of CART-BUG-001.";
+			expect(extractBugIdFromReportText(report, "CART")).toBe("CART-BUG-002");
+		});
+
+		it("ignores other-prefix IDs (no cross-project capture)", () => {
+			const report = "**Bug ID**: FORGE-BUG-043\n";
+			expect(extractBugIdFromReportText(report, "CART")).toBeNull();
+		});
+
+		it("does not match inside longer identifiers", () => {
+			const report = "see XCART-BUG-001A and prefix CART-BUGGY-001";
+			expect(extractBugIdFromReportText(report, "CART")).toBeNull();
+		});
+
+		it("returns null when the report carries no ID", () => {
+			expect(extractBugIdFromReportText("export renders links wrong", "CART")).toBeNull();
+		});
 	});
 });
 

@@ -299,6 +299,16 @@ export function assignNextBugId(storeCli: string, cwd: string, prefix = "FORGE")
 	return computeNextBugId(bugIds, prefix);
 }
 
+// Extracts the first canonical <PREFIX>-BUG-NNN referenced in a bug-report
+// text (e.g. the "**Bug ID**: CART-BUG-001" header line BUG_REPORT.md files
+// carry). Used by the @file intake path so /forge:fix-bug @BUG_REPORT.md
+// operates on the referenced store record instead of minting a duplicate.
+// Prefix is config-owned and identifier-validated (safe in a RegExp).
+export function extractBugIdFromReportText(text: string, prefix: string): string | null {
+	const m = text.match(new RegExp(`\\b${prefix}-BUG-\\d+\\b`));
+	return m ? m[0] : null;
+}
+
 // Pre-creates a minimal bug record so the subagent has a real ID to work with.
 export function preCreateBug(bugId: string, title: string, storeCli: string, cwd: string): boolean {
 	const data = {
@@ -1721,10 +1731,47 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 					return;
 				}
 			} else {
-				// Free-form text — defer bug creation to triage-phase subagent
-				// Use a temporary bugId placeholder; will be captured from subagent events
-				bugId = `PENDING-${Date.now()}`;
-				isNewBug = true;
+				// @file or free-form text. If an @file report references a canonical
+				// <PREFIX>-BUG-NNN that already exists in the store, fix THAT record —
+				// minting a new bug here duplicated CART-BUG-001 as a phantom in the
+				// CART incident (the report header carried the real ID all along).
+				let reportBugId: string | null = null;
+				if (rawArg.startsWith("@")) {
+					const rel = rawArg.slice(1).trim();
+					const reportPath = path.isAbsolute(rel) ? rel : path.join(cwd, rel);
+					try {
+						// 256 KB cap — bug reports are small; never slurp arbitrary files.
+						if (fs.existsSync(reportPath) && fs.statSync(reportPath).size <= 262144) {
+							const projectPrefix = loadGovernorProjectConfig(cwd).prefix;
+							reportBugId = extractBugIdFromReportText(fs.readFileSync(reportPath, "utf8"), projectPrefix);
+						}
+					} catch {
+						/* unreadable report — fall through to new-bug intake */
+					}
+				}
+
+				const reportRecord = reportBugId ? readBugRecord(reportBugId, storeCli, cwd) : null;
+				if (reportBugId && reportRecord) {
+					if (BUG_TERMINAL_STATES.has(reportRecord.status ?? "")) {
+						ctx.ui.notify(
+							`× forge:fix-bug — ${rawArg} references ${reportBugId}, which is already in terminal state ` +
+								`'${reportRecord.status}'. No further processing.`,
+							"error",
+						);
+						ctx.ui.setStatus?.(STATUS_KEY, undefined);
+						return;
+					}
+					bugId = reportBugId;
+					ctx.ui.notify(
+						`forge:fix-bug — ${rawArg} references existing bug ${bugId}; fixing it (no new record minted).`,
+						"info",
+					);
+				} else {
+					// Free-form text (or report with no resolvable ID) — defer bug
+					// creation to the triage-phase subagent via a PENDING placeholder.
+					bugId = `PENDING-${Date.now()}`;
+					isNewBug = true;
+				}
 			}
 
 			// ── Pre-flight confirm ───────────────────────────────────────────
