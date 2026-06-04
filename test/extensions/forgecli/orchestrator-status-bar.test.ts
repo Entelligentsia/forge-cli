@@ -142,54 +142,15 @@ describe("OrchestratorStatusBar render", () => {
 		bar.dispose();
 	});
 
-	it("uses filled ● for running state and outline ○ for completed state", () => {
+	it("shows outline ○ when inactive and filled ● when active", () => {
 		const tree = new OrchestratorTree();
 		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
 
-		const glyphCalls: Array<{ color: string; text: string }> = [];
+		const calls: Array<{ color: string; text: string }> = [];
 		const spyTheme: Theme = {
 			...mockTheme,
 			fg: (color: string, text: string) => {
-				glyphCalls.push({ color, text });
-				return text;
-			},
-		} as unknown as Theme;
-
-		const bar = new OrchestratorStatusBar(tree, spyTheme);
-		bar.setInvalidationCallback(vi.fn());
-
-		// Running state should use filled ●
-		bar.render(120);
-		const runningGlyphCall = glyphCalls.find(
-			(c) => c.text === "●" || c.text === "○",
-		);
-		expect(runningGlyphCall).toBeDefined();
-		expect(runningGlyphCall!.text).toBe("●");
-		expect(runningGlyphCall!.color).toBe("accent");
-		glyphCalls.length = 0;
-
-		// Complete the node
-		tree.completeNode("sprint-1", "completed");
-		bar.render(120);
-		const completedGlyphCall = glyphCalls.find(
-			(c) => c.text === "●" || c.text === "○",
-		);
-		expect(completedGlyphCall).toBeDefined();
-		expect(completedGlyphCall!.text).toBe("○");
-		expect(completedGlyphCall!.color).toBe("success");
-
-		bar.dispose();
-	});
-
-	it("shows outline ○ focus indicator when inactive and accent ▸ when active", () => {
-		const tree = new OrchestratorTree();
-		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
-
-		const prefixCalls: Array<{ color: string; text: string }> = [];
-		const spyTheme: Theme = {
-			...mockTheme,
-			fg: (color: string, text: string) => {
-				prefixCalls.push({ color, text });
+				calls.push({ color, text });
 				return text;
 			},
 		} as unknown as Theme;
@@ -199,15 +160,15 @@ describe("OrchestratorStatusBar render", () => {
 
 		// Inactive bar should show ○ prefix (dim)
 		bar.render(120);
-		const inactivePrefix = prefixCalls.find((c) => c.text === "○");
+		const inactivePrefix = calls.find((c) => c.text === "○");
 		expect(inactivePrefix).toBeDefined();
 		expect(inactivePrefix!.color).toBe("dim");
-		prefixCalls.length = 0;
+		calls.length = 0;
 
-		// Active bar should show ▸ prefix (accent)
+		// Active bar should show ● prefix (accent)
 		bar.setActive(true);
 		bar.render(120);
-		const activePrefix = prefixCalls.find((c) => c.text === "▸");
+		const activePrefix = calls.find((c) => c.text === "●");
 		expect(activePrefix).toBeDefined();
 		expect(activePrefix!.color).toBe("accent");
 

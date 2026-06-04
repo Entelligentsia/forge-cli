@@ -3,14 +3,19 @@
 // Two render modes, distinguished by focus indicator:
 //
 //   INACTIVE (outline ○ prefix — navigation hint):
-//     ○ [HELLO-S01-T01 ● plan ⠋] "preview…"  ↓ dashboard
+//     ○ [HELLO-S01-T01 · plan:1 ⠋] "preview…"  ↓ dashboard
 //
-//     Press ↓ to focus the status bar. ○ signals "you can navigate here".
+//     ○ signals "you can ↓ here". Spinner (⠋) separately shows activity.
 //
-//   ACTIVE (accent ▸ prefix — focus confirmation):
-//     ▸ [HELLO-S01-T01 ● plan ⠋] "preview…"  ⏎ open · esc back
+//   ACTIVE (filled ● prefix — focus confirmation):
+//     ● [HELLO-S01-T01 · plan:1 ⠋] "preview…"  ⏎ open · esc back
 //
-//     ↑ / Esc returns focus to the prompt. Enter opens the dashboard.
+//     ● signals "you're here". ↑/Esc returns focus to the prompt.
+//
+// Visual semantics:
+//   ○/● — bar focus state (outline = not focused, filled = focused)
+//   ⠋  — activity spinner (only shown for running/cancelling nodes)
+//   No worm when done — completed/failed etc. have no spinner.
 //
 // Focus lifecycle:  ↓ activates → ↑/Esc deactivates → prompt gets focus.
 // All activation/deactivation is handled by the ForgeInputRouter listener
@@ -25,7 +30,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
-import type { OrchestratorTree, NodeStatus } from "./orchestrator-tree.js";
+import type { OrchestratorTree } from "./orchestrator-tree.js";
 import { fmtTokenMeter } from "./viewport-renderer.js";
 
 // ── Braille spinner ────────────────────────────────────────────────────────
@@ -34,32 +39,6 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 const SPINNER_INTERVAL_MS = 100;
 
 // ── Status glyph for a node ────────────────────────────────────────────────
-
-// ── Status glyph for a node (status bar) ───────────────────────────────────
-//
-// Uses filled ● for active states (running, cancelling) and outline ○ for
-// terminal/idle states so the bar is scannable at a glance: filled = still
-// going, outline = done. Per-status colouring conveys the outcome.
-
-function nodeGlyph(status: NodeStatus, theme: Theme): string {
-	switch (status) {
-		case "running":
-			return theme.fg("accent", "●");   // filled — active
-		case "cancelling":
-			return theme.fg("warning", "●");  // filled — winding down
-		case "completed":
-			return theme.fg("success", "○");  // outline — done
-		case "failed":
-			return theme.fg("error", "○");     // outline — error
-		case "escalated":
-			return theme.fg("error", "○");     // outline — escalated
-		case "cancelled":
-			return theme.fg("muted", "○");    // outline — stopped
-		case "pending":
-		default:
-			return theme.fg("dim", "○");       // outline — waiting
-	}
-}
 
 // ── OrchestratorStatusBar ──────────────────────────────────────────────────
 
@@ -151,7 +130,6 @@ export class OrchestratorStatusBar implements Component {
 			// Find the deepest running leaf or the root itself.
 			const leaf = this.findDeepestRunningLeaf(root.id);
 			const displayNode = leaf ?? root;
-			const glyph = nodeGlyph(displayNode.status, this.theme);
 
 			// Label: root label, with current phase as suffix if different.
 			let label = root.label;
@@ -165,7 +143,8 @@ export class OrchestratorStatusBar implements Component {
 			const meter = fmtTokenMeter(usage);
 			const meterPart = meter ? dim(` ${meter}`) : "";
 
-			// IL1: spinner characters themed with accent colour.
+			// IL1: spinner (worm) shows activity — only for running/cancelling.
+			// Not shown for terminal states (completed, failed, etc.).
 			const spin = (displayNode.status === "running" || displayNode.status === "cancelling")
 				? ` ${this.theme.fg("accent", SPINNER_FRAMES[this.spinnerIdx])}`
 				: "";
@@ -175,7 +154,7 @@ export class OrchestratorStatusBar implements Component {
 				? dim(` "${truncateToWidth(displayNode.lastTurnPreview, 60)}"`)
 				: "";
 
-			const segment = `${glyph} ${bold(`[${label}]`)}${spin}${preview}${meterPart}`;
+			const segment = `${bold(`[${label}]`)}${spin}${preview}${meterPart}`;
 			segments.push(segment);
 		}
 
@@ -185,8 +164,9 @@ export class OrchestratorStatusBar implements Component {
 			: dim(" ↓ dashboard");
 
 		// Focus indicator: outline ○ when inactive (navigation hint),
-		// accent ▸ when active (focus confirmation).
-		const prefix = this.active ? accent("▸") + " " : dim("○") + " ";
+		// filled ● when active (focus confirmation). ○ says "↓ here",
+		// ● says "you're here". The spinner (⠋) separately shows activity.
+		const prefix = this.active ? accent("●") + " " : dim("○") + " ";
 		const joined = segments.join(dim(" │ "));
 		const line = `${prefix}${joined}${hint}`;
 
