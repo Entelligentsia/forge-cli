@@ -57,20 +57,52 @@ export interface RunHaltAdvisorOptions {
  *
  * Priority:
  *   1. Explicit `advisorModel` config slot from forge-cli layered config.
- *   2. `modelRegistry.getAvailable()[0]` — the first available model.
- *   3. undefined — caller should skip the advisor.
+ *   2. the session's current model — provider-neutral and known-good (it is
+ *      streaming the session right now).
+ *   3. first USABLE registry entry from getAvailable().
+ *   4. undefined — caller should skip the advisor.
  *
  * Note: model-registry.ts does NOT expose a capability rank, so the config
- * slot is the canonical way to point at a "strongest" model. getAvailable()[0]
- * is the safe no-config fallback. (Sub-decision resolved in PLAN.md.)
+ * slot is the canonical way to point at a "strongest" model.
+ *
+ * pi's ModelRegistry.getAvailable() returns Model objects whose identifier is
+ * `.id`, not `.model` — the previous blind `available[0] as PersonaModel`
+ * cast produced { provider, model: undefined } ("halt advisor running on
+ * anthropic/undefined", CART-S03-T01 halt). Entries without a usable
+ * identifier are skipped.
  */
 export function resolveAdvisorModel(
 	configSlot: PersonaModel | undefined,
 	modelRegistry: ModelRegistryLike | undefined,
+	currentModel?: { provider?: string; model?: string; id?: string },
 ): PersonaModel | undefined {
 	if (configSlot) return configSlot;
-	const available = modelRegistry?.getAvailable?.() ?? [];
-	return available[0] as PersonaModel | undefined;
+
+	const toPersonaModel = (entry: {
+		provider?: string;
+		model?: string;
+		id?: string;
+	}): PersonaModel | undefined => {
+		const model = entry.model ?? entry.id;
+		if (!entry.provider || !model) return undefined;
+		return { provider: entry.provider, model };
+	};
+
+	if (currentModel) {
+		const fromCurrent = toPersonaModel(currentModel);
+		if (fromCurrent) return fromCurrent;
+	}
+
+	const available = (modelRegistry?.getAvailable?.() ?? []) as Array<{
+		provider?: string;
+		model?: string;
+		id?: string;
+	}>;
+	for (const entry of available) {
+		const mapped = toPersonaModel(entry);
+		if (mapped) return mapped;
+	}
+	return undefined;
 }
 
 /**

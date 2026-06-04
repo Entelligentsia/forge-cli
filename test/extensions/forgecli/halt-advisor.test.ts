@@ -57,6 +57,60 @@ describe("halt-advisor :: resolveAdvisorModel()", () => {
 
 		expect(result).toBeUndefined();
 	});
+
+	// ── CART-S03-T01 regression: "halt advisor running on anthropic/undefined" ──
+	// pi's ModelRegistry.getAvailable() returns Model objects with `.id` (not
+	// `.model`); the blind `available[0] as PersonaModel` cast yielded
+	// { provider, model: undefined } and the advisor ran on a nonexistent model.
+
+	it("maps pi-shaped registry entries ({provider, id}) to PersonaModel", () => {
+		const ctx = makeCtx([]);
+		(ctx.modelRegistry.getAvailable as ReturnType<typeof vi.fn>) = vi.fn(() => [
+			{ provider: "ollama-cloud", id: "glm-5.1", name: "GLM 5.1" },
+		]);
+
+		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any);
+
+		expect(result).toEqual({ provider: "ollama-cloud", model: "glm-5.1" });
+	});
+
+	it("skips registry entries with no usable model id", () => {
+		const ctx = makeCtx([]);
+		(ctx.modelRegistry.getAvailable as ReturnType<typeof vi.fn>) = vi.fn(() => [
+			{ provider: "anthropic" }, // neither .model nor .id — unusable
+			{ provider: "ollama-cloud", id: "minimax-m2.7" },
+		]);
+
+		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any);
+
+		expect(result).toEqual({ provider: "ollama-cloud", model: "minimax-m2.7" });
+	});
+
+	it("prefers the session's current model over available[0] (provider-neutral, known-good)", () => {
+		const ctx = makeCtx([]);
+		(ctx.modelRegistry.getAvailable as ReturnType<typeof vi.fn>) = vi.fn(() => [
+			{ provider: "anthropic", id: "claude-haiku-3" },
+		]);
+
+		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any, {
+			provider: "ollama-cloud",
+			id: "glm-5.1",
+		} as any);
+
+		expect(result).toEqual({ provider: "ollama-cloud", model: "glm-5.1" });
+	});
+
+	it("config slot still wins over the current model", () => {
+		const slot: PersonaModel = { provider: "ollama-cloud", model: "qwen3-coder-next" };
+		const ctx = makeCtx([]);
+
+		const result = resolveAdvisorModel(slot, ctx.modelRegistry as any, {
+			provider: "ollama-cloud",
+			id: "glm-5.1",
+		} as any);
+
+		expect(result).toEqual(slot);
+	});
 });
 
 describe("halt-advisor :: runHaltAdvisor()", () => {

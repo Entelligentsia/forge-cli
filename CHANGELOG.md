@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.18] — 2026-06-04
+
+Coordinated release matching forge plugin **v1.2.17** (postflight-gate
+false-halt fixes). Bundles the dashboard Iron-Laws compliance pass
+(Focusable, theming, width-safety, timer guards, consolidated entry).
+
+### Fixed
+
+- **Halt advisor no longer runs on `anthropic/undefined`.** pi's
+  `ModelRegistry.getAvailable()` returns Model objects whose identifier is
+  `.id`, not `.model`; the blind `available[0] as PersonaModel` cast produced
+  `{ provider, model: undefined }` and the advisor dispatched against a
+  nonexistent model (observed on the CART-S03-T01 halt). `resolveAdvisorModel`
+  now maps both shapes, skips entries without a usable identifier, and —
+  before falling back to the registry at all — prefers the **session's
+  current model**, which is provider-neutral and known-good. Config
+  `advisorModel` slot still wins when set.
+
 ## [1.0.17] — 2026-06-04
 
 ### Fixed

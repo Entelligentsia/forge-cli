@@ -807,6 +807,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					const advisorModel = resolveAdvisorModel(
 						modelRoutingConfig.advisorModel,
 						ctx.modelRegistry as any,
+						ctx.model as any,
 					);
 					void runHaltAdvisor({
 						gateFailure: preflightOutcome.gateFailure,
@@ -1431,6 +1432,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				const advisorModel = resolveAdvisorModel(
 					modelRoutingConfig.advisorModel,
 					ctx.modelRegistry as any,
+					ctx.model as any,
 				);
 				void runHaltAdvisor({
 					gateFailure: {

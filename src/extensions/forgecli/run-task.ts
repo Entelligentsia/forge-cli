@@ -886,6 +886,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					const advisorModel = resolveAdvisorModel(
 						modelRoutingConfig.advisorModel,
 						ctx.modelRegistry as any,
+						ctx.model as any,
 					);
 					void runHaltAdvisor({
 						gateFailure: preflightOutcome.gateFailure,
@@ -1418,6 +1419,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				const advisorModel = resolveAdvisorModel(
 					modelRoutingConfig.advisorModel,
 					ctx.modelRegistry as any,
+					ctx.model as any,
 				);
 				void runHaltAdvisor({
 					gateFailure,
@@ -1526,6 +1528,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					const advisorModel = resolveAdvisorModel(
 						modelRoutingConfig.advisorModel,
 						ctx.modelRegistry as any,
+						ctx.model as any,
 					);
 					void runHaltAdvisor({
 						gateFailure: postflightOutcome.gateFailure,
