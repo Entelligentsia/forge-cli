@@ -10,7 +10,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createConfigTuiComponent } from "../config-tui/component.js";
 import { runConfigTui } from "../config-tui/handler.js";
 import type { InitOptions } from "../config-tui/state.js";
-import { getInputRouter } from "../input-router.js";
+import { getInputRouter } from "../tui/input-router.js";
 
 export interface RegisterConfigCommandOptions {
 	/** When null, /forge:config is registered but only the routing-config bits

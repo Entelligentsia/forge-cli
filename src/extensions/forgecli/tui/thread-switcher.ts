@@ -18,15 +18,15 @@ import { type Component } from "@earendil-works/pi-tui";
 
 import { getInputRouter } from "./input-router.js";
 import { matchesKey, Key } from "@earendil-works/pi-tui";
-import { getOrchestratorTree, type OrchestratorTree } from "./orchestrator-tree.js";
-import { DashboardComponent, DashboardController } from "./dashboard/component.js";
+import { getOrchestratorTree, type OrchestratorTree } from "../orchestrator-tree.js";
+import { DashboardComponent, DashboardController } from "../dashboard/component.js";
 import { OrchestratorStatusBar } from "./orchestrator-status-bar.js";
 import {
 	getSessionRegistry,
 	type SessionRegistry,
-} from "./session-registry.js";
-import { fmtModelLabel, fmtTokenFooter } from "./viewport/renderer.js";
-import { paintFooterLine } from "./viewport/theme.js";
+} from "../session-registry.js";
+import { fmtModelLabel, fmtTokenFooter } from "../viewport/renderer.js";
+import { paintFooterLine } from "../viewport/theme.js";
 
 const STATUS_BAR_WIDGET_KEY = "forge:orchestrator-status-bar";
 const FOOTER_WIDGET_KEY = "forge:viewport-footer";

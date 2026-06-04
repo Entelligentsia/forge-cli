@@ -31,8 +31,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
-import type { OrchestratorTree } from "./orchestrator-tree.js";
-import { fmtTokenMeter } from "./viewport/renderer.js";
+import type { OrchestratorTree } from "../orchestrator-tree.js";
+import { fmtTokenMeter } from "../viewport/renderer.js";
 
 // ── Braille spinner ────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ const SPINNER_INTERVAL_MS = 100;
 //   ○ dim    = not focused, terminal     ● dim    = focused, terminal
 //   ○ accent = not focused, running      ● accent = focused, running
 
-function focusIndicatorColour(roots: import("./orchestrator-tree.js").OrchestratorNode[], theme: Theme): import("@earendil-works/pi-coding-agent").ThemeColor {
+function focusIndicatorColour(roots: import("../orchestrator-tree.js").OrchestratorNode[], theme: Theme): import("@earendil-works/pi-coding-agent").ThemeColor {
 	// Derive the aggregate status from all visible roots.
 	// Running/cancelling wins over terminal; failed wins over completed.
 	const hasRunning = roots.some((r) => r.status === "running" || r.status === "cancelling");
@@ -227,7 +227,7 @@ export class OrchestratorStatusBar implements Component {
 	}
 
 	/** Walk depth-first to find the deepest running/cancelling leaf. */
-	private findDeepestRunningLeaf(id: string): import("./orchestrator-tree.js").OrchestratorNode | undefined {
+	private findDeepestRunningLeaf(id: string): import("../orchestrator-tree.js").OrchestratorNode | undefined {
 		const node = this.tree.getNode(id);
 		if (!node) return undefined;
 		if (node.kind === "leaf" && (node.status === "running" || node.status === "cancelling")) {

@@ -12,7 +12,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
-import { openDashboardTui } from "../thread-switcher.js";
+import { openDashboardTui } from "../tui/thread-switcher.js";
 
 export function registerDashboardCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("forge:dashboard", {

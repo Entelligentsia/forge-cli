@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ForgeInputRouter, type RouterListener } from "../../../src/extensions/forgecli/input-router.js";
+import { ForgeInputRouter, type RouterListener } from "../../../src/extensions/forgecli/tui/input-router.js";
 
 let router: ForgeInputRouter;
 

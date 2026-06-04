@@ -76,7 +76,7 @@ const config: KnipConfig = {
 		// Test-reset helpers (_reset*, __reset*) — exported for integration test access;
 		// not called by current vitest suite.
 		"src/extensions/forgecli/hook-dispatcher.ts": ["exports"],
-		"src/extensions/forgecli/input-router.ts": ["exports"],
+		"src/extensions/forgecli/tui/input-router.ts": ["exports"],
 		// friction-emit.ts types exported for downstream skill-curation consumers.
 		"src/extensions/forgecli/skill-curation/friction-emit.ts": ["types"],
 		// lib/state-helpers.ts base interfaces consumed by extending classes.

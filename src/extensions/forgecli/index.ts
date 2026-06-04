@@ -21,7 +21,7 @@ import { registerAddPipeline } from "./commands/add-pipeline.js";
 import { registerAddTask } from "./commands/add-task.js";
 import { registerApprove } from "./commands/approve.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
-import { readProjectMeta } from "./banner.js";
+import { readProjectMeta } from "./tui/banner.js";
 // calibrate.ts — registerCalibrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerCollate } from "./commands/collate.js";
 import { registerCommit } from "./commands/commit.js";
@@ -29,7 +29,7 @@ import { registerConfigCommand } from "./commands/config-command.js";
 // enhance.ts — registerEnhance removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerFixBug } from "./orchestrators/fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
-import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
+import { createForgeHeader, type ForgeHeader } from "./tui/forge-header.js";
 import { registerForgeInit } from "./forge-init/forge-init.js";
 import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
@@ -50,7 +50,7 @@ import {
 import { registerPostInitHook } from "./hooks/post-init-hook.js";
 import { registerPostSprintHook } from "./hooks/post-sprint-hook.js";
 import { registerImplement } from "./commands/implement.js";
-import { getInputRouter } from "./input-router.js";
+import { getInputRouter } from "./tui/input-router.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
 import { readPkgVersionsSync } from "./lib/versions.js";
 // materialize.ts — registerMaterialize removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
@@ -75,7 +75,7 @@ import { registerStatusCommand } from "./commands/status-command.js";
 import { registerStoreQuery } from "./commands/store-query.js";
 import { registerStoreRepair } from "./commands/store-repair.js";
 import { registerTestOrchestrate } from "./commands/test-orchestrate.js";
-import { registerThreadSwitcher } from "./thread-switcher.js";
+import { registerThreadSwitcher } from "./tui/thread-switcher.js";
 import { registerDashboardCommand } from "./dashboard/register.js";
 import { triggerUpdateCheck } from "./update/update-check.js";
 // update-tools.ts — registerUpdateTools removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands

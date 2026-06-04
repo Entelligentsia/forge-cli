@@ -22,7 +22,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { getInputRouter } from "./input-router.js";
+import { getInputRouter } from "./tui/input-router.js";
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
