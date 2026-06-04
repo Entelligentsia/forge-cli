@@ -3,19 +3,20 @@
 // Two render modes, distinguished by focus indicator:
 //
 //   INACTIVE (outline ○ prefix — navigation hint):
-//     ○ [HELLO-S01-T01 · plan:1 ⠋] "preview…"  ↓ dashboard
+//     ○ [CART-S03-T01 · writeback:1 ⠋] "preview…"  ↓ dashboard
 //
-//     ○ signals "you can ↓ here". Spinner (⠋) separately shows activity.
+//     ○ signals "you can ↓ here". Colour carries status: green=completed,
+//     red=failed, accent=running, muted=other terminal.
 //
 //   ACTIVE (filled ● prefix — focus confirmation):
-//     ● [HELLO-S01-T01 · plan:1 ⠋] "preview…"  ⏎ open · esc back
+//     ● [CART-S03-T01 · writeback:1 ⠋] "preview…"  ⏎ open · esc back
 //
 //     ● signals "you're here". ↑/Esc returns focus to the prompt.
 //
-// Visual semantics:
-//   ○/● — bar focus state (outline = not focused, filled = focused)
-//   ⠋  — activity spinner (only shown for running/cancelling nodes)
-//   No worm when done — completed/failed etc. have no spinner.
+// Visual semantics (two dimensions on one circle):
+//   Shape:  ○ = not focused,  ● = focused
+//   Colour: accent=running, success=completed, error=failed, muted=terminal
+//   ⠋ spinner: shows activity (only for running/cancelling nodes)
 //
 // Focus lifecycle:  ↓ activates → ↑/Esc deactivates → prompt gets focus.
 // All activation/deactivation is handled by the ForgeInputRouter listener
@@ -38,7 +39,30 @@ import { fmtTokenMeter } from "./viewport-renderer.js";
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 100;
 
-// ── Status glyph for a node ────────────────────────────────────────────────
+// ── Focus indicator colour: derives the theme colour from the root's
+// aggregate status. The shape (○/●) carries focus; the colour carries
+// status. Both dimensions on the same circle glyph.
+//
+//   ○ green  = not focused, completed    ● green  = focused, completed
+//   ○ red    = not focused, failed       ● red    = focused, failed
+//   ○ dim    = not focused, terminal     ● dim    = focused, terminal
+//   ○ accent = not focused, running      ● accent = focused, running
+
+function focusIndicatorColour(roots: import("./orchestrator-tree.js").OrchestratorNode[], theme: Theme): import("@earendil-works/pi-coding-agent").ThemeColor {
+	// Derive the aggregate status from all visible roots.
+	// Running/cancelling wins over terminal; failed wins over completed.
+	const hasRunning = roots.some((r) => r.status === "running" || r.status === "cancelling");
+	if (hasRunning) return "accent";
+
+	const hasFailed = roots.some((r) => r.status === "failed" || r.status === "escalated");
+	if (hasFailed) return "error";
+
+	const hasCompleted = roots.some((r) => r.status === "completed");
+	if (hasCompleted) return "success";
+
+	// Terminal but not failed/completed (cancelled, pending, etc.).
+	return "muted";
+}
 
 // ── OrchestratorStatusBar ──────────────────────────────────────────────────
 
@@ -121,7 +145,6 @@ export class OrchestratorStatusBar implements Component {
 		if (roots.length === 0) return []; // Hidden when nothing is running.
 
 		const dim = (s: string) => this.theme.fg("dim", s);
-		const accent = (s: string) => this.theme.fg("accent", s);
 		const bold = (s: string) => this.theme.bold(this.theme.fg("accent", s));
 
 		// Build a segment for each active root.
@@ -163,10 +186,12 @@ export class OrchestratorStatusBar implements Component {
 			? dim(" ⏎ open · esc back")
 			: dim(" ↓ dashboard");
 
-		// Focus indicator: outline ○ when inactive (navigation hint),
-		// filled ● when active (focus confirmation). ○ says "↓ here",
-		// ● says "you're here". The spinner (⠋) separately shows activity.
-		const prefix = this.active ? accent("●") + " " : dim("○") + " ";
+		// Focus indicator: ○/● coloured by aggregate status.
+		// Shape: ○ when inactive ("↓ here"), ● when active ("you're here").
+		// Colour: accent=running, success=completed, error=failed, muted=terminal.
+		const indicatorColour = focusIndicatorColour(roots, this.theme);
+		const indicatorGlyph = this.active ? "●" : "○";
+		const prefix = this.theme.fg(indicatorColour, indicatorGlyph) + " ";
 		const joined = segments.join(dim(" │ "));
 		const line = `${prefix}${joined}${hint}`;
 

@@ -142,7 +142,7 @@ describe("OrchestratorStatusBar render", () => {
 		bar.dispose();
 	});
 
-	it("shows outline ○ when inactive and filled ● when active", () => {
+	it("shows outline ○ when inactive and filled ● when active, coloured by status", () => {
 		const tree = new OrchestratorTree();
 		tree.startNode("sprint-1", { label: "Sprint 1", kind: "orchestrator" });
 
@@ -158,19 +158,36 @@ describe("OrchestratorStatusBar render", () => {
 		const bar = new OrchestratorStatusBar(tree, spyTheme);
 		bar.setInvalidationCallback(vi.fn());
 
-		// Inactive bar should show ○ prefix (dim)
+		// Running (inactive): ○ with accent colour
 		bar.render(120);
-		const inactivePrefix = calls.find((c) => c.text === "○");
-		expect(inactivePrefix).toBeDefined();
-		expect(inactivePrefix!.color).toBe("dim");
+		const inactiveRunning = calls.find((c) => c.text === "○");
+		expect(inactiveRunning).toBeDefined();
+		expect(inactiveRunning!.color).toBe("accent");
 		calls.length = 0;
 
-		// Active bar should show ● prefix (accent)
+		// Running (active): ● with accent colour
 		bar.setActive(true);
 		bar.render(120);
-		const activePrefix = calls.find((c) => c.text === "●");
-		expect(activePrefix).toBeDefined();
-		expect(activePrefix!.color).toBe("accent");
+		const activeRunning = calls.find((c) => c.text === "●");
+		expect(activeRunning).toBeDefined();
+		expect(activeRunning!.color).toBe("accent");
+		calls.length = 0;
+
+		// Completed (inactive): ○ with success (green) colour
+		bar.setActive(false);
+		tree.completeNode("sprint-1", "completed");
+		bar.render(120);
+		const inactiveCompleted = calls.find((c) => c.text === "○");
+		expect(inactiveCompleted).toBeDefined();
+		expect(inactiveCompleted!.color).toBe("success");
+		calls.length = 0;
+
+		// Completed (active): ● with success colour
+		bar.setActive(true);
+		bar.render(120);
+		const activeCompleted = calls.find((c) => c.text === "●");
+		expect(activeCompleted).toBeDefined();
+		expect(activeCompleted!.color).toBe("success");
 
 		bar.dispose();
 	});
