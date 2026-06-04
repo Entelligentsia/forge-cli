@@ -16,7 +16,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock forge-init.js (hoisted)
-vi.mock("../../../src/extensions/forgecli/forge-init.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/forge-init.js", () => ({
 	getBundledPayloadRoot: vi.fn(() => "/mock-bundle-root"),
 	getBundledToolsRoot: vi.fn(() => "/mock-tools-root"),
 	isPiRuntime: vi.fn(() => true),

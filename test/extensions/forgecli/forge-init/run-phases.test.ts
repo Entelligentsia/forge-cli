@@ -23,7 +23,7 @@ vi.mock("../../../../src/extensions/forgecli/forge-init/verifiers.js", () => ({
 }));
 
 // Mock init-context helpers
-vi.mock("../../../../src/extensions/forgecli/init-context.js", () => ({
+vi.mock("../../../../src/extensions/forgecli/forge-init/init-context.js", () => ({
 	buildProjectContext: vi.fn().mockReturnValue({}),
 	validateProjectContext: vi.fn(),
 	writeProjectContext: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock("../../../../src/extensions/forgecli/init-context.js", () => ({
 }));
 
 // Mock init-progress
-vi.mock("../../../../src/extensions/forgecli/init-progress.js", () => ({
+vi.mock("../../../../src/extensions/forgecli/forge-init/init-progress.js", () => ({
 	writeInitProgress: vi.fn(),
 	deleteInitProgress: vi.fn(),
 	readInitProgress: vi.fn().mockReturnValue({ kind: "none" }),
@@ -40,7 +40,7 @@ vi.mock("../../../../src/extensions/forgecli/init-progress.js", () => ({
 
 import { runPhase1, runPhase2, runPhase3 } from "../../../../src/extensions/forgecli/forge-init/run-phases.js";
 import { verifyPhase1, verifyPhase2, verifyPhase3 } from "../../../../src/extensions/forgecli/forge-init/verifiers.js";
-import { writeInitProgress } from "../../../../src/extensions/forgecli/init-progress.js";
+import { writeInitProgress } from "../../../../src/extensions/forgecli/forge-init/init-progress.js";
 
 const mockVerifyPhase1 = verifyPhase1 as ReturnType<typeof vi.fn>;
 const mockVerifyPhase2 = verifyPhase2 as ReturnType<typeof vi.fn>;

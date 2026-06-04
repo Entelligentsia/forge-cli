@@ -70,23 +70,23 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { runPhase4 } from "./forge-init/phase4-register.js";
-import { runPhase1, runPhase2, runPhase3 } from "./forge-init/run-phases.js";
-import { verifyPhase1, verifyPhase3 } from "./forge-init/verifiers.js";
-import { runHealthCheck } from "./health-check.js";
-import { emitSyntheticEvent } from "./hook-dispatcher.js";
+import { runPhase4 } from "../forge-init/phase4-register.js";
+import { runPhase1, runPhase2, runPhase3 } from "../forge-init/run-phases.js";
+import { verifyPhase1, verifyPhase3 } from "../forge-init/verifiers.js";
+import { runHealthCheck } from "../health-check.js";
+import { emitSyntheticEvent } from "../hook-dispatcher.js";
 import { discoverProjectName } from "./init-context.js";
 import { deleteInitProgress, readInitProgress } from "./init-progress.js";
-import { execFileAsync } from "./lib/exec-helpers.js";
-import { clearForgeConfigCache } from "./lib/forge-config.js";
+import { execFileAsync } from "../lib/exec-helpers.js";
+import { clearForgeConfigCache } from "../lib/forge-config.js";
 // FORGE-S26-T11: registerMigrate imported to power `forge:init --migrate`
-import { registerMigrate } from "./migrate.js";
+import { registerMigrate } from "../migrate.js";
 
 // ── Bundle path resolution ─────────────────────────────────────────────────
 
 const _EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
-// dist/extensions/forgecli/ → dist/ → <pkg-root>/
-const _DIST_DIR = path.resolve(_EXTENSION_DIR, "..", "..");
+// dist/extensions/forgecli/forge-init/ → dist/extensions/forgecli/ → dist/ → <pkg-root>/
+const _DIST_DIR = path.resolve(_EXTENSION_DIR, "..", "..", "..");
 const _PKG_ROOT = path.resolve(_DIST_DIR, "..");
 
 /** Get the bundled forge-payload root (dist/forge-payload/) */

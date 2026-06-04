@@ -14,7 +14,7 @@ import {
 	computeCalibrationBaseline,
 	discoverProjectName,
 	validateProjectContext,
-} from "../../../src/extensions/forgecli/init-context.js";
+} from "../../../src/extensions/forgecli/forge-init/init-context.js";
 
 describe("discoverProjectName", () => {
 	beforeEach(() => {

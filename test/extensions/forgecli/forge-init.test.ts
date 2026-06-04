@@ -33,13 +33,13 @@ vi.mock("node:util", () => ({
 }));
 
 // Mock the modules used by forge-init
-vi.mock("../../../src/extensions/forgecli/init-progress.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/init-progress.js", () => ({
 	readInitProgress: vi.fn(),
 	writeInitProgress: vi.fn(),
 	deleteInitProgress: vi.fn(),
 }));
 
-vi.mock("../../../src/extensions/forgecli/init-context.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/init-context.js", () => ({
 	discoverProjectName: vi.fn(() => "test-project"),
 	buildProjectContext: vi.fn(() => ({
 		project: { name: "test-project", prefix: "TP" },
@@ -141,12 +141,12 @@ function buildMockPi(): { registerCommand: ReturnType<typeof vi.fn>; sendUserMes
 	} as ReturnType<typeof buildMockPi>;
 }
 
-import { registerForgeInit } from "../../../src/extensions/forgecli/forge-init.js";
+import { registerForgeInit } from "../../../src/extensions/forgecli/forge-init/forge-init.js";
 import {
 	deleteInitProgress,
 	readInitProgress,
 	writeInitProgress,
-} from "../../../src/extensions/forgecli/init-progress.js";
+} from "../../../src/extensions/forgecli/forge-init/init-progress.js";
 
 const mockReadInitProgress = vi.mocked(readInitProgress);
 const mockDeleteInitProgress = vi.mocked(deleteInitProgress);

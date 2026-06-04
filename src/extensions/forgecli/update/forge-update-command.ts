@@ -21,7 +21,7 @@ import { existsSync, promises as fs, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getBundledPayloadRoot } from "../forge-init.js";
+import { getBundledPayloadRoot } from "../forge-init/forge-init.js";
 import { sendKickoff } from "../kickoff.js";
 import { getUserCacheDir } from "../paths/paths.js";
 

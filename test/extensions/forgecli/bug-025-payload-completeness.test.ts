@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init.js";
+import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init/forge-init.js";
 
 const PAYLOAD_ROOT = getBundledPayloadRoot();
 

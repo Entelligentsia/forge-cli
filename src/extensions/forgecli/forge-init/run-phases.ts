@@ -24,8 +24,8 @@ import {
 	computeCalibrationBaseline,
 	validateProjectContext,
 	writeProjectContext,
-} from "../init-context.js";
-import { writeInitProgress } from "../init-progress.js";
+} from "./init-context.js";
+import { writeInitProgress } from "./init-progress.js";
 import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { verifyPhase1, verifyPhase2, verifyPhase3 } from "./verifiers.js";
 

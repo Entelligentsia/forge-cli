@@ -41,7 +41,7 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", () => ({
 	}),
 }));
 
-vi.mock("../../../src/extensions/forgecli/forge-init.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/forge-init.js", () => ({
 	getBundledPayloadRoot: vi.fn(() => "/mock-bundle-root"),
 	getBundledToolsRoot: vi.fn(() => "/mock-bundle-root/tools"),
 	resolveBundleToolsRoot: vi.fn(() => "/mock-bundle-root/tools"),

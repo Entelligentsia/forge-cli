@@ -14,7 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { deleteInitProgress } from "../init-progress.js";
+import { deleteInitProgress } from "./init-progress.js";
 import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { getRefreshKbLinksHandler } from "../refresh-kb-links.js";
 

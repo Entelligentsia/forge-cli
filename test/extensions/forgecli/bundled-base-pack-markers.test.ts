@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { checkMaterialization as checkEnhanceMaterialization } from "../../../src/extensions/forgecli/commands/enhance.js";
-import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init.js";
+import { getBundledPayloadRoot } from "../../../src/extensions/forgecli/forge-init/forge-init.js";
 import { checkMaterialization as checkImplementMaterialization } from "../../../src/extensions/forgecli/commands/implement.js";
 import { checkMaterialization as checkPlanMaterialization } from "../../../src/extensions/forgecli/commands/plan.js";
 

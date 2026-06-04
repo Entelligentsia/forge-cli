@@ -46,13 +46,13 @@ vi.mock("node:util", () => ({
 	}),
 }));
 
-vi.mock("../../../src/extensions/forgecli/init-progress.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/init-progress.js", () => ({
 	readInitProgress: vi.fn(() => ({ kind: "none" })),
 	writeInitProgress: vi.fn(),
 	deleteInitProgress: vi.fn(),
 }));
 
-vi.mock("../../../src/extensions/forgecli/init-context.js", () => ({
+vi.mock("../../../src/extensions/forgecli/forge-init/init-context.js", () => ({
 	discoverProjectName: vi.fn(() => "test-project"),
 	buildProjectContext: vi.fn(() => ({
 		project: { name: "test-project", prefix: "TP" },
@@ -82,7 +82,7 @@ vi.mock("../../../src/extensions/forgecli/refresh-kb-links.js", () => ({
 }));
 
 import { registerAllForgeCommands } from "../../../src/extensions/forgecli/forge-commands.js";
-import { getBundledPayloadRoot, registerForgeInit } from "../../../src/extensions/forgecli/forge-init.js";
+import { getBundledPayloadRoot, registerForgeInit } from "../../../src/extensions/forgecli/forge-init/forge-init.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

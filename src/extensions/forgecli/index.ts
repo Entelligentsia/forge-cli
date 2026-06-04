@@ -30,7 +30,7 @@ import { registerConfigCommand } from "./config-command.js";
 import { registerFixBug } from "./fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
-import { registerForgeInit } from "./forge-init.js";
+import { registerForgeInit } from "./forge-init/forge-init.js";
 import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
