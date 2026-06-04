@@ -18,7 +18,7 @@ import { type Component } from "@earendil-works/pi-tui";
 
 import { getInputRouter } from "./input-router.js";
 import { matchesKey, Key } from "@earendil-works/pi-tui";
-import { getOrchestratorTree } from "./orchestrator-tree.js";
+import { getOrchestratorTree, type OrchestratorTree } from "./orchestrator-tree.js";
 import { DashboardComponent, DashboardController } from "./dashboard/component.js";
 import { OrchestratorStatusBar } from "./orchestrator-status-bar.js";
 import {
@@ -87,9 +87,41 @@ function isDownArrow(data: string): boolean {
 let statusBarRef: OrchestratorStatusBar | undefined;
 let statusBarTui: import("@earendil-works/pi-tui").TUI | undefined;
 
+// Module-level tree reference so openDashboardTui can access the singleton
+// without being nested inside registerThreadSwitcher.
+let treeRef: OrchestratorTree | undefined;
+
+/** Open the dashboard overlay. Shared by /forge:threads, /forge:dashboard,
+ *  and the status bar Enter action. */
+export function openDashboardTui(ctx: ExtensionContext): void {
+	const tree = treeRef ?? getOrchestratorTree();
+	if (!treeRef) treeRef = tree;
+
+	const controller = new DashboardController(tree);
+	const router = getInputRouter();
+	router.pushOverlay();
+	ctx.ui.custom<null>(
+		(tui, theme, _kb, done) => {
+			const component = new DashboardComponent(controller, tui, theme, done);
+			return component;
+		},
+		{
+			overlay: true,
+			overlayOptions: {
+				width: "100%",
+				anchor: "center",
+				margin: 0,
+			},
+		}
+	).finally(() => {
+		router.popOverlay();
+	});
+}
+
 export function registerThreadSwitcher(pi: ExtensionAPI): void {
 	const registry = getSessionRegistry();
 	const tree = getOrchestratorTree();
+	treeRef = tree;
 	let mounted = false;
 	let currentCtx: ExtensionContext | undefined;
 
@@ -167,28 +199,6 @@ export function registerThreadSwitcher(pi: ExtensionAPI): void {
 		);
 
 		mounted = true;
-	}
-
-	function openDashboardTui(ctx: ExtensionContext): void {
-		const controller = new DashboardController(tree);
-		const router = getInputRouter();
-		router.pushOverlay();
-		ctx.ui.custom<null>(
-			(tui, theme, _kb, done) => {
-				const component = new DashboardComponent(controller, tui, theme, done);
-				return component;
-			},
-			{
-				overlay: true,
-				overlayOptions: {
-					width: "100%",
-					anchor: "center",
-					margin: 0,
-				},
-			}
-		).finally(() => {
-			router.popOverlay();
-		});
 	}
 
 	pi.registerCommand("forge:threads", {

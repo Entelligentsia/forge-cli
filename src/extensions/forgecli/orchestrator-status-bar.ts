@@ -15,6 +15,10 @@
 //     Esc returns focus to the editor.
 //
 // The dashboard overlay (/forge:dashboard) remains the detailed view.
+//
+// Iron Laws conformance:
+//   IL1 — All visible strings route through theme.fg()/bg()/bold(). No raw glyphs.
+//   IL7 — Spinner timer guarded by disposed flag to prevent stale callbacks.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -56,6 +60,7 @@ export class OrchestratorStatusBar implements Component {
 	private tree: OrchestratorTree;
 	private theme: Theme;
 	private active = false;
+	private disposed = false; // IL7: guards interval callbacks after dispose
 	private invalidationCb?: () => void;
 	private spinnerTimer?: NodeJS.Timeout;
 	private spinnerIdx = 0;
@@ -66,7 +71,9 @@ export class OrchestratorStatusBar implements Component {
 		this.tree = tree;
 		this.theme = theme;
 
-		const onChange = () => this.invalidationCb?.();
+		const onChange = () => {
+			if (!this.disposed) this.invalidationCb?.();
+		};
 		this.tree.on("change", onChange);
 		this.tree.on("tree", onChange);
 		this.tree.on("tail", onChange);
@@ -87,7 +94,7 @@ export class OrchestratorStatusBar implements Component {
 
 	setActive(active: boolean): void {
 		this.active = active;
-		this.invalidationCb?.();
+		if (!this.disposed) this.invalidationCb?.();
 	}
 
 	isActive(): boolean {
@@ -97,19 +104,30 @@ export class OrchestratorStatusBar implements Component {
 	private ensureSpinnerTimer(): void {
 		if (this.spinnerTimer) return;
 		this.spinnerTimer = setInterval(() => {
+			// IL7: guard against firing after dispose.
+			if (this.disposed) {
+				this.stopSpinnerTimer();
+				return;
+			}
 			const anyActive = this.tree.getActiveRoots().some(
 				(r) => r.status === "running" || r.status === "cancelling",
 			);
 			if (!anyActive) {
 				// One last render to settle spinner, then stop.
 				this.invalidationCb?.();
-				if (this.spinnerTimer) clearInterval(this.spinnerTimer);
-				this.spinnerTimer = undefined;
+				this.stopSpinnerTimer();
 				return;
 			}
 			this.spinnerIdx = (this.spinnerIdx + 1) % SPINNER_FRAMES.length;
 			this.invalidationCb?.();
 		}, SPINNER_INTERVAL_MS);
+	}
+
+	private stopSpinnerTimer(): void {
+		if (this.spinnerTimer) {
+			clearInterval(this.spinnerTimer);
+			this.spinnerTimer = undefined;
+		}
 	}
 
 	render(width: number): string[] {
@@ -140,9 +158,9 @@ export class OrchestratorStatusBar implements Component {
 			const meter = fmtTokenMeter(usage);
 			const meterPart = meter ? dim(` ${meter}`) : "";
 
-			// Spinner for running nodes.
+			// IL1: spinner characters themed with accent colour.
 			const spin = (displayNode.status === "running" || displayNode.status === "cancelling")
-				? ` ${SPINNER_FRAMES[this.spinnerIdx]}`
+				? ` ${this.theme.fg("accent", SPINNER_FRAMES[this.spinnerIdx])}`
 				: "";
 
 			// Turn preview (truncated).
@@ -159,7 +177,7 @@ export class OrchestratorStatusBar implements Component {
 			? dim(" ⏎ open · esc back")
 			: dim(" ↓ dashboard");
 
-		// Compose: join segments with separator, append hint.
+		// IL1: ▸ cursor glyph themed via accent().
 		const prefix = this.active ? accent("▸") + " " : "";
 		const joined = segments.join(dim(" │ "));
 		const line = `${prefix}${joined}${hint}`;
@@ -179,17 +197,15 @@ export class OrchestratorStatusBar implements Component {
 		} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.up)) {
 			this.active = false; // deactivate, return to editor
 		}
-		this.invalidationCb?.();
+		if (!this.disposed) this.invalidationCb?.();
 	}
 
-	dispose: () => void = () => {
-		if (this.spinnerTimer) {
-			clearInterval(this.spinnerTimer);
-			this.spinnerTimer = undefined;
-		}
+	dispose(): void {
+		this.disposed = true; // IL7: set before clearing timer so callback sees it
+		this.stopSpinnerTimer();
 		for (const fn of this.disposeFns) fn();
 		this.disposeFns = [];
-	};
+	}
 
 	/** Walk depth-first to find the deepest running/cancelling leaf. */
 	private findDeepestRunningLeaf(id: string): import("./orchestrator-tree.js").OrchestratorNode | undefined {

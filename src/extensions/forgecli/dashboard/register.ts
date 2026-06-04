@@ -4,11 +4,15 @@
 // that renders the OrchestratorTree as a two-panel tree browser + detail view.
 // Parallel to the chip strip — both read from their respective models; the
 // dashboard does not replace or modify the chip strip.
+//
+// Entry point consolidation: thread-switcher.ts owns openDashboardTui() and
+// the /forge:threads command. This file re-exports openDashboardTui so both
+// /forge:dashboard and /forge:threads (↓ from status bar) share the same
+// wiring — single place to maintain overlay creation.
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
-import { DashboardComponent, DashboardController } from "./component.js";
-import { getInputRouter } from "../input-router.js";
+import { openDashboardTui } from "../thread-switcher.js";
 
 export function registerDashboardCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("forge:dashboard", {
@@ -26,24 +30,7 @@ export function registerDashboardCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const controller = new DashboardController(tree);
-			const router = getInputRouter();
-			router.pushOverlay();
-			try {
-				await ctx.ui.custom<null>((tui, theme, _kb, done) => {
-					const component = new DashboardComponent(controller, tui, theme, done);
-					return component;
-				}, {
-					overlay: true,
-					overlayOptions: {
-						width: "100%",
-						anchor: "center",
-						margin: 0,
-					},
-				});
-			} finally {
-				router.popOverlay();
-			}
+			openDashboardTui(ctx);
 		},
 	});
 }

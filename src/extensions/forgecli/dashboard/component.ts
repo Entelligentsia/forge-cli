@@ -20,16 +20,39 @@
 //   manages the refresh timer, and handles input. DashboardComponent reads
 //   only from the controller — never directly from the OrchestratorTree model.
 //   This eliminates the boundary violations catalogued in the audit.
+//
+// Iron Laws conformance:
+//   IL1 — All visible strings route through dashboard/theme.ts helpers or
+//          theme.fg()/bg()/bold(). No raw glyphs.
+//   IL2 — Dual-layer width safety: screen renderers call truncateLines(),
+//          orchestrator applies truncateToWidth per line.
+//   IL3 — DashboardComponent implements Focusable (focused: boolean = false).
+//   IL7 — Timer unmount-safety: disposed flag guards interval callbacks.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { Component, TUI } from "@earendil-works/pi-tui";
-import type { OrchestratorTree, NodeStatus } from "../orchestrator-tree.js";
+import type { Component, Focusable, TUI } from "@earendil-works/pi-tui";
+import type { OrchestratorTree } from "../orchestrator-tree.js";
 import { getSessionRegistry } from "../session-registry.js";
 import type { NodeViewModel, TreeViewModel } from "./view-model.js";
 import { buildViewModel } from "./view-model.js";
 import { fmtModelAndTokenFooter, fmtTokenMeter } from "../viewport-renderer.js";
 import { paintTailLine } from "../viewport-theme.js";
+import {
+	cursor,
+	nodeGlyph,
+	statusLabel,
+	dim,
+	accent,
+	accentBold,
+	warn,
+	bold,
+	border,
+	collapseIndicator,
+	promptExpandIcon,
+	cancelWarningGlyph,
+	truncateLines,
+} from "./theme.js";
 
 // ── Word-wrap helper ───────────────────────────────────────────────────────────
 //
@@ -119,7 +142,9 @@ function wrapLine(line: string, maxWidth: number): string[] {
 	}
 
 	return lines.length > 0 ? lines : [line];
-}// ── Refresh timer ───────────────────────────────────────────────────────────
+}
+
+// ── Refresh timer ───────────────────────────────────────────────────────────
 
 const REFRESH_INTERVAL_MS = 1000;
 
@@ -148,6 +173,7 @@ export class DashboardController {
 	private state: DashboardState;
 	private onInvalidate?: () => void;
 	private refreshTimer?: NodeJS.Timeout;
+	private disposed = false; // IL7: guards interval callbacks after dispose
 	private _handlers: Array<{ event: string; handler: (...args: any[]) => void }>;
 
 	constructor(tree: OrchestratorTree, initialCursorId?: string) {
@@ -169,12 +195,12 @@ export class DashboardController {
 		// On every model event, rebuild VM then invalidate the view.
 		const onModelChange = () => {
 			this.rebuildViewModel();
-			this.onInvalidate?.();
+			if (!this.disposed) this.onInvalidate?.();
 		};
 		const onTreeChange = (id: string) => {
 			this.rebuildViewModel();
 			this.autoExpandNewNode(id);
-			this.onInvalidate?.();
+			if (!this.disposed) this.onInvalidate?.();
 		};
 
 		this.tree.on("change", onModelChange);
@@ -321,7 +347,7 @@ export class DashboardController {
 		// Cancel confirmation mode takes priority.
 		if (this.state.cancelTargetId) {
 			this.handleCancelConfirm(data);
-			this.onInvalidate?.();
+			if (!this.disposed) this.onInvalidate?.();
 			return;
 		}
 
@@ -333,7 +359,7 @@ export class DashboardController {
 				this.handleDetailInput(data);
 				break;
 		}
-		this.onInvalidate?.();
+		if (!this.disposed) this.onInvalidate?.();
 	}
 
 	private handleTreeInput(data: string): void {
@@ -529,6 +555,11 @@ export class DashboardController {
 	private ensureRefreshTimer(): void {
 		if (this.refreshTimer) return;
 		this.refreshTimer = setInterval(() => {
+			// IL7: guard against firing after dispose.
+			if (this.disposed) {
+				this.stopRefreshTimer();
+				return;
+			}
 			if (!this.hasRunningNodes()) {
 				// One last render to settle final frame, then stop timer.
 				this.onInvalidate?.();
@@ -549,6 +580,7 @@ export class DashboardController {
 	// ── Cleanup ────────────────────────────────────────────────────────────
 
 	dispose(): void {
+		this.disposed = true; // IL7: set before clearing timer so callback sees it
 		this.stopRefreshTimer();
 		for (const { event, handler } of this._handlers) {
 			this.tree.off(event, handler);
@@ -563,7 +595,12 @@ export class DashboardController {
 
 // ── View ────────────────────────────────────────────────────────────────────
 
-export class DashboardComponent implements Component {
+export class DashboardComponent implements Component, Focusable {
+	/** IL3: Focusable — pi sets this to true when the overlay has
+	 *  keyboard focus. Without this, arrow-key and Escape events are
+	 *  swallowed at the overlay layer. (Lesson from config-TUI commit 07e886f.) */
+	focused: boolean = false;
+
 	private controller: DashboardController;
 	private theme: Theme;
 	private tui: TUI;
@@ -604,7 +641,7 @@ export class DashboardComponent implements Component {
 		// ── Right panel: detail ─────────────────────────────────────────
 		const rightLines = selectedNode
 			? this.renderDetailPanel(selectedNode, rightWidth)
-			: [this.theme.fg("dim", "Select a node in the tree")];
+			: [dim("Select a node in the tree", this.theme)];
 
 		// ── Compose ─────────────────────────────────────────────────────
 		const termHeight = this.tui.terminal.rows;
@@ -636,17 +673,15 @@ export class DashboardComponent implements Component {
 		}
 
 		const lines: string[] = [];
-		const border = (s: string) => this.theme.fg("border", s);
-		const accent = (s: string) => this.theme.fg("accent", s);
 
 		// ── Header ──────────────────────────────────────────────────────
 		const headerText = ` Orchestrator Dashboard `;
-		const headerPad = contentWidth - visibleWidth(border("")) - visibleWidth(accent(headerText));
+		const headerPad = contentWidth - visibleWidth(border("", this.theme)) - visibleWidth(accentBold(headerText, this.theme));
 		lines.push(
-			border("╭") +
-				accent(headerText) +
-				border("─".repeat(Math.max(0, headerPad))) +
-				border("╮"),
+			border("╭", this.theme) +
+				accentBold(headerText, this.theme) +
+				border("─".repeat(Math.max(0, headerPad)), this.theme) +
+				border("╮", this.theme),
 		);
 
 		for (let i = 0; i < contentHeight; i++) {
@@ -655,23 +690,22 @@ export class DashboardComponent implements Component {
 			const lPad = leftWidth - visibleWidth(left);
 			const rPad = rightWidth - visibleWidth(right);
 			lines.push(
-				border("│") +
+				border("│", this.theme) +
 					left +
 					" ".repeat(Math.max(0, lPad)) +
-					border("│") +
+					border("│", this.theme) +
 					" " +
 					right +
 					" ".repeat(Math.max(0, rPad)) +
-					border("│"),
+					border("│", this.theme),
 			);
 		}
 
 		// ── Footer: bottom border + key hints + model/token meter ────────
-		const dim = (s: string) => this.theme.fg("dim", s);
 		const hintsBase = state.cancelTargetId
 			? " y confirm · n dismiss · esc close"
 			: " ↑↓ nav · → expand · ← back · ⏎ focus · x cancel · esc close";
-		lines.push(border("╰") + border("─".repeat(contentWidth)) + border("╯"));
+		lines.push(border("╰", this.theme) + border("─".repeat(contentWidth), this.theme) + border("╯", this.theme));
 
 		// Aggregate model + token footer (mirrors ViewportFooterComponent).
 		const aggUsage = this.controller.getAggregateUsage();
@@ -685,15 +719,15 @@ export class DashboardComponent implements Component {
 
 		let footerLine = "";
 		if (modelLabel && meter) {
-			footerLine = `${hintsBase}   ${dim(modelLabel)}  Σ ${meter}${compSuffix}`;
+			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}  Σ ${meter}${compSuffix}`;
 		} else if (meter) {
 			footerLine = `${hintsBase}   Σ ${meter}${compSuffix}`;
 		} else if (modelLabel) {
-			footerLine = `${hintsBase}   ${dim(modelLabel)}`;
+			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}`;
 		} else {
 			footerLine = hintsBase;
 		}
-		lines.push(dim(truncateToWidth(footerLine, width)));
+		lines.push(dim(truncateToWidth(footerLine, width), this.theme));
 
 		// ── Overlay cancel confirmation on top of dashboard content ────
 		if (state.cancelTargetId) {
@@ -731,13 +765,13 @@ export class DashboardComponent implements Component {
 		width: number,
 	): string[] {
 		if (visibleIds.length === 0) {
-			return [this.theme.fg("dim", "No session running")];
+			return [dim("No session running", this.theme)];
 		}
 
 		const lines: string[] = [];
 
 		// Header
-		lines.push(this.theme.bold(this.theme.fg("accent", " Phases")));
+		lines.push(accentBold(" Phases", this.theme));
 
 		for (const id of visibleIds) {
 			const node = this.controller.getNode(id);
@@ -746,8 +780,11 @@ export class DashboardComponent implements Component {
 			const depth = node.depth;
 			const indent = " ".repeat(depth * 2);
 
+			// IL1: themed cursor and glyphs — no raw characters.
+			const cursorChar = cursor(isCursor, this.theme);
+
 			// Status glyph
-			const glyph = this.nodeGlyph(node);
+			const glyph = nodeGlyph(node.status, this.theme);
 
 			// Progress label for orchestrators
 			let label = node.label;
@@ -756,15 +793,15 @@ export class DashboardComponent implements Component {
 				label += ` ${prog.completed}/${prog.total}`;
 			}
 
-			// Expand indicator
+			// Expand/collapse indicator — themed
 			const expandIndicator = node.kind === "orchestrator"
 				? state.expanded.has(id)
 					? " "
-					: "▸"
+					: collapseIndicator(this.theme)
 				: " ";
 
 			// Combine
-			const prefix = `${indent}${isCursor ? "❯" : " "} ${glyph} ${expandIndicator} `;
+			const prefix = `${indent}${cursorChar} ${glyph} ${expandIndicator} `;
 			const styled = isCursor
 				? this.theme.bold(this.theme.fg("accent", `${prefix}${label}`))
 				: `${prefix}${label}`;
@@ -772,60 +809,34 @@ export class DashboardComponent implements Component {
 			lines.push(truncateToWidth(styled, width));
 		}
 
-		return lines;
+		// IL2: dual-layer width safety — first guard in screen renderer.
+		return truncateLines(lines, width);
 	}
-
-	private nodeGlyph(node: NodeViewModel): string {
-		switch (node.status) {
-			case "completed":
-				return this.theme.fg("success", "✔");
-			case "running":
-				return this.theme.fg("accent", "●");
-			case "cancelling":
-				return this.theme.fg("warning", "⏳");
-			case "cancelled":
-				return this.theme.fg("muted", "⊘");
-			case "failed":
-				return this.theme.fg("error", "✗");
-			case "escalated":
-				return this.theme.fg("error", "▲");
-			case "pending":
-			default:
-				return this.theme.fg("dim", "○");
-		}
-	}
-
-	// ── Detail panel renderer ────────────────────────────────────────────────
 
 	private renderDetailPanel(node: NodeViewModel, width: number): string[] {
 		const lines: string[] = [];
-		const dim = (s: string) => this.theme.fg("dim", s);
-		const accent = (s: string) => this.theme.fg("accent", s);
-		const bold = (s: string) => this.theme.bold(s);
-		const success = (s: string) => this.theme.fg("success", s);
-		const warn = (s: string) => this.theme.fg("warning", s);
 
 		// ── Header: label + status (wrap long model strings) ──────────────────
-		const statusLabel = this.statusLabel(node.status);
+		const statusLabelStr = statusLabel(node.status);
 		const modelPart = node.model ? ` · ${node.provider ?? ""} ${node.model}` : "";
-		lines.push(...wrapLine(`${this.nodeGlyph(node)} ${bold(statusLabel)}${dim(modelPart)}`, width));
+		lines.push(...wrapLine(`${nodeGlyph(node.status, this.theme)} ${bold(statusLabelStr, this.theme)}${dim(modelPart, this.theme)}`, width));
 
 		// ── Metrics line ────────────────────────────────────────────────
 		const metrics = this.formatMetrics(node);
-		if (metrics) lines.push(...wrapLine(dim(metrics), width));
+		if (metrics) lines.push(...wrapLine(dim(metrics, this.theme), width));
 		lines.push("");
 
 		// ── Orchestrator node: list children ─────────────────────────────
 		if (node.kind === "orchestrator" && node.children.length > 0) {
 			const children = this.controller.getChildren(node.id);
-			lines.push(...wrapLine(dim(bold(`Agents · ${children.length}`)), width));
+			lines.push(...wrapLine(dim(bold(`Agents · ${children.length}`, this.theme), this.theme), width));
 			for (const child of children) {
-				const cglyph = this.nodeGlyph(child);
+				const cglyph = nodeGlyph(child.status, this.theme);
 				const cmodel = child.model ? ` ${child.provider ?? ""} ${child.model}` : "";
 				const cmetrics = this.formatMetrics(child);
 				const cmetricsPart = cmetrics ? ` ${cmetrics}` : "";
 				lines.push(
-					...wrapLine(` ${cglyph} ${child.label}${dim(cmodel)}${dim(cmetricsPart)}`, width),
+					...wrapLine(` ${cglyph} ${child.label}${dim(cmodel, this.theme)}${dim(cmetricsPart, this.theme)}`, width),
 				);
 			}
 			lines.push("");
@@ -833,19 +844,19 @@ export class DashboardComponent implements Component {
 
 		// ── Prompt preview (expandable) ─────────────────────────────────
 		if (node.promptPreview) {
-			const expandIcon = this.controller.getState().promptExpanded ? "▼" : "▶";
+			const expandIcon = promptExpandIcon(this.controller.getState().promptExpanded, this.theme);
 			const lineCount = node.promptPreview.split("\n").length;
-			lines.push(...wrapLine(dim(`${expandIcon} Prompt · ${lineCount} lines · ⏎ expand`), width));
+			lines.push(...wrapLine(dim(`${expandIcon} Prompt · ${lineCount} lines · ⏎ expand`, this.theme), width));
 			if (this.controller.getState().promptExpanded) {
 				for (const pline of node.promptPreview.split("\n").slice(0, 20)) {
 					// Indent wrapped prompt lines by 2 spaces
 					const wrapped = wrapLine(pline, Math.max(0, width - 4));
 					for (let i = 0; i < wrapped.length; i++) {
-						lines.push(dim(i === 0 ? `  ${wrapped[i]}` : `  ${wrapped[i]}`));
+						lines.push(dim(i === 0 ? `  ${wrapped[i]}` : `  ${wrapped[i]}`, this.theme));
 					}
 				}
 				if (lineCount > 20) {
-					lines.push(dim(`  … ${lineCount - 20} more lines`));
+					lines.push(dim(`  … ${lineCount - 20} more lines`, this.theme));
 				}
 			}
 			lines.push("");
@@ -854,7 +865,7 @@ export class DashboardComponent implements Component {
 		// ── Activity: running full log of all turns ──────────────────────
 		if (node.kind === "leaf" && node.tailBuffer.length > 0) {
 			const total = node.tailBuffer.length;
-			lines.push(...wrapLine(dim(`Activity · ${total} log line${total === 1 ? "" : "s"}`), width));
+			lines.push(...wrapLine(dim(`Activity · ${total} log line${total === 1 ? "" : "s"}`, this.theme), width));
 			for (const tline of node.tailBuffer) {
 				const painted = paintTailLine(tline, this.theme);
 				lines.push(...wrapLine(painted, width));
@@ -864,7 +875,7 @@ export class DashboardComponent implements Component {
 
 		// ── Outcome ─────────────────────────────────────────────────────
 		if (node.outcomePreview) {
-			lines.push(dim("Outcome"));
+			lines.push(dim("Outcome", this.theme));
 			for (const oline of node.outcomePreview.split("\n").slice(0, 8)) {
 				const wrapped = wrapLine(oline, Math.max(0, width - 4));
 				for (const wl of wrapped) {
@@ -873,11 +884,12 @@ export class DashboardComponent implements Component {
 			}
 			const lineCount = node.outcomePreview.split("\n").length;
 			if (lineCount > 8) {
-				lines.push(dim(`  … ${lineCount - 8} more lines`));
+				lines.push(dim(`  … ${lineCount - 8} more lines`, this.theme));
 			}
 		}
 
-		return lines;
+		// IL2: dual-layer width safety — first guard in screen renderer.
+		return truncateLines(lines, width);
 	}
 
 	/** Render a cancel-confirmation dialog overlaid on the dashboard.
@@ -891,10 +903,6 @@ export class DashboardComponent implements Component {
 	private overlayCancelConfirm(baseLines: string[], width: number, targetId: string): string[] {
 		const node = this.controller.getNode(targetId);
 		const label = node?.label ?? targetId;
-		const dim = (s: string) => this.theme.fg("dim", s);
-		const warn = (s: string) => this.theme.fg("warning", s);
-		const bold = (s: string) => this.theme.bold(s);
-		const brd = (s: string) => this.theme.fg("border", s);
 
 		// Content width is the full width minus the two outer │ borders.
 		const contentWidth = width - 2;
@@ -904,27 +912,27 @@ export class DashboardComponent implements Component {
 		const dialogW = Math.min(contentWidth, 60);
 		const diagLines: string[] = [];
 
-		const prompt = warn(`⚠ Cancel ${bold(label)}?`);
-		const actions = dim("y confirm · n dismiss · esc close");
+		const prompt = warn(`⚠ Cancel ${bold(label, this.theme)}?`, this.theme);
+		const actions = dim("y confirm · n dismiss · esc close", this.theme);
 		const promptW = visibleWidth(prompt);
 		const actionsW = visibleWidth(actions);
 
-		diagLines.push(brd("╭") + brd("─".repeat(dialogW - 2)) + brd("╮"));
-		diagLines.push(brd("│") + " ".repeat(dialogW - 2) + brd("│"));
+		diagLines.push(border("╭", this.theme) + border("─".repeat(dialogW - 2), this.theme) + border("╮", this.theme));
+		diagLines.push(border("│", this.theme) + " ".repeat(dialogW - 2) + border("│", this.theme));
 		{
 			// Place prompt and actions side by side when they fit; stack otherwise.
 			const sideBySide = promptW + actionsW + 4 <= dialogW - 2;
 			if (sideBySide) {
 				const contentGap = Math.max(1, dialogW - 4 - promptW - actionsW);
 				const contentLine =
-					brd("│") + " " + prompt + " ".repeat(contentGap) + actions + " " + brd("│");
+					border("│", this.theme) + " " + prompt + " ".repeat(contentGap) + actions + " " + border("│", this.theme);
 				if (visibleWidth(contentLine) < dialogW) {
 					// Pad content line to full dialog width.
 					const pad = dialogW - 2 - visibleWidth(contentLine.slice(1, -1));
 					diagLines.push(
-						brd("│") +
+						border("│", this.theme) +
 						" " + prompt + " ".repeat(contentGap + Math.max(0, pad)) + actions +
-						" " + brd("│"),
+						" " + border("│", this.theme),
 					);
 				} else {
 					diagLines.push(contentLine);
@@ -932,13 +940,13 @@ export class DashboardComponent implements Component {
 			} else {
 				// Stacked: prompt on one line, actions on the next.
 				const promptPad = Math.max(0, dialogW - 2 - 1 - promptW - 1);
-				diagLines.push(brd("│") + " " + prompt + " ".repeat(promptPad) + brd("│"));
+				diagLines.push(border("│", this.theme) + " " + prompt + " ".repeat(promptPad) + border("│", this.theme));
 				const actionsPad = Math.max(0, dialogW - 2 - 1 - actionsW - 1);
-				diagLines.push(brd("│") + " " + actions + " ".repeat(actionsPad) + brd("│"));
+				diagLines.push(border("│", this.theme) + " " + actions + " ".repeat(actionsPad) + border("│", this.theme));
 			}
 		}
-		diagLines.push(brd("│") + " ".repeat(dialogW - 2) + brd("│"));
-		diagLines.push(brd("╰") + brd("─".repeat(dialogW - 2)) + brd("╯"));
+		diagLines.push(border("│", this.theme) + " ".repeat(dialogW - 2) + border("│", this.theme));
+		diagLines.push(border("╰", this.theme) + border("─".repeat(dialogW - 2), this.theme) + border("╯", this.theme));
 
 		// Center the dialog vertically within the content rows and
 		// horizontally within the content area, preserving the outer │
@@ -955,29 +963,10 @@ export class DashboardComponent implements Component {
 			const rightPad = Math.max(0, contentWidth - leftPad - diagVisW);
 			// Preserve the outer │ borders: left border + centered dialog + right border.
 			result[startRow + i] =
-				brd("│") + " ".repeat(leftPad) + diagLine + " ".repeat(rightPad) + brd("│");
+				border("│", this.theme) + " ".repeat(leftPad) + diagLine + " ".repeat(rightPad) + border("│", this.theme);
 		}
 
 		return result;
-	}
-
-	private statusLabel(status: NodeStatus): string {
-		switch (status) {
-			case "completed":
-				return "Completed";
-			case "running":
-				return "Running";
-			case "cancelling":
-				return "Cancelling…";
-			case "cancelled":
-				return "Cancelled";
-			case "failed":
-				return "Failed";
-			case "escalated":
-				return "Escalated";
-			case "pending":
-				return "Pending";
-		}
 	}
 
 	private formatMetrics(node: NodeViewModel): string {
