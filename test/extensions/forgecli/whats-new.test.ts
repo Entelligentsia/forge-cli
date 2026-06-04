@@ -32,7 +32,7 @@ import {
 	semverGt,
 	summarizeEntries,
 	writeSeenState,
-} from "../../../src/extensions/forgecli/whats-new.js";
+} from "../../../src/extensions/forgecli/update/whats-new.js";
 
 function tmpDir(label: string): string {
 	return path.join(os.tmpdir(), `forgecli-whats-new-${label}-${crypto.randomBytes(6).toString("hex")}`);

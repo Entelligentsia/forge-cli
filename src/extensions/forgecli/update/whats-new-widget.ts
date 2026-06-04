@@ -28,8 +28,8 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { getInputRouter } from "./input-router.js";
-import { getUserCacheDir } from "./paths/paths.js";
+import { getInputRouter } from "../input-router.js";
+import { getUserCacheDir } from "../paths/paths.js";
 import {
 	type ChangeSummary,
 	computeAndPersistStartupPanel,

@@ -8,7 +8,7 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { getUserCacheDir } from "./paths/paths.js";
+import { getUserCacheDir } from "../paths/paths.js";
 
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5000;

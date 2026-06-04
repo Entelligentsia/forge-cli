@@ -17,7 +17,7 @@
 
 import { existsSync, promises as fs, readFileSync } from "node:fs";
 import * as path from "node:path";
-import { getUserCacheDir } from "./paths/paths.js";
+import { getUserCacheDir } from "../paths/paths.js";
 
 export type ComponentId = "pi" | "forge-plugin" | "forge-cli";
 

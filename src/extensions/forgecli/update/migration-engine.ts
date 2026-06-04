@@ -14,7 +14,7 @@
 import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
-import { isFile } from "./lib/shared-fs-utils.js";
+import { isFile } from "../lib/shared-fs-utils.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

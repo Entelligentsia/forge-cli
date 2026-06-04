@@ -39,7 +39,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
-import { registerUpdateTools, runUpdateTools } from "../../../src/extensions/forgecli/update-tools.js";
+import { registerUpdateTools, runUpdateTools } from "../../../src/extensions/forgecli/update/update-tools.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 

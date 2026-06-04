@@ -32,7 +32,7 @@ import { registerAllForgeCommands, registerForgeCommands } from "./forge-command
 import { createForgeHeader, type ForgeHeader } from "./forge-header.js";
 import { registerForgeInit } from "./forge-init.js";
 import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
-import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./forge-update-command.js";
+import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
 import {
@@ -77,12 +77,12 @@ import { registerStoreRepair } from "./commands/store-repair.js";
 import { registerTestOrchestrate } from "./test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerDashboardCommand } from "./dashboard/register.js";
-import { triggerUpdateCheck } from "./update-check.js";
+import { triggerUpdateCheck } from "./update/update-check.js";
 // update-tools.ts — registerUpdateTools removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerUsageHook } from "./usage-hook.js";
 import { registerValidate } from "./commands/validate.js";
 import { registerRunWorkflow } from "./wf-engine/register.js";
-import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./whats-new-widget.js";
+import { mountWhatsNewWidgetOnStartup, registerChangelogCommand } from "./update/whats-new-widget.js";
 
 // Resolve the vendored prompts directory at module load. After build, this
 // file lives at <pkg>/dist/extensions/forgecli/index.js — go up three levels

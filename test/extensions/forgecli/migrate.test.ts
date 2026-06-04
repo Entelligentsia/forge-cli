@@ -42,7 +42,7 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", () => ({
 }));
 
 // Mock migration-engine.js (hoisted)
-vi.mock("../../../src/extensions/forgecli/migration-engine.js", () => ({
+vi.mock("../../../src/extensions/forgecli/update/migration-engine.js", () => ({
 	runMigrations: vi.fn().mockResolvedValue({
 		applied: [],
 		skippedBreaking: [],
@@ -67,7 +67,7 @@ import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/
 import { loadForgePersona, runForgeSubagent } from "../../../src/extensions/forgecli/forge-subagent.js";
 import { runHealthCheck } from "../../../src/extensions/forgecli/health-check.js";
 import { parseMigrateArgs, registerMigrate } from "../../../src/extensions/forgecli/migrate.js";
-import { runMigrations } from "../../../src/extensions/forgecli/migration-engine.js";
+import { runMigrations } from "../../../src/extensions/forgecli/update/migration-engine.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────
 

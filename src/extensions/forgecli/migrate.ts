@@ -20,7 +20,7 @@ import { getBundledPayloadRoot } from "./forge-init.js";
 import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
 import { runHealthCheck } from "./health-check.js";
-import { runMigrations } from "./migration-engine.js";
+import { runMigrations } from "./update/migration-engine.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

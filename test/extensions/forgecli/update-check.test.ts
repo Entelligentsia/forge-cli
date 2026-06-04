@@ -17,7 +17,7 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __test__, triggerUpdateCheck, type UpdateBannerCache } from "../../../src/extensions/forgecli/update-check.js";
+import { __test__, triggerUpdateCheck, type UpdateBannerCache } from "../../../src/extensions/forgecli/update/update-check.js";
 
 function tmpCacheDir(): string {
 	return path.join(os.tmpdir(), `forgecli-update-test-${crypto.randomBytes(6).toString("hex")}`);
