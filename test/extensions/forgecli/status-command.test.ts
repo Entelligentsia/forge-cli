@@ -51,7 +51,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
-import { registerStatusCommand, runStatus } from "../../../src/extensions/forgecli/status-command.js";
+import { registerStatusCommand, runStatus } from "../../../src/extensions/forgecli/commands/status-command.js";
 
 const FAKE_FORGE_ROOT = "/fake/forge";
 

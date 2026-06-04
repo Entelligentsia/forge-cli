@@ -142,8 +142,8 @@ const HANDLERS: HandlerEntry[] = [
 
 	// ── T10 ──────────────────────────────────────────────────────────────────
 	// forge:update-tools removed in v1.0. store-query.ts now registers forge:search.
-	{ command: "forge:search", file: "store-query.ts", archetype: "Atomic", task: "T10" },
-	{ command: "forge:status", file: "status-command.ts", archetype: "Atomic", task: "T10" },
+	{ command: "forge:search", file: "commands/store-query.ts", archetype: "Atomic", task: "T10" },
+	{ command: "forge:status", file: "commands/status-command.ts", archetype: "Atomic", task: "T10" },
 
 	// ── T11 ──────────────────────────────────────────────────────────────────
 	// quiz-agent.ts → forge:check-agent, store-repair.ts → forge:repair (FORGE-S26-T10).

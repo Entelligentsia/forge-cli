@@ -25,7 +25,7 @@ import { readProjectMeta } from "./banner.js";
 // calibrate.ts — registerCalibrate removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerCollate } from "./commands/collate.js";
 import { registerCommit } from "./commands/commit.js";
-import { registerConfigCommand } from "./config-command.js";
+import { registerConfigCommand } from "./commands/config-command.js";
 // enhance.ts — registerEnhance removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerFixBug } from "./orchestrators/fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
@@ -60,8 +60,8 @@ import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js"
 import { registerPlan } from "./commands/plan.js";
 import { buildProjectOrientation } from "./project-orientation.js";
 import { registerQuizAgent } from "./commands/quiz-agent.js";
-import { registerReadCommand } from "./read-command.js";
-import { registerRegenerate } from "./regenerate.js";
+import { registerReadCommand } from "./commands/read-command.js";
+import { registerRegenerate } from "./commands/regenerate.js";
 import { registerRemoveCommand } from "./commands/remove-command.js";
 import { registerReportBug } from "./commands/report-bug.js";
 import { registerRetrospective } from "./commands/retrospective.js";
@@ -71,10 +71,10 @@ import { registerRunSprint } from "./orchestrators/run-sprint.js";
 import { registerRunTask } from "./orchestrators/run-task.js";
 import { registerSprintIntake } from "./commands/sprint-intake.js";
 import { registerSprintPlan } from "./commands/sprint-plan.js";
-import { registerStatusCommand } from "./status-command.js";
-import { registerStoreQuery } from "./store-query.js";
+import { registerStatusCommand } from "./commands/status-command.js";
+import { registerStoreQuery } from "./commands/store-query.js";
 import { registerStoreRepair } from "./commands/store-repair.js";
-import { registerTestOrchestrate } from "./test-orchestrate.js";
+import { registerTestOrchestrate } from "./commands/test-orchestrate.js";
 import { registerThreadSwitcher } from "./thread-switcher.js";
 import { registerDashboardCommand } from "./dashboard/register.js";
 import { triggerUpdateCheck } from "./update/update-check.js";

@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-import { type ForgePersona, getFinalOutput, loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
+import { type ForgePersona, getFinalOutput, loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
 
 const STATUS_KEY = "test-orchestrate";
 

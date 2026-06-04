@@ -4,7 +4,7 @@
 // the supplied ExtensionAPI mock.
 
 import { describe, expect, it, vi } from "vitest";
-import { registerConfigCommand } from "../../../src/extensions/forgecli/config-command.js";
+import { registerConfigCommand } from "../../../src/extensions/forgecli/commands/config-command.js";
 
 describe("registerConfigCommand", () => {
 	it("registers /forge:config on the supplied pi extension api", () => {

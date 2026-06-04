@@ -18,7 +18,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { findModifiedStructuralFiles, runRebuildTools } from "../../../src/extensions/forgecli/regenerate.js";
+import { findModifiedStructuralFiles, runRebuildTools } from "../../../src/extensions/forgecli/commands/regenerate.js";
 
 // Resolve a real generation-manifest.cjs from the bundled payload so the test
 // exercises the actual exit-code contract (0=pristine, 1=modified, 2=untracked).

@@ -85,7 +85,7 @@ const config: KnipConfig = {
 		"src/extensions/forgecli/model-registry.ts": ["types"],
 		"src/extensions/forgecli/skill-curation/skill-curator-subagent.ts": ["types"],
 		// status-command.ts helper exported for potential external CLI integrations.
-		"src/extensions/forgecli/status-command.ts": ["exports"],
+		"src/extensions/forgecli/commands/status-command.ts": ["exports"],
 	},
 };
 
