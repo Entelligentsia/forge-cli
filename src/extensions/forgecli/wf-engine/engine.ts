@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { extractTurnPreview } from "../run-task.js";
+import { extractTurnPreview } from "../orchestrators/run-task.js";
 import type { SessionRegistry } from "../session-registry.js";
 import { parseEventsBlock } from "./event-parser.js";
 import { makeEventId, makeInstanceId, makeNodeExecId } from "./id-gen.js";

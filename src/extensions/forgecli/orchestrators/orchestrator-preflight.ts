@@ -21,9 +21,9 @@
 //   That block is architecturally distinct and is explicitly out of scope
 //   per the plan-review finding (N-H-D resolved, reviewer-approved).
 
-import type { MergedConfig } from "./config-layer.js";
-import { validateModelConfig } from "./model-validator.js";
-import type { OrchestratorResult } from "./lib/orchestrator-types.js";
+import type { MergedConfig } from "../config-layer.js";
+import { validateModelConfig } from "../model-validator.js";
+import type { OrchestratorResult } from "../lib/orchestrator-types.js";
 
 // ---------------------------------------------------------------------------
 // Types

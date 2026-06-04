@@ -18,7 +18,7 @@ import {
 } from "../../../../src/extensions/forgecli/lib/state-helpers.js";
 // Regression imports: run-task.ts re-exports readState/writeState which internally
 // delegate to lib helpers. These tests verify the chain is intact.
-import { type RunTaskState, readState, writeState } from "../../../../src/extensions/forgecli/run-task.js";
+import { type RunTaskState, readState, writeState } from "../../../../src/extensions/forgecli/orchestrators/run-task.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

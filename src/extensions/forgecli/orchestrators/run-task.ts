@@ -23,32 +23,32 @@ import { fileURLToPath } from "node:url";
 // honored by validateModelConfig.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { assertAudience, CallerContextStore } from "./audience-gate.js";
-import type { PhaseRole } from "./subagent/caller-context.js";
-import { loadLayeredConfig } from "./config-layer.js";
-import { buildGovernorFactory } from "./context-governor.js";
-import { buildForgeCompactionFactory } from "./context-governor-compaction.js";
-import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
-import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
-import { discoverForgeConfigCached } from "./lib/forge-config.js";
+import { assertAudience, CallerContextStore } from "../audience-gate.js";
+import type { PhaseRole } from "../subagent/caller-context.js";
+import { loadLayeredConfig } from "../config-layer.js";
+import { buildGovernorFactory } from "../context-governor.js";
+import { buildForgeCompactionFactory } from "../context-governor-compaction.js";
+import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
+import { readPersonaDir, readPipelineNames } from "../lib/catalog-helpers.js";
+import { discoverForgeConfigCached } from "../lib/forge-config.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
-import { checkMaterialization } from "./lib/manifest-checker.js";
+import { checkMaterialization } from "../lib/manifest-checker.js";
 import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
 import {
 	isStateStale as isJsonStateStale,
 	readJsonState,
 	taskStateFilePath,
 	writeJsonState,
-} from "./lib/state-helpers.js";
-import { resolveModelForPhase } from "./model-resolver.js";
-import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
-import { getSessionRegistry } from "./session-registry.js";
-import { getOrchestratorTree } from "./orchestrator-tree.js";
-import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
-import { resolveToCanonicalId, resolveToolDir } from "./store/store-resolver.js";
-import { attachViewportObserver } from "./viewport/events.js";
-import { fmtPhaseSummary, type UsageDelta } from "./viewport/renderer.js";
+} from "../lib/state-helpers.js";
+import { resolveModelForPhase } from "../model-resolver.js";
+import { type AudienceValue, loadWorkflow } from "../parsers/workflow-loader.js";
+import { getSessionRegistry } from "../session-registry.js";
+import { getOrchestratorTree } from "../orchestrator-tree.js";
+import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
+import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
+import { attachViewportObserver } from "../viewport/events.js";
+import { fmtPhaseSummary, type UsageDelta } from "../viewport/renderer.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
 
@@ -680,7 +680,7 @@ const MESSAGE_KEY = "forge:run-task:message";
 
 // extractTurnPreview moved to viewport/renderer.ts; re-exported below for
 // backwards-compatibility with existing imports (e.g. tests).
-export { extractTurnPreview } from "./viewport/renderer.js";
+export { extractTurnPreview } from "../viewport/renderer.js";
 
 // ── runTaskPipeline ──────────────────────────────────────────────────────
 
@@ -714,6 +714,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),
+			"..",
 			"..",
 			"..",
 			"forge-payload",

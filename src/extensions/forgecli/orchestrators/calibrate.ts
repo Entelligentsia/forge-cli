@@ -18,10 +18,10 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { getBundledPayloadRoot } from "./forge-init/forge-init.js";
-import { getFinalOutput, loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
-import { type CalibrationBaseline, computeCalibrationBaseline } from "./forge-init/init-context.js";
+import { getBundledPayloadRoot } from "../forge-init/forge-init.js";
+import { getFinalOutput, loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
+import { type CalibrationBaseline, computeCalibrationBaseline } from "../forge-init/init-context.js";
 import { isNonInteractive } from "./run-task.js";
 
 // ── Bundled forge version ─────────────────────────────────────────────────

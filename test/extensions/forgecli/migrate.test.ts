@@ -66,7 +66,7 @@ vi.mock("../../../src/extensions/forgecli/health-check.js", () => ({
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
 import { loadForgePersona, runForgeSubagent } from "../../../src/extensions/forgecli/forge-subagent.js";
 import { runHealthCheck } from "../../../src/extensions/forgecli/health-check.js";
-import { parseMigrateArgs, registerMigrate } from "../../../src/extensions/forgecli/migrate.js";
+import { parseMigrateArgs, registerMigrate } from "../../../src/extensions/forgecli/orchestrators/migrate.js";
 import { runMigrations } from "../../../src/extensions/forgecli/update/migration-engine.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────────

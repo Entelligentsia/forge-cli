@@ -13,9 +13,9 @@
 //     skipped silently (non-fatal).
 //   - runHaltAdvisor is best-effort: failures must not mask the primary halt.
 
-import type { MergedConfig, PersonaModel } from "./config-layer.js";
-import { runForgeSubagent, loadForgePersona, type ForgePersona } from "./forge-subagent.js";
-import { resolveModelForPhase } from "./model-resolver.js";
+import type { MergedConfig, PersonaModel } from "../config-layer.js";
+import { runForgeSubagent, loadForgePersona, type ForgePersona } from "../forge-subagent.js";
+import { resolveModelForPhase } from "../model-resolver.js";
 
 // Minimal subset of the ExtensionCommandContext.ui interface needed here.
 export interface UiLike {

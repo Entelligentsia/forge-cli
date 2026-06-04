@@ -25,7 +25,7 @@ import {
 	readBugState,
 	readBugVerdict,
 	writeBugState,
-} from "../../../src/extensions/forgecli/fix-bug.js";
+} from "../../../src/extensions/forgecli/orchestrators/fix-bug.js";
 import {
 	actionForRole,
 	buildPhaseEvent,
@@ -36,7 +36,7 @@ import {
 	type PhaseDescriptor,
 	runPreflightGate,
 	validateId,
-} from "../../../src/extensions/forgecli/run-task.js";
+} from "../../../src/extensions/forgecli/orchestrators/run-task.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

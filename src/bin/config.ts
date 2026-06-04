@@ -22,7 +22,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { loadLayeredConfig } from "../extensions/forgecli/config-layer.js";
-import { BUG_PHASES } from "../extensions/forgecli/fix-bug.js";
+import { BUG_PHASES } from "../extensions/forgecli/orchestrators/fix-bug.js";
 import { lookupPersonaModel, resolveModelForPhase } from "../extensions/forgecli/model-resolver.js";
 import {
 	ensureForgeCliPathsReady,
@@ -30,7 +30,7 @@ import {
 	getProjectConfigPath,
 	shortenPath,
 } from "../extensions/forgecli/paths/paths.js";
-import { PHASES } from "../extensions/forgecli/run-task.js";
+import { PHASES } from "../extensions/forgecli/orchestrators/run-task.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

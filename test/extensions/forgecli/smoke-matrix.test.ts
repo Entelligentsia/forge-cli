@@ -137,8 +137,8 @@ const HANDLERS: HandlerEntry[] = [
 	// under the provider-lock gate via registered:false (registration gate skips
 	// them). materialize.ts/update-tools.ts are dormant (no remaining caller) and
 	// are intentionally dropped from this matrix.
-	{ command: "forge:calibrate", file: "calibrate.ts", archetype: "Orchestrator", task: "T08", registered: false },
-	{ command: "forge:migrate", file: "migrate.ts", archetype: "Hybrid", task: "T09", registered: false },
+	{ command: "forge:calibrate", file: "orchestrators/calibrate.ts", archetype: "Orchestrator", task: "T08", registered: false },
+	{ command: "forge:migrate", file: "orchestrators/migrate.ts", archetype: "Hybrid", task: "T09", registered: false },
 
 	// ── T10 ──────────────────────────────────────────────────────────────────
 	// forge:update-tools removed in v1.0. store-query.ts now registers forge:search.

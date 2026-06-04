@@ -19,7 +19,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { registerRunSprint } from "../../../src/extensions/forgecli/run-sprint.js";
+import { registerRunSprint } from "../../../src/extensions/forgecli/orchestrators/run-sprint.js";
 import { buildSprintFixture, realForgeRoot, type SprintFixture } from "../../fixtures/sprint-fixture.js";
 
 // Mock store-resolver so resolveToCanonicalId passes through canonical sprint IDs unchanged.

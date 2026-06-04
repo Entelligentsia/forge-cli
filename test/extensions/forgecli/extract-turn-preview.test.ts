@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { extractTurnPreview } from "../../../src/extensions/forgecli/run-task.js";
+import { extractTurnPreview } from "../../../src/extensions/forgecli/orchestrators/run-task.js";
 
 describe("extractTurnPreview", () => {
 	it("returns first non-empty text from an assistant message", () => {

@@ -21,7 +21,7 @@ import {
 	readBugVerdict,
 	runBugPipeline,
 	writeBugState,
-} from "../../../src/extensions/forgecli/fix-bug.js";
+} from "../../../src/extensions/forgecli/orchestrators/fix-bug.js";
 import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────

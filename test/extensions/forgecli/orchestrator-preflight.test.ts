@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	type OrchestratorPreflightResult,
 	runOrchestratorPreflight,
-} from "../../../src/extensions/forgecli/orchestrator-preflight.js";
+} from "../../../src/extensions/forgecli/orchestrators/orchestrator-preflight.js";
 
 // Minimal mock for PreflightContext (only the bits runOrchestratorPreflight uses)
 function makeCtx(notifications: Array<{ msg: string; level: string }> = []) {

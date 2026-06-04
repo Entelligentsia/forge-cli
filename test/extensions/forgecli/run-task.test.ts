@@ -78,15 +78,15 @@ vi.mock("../../../src/extensions/forgecli/store/store-resolver.js", () => ({
 // Mock the halt-recovery advisor so the verdict-missing path can be asserted
 // without spawning a real advisor subagent. Both exports are replaced; the
 // advisor itself is covered by halt-advisor.test.ts.
-vi.mock("../../../src/extensions/forgecli/halt-advisor.js", () => ({
+vi.mock("../../../src/extensions/forgecli/orchestrators/halt-advisor.js", () => ({
 	resolveAdvisorModel: vi.fn(() => undefined),
 	runHaltAdvisor: vi.fn(() => Promise.resolve()),
 }));
 
 import { spawnSync } from "node:child_process";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
-import { runHaltAdvisor } from "../../../src/extensions/forgecli/halt-advisor.js";
-import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate, runPostflightGate } from "../../../src/extensions/forgecli/run-task.js";
+import { runHaltAdvisor } from "../../../src/extensions/forgecli/orchestrators/halt-advisor.js";
+import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate, runPostflightGate } from "../../../src/extensions/forgecli/orchestrators/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────
 
@@ -655,7 +655,7 @@ describe("Test 7: IL10 enforcement", () => {
 	it("createAgentSession is called per phase; run-task.ts source has no sendKickoff(", () => {
 		// Source-grep test: read run-task.ts and assert no sendKickoff(
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runTaskPath = path.resolve(thisDir, "../../../src/extensions/forgecli/run-task.ts");
+		const runTaskPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-task.ts");
 		expect(fs.existsSync(runTaskPath), `run-task.ts must exist at ${runTaskPath}`).toBe(true);
 
 		const source = fs.readFileSync(runTaskPath, "utf8");
@@ -820,7 +820,7 @@ describe("Test 11: Persona loaded per phase via loadForgePersona", () => {
 		expect(completionNotify, "Pipeline must complete for all personas to be loaded").toBeDefined();
 
 		// Verify the PHASES table has distinct persona nouns (contract: per-phase persona loading)
-		const { PHASES } = await import("../../../src/extensions/forgecli/run-task.js");
+		const { PHASES } = await import("../../../src/extensions/forgecli/orchestrators/run-task.js");
 		const personaNouns = new Set(PHASES.map((p) => p.personaNoun));
 		// 5 distinct persona nouns: engineer, supervisor, qa-engineer, architect, collator
 		expect(personaNouns.size).toBeGreaterThanOrEqual(3);

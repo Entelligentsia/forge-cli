@@ -327,12 +327,12 @@ describe("AC3: Contract-unchanged — runForgeSubagent signature and orchestrato
 		expect(subagentSrc).toContain("extensionFactories");
 
 		// 3. run-task.ts uses store-cli.cjs emit (orchestrator emit path)
-		const runTaskSrc = readFileSync(path.join(forgeCliSrc, "run-task.ts"), "utf8");
+		const runTaskSrc = readFileSync(path.join(forgeCliSrc, "orchestrators", "run-task.ts"), "utf8");
 		expect(runTaskSrc).toContain("store-cli.cjs");
 		expect(runTaskSrc).toContain('"emit"');
 
 		// 4. run-sprint.ts also uses store-cli.cjs (orchestrator emit path)
-		const runSprintSrc = readFileSync(path.join(forgeCliSrc, "run-sprint.ts"), "utf8");
+		const runSprintSrc = readFileSync(path.join(forgeCliSrc, "orchestrators", "run-sprint.ts"), "utf8");
 		expect(runSprintSrc).toContain("store-cli.cjs");
 
 		// 5. index.ts does NOT call registerHookDispatcher with a live governor yet

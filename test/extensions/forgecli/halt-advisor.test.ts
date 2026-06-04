@@ -15,7 +15,7 @@ vi.mock("../../../src/extensions/forgecli/forge-subagent.js", () => ({
 }));
 
 import type { PersonaModel } from "../../../src/extensions/forgecli/config-layer.js";
-import { resolveAdvisorModel, runHaltAdvisor } from "../../../src/extensions/forgecli/halt-advisor.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "../../../src/extensions/forgecli/orchestrators/halt-advisor.js";
 import { runForgeSubagent, loadForgePersona } from "../../../src/extensions/forgecli/forge-subagent.js";
 
 // Minimal ctx mock matching the shape runHaltAdvisor needs

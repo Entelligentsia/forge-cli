@@ -42,25 +42,25 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { assertAudience, CallerContextStore } from "./audience-gate.js";
-import type { PhaseRole } from "./subagent/caller-context.js";
+import { assertAudience, CallerContextStore } from "../audience-gate.js";
+import type { PhaseRole } from "../subagent/caller-context.js";
 // ModelRegistry/AuthStorage no longer instantiated here — use ctx.modelRegistry
 // so extension-registered providers (registered against the live session) are
 // visible to validateModelConfig. Creating a fresh registry here would miss
 // them and produce spurious MODEL_UNAVAILABLE warnings (FORGE-BUG-001).
-import { loadLayeredConfig } from "./config-layer.js";
-import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
-import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
+import { loadLayeredConfig } from "../config-layer.js";
+import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
+import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
 import {
 	readPersonaDir as readPersonaDirBug,
 	readPipelineNames as readPipelineNamesBug,
-} from "./lib/catalog-helpers.js";
-import { discoverForgeConfigCached } from "./lib/forge-config.js";
+} from "../lib/catalog-helpers.js";
+import { discoverForgeConfigCached } from "../lib/forge-config.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
-import { checkMaterialization } from "./lib/manifest-checker.js";
+import { checkMaterialization } from "../lib/manifest-checker.js";
 import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
-import { resolveModelForPhase } from "./model-resolver.js";
-import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
+import { resolveModelForPhase } from "../model-resolver.js";
+import { type AudienceValue, loadWorkflow } from "../parsers/workflow-loader.js";
 import {
 	buildPhaseEvent,
 	buildSummariesBlock,
@@ -79,12 +79,12 @@ import {
 	runPreflightGateWithData,
 	validateId,
 } from "./run-task.js";
-import { getSessionRegistry } from "./session-registry.js";
-import { getOrchestratorTree } from "./orchestrator-tree.js";
-import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
-import { resolveToCanonicalId, resolveToolDir } from "./store/store-resolver.js";
-import { attachViewportObserver } from "./viewport/events.js";
-import { fmtPhaseSummary } from "./viewport/renderer.js";
+import { getSessionRegistry } from "../session-registry.js";
+import { getOrchestratorTree } from "../orchestrator-tree.js";
+import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
+import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
+import { attachViewportObserver } from "../viewport/events.js";
+import { fmtPhaseSummary } from "../viewport/renderer.js";
 
 // ── Bug phase descriptor table ──────────────────────────────────────────────
 //
@@ -116,8 +116,8 @@ export const BUG_PHASES: PhaseDescriptor[] = [
 // subagent/phase-summary-map.ts so the new phase-guard.ts can import
 // it without dragging fix-bug.ts into a forge-tools import cycle.
 // Re-exported here for backwards-compatibility with existing call sites.
-export { BUG_SUMMARY_KEY_BY_ROLE } from "./subagent/phase-summary-map.js";
-import { BUG_SUMMARY_KEY_BY_ROLE } from "./subagent/phase-summary-map.js";
+export { BUG_SUMMARY_KEY_BY_ROLE } from "../subagent/phase-summary-map.js";
+import { BUG_SUMMARY_KEY_BY_ROLE } from "../subagent/phase-summary-map.js";
 
 // Bug-event type tokens — explicit mapping per review finding #3.
 // Non-review phases always emit the pass token. Review phases select
@@ -577,6 +577,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),
+			"..",
 			"..",
 			"..",
 			"forge-payload",

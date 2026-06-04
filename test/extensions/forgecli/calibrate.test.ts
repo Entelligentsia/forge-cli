@@ -54,7 +54,7 @@ import {
 	extractPatchProposals,
 	parseCalibrateFlags,
 	registerCalibrate,
-} from "../../../src/extensions/forgecli/calibrate.js";
+} from "../../../src/extensions/forgecli/orchestrators/calibrate.js";
 import { __test__ as forgeCommandsTest } from "../../../src/extensions/forgecli/forge-commands.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ describe("regression: isNonInteractive from run-task.ts", () => {
 		// Before T18, calibrate.ts defined its own isNonInteractive(). After T18 it
 		// imports the shared one from run-task.ts. This test verifies the shared
 		// function behaves correctly when activated by FORGE_YES=1.
-		const { isNonInteractive } = await import("../../../src/extensions/forgecli/run-task.js");
+		const { isNonInteractive } = await import("../../../src/extensions/forgecli/orchestrators/run-task.js");
 
 		const old = process.env.FORGE_YES;
 		try {
@@ -398,7 +398,7 @@ describe("regression: isNonInteractive from run-task.ts", () => {
 	});
 
 	it("FORGE_NON_INTERACTIVE=1 triggers non-interactive mode via the shared isNonInteractive()", async () => {
-		const { isNonInteractive } = await import("../../../src/extensions/forgecli/run-task.js");
+		const { isNonInteractive } = await import("../../../src/extensions/forgecli/orchestrators/run-task.js");
 
 		const old = process.env.FORGE_NON_INTERACTIVE;
 		try {
