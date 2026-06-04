@@ -22,11 +22,13 @@
 // Design notes:
 //   - The policy table is a TypeScript literal loaded at module init — no disk I/O,
 //     no .forge/store/ reads or writes (Pack 07 compliance).
-//   - contextWindow resolution: when ctx.getContextUsage() returns a ContextUsage value,
-//     usage.contextWindow is used directly (no registry lookup needed). Fallback chain
-//     (ctx.model?.contextWindow → modelRegistry → DEFAULT_CONTEXT_WINDOW) only applies
-//     when getContextUsage() returns undefined.
+//   - contextWindow resolution: Mechanism B uses usage.contextWindow from
+//     ctx.getContextUsage() directly; when usage is unavailable the meter is
+//     cleared and no steer/compact decision is made that turn.
 //     No provider names, model-family strings, or tier logic appear here.
+//   - Phase/summary vocabulary (summary keys, {PHASE}-SUMMARY.json filenames)
+//     is imported from phase-vocab.ts — the single mirror of the plugin's
+//     artifact-kinds.cjs catalog (FORGE-BUG-043).
 //   - Governor methods MUST NOT throw; failures fall through to undefined (IL7).
 //   - IL10: registerHookDispatcher's public signature and orchestrator event paths
 //     are untouched. The third arg is optional; all existing callers unaffected.
@@ -42,6 +44,7 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { summaryFilenameFor, summaryKeyFor } from "./phase-vocab.js";
 
 /**
  * Return type for tool_result pi handlers — matches ToolResultEventResult from
@@ -131,9 +134,6 @@ export function createNoOpGovernor(): ContextGovernor {
 // Governor factory helpers (Mechanism A)
 // ---------------------------------------------------------------------------
 
-/** Fallback context window when neither ctx.model nor modelRegistry can supply one. */
-export const DEFAULT_CONTEXT_WINDOW = 200_000;
-
 /**
  * Resolve the policy key from the extension context.
  * Probes ctx for persona/phase fields (not formally in ExtensionContext; best-effort).
@@ -202,10 +202,10 @@ function dedupKey(event: ToolResultEvent): string | null {
 
 /**
  * Apply Rule 2 — schema-trim to a forge_store result.
- * Trims top-level keys to residentFields ∪ {summaries, summaries.*} ∪ identity keys.
+ * Trims top-level keys to residentFields ∪ {summaries} ∪ identity keys.
  * Returns the trimmed JSON string, or the original string on parse failure (IL7).
  */
-function applySchemaTrip(textContent: string, residentFields: string[]): string {
+function applySchemaTrim(textContent: string, residentFields: string[]): string {
 	let parsed: Record<string, unknown>;
 	try {
 		parsed = JSON.parse(textContent) as Record<string, unknown>;
@@ -221,11 +221,7 @@ function applySchemaTrip(textContent: string, residentFields: string[]): string 
 	const residentSet = new Set(residentFields);
 	const trimmed: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(parsed)) {
-		const retain =
-			identityKeys.has(key) ||
-			residentSet.has(key) ||
-			key === "summaries" ||
-			key.startsWith("summaries.");
+		const retain = identityKeys.has(key) || residentSet.has(key) || key === "summaries";
 		if (retain) {
 			trimmed[key] = value;
 		}
@@ -268,50 +264,22 @@ function resolveEntityId(event: ToolResultEvent): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Map a phaseKey to the canonical {PHASE}-SUMMARY.json filename.
- * Returns a literal placeholder for unknown keys so steer messages always name a file.
- */
-function phaseSummaryName(phaseKey: string): string {
-	const map: Record<string, string> = {
-		// Real run-task PHASE_PIPELINE keys (`${personaNoun}/${role}`):
-		"engineer/plan": "PLAN-SUMMARY.json",
-		"supervisor/review-plan": "REVIEW_PLAN-SUMMARY.json",
-		"engineer/implement": "IMPLEMENTATION-SUMMARY.json",
-		"supervisor/review-code": "CODE_REVIEW-SUMMARY.json",
-		"qa-engineer/validate": "VALIDATION-SUMMARY.json",
-		"architect/approve": "APPROVE-SUMMARY.json",
-		// Legacy design-time keys (kept for test fixtures; not produced by the pipeline):
-		"architect/plan": "PLAN-SUMMARY.json",
-		"engineer/review": "REVIEW-SUMMARY.json",
-		"engineer/code-review": "CODE_REVIEW-SUMMARY.json",
-	};
-	return map[phaseKey] ?? "{PHASE}-SUMMARY.json";
-}
-
-/**
- * Map a real pipeline phaseKey to the store record `summaries` key written by
- * `store-cli set-summary` (kind names — e.g. "implementation", not "implement").
- * Used by buildGovernorFactory's summary sentinel (Mechanism C).
- */
-const PHASE_SUMMARY_KEYS: Record<string, string> = {
-	"engineer/plan": "plan",
-	"supervisor/review-plan": "review_plan",
-	"engineer/implement": "implementation",
-	"supervisor/review-code": "code_review",
-	"qa-engineer/validate": "validation",
-	"architect/approve": "approve",
-};
-
-/**
  * Build the one-shot steer message injected into the agent loop when the budget
- * threshold is reached. Names the phase summary file so the persona can act
- * immediately. "Will not re-fire" note prevents the agent from waiting for a
- * second prompt.
+ * threshold is reached. Names the phase summary file (from phase-vocab, mirror
+ * of the plugin's artifact-kinds.cjs catalog) so the persona can act
+ * immediately. Phases without a summary artifact — and unknown phase keys
+ * (e.g. custom config.pipelines phases) — get generic checkpoint wording
+ * instead of a phantom or placeholder filename (FORGE-BUG-043).
+ * "Will not re-fire" note prevents the agent from waiting for a second prompt.
  */
 function buildSteerMessage(phaseKey: string): string {
+	const filename = summaryFilenameFor(phaseKey);
+	const checkpoint = filename
+		? `Checkpoint your findings to ${filename} before reading further.`
+		: `Checkpoint your findings durably (phase summary artifact or store record) before reading further.`;
 	return (
 		`[Forge context governor] Budget threshold reached (${phaseKey}).\n` +
-		`Checkpoint your findings to ${phaseSummaryName(phaseKey)} before reading further.\n` +
+		`${checkpoint}\n` +
 		`This note will not re-fire.`
 	);
 }
@@ -350,11 +318,9 @@ function buildSteerMessage(phaseKey: string): string {
  *                  The sentinel MUST NOT write to .forge/store/ or the summary itself (Pack 07).
  *                  Errors inside the sentinel are silently caught and cause retain, not eviction (IL7).
  *
- * contextWindow resolution order (provider-neutral):
- *   1. usage.contextWindow from ctx.getContextUsage() — direct, when available
- *   2. ctx.model?.contextWindow — active model
- *   3. ctx.modelRegistry.find(provider, modelId)?.contextWindow — registry backup
- *   4. DEFAULT_CONTEXT_WINDOW (200_000) — conservative fallback
+ * contextWindow resolution (provider-neutral): usage.contextWindow from
+ * ctx.getContextUsage(), used directly when available; otherwise the budget
+ * meter is cleared for the turn and no steer/compact decision is made.
  * @param compactFn  opt callback injected at construction (Mechanism E / T09).
  *                  Called proactively once when fraction >= policy.steerThreshold,
  *                  via a single-fire `compactFired` flag distinct from `steerFired`.
@@ -493,11 +459,16 @@ export function createGovernor(
 					try {
 						const entityId = resolveEntityId(event);
 						if (entityId && summarySentinel(resolvedPhaseKey, entityId)) {
+							// summaryFilenameFor is null for phases without a summary artifact;
+							// an injected sentinel may still fire there, so fall back to naming
+							// the store record rather than a phantom file.
+							const summaryRef =
+								summaryFilenameFor(resolvedPhaseKey) ?? "the store record summaries";
 							return {
 								content: [
 									{
 										type: "text",
-										text: `[summarized — see ${phaseSummaryName(resolvedPhaseKey)} for ${entityId}]`,
+										text: `[summarized — see ${summaryRef} for ${entityId}]`,
 									},
 								],
 							};
@@ -518,7 +489,7 @@ export function createGovernor(
 
 				// Rule 2 — Schema-trim (forge_store results only)
 				if (event.toolName === "forge_store") {
-					const trimmed = applySchemaTrip(fullText, policy.residentFields);
+					const trimmed = applySchemaTrim(fullText, policy.residentFields);
 					if (trimmed !== fullText) {
 						return { content: [{ type: "text", text: trimmed }] };
 					}
@@ -548,21 +519,10 @@ export function createGovernor(
 			}
 		},
 
-		applyToolCall(event: ToolCallEvent, ctx: ExtensionContext): void {
+		applyToolCall(event: ToolCallEvent, _ctx: ExtensionContext): void {
 			// T03/T04/T05/T06: no-op body for tool_call.
 			// T06 Mechanism C shed gate is implemented in applyToolResult above;
 			// applyToolCall remains no-op for Mechanism C.
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			const _contextWindow =
-				ctx.model?.contextWindow ??
-				(ctx.model !== undefined
-					? ctx.modelRegistry.find(
-							(ctx.model as { provider?: string }).provider ?? "",
-							(ctx.model as { id?: string }).id ?? "",
-						)?.contextWindow
-					: undefined) ??
-				DEFAULT_CONTEXT_WINDOW;
-
 			void event;
 			return undefined;
 		},
@@ -669,7 +629,7 @@ export interface GovernorFactoryOptions {
  * Any failure returns false → retain, never evict (IL7).
  */
 function storeSummarySentinel(cwd: string, phaseKey: string, entityId: string): boolean {
-	const summaryKey = PHASE_SUMMARY_KEYS[phaseKey];
+	const summaryKey = summaryKeyFor(phaseKey);
 	if (!summaryKey) return false;
 	for (const kind of ["tasks", "bugs"]) {
 		try {

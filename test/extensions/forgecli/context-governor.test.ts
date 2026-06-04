@@ -12,8 +12,8 @@
 //
 //   createGovernor (contextWindow resolution):
 //     6. Uses ctx.model.contextWindow when model is present
-//     7. Falls back to DEFAULT_CONTEXT_WINDOW when ctx.model is undefined
-//        and modelRegistry.find returns undefined
+//     7. Tolerates ctx.model being undefined (fallback chain removed in
+//        FORGE-BUG-043 PR 1 — Mechanism B reads usage.contextWindow directly)
 //
 //   registerHookDispatcher governor wiring (via hook-dispatcher):
 //     8. Governor wired into registerHookDispatcher is called on tool_result
@@ -31,7 +31,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	DEFAULT_CONTEXT_WINDOW,
 	type ContextGovernor,
 	type PhasePolicyTable,
 	createGovernor,
@@ -225,7 +224,11 @@ describe("createGovernor — contextWindow resolution", () => {
 		expect(fakeRegistry.find).not.toHaveBeenCalled();
 	});
 
-	it("Test 7: falls back to DEFAULT_CONTEXT_WINDOW when ctx.model is undefined", () => {
+	it("Test 7: tolerates ctx.model being undefined (no fallback lookup needed)", () => {
+		// DEFAULT_CONTEXT_WINDOW and the applyToolCall fallback chain were removed
+		// in FORGE-BUG-043 PR 1 — Mechanism B reads usage.contextWindow directly
+		// and skips the meter when usage is unavailable. This test keeps the
+		// no-model robustness assertion.
 		const table = loadDefaultPolicyTable();
 		const fakeRegistry = { find: vi.fn(() => undefined) } as unknown as Parameters<typeof createGovernor>[1];
 		const gov = createGovernor(table, fakeRegistry);
@@ -238,8 +241,6 @@ describe("createGovernor — contextWindow resolution", () => {
 		// Should not throw; returns undefined (no-op body in T03).
 		const result = gov.applyToolResult(makeToolResultEvent(), ctxNoModel);
 		expect(result).toBeUndefined();
-		// DEFAULT_CONTEXT_WINDOW is exported for verification
-		expect(DEFAULT_CONTEXT_WINDOW).toBe(200_000);
 	});
 });
 

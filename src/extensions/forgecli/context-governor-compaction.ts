@@ -28,6 +28,7 @@ import type {
 	SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { CompactionResult } from "@earendil-works/pi-coding-agent";
+import { summaryFilenameFor } from "./phase-vocab.js";
 
 /**
  * Structural equivalent of SessionBeforeCompactResult from pi's types.d.ts.
@@ -229,24 +230,6 @@ function extractTextContent(msg: unknown): string[] {
 // Warm-tier helpers
 // ---------------------------------------------------------------------------
 
-/** Map phase key to canonical {PHASE}-SUMMARY.json filename. */
-function phaseSummaryFilename(phaseKey: string): string {
-	const map: Record<string, string> = {
-		// Real run-task PHASE_PIPELINE keys (`${personaNoun}/${role}`):
-		"engineer/plan": "PLAN-SUMMARY.json",
-		"supervisor/review-plan": "REVIEW_PLAN-SUMMARY.json",
-		"engineer/implement": "IMPLEMENTATION-SUMMARY.json",
-		"supervisor/review-code": "CODE_REVIEW-SUMMARY.json",
-		"qa-engineer/validate": "VALIDATION-SUMMARY.json",
-		"architect/approve": "APPROVE-SUMMARY.json",
-		// Legacy design-time keys (test fixtures only):
-		"architect/plan": "PLAN-SUMMARY.json",
-		"engineer/review": "REVIEW-SUMMARY.json",
-		"engineer/code-review": "CODE_REVIEW-SUMMARY.json",
-	};
-	return map[phaseKey] ?? "{PHASE}-SUMMARY.json";
-}
-
 /** Expected shape of a {PHASE}-SUMMARY.json file. */
 interface PhaseSummaryShape {
 	objective?: string;
@@ -266,6 +249,11 @@ function defaultSummaryReader(filePath: string): string | null {
  * Read and parse the warm-tier {PHASE}-SUMMARY.json (synchronous).
  * Returns the parsed object or null on any failure (IL7).
  *
+ * The summary filename comes from phase-vocab (mirror of the plugin's
+ * artifact-kinds.cjs catalog — FORGE-BUG-043). Unknown phase keys and phases
+ * without a summary artifact skip the warm-tier read entirely; no placeholder
+ * paths are ever constructed.
+ *
  * When summaryReader is provided but cwd/phaseKey/entityId/sprintId are not,
  * calls summaryReader("") — enables test seams that don't need path resolution.
  */
@@ -275,13 +263,15 @@ function readWarmTierSummary(opts: ForgeCompactionOptions): PhaseSummaryShape | 
 		const reader = opts.summaryReader ?? defaultSummaryReader;
 
 		if (opts.cwd && opts.phaseKey && opts.entityId && opts.sprintId) {
+			const filename = summaryFilenameFor(opts.phaseKey);
+			if (filename === null) return null; // unknown key / no artifact — skip warm tier
 			filePath = path.join(
 				opts.cwd,
 				"engineering",
 				"sprints",
 				opts.sprintId,
 				opts.entityId,
-				phaseSummaryFilename(opts.phaseKey),
+				filename,
 			);
 		} else if (opts.summaryReader) {
 			// Test seam: summaryReader present but no path context — call with empty string.
