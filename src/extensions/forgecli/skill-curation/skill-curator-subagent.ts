@@ -45,8 +45,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { type ForgePersona, getFinalOutput, runForgeSubagent, type SubagentResult } from "./forge-subagent.js";
-import type { ForgeToolDefs } from "./forge-tools.js";
+import { type ForgePersona, getFinalOutput, runForgeSubagent, type SubagentResult } from "../forge-subagent.js";
+import type { ForgeToolDefs } from "../forge-tools.js";
 import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ────────────────────────────────────────────────────────

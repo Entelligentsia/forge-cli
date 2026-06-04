@@ -23,7 +23,7 @@ import {
 	resultShape,
 	toolGlyph,
 	truncateAtBoundary,
-} from "../src/extensions/forgecli/viewport-renderer.js";
+} from "../src/extensions/forgecli/viewport/renderer.js";
 
 describe("toolGlyph", () => {
 	it("returns $ for bash", () => {

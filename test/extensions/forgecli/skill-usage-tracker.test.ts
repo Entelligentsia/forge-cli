@@ -31,7 +31,7 @@ import {
 	emitSkillUsageTrackingEvents,
 	type RetrievedSkillForTracking,
 	type TaskTrajectory,
-} from "../../../src/extensions/forgecli/skill-usage-tracker.js";
+} from "../../../src/extensions/forgecli/skill-curation/skill-usage-tracker.js";
 
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 

@@ -53,7 +53,7 @@ export interface PhaseSummary {
 	};
 	/**
 	 * Provider + model id observed on the most recent assistant turn of this
-	 * phase. Captured by viewport-events on every turn_end so the tail-view
+	 * phase. Captured by viewport/events on every turn_end so the tail-view
 	 * footer can show e.g. `ollama-cloud/glm-5.1 · ↑1.2k ↓340`. Lets users
 	 * confirm at a glance which model a phase's subagent actually ran with,
 	 * instead of inferring it from config files or stderr.
@@ -330,7 +330,7 @@ export class SessionRegistry extends EventEmitter {
 
 	/**
 	 * Append a per-turn bubble-up event from any subagent. The observer in
-	 * viewport-events.ts calls this once on every `turn_end`. ChipStrip
+	 * viewport/events.ts calls this once on every `turn_end`. ChipStrip
 	 * subscribes to the emitted `turn` event to refresh its global preview
 	 * panel; other consumers can read `getRecentTurnEvents()`.
 	 */

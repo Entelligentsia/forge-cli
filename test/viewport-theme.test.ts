@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { paintFooterLine, paintTailLine } from "../src/extensions/forgecli/viewport-theme.js";
+import { paintFooterLine, paintTailLine } from "../src/extensions/forgecli/viewport/theme.js";
 
 interface StubCall {
 	method: string;

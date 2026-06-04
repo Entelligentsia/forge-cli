@@ -25,8 +25,8 @@ import {
 	getSessionRegistry,
 	type SessionRegistry,
 } from "./session-registry.js";
-import { fmtModelLabel, fmtTokenFooter } from "./viewport-renderer.js";
-import { paintFooterLine } from "./viewport-theme.js";
+import { fmtModelLabel, fmtTokenFooter } from "./viewport/renderer.js";
+import { paintFooterLine } from "./viewport/theme.js";
 
 const STATUS_BAR_WIDGET_KEY = "forge:orchestrator-status-bar";
 const FOOTER_WIDGET_KEY = "forge:viewport-footer";

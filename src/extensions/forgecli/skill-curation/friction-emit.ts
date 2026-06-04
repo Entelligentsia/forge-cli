@@ -39,7 +39,7 @@
 
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
+import { spawnStoreCliEmit } from "../lib/spawn-store-cli.js";
 import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ──────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ export type FrictionInputs = Static<typeof FrictionInputsSchema>;
 // lib/catalog-types.ts (single source of truth). Re-exported here for backward
 // compatibility — all existing imports of FRICTION_SUBKINDS from this module continue to work.
 // Source of truth: event.schema.json subkind pattern (skill_unused|skill_failed|…).
-import { FRICTION_SUBKINDS, type FrictionSubkind } from "./lib/catalog-types.js";
+import { FRICTION_SUBKINDS, type FrictionSubkind } from "../lib/catalog-types.js";
 
 export { FRICTION_SUBKINDS, type FrictionSubkind };
 

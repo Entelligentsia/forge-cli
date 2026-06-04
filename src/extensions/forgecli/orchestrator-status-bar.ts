@@ -32,7 +32,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 import type { OrchestratorTree } from "./orchestrator-tree.js";
-import { fmtTokenMeter } from "./viewport-renderer.js";
+import { fmtTokenMeter } from "./viewport/renderer.js";
 
 // ── Braille spinner ────────────────────────────────────────────────────────
 

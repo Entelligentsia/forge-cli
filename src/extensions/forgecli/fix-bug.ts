@@ -83,8 +83,8 @@ import { getSessionRegistry } from "./session-registry.js";
 import { getOrchestratorTree } from "./orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { attachViewportObserver } from "./viewport-events.js";
-import { fmtPhaseSummary } from "./viewport-renderer.js";
+import { attachViewportObserver } from "./viewport/events.js";
+import { fmtPhaseSummary } from "./viewport/renderer.js";
 
 // ── Bug phase descriptor table ──────────────────────────────────────────────
 //

@@ -1,4 +1,4 @@
-// viewport-events.ts
+// viewport/events.ts
 //
 // Reusable subagent event observer. Wires `runForgeSubagent.onEvent` to:
 //   1. Append per-event tail lines (with tree connectors, glyphs, risky tag,
@@ -13,8 +13,8 @@
 // "bubbles" usage up the same way. Top-level viewports read aggregate usage
 // via SessionRegistry.getAggregateUsage().
 
-import type { SessionRegistry } from "./session-registry.js";
-import { getOrchestratorTree } from "./orchestrator-tree.js";
+import type { SessionRegistry } from "../session-registry.js";
+import { getOrchestratorTree } from "../orchestrator-tree.js";
 import {
 	extractThinkingOneLiner,
 	extractTurnPreview,
@@ -24,7 +24,7 @@ import {
 	resultShape,
 	toolGlyph,
 	type UsageDelta,
-} from "./viewport-renderer.js";
+} from "./renderer.js";
 
 /** Minimal shape of the AgentSessionEvent union we care about — kept loose
  * so the file doesn't pull in @earendil-works/pi-agent-core types at compile

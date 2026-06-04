@@ -78,12 +78,12 @@ const config: KnipConfig = {
 		"src/extensions/forgecli/hook-dispatcher.ts": ["exports"],
 		"src/extensions/forgecli/input-router.ts": ["exports"],
 		// friction-emit.ts types exported for downstream skill-curation consumers.
-		"src/extensions/forgecli/friction-emit.ts": ["types"],
+		"src/extensions/forgecli/skill-curation/friction-emit.ts": ["types"],
 		// lib/state-helpers.ts base interfaces consumed by extending classes.
 		"src/extensions/forgecli/lib/state-helpers.ts": ["types"],
 		// Public API types in model-registry.ts and skill-curator-subagent.ts.
 		"src/extensions/forgecli/model-registry.ts": ["types"],
-		"src/extensions/forgecli/skill-curator-subagent.ts": ["types"],
+		"src/extensions/forgecli/skill-curation/skill-curator-subagent.ts": ["types"],
 		// status-command.ts helper exported for potential external CLI integrations.
 		"src/extensions/forgecli/status-command.ts": ["exports"],
 	},

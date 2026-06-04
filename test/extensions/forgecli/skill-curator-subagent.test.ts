@@ -49,7 +49,7 @@ import {
 	parseProposalsFromOutput,
 	type RetrievedSkillBody,
 	runSkillCurator,
-} from "../../../src/extensions/forgecli/skill-curator-subagent.js";
+} from "../../../src/extensions/forgecli/skill-curation/skill-curator-subagent.js";
 
 const mockRunForgeSubagent = vi.mocked(runForgeSubagent);
 const mockGetFinalOutput = vi.mocked(getFinalOutput);

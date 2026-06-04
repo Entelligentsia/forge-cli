@@ -1,4 +1,4 @@
-// viewport-renderer.ts
+// viewport/renderer.ts
 //
 // Pure-string helpers for the subagent viewport tail buffer.
 // Centralises glyph selection, arg/result shape extraction, thinking one-liners,

@@ -47,8 +47,8 @@ import { getSessionRegistry } from "./session-registry.js";
 import { getOrchestratorTree } from "./orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "./subagent/orchestrator-transcript.js";
 import { resolveToCanonicalId, resolveToolDir } from "./store-resolver.js";
-import { attachViewportObserver } from "./viewport-events.js";
-import { fmtPhaseSummary, type UsageDelta } from "./viewport-renderer.js";
+import { attachViewportObserver } from "./viewport/events.js";
+import { fmtPhaseSummary, type UsageDelta } from "./viewport/renderer.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
 
@@ -678,9 +678,9 @@ export function runPreflightGateWithData(
 const STATUS_KEY = "forge:run-task";
 const MESSAGE_KEY = "forge:run-task:message";
 
-// extractTurnPreview moved to viewport-renderer.ts; re-exported below for
+// extractTurnPreview moved to viewport/renderer.ts; re-exported below for
 // backwards-compatibility with existing imports (e.g. tests).
-export { extractTurnPreview } from "./viewport-renderer.js";
+export { extractTurnPreview } from "./viewport/renderer.js";
 
 // ── runTaskPipeline ──────────────────────────────────────────────────────
 

@@ -36,8 +36,8 @@ import type { OrchestratorTree } from "../orchestrator-tree.js";
 import { getSessionRegistry } from "../session-registry.js";
 import type { NodeViewModel, TreeViewModel } from "./view-model.js";
 import { buildViewModel } from "./view-model.js";
-import { fmtModelAndTokenFooter, fmtTokenMeter } from "../viewport-renderer.js";
-import { paintTailLine } from "../viewport-theme.js";
+import { fmtModelAndTokenFooter, fmtTokenMeter } from "../viewport/renderer.js";
+import { paintTailLine } from "../viewport/theme.js";
 import {
 	cursor,
 	nodeGlyph,

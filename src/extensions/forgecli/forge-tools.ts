@@ -69,7 +69,7 @@ function compressWithTelemetry(
 	const saved = Math.round((1 - after / before) * 100);
 	// No stderr print here: raw writes corrupt active TUI overlays (/forge:dashboard).
 	// Savings surface through the returned stats → tool-result details.compression →
-	// viewport-events → session-registry/orchestrator-tree → dashboard "⇌Nt" suffix.
+	// viewport/events → session-registry/orchestrator-tree → dashboard "⇌Nt" suffix.
 	return { text: compressed, stats: { tool: toolName, before, after, saved } };
 }
 

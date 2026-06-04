@@ -1,7 +1,7 @@
-// viewport-theme.ts
+// viewport/theme.ts
 //
 // Paints subagent-tail lines using pi's Theme. The tail buffer (see
-// viewport-renderer.ts) stores plain strings so transcripts and audit logs
+// viewport/renderer.ts) stores plain strings so transcripts and audit logs
 // stay ANSI-clean; this module is the single place that maps line categories
 // to theme colors at render time.
 //

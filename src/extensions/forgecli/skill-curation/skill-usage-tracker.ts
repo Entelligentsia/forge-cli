@@ -40,7 +40,7 @@
 
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import { spawnStoreCliEmit } from "./lib/spawn-store-cli.js";
+import { spawnStoreCliEmit } from "../lib/spawn-store-cli.js";
 import { isSkillCurationEnabled } from "./skill-curation-flag.js";
 
 // ── Public schemas ───────────────────────────────────────────────────────

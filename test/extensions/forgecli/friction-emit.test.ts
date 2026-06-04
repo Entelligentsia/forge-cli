@@ -35,7 +35,7 @@ import {
 	type FrictionEmitRuntime,
 	type FrictionInputs,
 	type FrictionSignal,
-} from "../../../src/extensions/forgecli/friction-emit.js";
+} from "../../../src/extensions/forgecli/skill-curation/friction-emit.js";
 
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 

@@ -48,18 +48,18 @@ import {
 	emitFrictionEvents,
 	type FrictionEmitRuntime,
 	type FrictionSignal,
-} from "../../../src/extensions/forgecli/friction-emit.js";
-import { _internal, isSkillCurationEnabled } from "../../../src/extensions/forgecli/skill-curation-flag.js";
-import { runSkillCurator } from "../../../src/extensions/forgecli/skill-curator-subagent.js";
+} from "../../../src/extensions/forgecli/skill-curation/friction-emit.js";
+import { _internal, isSkillCurationEnabled } from "../../../src/extensions/forgecli/skill-curation/skill-curation-flag.js";
+import { runSkillCurator } from "../../../src/extensions/forgecli/skill-curation/skill-curator-subagent.js";
 import {
 	emitSkillUsageEvents,
 	type RetrievalHit,
 	type EmitRuntime as RetrieverEmitRuntime,
-} from "../../../src/extensions/forgecli/skill-retriever.js";
+} from "../../../src/extensions/forgecli/skill-curation/skill-retriever.js";
 import {
 	emitSkillUsageTrackingEvents,
 	type EmitRuntime as TrackerEmitRuntime,
-} from "../../../src/extensions/forgecli/skill-usage-tracker.js";
+} from "../../../src/extensions/forgecli/skill-curation/skill-usage-tracker.js";
 
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockRunSubagent = vi.mocked(runForgeSubagent);
