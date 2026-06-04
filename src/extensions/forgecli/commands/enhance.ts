@@ -185,6 +185,110 @@ export interface RegisterEnhanceOptions {
 	now?: () => Date;
 }
 
+/**
+ * Run the enhance kickoff flow in-process (kickoff-dispatch fix).
+ *
+ * pi's `sendUserMessage` deliberately bypasses extension-command dispatch —
+ * agent-session.ts routes it through `prompt(text, { expandPromptTemplates:
+ * false })`, and the slash-command branch in `prompt()` is gated on
+ * `expandPromptTemplates`. So steering the literal string
+ * "/forge:rebuild --enrich" via sendKickoff lands as PROSE in the
+ * conversation; the registered handler never runs and the LLM is left to
+ * improvise. pi also forbids queueing extension commands outright
+ * (steer()/followUp() throw "cannot be queued").
+ *
+ * Callers that trigger enhancement programmatically (regenerate.ts
+ * `--enrich`, post-init-hook.ts, post-sprint-hook.ts) MUST call this
+ * function directly. The composed kickoff PROSE is still handed to the LLM
+ * via sendKickoff at the end — that part is a legitimate steer.
+ */
+export async function runEnhance(
+	pi: ExtensionAPI,
+	args: string,
+	ctx: ExtensionCommandContext,
+	options: RegisterEnhanceOptions = {},
+): Promise<void> {
+	const cwd = options.cwd ?? process.cwd();
+	const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
+
+	let workflowMd: string;
+	let workflowAudience: import("../parsers/workflow-loader.js").AudienceValue;
+	try {
+		const loaded = loadWorkflow(workflowPath);
+		workflowMd = loaded.rawMarkdown;
+		workflowAudience = loaded.audience;
+	} catch (err: unknown) {
+		if (err instanceof WorkflowLoaderError) {
+			if (err.code === "missing_file") {
+				ctx.ui.notify(
+					`× forge:enhance — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
+					"error",
+				);
+			} else {
+				ctx.ui.notify(`× forge:enhance — workflow load failed (${err.code}): ${err.message}`, "error");
+			}
+			return;
+		}
+		const e = err as { message?: string };
+		ctx.ui.notify(`× forge:enhance — failed to read workflow: ${e.message ?? "unknown"}`, "error");
+		return;
+	}
+
+	let parsed: ParsedArgs;
+	try {
+		parsed = parseEnhanceArgs(args);
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		ctx.ui.notify(`× forge:enhance — ${e.message ?? "argv parse failed"}`, "error");
+		return;
+	}
+
+	const check = checkMaterialization(workflowPath, workflowMd);
+	if (!check.ok) {
+		for (const marker of check.missing) {
+			ctx.ui.notify(`× workflow regression: ${marker} not found in ${workflowPath}`, "error");
+		}
+		return;
+	}
+
+	const personas = extractPersonaNames(workflowMd);
+	let personaIdentity = "";
+	if (personas.length > 0) {
+		try {
+			const persona = loadPersona(personas[0], { cwd });
+			personaIdentity = persona.identity;
+		} catch (err: unknown) {
+			if (err instanceof PersonaSkillLoaderError) {
+				ctx.ui.notify(
+					`× forge:enhance — persona '${personas[0]}' load failed (${err.code}): ${err.message}`,
+					"error",
+				);
+				return;
+			}
+			const e = err as { message?: string };
+			ctx.ui.notify(`× forge:enhance — persona load error: ${e.message ?? "unknown"}`, "error");
+			return;
+		}
+	}
+
+	if (!assertAudience({ workflowName: "enhance", audience: workflowAudience }, ctx)) {
+		return;
+	}
+
+	const now = options.now ?? defaultNow;
+	const timestamp = formatTimestamp(now());
+
+	const kickoff = composeKickoff({
+		workflowMd,
+		personaIdentity,
+		parsed,
+		cwd,
+		timestamp,
+	});
+
+	sendKickoff(pi, kickoff);
+}
+
 export function registerEnhance(pi: ExtensionAPI, options: RegisterEnhanceOptions = {}): void {
 	pi.registerCommand("forge:enhance", {
 		description:
@@ -192,85 +296,7 @@ export function registerEnhance(pi: ExtensionAPI, options: RegisterEnhanceOption
 			"Usage: /forge:enhance [--phase 1|2|3 | --auto] [free-form context]. " +
 			"Default phase: 2 (post-sprint propose-diffs).",
 		async handler(args: string, ctx: ExtensionCommandContext) {
-			const cwd = options.cwd ?? process.cwd();
-			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
-
-			let workflowMd: string;
-			let workflowAudience: import("../parsers/workflow-loader.js").AudienceValue;
-			try {
-				const loaded = loadWorkflow(workflowPath);
-				workflowMd = loaded.rawMarkdown;
-				workflowAudience = loaded.audience;
-			} catch (err: unknown) {
-				if (err instanceof WorkflowLoaderError) {
-					if (err.code === "missing_file") {
-						ctx.ui.notify(
-							`× forge:enhance — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
-							"error",
-						);
-					} else {
-						ctx.ui.notify(`× forge:enhance — workflow load failed (${err.code}): ${err.message}`, "error");
-					}
-					return;
-				}
-				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:enhance — failed to read workflow: ${e.message ?? "unknown"}`, "error");
-				return;
-			}
-
-			let parsed: ParsedArgs;
-			try {
-				parsed = parseEnhanceArgs(args);
-			} catch (err: unknown) {
-				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:enhance — ${e.message ?? "argv parse failed"}`, "error");
-				return;
-			}
-
-			const check = checkMaterialization(workflowPath, workflowMd);
-			if (!check.ok) {
-				for (const marker of check.missing) {
-					ctx.ui.notify(`× workflow regression: ${marker} not found in ${workflowPath}`, "error");
-				}
-				return;
-			}
-
-			const personas = extractPersonaNames(workflowMd);
-			let personaIdentity = "";
-			if (personas.length > 0) {
-				try {
-					const persona = loadPersona(personas[0], { cwd });
-					personaIdentity = persona.identity;
-				} catch (err: unknown) {
-					if (err instanceof PersonaSkillLoaderError) {
-						ctx.ui.notify(
-							`× forge:enhance — persona '${personas[0]}' load failed (${err.code}): ${err.message}`,
-							"error",
-						);
-						return;
-					}
-					const e = err as { message?: string };
-					ctx.ui.notify(`× forge:enhance — persona load error: ${e.message ?? "unknown"}`, "error");
-					return;
-				}
-			}
-
-			if (!assertAudience({ workflowName: "enhance", audience: workflowAudience }, ctx)) {
-				return;
-			}
-
-			const now = options.now ?? defaultNow;
-			const timestamp = formatTimestamp(now());
-
-			const kickoff = composeKickoff({
-				workflowMd,
-				personaIdentity,
-				parsed,
-				cwd,
-				timestamp,
-			});
-
-			sendKickoff(pi, kickoff);
+			await runEnhance(pi, args, ctx, options);
 		},
 	});
 }

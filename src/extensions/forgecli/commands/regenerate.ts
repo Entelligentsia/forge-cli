@@ -23,8 +23,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-// FORGE-S26-T11: registerEnhance imported to power `forge:rebuild --enrich`
-import { registerEnhance } from "../commands/enhance.js";
+// FORGE-S26-T11: runEnhance imported to power `forge:rebuild --enrich`
+// (kickoff-dispatch fix: direct in-process call replaced the syntheticPi
+// handler-capture shim).
+import { runEnhance } from "../commands/enhance.js";
 import { getBundledPayloadRoot, getBundledToolsRoot } from "../forge-init/forge-init.js";
 
 // ── Pre-write modification guard (forge-cli#26 / forge#106 / FORGE-BUG-037) ──
@@ -178,7 +180,9 @@ export function runRebuildTools(
 				fs.copyFileSync(resolvedSrc, destFile);
 				messages.push(`〇 forge:rebuild tools — copied ${path.basename(resolvedSrc)}`);
 			} catch (err: unknown) {
-				messages.push(`× forge:rebuild tools — copy failed for ${singleTool}: ${(err as Error).message ?? String(err)}`);
+				messages.push(
+					`× forge:rebuild tools — copy failed for ${singleTool}: ${(err as Error).message ?? String(err)}`,
+				);
 			}
 		} else {
 			messages.push(`△ forge:rebuild tools — tool not found: ${singleTool} (neither .cjs nor .js)`);
@@ -201,7 +205,9 @@ export function runRebuildTools(
 			}
 		}
 	} catch (err: unknown) {
-		messages.push(`× forge:rebuild tools — could not read bundle tools dir: ${(err as Error).message ?? String(err)}`);
+		messages.push(
+			`× forge:rebuild tools — could not read bundle tools dir: ${(err as Error).message ?? String(err)}`,
+		);
 		return { messages };
 	}
 
@@ -256,23 +262,9 @@ export function registerRegenerate(pi: ExtensionAPI): void {
 				return;
 			}
 			if (hasEnrich) {
-				// Strip --enrich, pass remaining args to enhance handler (Phase 2 default)
+				// Strip --enrich, pass remaining args to the enhance flow (Phase 2 default)
 				const enhanceArgs = parts.filter((p) => p !== "--enrich").join(" ");
-				let enhanceHandler:
-					| ((args: string, ctx: ExtensionCommandContext) => Promise<void> | void)
-					| undefined;
-				const syntheticPi = {
-					...pi,
-					registerCommand: (name: string, def: { handler: typeof enhanceHandler }) => {
-						if (name === "forge:enhance") enhanceHandler = def.handler;
-					},
-				} as unknown as ExtensionAPI;
-				registerEnhance(syntheticPi);
-				if (enhanceHandler) {
-					await enhanceHandler(enhanceArgs, ctx);
-				} else {
-					ctx.ui.notify("× forge:rebuild --enrich — enhance handler unavailable", "error");
-				}
+				await runEnhance(pi, enhanceArgs, ctx);
 				return;
 			}
 

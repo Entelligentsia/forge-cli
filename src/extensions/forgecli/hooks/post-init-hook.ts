@@ -18,7 +18,9 @@
 //      notify and return without dispatching.
 //   4. Write sentinel BEFORE dispatching (fail-open: if dispatch fails, the
 //      sentinel prevents re-fire flooding).
-//   5. sendKickoff "/forge:rebuild --enrich". If this throws: catch,
+//   5. runEnhance(pi, "", ctx, { cwd }) — in-process enhance dispatch
+//      (NOT a steered slash-command string; pi never dispatches those —
+//      see kickoff.ts guard). If this throws: catch,
 //      notify error, do NOT re-throw (init must still report success).
 //
 // Iron Laws:
@@ -32,9 +34,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { assertAudience } from "../audience-gate.js";
-import { checkMaterialization } from "../commands/enhance.js";
+import { checkMaterialization, runEnhance } from "../commands/enhance.js";
 import { type InitCompleteEvent, onSyntheticEvent } from "../hook-dispatcher.js";
-import { sendKickoff } from "../kickoff.js";
 import { loadWorkflow, WorkflowLoaderError } from "../parsers/workflow-loader.js";
 
 // ── Types (re-exported for tests) ─────────────────────────────────────────────
@@ -130,13 +131,17 @@ export function createPostInitHookHandler(
 		// 4. Write sentinel BEFORE dispatch (fail-open on dispatch error)
 		writeSentinel(sentinel, projectPrefix);
 
-		// 5. Dispatch /forge:rebuild --enrich (best-effort, fail-open)
+		// 5. Dispatch the enhance flow in-process (best-effort, fail-open).
+		// Kickoff-dispatch fix: pi's sendUserMessage bypasses extension-command
+		// dispatch, so steering the literal "/forge:rebuild --enrich" string
+		// never reached the handler. runEnhance composes the enhance kickoff
+		// prose and steers THAT instead.
 		try {
-			sendKickoff(pi, "/forge:rebuild --enrich");
+			await runEnhance(pi, "", ctx, { cwd });
 		} catch (err: unknown) {
 			const e = err as { message?: string };
 			ctx.ui.notify(
-				`× post-init hook: failed to trigger /forge:rebuild --enrich: ${e.message ?? "unknown"}`,
+				`× post-init hook: failed to trigger enhance (rebuild --enrich): ${e.message ?? "unknown"}`,
 				"error",
 			);
 			// Do NOT re-throw — /forge:init must still report success.

@@ -36,6 +36,20 @@ function makeTmpDir(): string {
 function makeForgeDir(dir: string): void {
 	fs.mkdirSync(path.join(dir, ".forge", "cache"), { recursive: true });
 	fs.mkdirSync(path.join(dir, ".forge", "workflows"), { recursive: true });
+	fs.mkdirSync(path.join(dir, ".forge", "personas"), { recursive: true });
+	// runEnhance → loadPersona resolves the project root via .forge/config.json
+	fs.writeFileSync(
+		path.join(dir, ".forge", "config.json"),
+		JSON.stringify({ paths: { forgeRoot: "./forge/forge" } }),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(dir, ".forge", "personas", "engineer.md"),
+		["🌱 **Forge Engineer** — I plan what will be built.", "", "## Capabilities", "", "- Read and write code"].join(
+			"\n",
+		),
+		"utf8",
+	);
 }
 
 function writeFakeEnhanceWorkflow(dir: string, withMarkers = true): void {
@@ -105,10 +119,13 @@ describe("post-init-hook handler", () => {
 
 		await handler(event, ctx);
 
-		// sendKickoff must have been called with /forge:rebuild --enrich
-		// (v1.0: /forge:enhance was removed; enrichment is now a flag on rebuild — FORGE-S26-T10)
+		// Kickoff-dispatch fix: the hook now runs the enhance flow in-process
+		// (runEnhance) and steers the COMPOSED enhance kickoff prose — never a
+		// literal slash-command string, which pi would not dispatch.
 		expect(kickoffMessages.length).toBe(1);
-		expect(kickoffMessages[0]).toMatch(/forge:rebuild\s+--enrich/);
+		expect(kickoffMessages[0]).toMatch(/^# \/forge:enhance --phase 2/);
+		expect(kickoffMessages[0]).toContain("Store-Write Verification"); // workflow body included
+		expect(kickoffMessages[0].startsWith("/")).toBe(false); // not a slash-command string
 	});
 
 	it("2. sentinel prevents re-fire: second emit notifies 'already fired'", async () => {
