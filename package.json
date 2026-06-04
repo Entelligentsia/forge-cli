@@ -61,6 +61,7 @@
     "test": "vitest run",
     "test:e2e": "bash test/e2e/smoke.sh",
     "smoke:tmp": "bash test/e2e/tmp-smoke.sh",
+    "install:global": "npm run build && TARBALL=$(npm pack --silent | tail -n 1) && npm install -g \"./$TARBALL\" && rm -f \"$TARBALL\" && forge --version",
     "lint": "biome check src test",
     "lint:no-skip": "node tools/check-no-skipped-tests.cjs",
     "lint:layering": "node tools/check-import-layering.cjs",
