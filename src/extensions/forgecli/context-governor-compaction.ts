@@ -18,7 +18,9 @@
 //   - IL7 fallback: entire session_before_compact handler wrapped in try/catch.
 //     On any error, returns undefined — lets pi compact normally with generateSummary.
 //   - IL10/Pack 07: only reads summary files, never writes .forge/store/ or summaries.
-//   - NOT wired into index.ts/run-task.ts yet — deferred to T07 production integration.
+//   - Wired per-phase by run-task.ts (FORGE_CTX_GOVERNOR=1) with cwd/phaseKey/
+//     entityId/sprintId opts; project config (prefix, paths.engineering) loads
+//     once at factory construction (FORGE-BUG-043 PR 2).
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -28,6 +30,7 @@ import type {
 	SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { CompactionResult } from "@earendil-works/pi-coding-agent";
+import { loadGovernorProjectConfig } from "./governor-config.js";
 import { summaryFilenameFor } from "./phase-vocab.js";
 
 /**
@@ -100,16 +103,27 @@ export interface ForgeCompactionOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Pattern constants (module-level compile-time constants)
+// Pattern builders (parameterized by project config — FORGE-BUG-043 PR 2)
 // ---------------------------------------------------------------------------
 
-/** Matches Forge store IDs in their standard forms:
- *   FORGE-S30-T09   (sprint+task)
- *   FORGE-S30       (sprint)
- *   FORGE-BUG-042   (bug, with category letters + digit suffix)
- * Pattern: FORGE- followed by alternating ALPHANUM segments separated by hyphens.
- * Two variants ordered longest-first so overlapping (sprint+task before sprint) works. */
-const STORE_ID_RE = /FORGE-[A-Z]+\d*-(?:T?\d+|[A-Z]+\d*)|FORGE-[A-Z]+\d*/g;
+/**
+ * Build the store-ID pattern for a project prefix. Standard forms:
+ *   <P>-S30-T09   (sprint+task)
+ *   <P>-S30       (sprint)
+ *   <P>-BUG-042   (bug, with category letters + digit suffix)
+ * Pattern: prefix followed by alternating ALPHANUM segments separated by
+ * hyphens; two variants ordered longest-first so overlapping (sprint+task
+ * before sprint) works.
+ *
+ * The prefix was previously the literal "FORGE", so any project with a
+ * different project.prefix (e.g. CART) extracted zero store IDs (FORGE-BUG-043).
+ * The prefix is identifier-validated by loadGovernorProjectConfig before it
+ * reaches this builder; escaping here is defence in depth.
+ */
+function buildStoreIdRe(prefix: string): RegExp {
+	const p = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`${p}-[A-Z]+\\d*-(?:T?\\d+|[A-Z]+\\d*)|${p}-[A-Z]+\\d*`, "g");
+}
 
 /** Matches Markdown checkbox lines. */
 const CHECKBOX_RE = /^\s*[-*]?\s*\[[ xX]\].*$/gm;
@@ -120,9 +134,18 @@ const CHECKBOX_RE = /^\s*[-*]?\s*\[[ xX]\].*$/gm;
  * Using a broad match to capture both forms reliably. */
 const TRANSITION_RE = /(?:→\s*[\w][\w-]*|update-status\s+\S+\s+\S+\s+status\s+[\w][\w-]*)/g;
 
-/** Matches file reference patterns. */
-const FILE_REF_RE =
-	/(?:engineering\/[^\s"'`,;)]+|\.forge\/[^\s"'`,;)]+|\b[\w./\-]+\.(?:ts|md|cjs|json)\b)/g;
+/**
+ * Build the file-reference pattern. The engineering directory segment comes
+ * from paths.engineering (default "engineering"); `.forge/` is the product's
+ * fixed instance directory (it hosts config.json itself) and stays literal.
+ */
+function buildFileRefRe(engineeringPath: string): RegExp {
+	const e = engineeringPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(
+		`(?:${e}\\/[^\\s"'\`,;)]+|\\.forge\\/[^\\s"'\`,;)]+|\\b[\\w./\\-]+\\.(?:ts|md|cjs|json)\\b)`,
+		"g",
+	);
+}
 
 // ---------------------------------------------------------------------------
 // extractForgeFacts — pure extractor
@@ -137,9 +160,19 @@ const FILE_REF_RE =
  * and from direct string entries.
  *
  * @param messagesToSummarize  Array of message-like objects from preparation.
+ * @param extractOpts  Optional project-config parameters (FORGE-BUG-043 PR 2):
+ *                     prefix (store-ID prefix, default "FORGE") and
+ *                     engineeringPath (file-ref directory, default "engineering").
+ *                     Omitting them preserves the historical behaviour exactly.
  * @returns ForgeFactSummary with all extracted patterns.
  */
-export function extractForgeFacts(messagesToSummarize: unknown[]): ForgeFactSummary {
+export function extractForgeFacts(
+	messagesToSummarize: unknown[],
+	extractOpts?: { prefix?: string; engineeringPath?: string },
+): ForgeFactSummary {
+	const storeIdRe = buildStoreIdRe(extractOpts?.prefix ?? "FORGE");
+	const fileRefRe = buildFileRefRe(extractOpts?.engineeringPath ?? "engineering");
+
 	const storeIdSet = new Set<string>();
 	const acStateLines: string[] = [];
 	const transitionLineSet = new Set<string>();
@@ -149,8 +182,8 @@ export function extractForgeFacts(messagesToSummarize: unknown[]): ForgeFactSumm
 	for (const msg of messagesToSummarize) {
 		const texts = extractTextContent(msg);
 		for (const text of texts) {
-			// Store IDs — reset lastIndex before each matchAll
-			const storeMatches = text.matchAll(new RegExp(STORE_ID_RE.source, "g"));
+			// Store IDs — fresh RegExp per text so lastIndex never leaks
+			const storeMatches = text.matchAll(new RegExp(storeIdRe.source, "g"));
 			for (const m of storeMatches) {
 				storeIdSet.add(m[0]);
 			}
@@ -170,7 +203,7 @@ export function extractForgeFacts(messagesToSummarize: unknown[]): ForgeFactSumm
 			}
 
 			// File refs
-			const fileRefMatches = text.matchAll(new RegExp(FILE_REF_RE.source, "g"));
+			const fileRefMatches = text.matchAll(new RegExp(fileRefRe.source, "g"));
 			for (const m of fileRefMatches) {
 				const ref = m[0].trim();
 				if (ref.length > 2) {
@@ -257,7 +290,10 @@ function defaultSummaryReader(filePath: string): string | null {
  * When summaryReader is provided but cwd/phaseKey/entityId/sprintId are not,
  * calls summaryReader("") — enables test seams that don't need path resolution.
  */
-function readWarmTierSummary(opts: ForgeCompactionOptions): PhaseSummaryShape | null {
+function readWarmTierSummary(
+	opts: ForgeCompactionOptions,
+	engineeringPath: string,
+): PhaseSummaryShape | null {
 	try {
 		let filePath: string;
 		const reader = opts.summaryReader ?? defaultSummaryReader;
@@ -267,7 +303,7 @@ function readWarmTierSummary(opts: ForgeCompactionOptions): PhaseSummaryShape | 
 			if (filename === null) return null; // unknown key / no artifact — skip warm tier
 			filePath = path.join(
 				opts.cwd,
-				"engineering",
+				engineeringPath,
 				"sprints",
 				opts.sprintId,
 				opts.entityId,
@@ -369,12 +405,17 @@ function assembleSummary(
  *
  * Pack 07: reads summary files but never writes .forge/store/.
  * IL10: no pi-mono edits, no dispatch contract changes.
- * NOT wired into index.ts/run-task.ts — deferred to T07 production integration.
+ * Wired per-phase by run-task.ts via RunSubagentOptions.extensionFactories.
+ *
+ * Project config (store-ID prefix, paths.engineering) is loaded ONCE here at
+ * factory construction from `<opts.cwd>/.forge/config.json` — never per
+ * compaction event. Without cwd the historical defaults apply (FORGE-BUG-043 PR 2).
  *
  * @param opts  ForgeCompactionOptions (default: empty — no warm-tier).
  * @returns ExtensionFactory for passing to DefaultResourceLoader.extensionFactories.
  */
 export function buildForgeCompactionFactory(opts: ForgeCompactionOptions = {}): ExtensionFactory {
+	const projectConfig = loadGovernorProjectConfig(opts.cwd);
 	return (pi: ExtensionAPI): void => {
 		pi.on(
 			"session_before_compact",
@@ -400,12 +441,16 @@ export function buildForgeCompactionFactory(opts: ForgeCompactionOptions = {}): 
 						return undefined; // IL7 — malformed preparation fields
 					}
 
-					// Extract Forge facts from message history.
+					// Extract Forge facts from message history (patterns built from
+					// the project config loaded at factory construction).
 					const msgs = Array.isArray(messagesToSummarize) ? messagesToSummarize : [];
-					const facts = extractForgeFacts(msgs);
+					const facts = extractForgeFacts(msgs, {
+						prefix: projectConfig.prefix,
+						engineeringPath: projectConfig.engineeringPath,
+					});
 
 					// Read warm-tier summary (best-effort, IL7).
-					const warmTier = readWarmTierSummary(opts);
+					const warmTier = readWarmTierSummary(opts, projectConfig.engineeringPath);
 
 					// Assemble summary string.
 					const summary = assembleSummary(facts, warmTier);

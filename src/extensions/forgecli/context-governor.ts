@@ -44,6 +44,7 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { loadGovernorProjectConfig } from "./governor-config.js";
 import { summaryFilenameFor, summaryKeyFor } from "./phase-vocab.js";
 
 /**
@@ -625,15 +626,22 @@ export interface GovernorFactoryOptions {
 /**
  * Read-only Mechanism C sentinel: true when the store record for entityId
  * already carries a summary for the given phase. Reads
- * `.forge/store/{tasks,bugs}/<entityId>.json` directly (never writes — Pack 07).
- * Any failure returns false → retain, never evict (IL7).
+ * `<storePath>/{tasks,bugs}/<entityId>.json` directly (never writes — Pack 07).
+ * storePath comes from paths.store in .forge/config.json (default
+ * ".forge/store" — FORGE-BUG-043 PR 2). Any failure returns false → retain,
+ * never evict (IL7).
  */
-function storeSummarySentinel(cwd: string, phaseKey: string, entityId: string): boolean {
+function storeSummarySentinel(
+	cwd: string,
+	storePath: string,
+	phaseKey: string,
+	entityId: string,
+): boolean {
 	const summaryKey = summaryKeyFor(phaseKey);
 	if (!summaryKey) return false;
 	for (const kind of ["tasks", "bugs"]) {
 		try {
-			const recordPath = path.join(cwd, ".forge", "store", kind, `${entityId}.json`);
+			const recordPath = path.join(cwd, storePath, kind, `${entityId}.json`);
 			const raw = fs.readFileSync(recordPath, "utf8");
 			const record = JSON.parse(raw) as { summaries?: Record<string, unknown> };
 			const summary = record.summaries?.[summaryKey];
@@ -671,6 +679,9 @@ function storeSummarySentinel(cwd: string, phaseKey: string, entityId: string): 
  */
 export function buildGovernorFactory(opts: GovernorFactoryOptions): ExtensionFactory {
 	const { phaseKey, cwd } = opts;
+	// Project config (paths.store) loads ONCE at factory construction — never
+	// per tool event (FORGE-BUG-043 PR 2). IL7 defaults apply without a config.
+	const projectConfig = loadGovernorProjectConfig(cwd);
 	return (pi: ExtensionAPI): void => {
 		let currentCtx: ExtensionContext | undefined;
 
@@ -687,7 +698,7 @@ export function buildGovernorFactory(opts: GovernorFactoryOptions): ExtensionFac
 			currentCtx?.compact();
 		};
 		const summarySentinel = (pk: string, entityId: string): boolean =>
-			storeSummarySentinel(cwd, pk, entityId);
+			storeSummarySentinel(cwd, projectConfig.storePath, pk, entityId);
 
 		// Registration-time stub; per-turn contextWindow resolution uses
 		// ctx.getContextUsage()/ctx.modelRegistry inside the handler chain.
