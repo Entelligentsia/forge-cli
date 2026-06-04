@@ -97,7 +97,7 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 		"1. Read the implementation diff and PROGRESS.md for `engineering/sprints/<SPRINT_ID>/<TASK_ID>/` (the source of truth).",
 		"2. Query the store for the task and its sprint/feature context via `forge_store_query` — do NOT raw-read `.forge/store/`.",
 		"3. Follow the workflow Algorithm verbatim: review code for correctness, test coverage, security, and architecture compliance.",
-		"4. Write `CODE_REVIEW.md` and `CODE-REVIEW-SUMMARY.json` to the task directory using the `write` tool.",
+		"4. Write `CODE_REVIEW.md` and `REVIEW-CODE-SUMMARY.json` to the task directory using the `write` tool.",
 		"5. Update task status by calling the `forge_store` MCP tool: `{command:'update-status', args:['task','<TASK_ID>','status','<new-status>']}`. Never raw-write `.forge/store/`. Do NOT bash-shell `forge store ...`.",
 		"6. Honour Pack-06 Read/Write/Ask/Store discipline: writes go via the `forge_store` MCP tool; in-conversation clarifications use `forge_ask_user`.",
 	);

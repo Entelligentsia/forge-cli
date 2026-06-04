@@ -300,7 +300,10 @@ describe("Mechanism B: steer message content (phaseSummaryName)", () => {
 		expect(msgA).toContain("architect/plan");
 		expect(msgA).toContain("This note will not re-fire");
 
-		// --- Part B: unknown phase → "{PHASE}-SUMMARY.json" ---
+		// --- Part B: unknown phase → generic checkpoint wording, NO placeholder ---
+		// FORGE-BUG-043: previously the steer named the literal "{PHASE}-SUMMARY.json"
+		// placeholder for unknown keys (e.g. custom config.pipelines phases),
+		// instructing the agent to write to a file literally named that.
 		// "default" policy has steerThreshold = 0.9; use 95% to trigger
 		const steerFnB = vi.fn<[string], void>();
 		const govB = createGovernor(table, registry, steerFnB);
@@ -316,6 +319,47 @@ describe("Mechanism B: steer message content (phaseSummaryName)", () => {
 
 		expect(steerFnB).toHaveBeenCalledTimes(1);
 		const msgB = steerFnB.mock.calls[0]?.[0] ?? "";
-		expect(msgB).toContain("{PHASE}-SUMMARY.json");
+		expect(msgB).not.toContain("{PHASE}-SUMMARY.json");
+		expect(msgB).toContain("Checkpoint your findings");
+		expect(msgB).toContain("This note will not re-fire");
+	});
+
+	it("Test 11: steer message names the CATALOG summary filename for review phases (FORGE-BUG-043)", () => {
+		// The plugin catalog (forge/tools/lib/artifact-kinds.cjs) names these
+		// REVIEW-PLAN-SUMMARY.json / REVIEW-CODE-SUMMARY.json. The governor
+		// previously steered agents toward REVIEW_PLAN-SUMMARY.json /
+		// CODE_REVIEW-SUMMARY.json — files that never exist on disk.
+		const table = loadDefaultPolicyTable();
+		const registry: ModelRegistry = { find: vi.fn(() => undefined) } as unknown as ModelRegistry;
+
+		const steerFnPlan = vi.fn<[string], void>();
+		const govPlan = createGovernor(table, registry, steerFnPlan);
+		const ctxPlan = makeFakeCtx({
+			tokens: 160_000,
+			contextWindow: 200_000,
+			percent: 80,
+			persona: "supervisor",
+			phase: "review-plan",
+		});
+		govPlan.applyToolResult(makeToolResultEvent("bash", "out", "tc-mech-b-t11a"), ctxPlan);
+		expect(steerFnPlan).toHaveBeenCalledTimes(1);
+		const msgPlan = steerFnPlan.mock.calls[0]?.[0] ?? "";
+		expect(msgPlan).toContain("REVIEW-PLAN-SUMMARY.json");
+		expect(msgPlan).not.toContain("REVIEW_PLAN-SUMMARY.json");
+
+		const steerFnCode = vi.fn<[string], void>();
+		const govCode = createGovernor(table, registry, steerFnCode);
+		const ctxCode = makeFakeCtx({
+			tokens: 160_000,
+			contextWindow: 200_000,
+			percent: 80,
+			persona: "supervisor",
+			phase: "review-code",
+		});
+		govCode.applyToolResult(makeToolResultEvent("bash", "out", "tc-mech-b-t11b"), ctxCode);
+		expect(steerFnCode).toHaveBeenCalledTimes(1);
+		const msgCode = steerFnCode.mock.calls[0]?.[0] ?? "";
+		expect(msgCode).toContain("REVIEW-CODE-SUMMARY.json");
+		expect(msgCode).not.toContain("CODE_REVIEW-SUMMARY.json");
 	});
 });

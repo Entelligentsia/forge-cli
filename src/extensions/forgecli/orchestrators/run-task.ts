@@ -1100,7 +1100,10 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		//   buildForgeCompactionFactory — Mechanism E with warm-tier path opts
 		//     (previously injected from index.ts with NO opts → warm-tier dead)
 		const phaseKey = `${phase.personaNoun}/${phase.role}`;
-		const sprintIdForSummaries = /^(.*)-T\d+$/.exec(taskId)?.[1];
+		// Sprint ID from the task record's sprint FK (the store owns that
+		// relationship); the taskId-shape regex is only a fallback for records
+		// missing the FK (FORGE-BUG-043 PR 2).
+		const sprintIdForSummaries = taskRecordAtStart?.sprintId ?? /^(.*)-T\d+$/.exec(taskId)?.[1];
 		const governorFactories: ExtensionFactory[] =
 			process.env.FORGE_CTX_GOVERNOR === "1"
 				? [
