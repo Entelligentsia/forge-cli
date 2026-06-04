@@ -17,6 +17,7 @@ import {
 	BUG_TYPE_TOKENS,
 	type BugRecord,
 	composeBugBody,
+	computeNextBugId,
 	deleteBugState,
 	extractBugIdFromEvents,
 	isBugStateStale,
@@ -150,10 +151,7 @@ describe("BUG_PHASES", () => {
 	// typos at unit-test time instead of waiting for end-to-end manual
 	// verification.
 	it("FORGE-BUG-040: every BUG_PHASES workflowFile resolves to an existing payload .md", () => {
-		const payloadRoot = path.resolve(
-			__dirname,
-			"../../../../forge/forge/init/base-pack/workflows",
-		);
+		const payloadRoot = path.resolve(__dirname, "../../../../forge/forge/init/base-pack/workflows");
 		for (const phase of BUG_PHASES) {
 			const workflowPath = path.join(payloadRoot, `${phase.workflowFile}.md`);
 			expect(
@@ -555,6 +553,51 @@ describe("BUG_TYPE_TOKENS in phase events", () => {
 });
 
 // ── Test Case 13: extractBugIdFromEvents ───────────────────────────────────
+
+// Prefix-aware bug IDs — regression for the CART testbench incident: in a
+// CART-prefixed project, /forge:fix-bug minted a phantom FORGE-BUG-001
+// (hardcoded prefix in assignNextBugId / extractBugIdFromEvents) instead of
+// operating on the project's CART-BUG-* records.
+describe("prefix-aware bug IDs (CART regression)", () => {
+	it("computeNextBugId increments within the project prefix", () => {
+		expect(computeNextBugId(["CART-BUG-001", "CART-BUG-002"], "CART")).toBe("CART-BUG-003");
+	});
+
+	it("computeNextBugId is not collision-blind to same-prefix bugs", () => {
+		expect(computeNextBugId(["CART-BUG-009"], "CART")).toBe("CART-BUG-010");
+	});
+
+	it("computeNextBugId ignores other-prefix bugs (the phantom-mint regression)", () => {
+		// Pre-fix behaviour: CART bugs never matched the hardcoded FORGE regex,
+		// so the counter restarted at 001 regardless of store contents.
+		expect(computeNextBugId(["CART-BUG-001", "CART-BUG-002"], "FORGE")).toBe("FORGE-BUG-001");
+	});
+
+	it("computeNextBugId starts at 001 on an empty store", () => {
+		expect(computeNextBugId([], "CART")).toBe("CART-BUG-001");
+	});
+
+	it("extractBugIdFromEvents honors the project prefix on all four event paths", () => {
+		const cases = [
+			{ toolName: "store-cli", result: "Created bug CART-BUG-005" },
+			{ toolName: "store-cli", result: { bugId: "CART-BUG-005" } },
+			{ toolName: "forge_store", result: "wrote CART-BUG-005" },
+			{ toolName: "bash", result: "store-cli write bug ... CART-BUG-005" },
+		];
+		for (const ev of cases) {
+			expect(extractBugIdFromEvents([ev] as any, "CART")).toBe("CART-BUG-005");
+			// Default (FORGE) prefix must NOT capture CART IDs — the capture
+			// regex is prefix-scoped, not match-anything.
+			expect(extractBugIdFromEvents([ev] as any)).toBeNull();
+		}
+	});
+
+	it("extractBugIdFromEvents default prefix preserves historical FORGE behaviour", () => {
+		const events = [{ toolName: "forge_store", result: "wrote FORGE-BUG-042" }];
+		expect(extractBugIdFromEvents(events as any)).toBe("FORGE-BUG-042");
+		expect(extractBugIdFromEvents(events as any, "CART")).toBeNull();
+	});
+});
 
 describe("extractBugIdFromEvents", () => {
 	it("should extract bug ID from store-cli result string", () => {

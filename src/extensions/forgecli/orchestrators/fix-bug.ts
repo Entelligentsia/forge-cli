@@ -43,24 +43,31 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { assertAudience, CallerContextStore } from "../audience-gate.js";
-import type { PhaseRole } from "../subagent/caller-context.js";
 // ModelRegistry/AuthStorage no longer instantiated here — use ctx.modelRegistry
 // so extension-registered providers (registered against the live session) are
 // visible to validateModelConfig. Creating a fresh registry here would miss
 // them and produce spurious MODEL_UNAVAILABLE warnings (FORGE-BUG-001).
 import { loadLayeredConfig } from "../config/config-layer.js";
+import { resolveModelForPhase } from "../config/model-resolver.js";
 import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
+import { loadGovernorProjectConfig } from "../governor-config.js";
 import {
 	readPersonaDir as readPersonaDirBug,
 	readPipelineNames as readPipelineNamesBug,
 } from "../lib/catalog-helpers.js";
 import { discoverForgeConfigCached } from "../lib/forge-config.js";
-import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
 import { checkMaterialization } from "../lib/manifest-checker.js";
-import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
-import { resolveModelForPhase } from "../config/model-resolver.js";
+import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { type AudienceValue, loadWorkflow } from "../parsers/workflow-loader.js";
+import { getSessionRegistry } from "../session-registry.js";
+import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
+import type { PhaseRole } from "../subagent/caller-context.js";
+import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
+import { attachViewportObserver } from "../viewport/events.js";
+import { fmtPhaseSummary } from "../viewport/renderer.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
+import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
 import {
 	buildPhaseEvent,
 	buildSummariesBlock,
@@ -79,12 +86,6 @@ import {
 	runPreflightGateWithData,
 	validateId,
 } from "./run-task.js";
-import { getSessionRegistry } from "../session-registry.js";
-import { getOrchestratorTree } from "../orchestrator-tree.js";
-import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
-import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
-import { attachViewportObserver } from "../viewport/events.js";
-import { fmtPhaseSummary } from "../viewport/renderer.js";
 
 // ── Bug phase descriptor table ──────────────────────────────────────────────
 //
@@ -117,6 +118,7 @@ export const BUG_PHASES: PhaseDescriptor[] = [
 // it without dragging fix-bug.ts into a forge-tools import cycle.
 // Re-exported here for backwards-compatibility with existing call sites.
 export { BUG_SUMMARY_KEY_BY_ROLE } from "../subagent/phase-summary-map.js";
+
 import { BUG_SUMMARY_KEY_BY_ROLE } from "../subagent/phase-summary-map.js";
 
 // Bug-event type tokens — explicit mapping per review finding #3.
@@ -260,29 +262,41 @@ export function readBugRecord(bugId: string, storeCli: string, cwd: string): Bug
 	}
 }
 
-// Pre-assigns a real FORGE-BUG-NNN ID by listing existing bugs and incrementing.
-// Returns the next ID in sequence, e.g. "FORGE-BUG-003" if bugs 001 and 002 exist.
-export function assignNextBugId(storeCli: string, cwd: string): string {
-	const result = spawnSync("node", [storeCli, "list", "bug", "--json"], { cwd, encoding: "utf8" });
+// Pure helper: next <PREFIX>-BUG-NNN ID given the existing bug IDs.
+// Only same-prefix bugs participate in the increment — exported for tests.
+// The prefix is config-owned (project.prefix) and identifier-validated by
+// loadGovernorProjectConfig, so it is safe to splice into a RegExp.
+export function computeNextBugId(bugIds: string[], prefix: string): string {
+	const idPattern = new RegExp(`^${prefix}-BUG-(\\d+)$`);
 	let maxNum = 0;
+	for (const id of bugIds) {
+		const m = idPattern.exec(id);
+		if (m) {
+			const n = parseInt(m[1], 10);
+			if (n > maxNum) maxNum = n;
+		}
+	}
+	return `${prefix}-BUG-${String(maxNum + 1).padStart(3, "0")}`;
+}
+
+// Pre-assigns a real <PREFIX>-BUG-NNN ID by listing existing bugs and
+// incrementing. Prefix comes from .forge/config.json project.prefix — the
+// hardcoded FORGE prefix minted phantom FORGE-BUG-* records in any project
+// with a different prefix (CART testbench incident, FORGE-BUG-043 class).
+export function assignNextBugId(storeCli: string, cwd: string, prefix = "FORGE"): string {
+	const result = spawnSync("node", [storeCli, "list", "bug", "--json"], { cwd, encoding: "utf8" });
+	let bugIds: string[] = [];
 	if (result.status === 0 && result.stdout) {
 		try {
 			const bugs = JSON.parse(result.stdout as string);
 			if (Array.isArray(bugs)) {
-				for (const b of bugs) {
-					const m = String(b.bugId ?? "").match(/FORGE-BUG-(\d+)/);
-					if (m) {
-						const n = parseInt(m[1], 10);
-						if (n > maxNum) maxNum = n;
-					}
-				}
+				bugIds = bugs.map((b) => String(b.bugId ?? ""));
 			}
 		} catch {
 			/* empty store — start from 1 */
 		}
 	}
-	const next = maxNum + 1;
-	return `FORGE-BUG-${String(next).padStart(3, "0")}`;
+	return computeNextBugId(bugIds, prefix);
 }
 
 // Pre-creates a minimal bug record so the subagent has a real ID to work with.
@@ -441,7 +455,15 @@ const BUG_WRITE_TOOL_NAMES = new Set(["write", "store-cli", "bash", "forge_store
  * "store-cli"). In Claude Code runtime, subagents may shell out via Bash.
  * This function covers all three paths.
  */
-export function extractBugIdFromEvents(events: Array<{ toolName?: string; result?: unknown }>): string | null {
+export function extractBugIdFromEvents(
+	events: Array<{ toolName?: string; result?: unknown }>,
+	prefix = "FORGE",
+): string | null {
+	// Prefix is config-owned (project.prefix) and identifier-validated by
+	// loadGovernorProjectConfig — the previous hardcoded FORGE-BUG- pattern
+	// missed every capture in differently-prefixed projects (CART incident).
+	const idPattern = new RegExp(`${prefix}-BUG-\\d+`);
+	const idPrefix = `${prefix}-BUG-`;
 	let lastBugId: string | null = null;
 	for (const event of events) {
 		if (!event.toolName) continue;
@@ -449,11 +471,11 @@ export function extractBugIdFromEvents(events: Array<{ toolName?: string; result
 		if (event.toolName === "store-cli") {
 			const result = event.result;
 			if (typeof result === "string") {
-				const match = result.match(/FORGE-BUG-\d+/);
+				const match = result.match(idPattern);
 				if (match) lastBugId = match[0];
 			} else if (result && typeof result === "object") {
 				const obj = result as Record<string, unknown>;
-				if (typeof obj.bugId === "string" && obj.bugId.startsWith("FORGE-BUG-")) {
+				if (typeof obj.bugId === "string" && obj.bugId.startsWith(idPrefix)) {
 					lastBugId = obj.bugId;
 				}
 			}
@@ -462,12 +484,12 @@ export function extractBugIdFromEvents(events: Array<{ toolName?: string; result
 		// The pi extension registers the tool as "forge_store", not "store-cli".
 		if (event.toolName === "forge_store" && event.result != null) {
 			const output = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
-			const match = output.match(/FORGE-BUG-\d+/);
+			const match = output.match(idPattern);
 			if (match) lastBugId = match[0];
 		}
 		// Also check for write operations to .forge/store/bugs/
 		if (event.toolName === "write" && typeof event.result === "string") {
-			const match = event.result.match(/(FORGE-BUG-\d+)/);
+			const match = event.result.match(idPattern);
 			if (match) lastBugId = match[0];
 		}
 		// Bash events: subagents shelling out via Bash may run "store-cli write bug".
@@ -477,7 +499,7 @@ export function extractBugIdFromEvents(events: Array<{ toolName?: string; result
 		if (event.toolName === "bash" && event.result != null) {
 			const output = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
 			if (output.includes("store-cli") && output.includes("write") && output.includes("bug")) {
-				const match = output.match(/FORGE-BUG-\d+/);
+				const match = output.match(idPattern);
 				if (match) lastBugId = match[0];
 			}
 		}
@@ -630,637 +652,334 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	const pipelineStartMs = Date.now();
 
 	try {
-	while (currentPhaseIndex < BUG_PHASES.length) {
-		// ── Between-phase cancellation gate ────────────────────────────
-		if (opts.signal?.aborted) {
-			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} cancelled by user.`, "info");
-			registry.completePhase(bugId, BUG_PHASES[currentPhaseIndex]?.role ?? "unknown", "cancelled");
-			registry.confirmCancelled(bugId);
-			// ADR-S21-01: preserve state file so cancelled runs are resumable
-			writeBugState(cwd, {
-				bugId,
-				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: false,
-				status: "cancelled",
-				lastError: undefined,
-				savedAt: new Date().toISOString(),
-			});
-			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
-		}
-
-		const phase = BUG_PHASES[currentPhaseIndex];
-		if (!phase) {
-			ctx.ui.notify(`× forge:fix-bug — invalid phase index ${currentPhaseIndex}`, "error");
-			return {
-				status: "failed",
-				lastPhaseIndex: currentPhaseIndex,
-				iterationCounts,
-				lastError: `invalid phase index ${currentPhaseIndex}`,
-			};
-		}
-
-		ctx.ui.setStatus?.(
-			STATUS_KEY,
-			`fix-bug ${bugId}: phase ${currentPhaseIndex + 1}/${BUG_PHASES.length} (${phase.role})`,
-		);
-		ctx.ui.notify(`→ ${bugId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${BUG_PHASES.length})`, "info");
-		orchTranscript.record({
-			kind: "phase-start",
-			ts: new Date().toISOString(),
-			phase: phase.role,
-			phaseIndex: currentPhaseIndex,
-			phaseCount: BUG_PHASES.length,
-			attempt: (iterationCounts[phase.role] ?? 0) + 1,
-			workflowFile: phase.workflowFile,
-			persona: phase.personaNoun,
-		});
-
-		const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
-
-		// ── Read sub-workflow ─────────────────────────────────────────
-		let subWorkflowMd: string;
-		let subWorkflowAudience: AudienceValue = "any";
-		try {
-			const loaded = loadWorkflow(subWorkflowPath);
-			subWorkflowMd = loaded.rawMarkdown;
-			subWorkflowAudience = loaded.audience;
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			ctx.ui.notify(
-				`× forge:fix-bug — failed to read sub-workflow for ${phase.role}: ${e.message ?? "unknown"}`,
-				"error",
-			);
-			writeBugState(cwd, {
-				bugId,
-				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: true,
-				lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
-				savedAt: new Date().toISOString(),
-			});
-			return {
-				status: "failed",
-				lastPhaseIndex: currentPhaseIndex,
-				iterationCounts,
-				lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
-			};
-		}
-
-		// ── 6a. Phase skip (state-aware, defense-in-depth) ─────────────
-		// Belt-and-suspenders alongside the explicit summaries.triage.route
-		// branch (handled in section 6c below). Some subagents in some
-		// runtimes still go end-to-end during triage instead of just triaging
-		// — rather than roll back the work they did, skip non-review phases
-		// whose output is already reflected in the bug status. Review phases
-		// are never skipped — they are quality gates that must always run.
-		//
-		// Post-v0.44.0: terminal status is `fixed` only. `approved` and
-		// `verified` are no longer valid bug status values; references
-		// removed.
-		const PHASE_SKIP_STATES: Record<string, Set<string>> = {
-			"plan-fix": new Set(["fixed"]),
-			implement: new Set(["fixed"]),
-			commit: new Set(["fixed"]), // commit writes the terminal status; skip if already there
-		};
-		const bugNow = readBugRecord(bugId, storeCli, cwd);
-		const skipStates = PHASE_SKIP_STATES[phase.role];
-		if (skipStates && bugNow?.status && skipStates.has(bugNow.status) && !phase.isReview) {
-			ctx.ui.notify(
-				`⊘ forge:fix-bug — skipping ${phase.role}: bug ${bugId} is already '${bugNow.status}' (work already done).`,
-				"info",
-			);
-			// Write a synthetic "approved" summary so downstream `after` predecessor
-			// verdict checks find a verdict and don't block review phases.
-			const summaryKey = BUG_SUMMARY_KEY_BY_ROLE[phase.role as keyof typeof BUG_SUMMARY_KEY_BY_ROLE];
-			if (summaryKey) {
-				const synthSummary = {
-					objective: `Phase ${phase.role} skipped — bug already ${bugNow.status}`,
-					findings: ["Subagent completed fix during triage (Path A); phase output implicitly satisfied."],
-					// Non-review phases should have verdict "n/a" — the phase
-					// didn't produce a gate verdict. This matches the `after
-					// <phase> = n/a` preflight gate contract. Review phases
-					// use "approved" since they are gate phases.
-					verdict: phase.isReview ? "approved" : "n/a",
-					written_at: new Date().toISOString(),
-				};
-				const synthFile = path.join(cwd, ".forge", "cache", `synthetic-summary-${bugId}-${summaryKey}.json`);
-				fs.writeFileSync(synthFile, JSON.stringify(synthSummary, null, 2), "utf8");
-				const synthResult = spawnSync("node", [storeCli, "set-bug-summary", bugId, summaryKey, synthFile], {
-					cwd,
-					encoding: "utf8",
-				});
-				if (synthResult.status !== 0) {
-					ctx.ui.notify(
-						`⚠ forge:fix-bug — synthetic summary write failed for ${phase.role}: ${String(synthResult.stderr).trim()}`,
-						"warning",
-					);
-				}
-				try {
-					fs.unlinkSync(synthFile);
-				} catch {
-					/* non-fatal */
-				}
-			}
-			currentPhaseIndex++;
-			continue;
-		}
-
-		// ── 6b. Preflight gate ────────────────────────────────────────
-		// Skip preflight gate for triage phase of new bugs (PENDING- placeholder)
-		// because the bug record doesn't exist yet — gates referencing bug fields
-		// would always fail.
-		//
-		// Also skip for review phases when the bug is already in a terminal
-		// state ("fixed"). Path A bugs get fixed during triage, then the
-		// preflight gate's `forbid bug.status == fixed` and `after implement
-		// = n/a` checks block review-code/review-plan even though we
-		// deliberately want to run those reviews. The review subagent handles
-		// the already-fixed scenario internally.
-		const pendingBugId = bugId.startsWith("PENDING-");
-		const bugAlreadyFixed = bugNow?.status === "fixed" && phase.isReview;
-		if (!pendingBugId && !bugAlreadyFixed && fs.existsSync(preflightGate)) {
-			const preflightOutcome = runPreflightGateWithData(preflightGate, phase.role, bugId, cwd, "bug");
-			if (preflightOutcome.result === "halt") {
-				// Render structured failure reason if available.
-				if (preflightOutcome.gateFailure) {
-					ctx.ui.notify(
-						`× forge:fix-bug — preflight gate failed for phase ${phase.role} ` +
-						`[${preflightOutcome.gateFailure.reasonCode}]: ${preflightOutcome.gateFailure.detail}`,
-						"error",
-					);
-				} else {
-					ctx.ui.notify(
-						`× forge:fix-bug — preflight gate failed for phase ${phase.role} (exit 1); halting.`,
-						"error",
-					);
-				}
+		while (currentPhaseIndex < BUG_PHASES.length) {
+			// ── Between-phase cancellation gate ────────────────────────────
+			if (opts.signal?.aborted) {
+				ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} cancelled by user.`, "info");
+				registry.completePhase(bugId, BUG_PHASES[currentPhaseIndex]?.role ?? "unknown", "cancelled");
+				registry.confirmCancelled(bugId);
+				// ADR-S21-01: preserve state file so cancelled runs are resumable
 				writeBugState(cwd, {
 					bugId,
 					phaseIndex: currentPhaseIndex,
 					iterationCounts,
-					halted: true,
-					lastError: `preflight gate exit 1 for ${phase.role}`,
+					halted: false,
+					status: "cancelled",
+					lastError: undefined,
 					savedAt: new Date().toISOString(),
 				});
-				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
-				if (preflightOutcome.gateFailure) {
-					const advisorModel = resolveAdvisorModel(
-						modelRoutingConfig,
-						ctx.model as any,
-					);
-					void runHaltAdvisor({
-						gateFailure: preflightOutcome.gateFailure,
-						advisorModel,
-						taskId: bugId,
-						cwd,
-						ctx: { ui: ctx.ui as any },
-						forgeRoot,
-					});
-				}
-				return {
-					status: "halted",
-					lastPhaseIndex: currentPhaseIndex,
-					iterationCounts,
-					lastError: `preflight gate exit 1 for ${phase.role}`,
-				};
+				return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
 			}
-			if (preflightOutcome.result === "escalate") {
-				ctx.ui.notify(
-					`× forge:fix-bug — preflight gate escalated for phase ${phase.role} (exit 2); manual intervention required.`,
-					"error",
-				);
-				writeBugState(cwd, {
-					bugId,
-					phaseIndex: currentPhaseIndex,
-					iterationCounts,
-					halted: true,
-					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
-					savedAt: new Date().toISOString(),
-				});
-				return {
-					status: "escalated",
-					lastPhaseIndex: currentPhaseIndex,
-					iterationCounts,
-					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
-				};
-			}
-		}
 
-		// ── 6. Materialization-marker check ───────────────────────────
-		// FORGE-BUG-040: every BUG phase is now a true `audience: subagent`
-		// sub-workflow — triage / plan-fix / implement no longer alias to
-		// fix_bug.md. The marker check is therefore unconditional; a missing
-		// marker is a hard failure on the first dispatch.
-		{
-			const markerCheck = checkMaterialization(subWorkflowPath, subWorkflowMd);
-			if (!markerCheck.ok) {
-				for (const marker of markerCheck.missing) {
-					ctx.ui.notify(`× workflow regression: ${marker} not found in ${subWorkflowPath}`, "error");
-				}
+			const phase = BUG_PHASES[currentPhaseIndex];
+			if (!phase) {
+				ctx.ui.notify(`× forge:fix-bug — invalid phase index ${currentPhaseIndex}`, "error");
 				return {
 					status: "failed",
 					lastPhaseIndex: currentPhaseIndex,
 					iterationCounts,
-					lastError: `materialization markers missing: ${markerCheck.missing.join(", ")}`,
+					lastError: `invalid phase index ${currentPhaseIndex}`,
 				};
 			}
-		}
 
-		// ── 5. Audience check ─────────────────────────────────────────
-		// FORGE-BUG-040: every BUG phase is a true `audience: subagent`
-		// workflow now; the previous `fix_bug.md` audience-bypass is gone.
-		const audienceOk = CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
-			assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
-		);
-		if (!audienceOk) {
-			writeBugState(cwd, {
-				bugId,
-				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: true,
-				lastError: `audience check failed for ${phase.workflowFile}`,
-				savedAt: new Date().toISOString(),
-			});
-			return {
-				status: "failed",
-				lastPhaseIndex: currentPhaseIndex,
-				iterationCounts,
-				lastError: `audience check failed for ${phase.workflowFile}`,
-			};
-		}
-
-		// ── Persona load ──────────────────────────────────────────────
-		let persona;
-		try {
-			persona = loadForgePersona(phase.personaNoun, cwd);
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			ctx.ui.notify(
-				`× forge:fix-bug — persona '${phase.personaNoun}' not found for phase ${phase.role}: ${e.message ?? "unknown"}. ` +
-					"Run /forge:regenerate to materialize persona files.",
-				"error",
-			);
-			writeBugState(cwd, {
-				bugId,
-				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: true,
-				lastError: `persona load failed: ${e.message ?? "unknown"}`,
-				savedAt: new Date().toISOString(),
-			});
-			return {
-				status: "failed",
-				lastPhaseIndex: currentPhaseIndex,
-				iterationCounts,
-				lastError: `persona load failed: ${e.message ?? "unknown"}`,
-			};
-		}
-
-		// ── Read bug record for current status ────────────────────────
-		// Skip for PENDING bugIds (bug doesn't exist yet).
-		const bugRecordBefore = pendingBugId ? null : readBugRecord(bugId, storeCli, cwd);
-		const bugStatusBeforePhase = bugRecordBefore?.status;
-
-		// ── 4. Dispatch via runForgeSubagent (IL10) ───────────────────
-		// NEVER sendKickoff here — that would reproduce issue #30.
-		// Carry forward prior phase summaries (forge-cli#19).
-		const bugSummariesBlock = currentPhaseIndex > 0
-			? buildSummariesBlock(bugRecordBefore?.summaries) || undefined
-			: undefined;
-		let bugBody = composeBugBody(subWorkflowMd, bugId, phase.role, bugStatusBeforePhase, bugSummariesBlock);
-
-		// For new bugs in triage, prepend the original free-form text so the
-		// subagent knows the user-provided bug description to triage.
-		// The bug record already exists (pre-created with status "reported"),
-		// so the subagent should update it, not create a new one.
-		if (phase.role === "triage" && isNewBug && originalArg) {
-			bugBody = `Bug description: ${originalArg}\n\n---\n\n${bugBody}`;
-		}
-
-		// Phase-scoped progress counters
-		const phaseStart = Date.now();
-
-		// Track tool_execution_end events for bugId capture (Findings #1, #2).
-		const toolExecutionEvents: Array<{ toolName?: string; result?: unknown }> = [];
-
-		// Stabilization debug log
-		// Skip for PENDING bugIds — create after real bugId is captured.
-		// Disable entirely with FORGE_DEBUG_LOG=0.
-		const debugLogDisabled = process.env.FORGE_DEBUG_LOG === "0";
-		let debugLogPath: string | null = null;
-		let writeDebug: (rec: Record<string, unknown>) => void = () => {};
-		if (!pendingBugId && !debugLogDisabled) {
-			debugLogPath = path.join(cwd, ".forge", "cache", `fix-bug-debug-${bugId}.jsonl`);
-			writeDebug = (rec: Record<string, unknown>) => {
-				try {
-					fs.mkdirSync(path.dirname(debugLogPath!), { recursive: true });
-					// Cap at 10 MB: truncate head when size exceeds the cap.
-					try {
-						const st = fs.statSync(debugLogPath!);
-						if (st.size > 10 * 1024 * 1024) {
-							const all = fs.readFileSync(debugLogPath!, "utf8");
-							const lines = all.split("\n");
-							// Keep last 80% of lines
-							const keep = Math.floor(lines.length * 0.8);
-							fs.writeFileSync(debugLogPath!, lines.slice(-keep).join("\n"), "utf8");
-						}
-					} catch {
-						/* file may not exist yet */
-					}
-					fs.appendFileSync(
-						debugLogPath!,
-						`${JSON.stringify({ ts: new Date().toISOString(), phase: phase.role, ...rec })}\n`,
-						"utf8",
-					);
-				} catch {
-					// non-fatal; debug log is best-effort
-				}
-			};
-		}
-		writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
-		registry.startPhase(bugId, phase.role, currentPhaseIndex);
-
-		// Bridge: register phase in OrchestratorTree
-		const iteration = (iterationCounts[phase.role] ?? 0) + 1;
-		const phaseNodeId = `${bugId}:${phase.role}:${iteration}`;
-		tree.startNode(phaseNodeId, {
-			parentId: bugId,
-			label: `${phase.role}:${iteration}`,
-			kind: "leaf",
-			promptPreview: bugBody.slice(0, 200),
-		});
-
-		const refreshStatus = () => {
-			if (process.env.FORGE_VERBOSE !== "1") return;
-			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
-			const tail = observer.state.lastTool ? ` · ${observer.state.lastTool}` : "";
 			ctx.ui.setStatus?.(
 				STATUS_KEY,
-				`fix-bug ${bugId}: ${phase.role} · t${observer.state.turn} · tools ${observer.state.toolCount}${observer.state.errCount ? ` · err ${observer.state.errCount}` : ""} · ${elapsed}s${tail}`,
+				`fix-bug ${bugId}: phase ${currentPhaseIndex + 1}/${BUG_PHASES.length} (${phase.role})`,
 			);
-		};
-
-		const observer = attachViewportObserver({
-			registry,
-			sessionId: bugId,
-			phaseRole: phase.role,
-			beginHeader: `─── phase ${phase.role} begin ───`,
-			writeDebug,
-			notify: (msg, level) => ctx.ui.notify(msg, level),
-			setStatusVerbose: process.env.FORGE_VERBOSE === "1" ? (k, v) => ctx.ui.setStatus?.(k, v) : undefined,
-			verboseKeys: { messageKey: `${STATUS_KEY}:message` },
-			afterEach: refreshStatus,
-		});
-
-		// Wrap the observer's onEvent to also capture tool_execution_end events
-		// for bugId capture downstream (findings #1, #2), plus the first turn_end
-		// per phase (IL10 visibility — stream-observed model id).
-		let modelObservedLogged = false;
-		const onSubagentEvent = (event: any) => {
-			if (event?.type === "tool_execution_end") {
-				toolExecutionEvents.push({ toolName: event.toolName, result: event.result });
-			}
-			if (!modelObservedLogged && event?.type === "turn_end" && event.message?.model) {
-				modelObservedLogged = true;
-				writeDebug({
-					kind: "model_observed",
-					provider: event.message.provider ?? null,
-					model: event.message.model,
-				});
-			}
-			observer.onEvent(event);
-		};
-
-		// Per-phase model resolution. When config is absent or cascade bottoms
-		// out, resolves to inherit (model: undefined) — setModel is skipped and
-		// pi's current model is used. IL10 still holds: result.model below is
-		// the stream-observed runtime model, not whatever we requested here.
-		const modelResolution = resolveModelForPhase("fix-bug", phase.role, phase.personaNoun, modelRoutingConfig);
-		writeDebug({
-			kind: "requested_model",
-			requested: modelResolution.model ?? null,
-			source: modelResolution.source,
-			persona: phase.personaNoun,
-		});
-
-		let result;
-		try {
-			// FORGE-BUG-040: wrap the runForgeSubagent dispatch in the phase
-			// caller context so downstream tool calls (forge_preflight,
-			// forge_store update-status / set-bug-summary / set-summary / emit)
-			// can verify the caller's phase matches the phase named in the
-			// tool's arguments. This is the single setter of phase context
-			// for the bug pipeline; the audience-test wrap above is a
-			// short-lived test, not the canonical dispatch context.
-			result = await CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
-				runForgeSubagent({
-				persona,
-				task: bugBody,
-				cwd,
-				exportTag: `${bugId}__${phase.role}`,
-				// Sprint-scoped if the bug is attached to one, else bug-scoped.
-				// Keeps every phase of this bug-fix pipeline in a single cache
-				// namespace so the system-prompt + persona prefix stays warm
-				// across the ~10-minute phases.
-				cacheSessionId:
-					typeof bugRecordBefore?.sprintId === "string"
-						? `forge:${bugRecordBefore.sprintId}`
-						: `forge:bug:${bugId}`,
-				onEvent: onSubagentEvent,
-				requestedModel: modelResolution.model,
-				modelRegistry: ctx.modelRegistry,
-				signal: opts.signal,
-				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
-				}),
-			);
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			ctx.ui.notify(
-				`× forge:fix-bug — runForgeSubagent threw for phase ${phase.role}: ${e.message ?? "unknown"}`,
-				"error",
-			);
-			writeBugState(cwd, {
-				bugId,
+			ctx.ui.notify(`→ ${bugId}: ${phase.role} (phase ${currentPhaseIndex + 1}/${BUG_PHASES.length})`, "info");
+			orchTranscript.record({
+				kind: "phase-start",
+				ts: new Date().toISOString(),
+				phase: phase.role,
 				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: true,
-				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
-				savedAt: new Date().toISOString(),
+				phaseCount: BUG_PHASES.length,
+				attempt: (iterationCounts[phase.role] ?? 0) + 1,
+				workflowFile: phase.workflowFile,
+				persona: phase.personaNoun,
 			});
-			return {
-				status: "failed",
-				lastPhaseIndex: currentPhaseIndex,
-				iterationCounts,
-				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
-			};
-		}
 
-		// ── Post-subagent abort detection ─────────────────────────────────
-		if (result.stopReason === "aborted" || opts.signal?.aborted) {
-			ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
-			registry.completePhase(bugId, phase.role, "cancelled");
-			tree.completeNode(phaseNodeId, "cancelled");
-			registry.confirmCancelled(bugId);
-			// Bug B parity with run-task: account billed tokens of the aborted attempt.
-			// sprintId "bugs" = routing key for bug events (matches success path).
-			// The optional `type` token is omitted — verdict carries the outcome.
-			emitIncompletePhaseEvent({
-				emitCtx: {
-					entityType: "bug",
-					bugId,
-					sprintId: "bugs",
-					phase,
-					iteration: (iterationCounts[phase.role] ?? 0) + 1,
-					startMs: phaseStart,
-					endMs: Date.now(),
-					model: result.model ?? "unknown",
-					provider: result.provider ?? "unknown",
-					usage: {
-						input: result.usage.input,
-						output: result.usage.output,
-						cacheRead: result.usage.cacheRead,
-						cacheWrite: result.usage.cacheWrite,
-					},
-					judgement: undefined,
-					storeCli,
-					cwd,
-				},
-				outcome: "aborted",
-				notes: result.errorMessage ?? result.stopReason ?? undefined,
-				onDebug: writeDebug,
-			});
-			// ADR-S21-01: preserve state file so cancelled runs are resumable
-			writeBugState(cwd, {
-				bugId,
-				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: false,
-				status: "cancelled",
-				lastError: undefined,
-				savedAt: new Date().toISOString(),
-			});
-			return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
-		}
+			const subWorkflowPath = path.join(cwd, ".forge", "workflows", `${phase.workflowFile}.md`);
 
-		// ── Halt-on-failure ───────────────────────────────────────────
-		if (result.exitCode !== 0) {
-			ctx.ui.notify(
-				`× forge:fix-bug — phase ${phase.role} failed (exit ${result.exitCode})` +
-					(result.errorMessage ? `: ${result.errorMessage}` : "") +
-					(result.stopReason ? ` [${result.stopReason}]` : ""),
-				"error",
-			);
-			// Bug B parity with run-task: account billed tokens of the failed attempt.
-			emitIncompletePhaseEvent({
-				emitCtx: {
-					entityType: "bug",
-					bugId,
-					sprintId: "bugs",
-					phase,
-					iteration: (iterationCounts[phase.role] ?? 0) + 1,
-					startMs: phaseStart,
-					endMs: Date.now(),
-					model: result.model ?? "unknown",
-					provider: result.provider ?? "unknown",
-					usage: {
-						input: result.usage.input,
-						output: result.usage.output,
-						cacheRead: result.usage.cacheRead,
-						cacheWrite: result.usage.cacheWrite,
-					},
-					judgement: undefined,
-					storeCli,
-					cwd,
-				},
-				outcome: "failed",
-				notes: result.errorMessage ?? result.stopReason ?? undefined,
-				onDebug: writeDebug,
-			});
-			writeBugState(cwd, {
-				bugId,
-				phaseIndex: currentPhaseIndex,
-				iterationCounts,
-				halted: true,
-				lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
-				savedAt: new Date().toISOString(),
-			});
-			return {
-				status: "failed",
-				lastPhaseIndex: currentPhaseIndex,
-				iterationCounts,
-				lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
-			};
-		}
-
-		// Capture model/provider from subagent result.
-		if (result.model) lastModel = result.model;
-		if (result.provider) lastProvider = result.provider;
-
-		// ── BugId capture after triage phase (Finding #1, #2) ──────────
-		// For new bugs, the triage subagent creates the bug record via store-cli.
-		// We capture the bugId by scanning tool_execution_end events.
-		if (phase.role === "triage" && isNewBug && bugId.startsWith("PENDING-")) {
-			const capturedBugId = extractBugIdFromEvents(toolExecutionEvents);
-			if (capturedBugId) {
-				ctx.ui.notify(`forge:fix-bug — captured bug ID: ${capturedBugId}`, "info");
-				bugId = capturedBugId;
-			} else {
-				// Fallback: list bugs and find the most recent one created after pipeline start.
-				const listResult = spawnSync("node", [storeCli, "list", "bug", "--json"], { cwd, encoding: "utf8" });
-				if (listResult.status === 0 && listResult.stdout) {
-					try {
-						const bugs = JSON.parse(listResult.stdout);
-						if (Array.isArray(bugs)) {
-							// Find most recent bug whose reportedAt is after the pipeline start
-							const pipelineStartIso = new Date(parseInt(bugId.replace("PENDING-", ""))).toISOString();
-							const recent = bugs
-								.filter((b: Record<string, unknown>) => b.reportedAt && b.reportedAt >= pipelineStartIso)
-								.sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
-									String(b.reportedAt).localeCompare(String(a.reportedAt)),
-								)[0];
-							if (
-								recent &&
-								recent.bugId &&
-								typeof recent.bugId === "string" &&
-								recent.bugId.startsWith("FORGE-BUG-")
-							) {
-								bugId = recent.bugId;
-								ctx.ui.notify(`forge:fix-bug — captured bug ID via store fallback: ${bugId}`, "info");
-							}
-						}
-					} catch {
-						/* parse failure — fall through to assertion */
-					}
-				}
-			}
-
-			// Defensive guard: if bugId is still PENDING after triage, pipeline cannot proceed.
-			if (bugId.startsWith("PENDING-")) {
+			// ── Read sub-workflow ─────────────────────────────────────────
+			let subWorkflowMd: string;
+			let subWorkflowAudience: AudienceValue = "any";
+			try {
+				const loaded = loadWorkflow(subWorkflowPath);
+				subWorkflowMd = loaded.rawMarkdown;
+				subWorkflowAudience = loaded.audience;
+			} catch (err: unknown) {
+				const e = err as { message?: string };
 				ctx.ui.notify(
-					"× forge:fix-bug — failed to capture real bug ID after triage. Cannot proceed with PENDING placeholder.",
+					`× forge:fix-bug — failed to read sub-workflow for ${phase.role}: ${e.message ?? "unknown"}`,
 					"error",
 				);
+				writeBugState(cwd, {
+					bugId,
+					phaseIndex: currentPhaseIndex,
+					iterationCounts,
+					halted: true,
+					lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
+					savedAt: new Date().toISOString(),
+				});
 				return {
 					status: "failed",
 					lastPhaseIndex: currentPhaseIndex,
 					iterationCounts,
-					lastError: "bugId still PENDING after triage",
+					lastError: `sub-workflow read failed: ${e.message ?? "unknown"}`,
 				};
 			}
 
-			// Re-initialize debug log now that real bugId is available.
-			if (!debugLogDisabled) {
+			// ── 6a. Phase skip (state-aware, defense-in-depth) ─────────────
+			// Belt-and-suspenders alongside the explicit summaries.triage.route
+			// branch (handled in section 6c below). Some subagents in some
+			// runtimes still go end-to-end during triage instead of just triaging
+			// — rather than roll back the work they did, skip non-review phases
+			// whose output is already reflected in the bug status. Review phases
+			// are never skipped — they are quality gates that must always run.
+			//
+			// Post-v0.44.0: terminal status is `fixed` only. `approved` and
+			// `verified` are no longer valid bug status values; references
+			// removed.
+			const PHASE_SKIP_STATES: Record<string, Set<string>> = {
+				"plan-fix": new Set(["fixed"]),
+				implement: new Set(["fixed"]),
+				commit: new Set(["fixed"]), // commit writes the terminal status; skip if already there
+			};
+			const bugNow = readBugRecord(bugId, storeCli, cwd);
+			const skipStates = PHASE_SKIP_STATES[phase.role];
+			if (skipStates && bugNow?.status && skipStates.has(bugNow.status) && !phase.isReview) {
+				ctx.ui.notify(
+					`⊘ forge:fix-bug — skipping ${phase.role}: bug ${bugId} is already '${bugNow.status}' (work already done).`,
+					"info",
+				);
+				// Write a synthetic "approved" summary so downstream `after` predecessor
+				// verdict checks find a verdict and don't block review phases.
+				const summaryKey = BUG_SUMMARY_KEY_BY_ROLE[phase.role as keyof typeof BUG_SUMMARY_KEY_BY_ROLE];
+				if (summaryKey) {
+					const synthSummary = {
+						objective: `Phase ${phase.role} skipped — bug already ${bugNow.status}`,
+						findings: ["Subagent completed fix during triage (Path A); phase output implicitly satisfied."],
+						// Non-review phases should have verdict "n/a" — the phase
+						// didn't produce a gate verdict. This matches the `after
+						// <phase> = n/a` preflight gate contract. Review phases
+						// use "approved" since they are gate phases.
+						verdict: phase.isReview ? "approved" : "n/a",
+						written_at: new Date().toISOString(),
+					};
+					const synthFile = path.join(cwd, ".forge", "cache", `synthetic-summary-${bugId}-${summaryKey}.json`);
+					fs.writeFileSync(synthFile, JSON.stringify(synthSummary, null, 2), "utf8");
+					const synthResult = spawnSync("node", [storeCli, "set-bug-summary", bugId, summaryKey, synthFile], {
+						cwd,
+						encoding: "utf8",
+					});
+					if (synthResult.status !== 0) {
+						ctx.ui.notify(
+							`⚠ forge:fix-bug — synthetic summary write failed for ${phase.role}: ${String(synthResult.stderr).trim()}`,
+							"warning",
+						);
+					}
+					try {
+						fs.unlinkSync(synthFile);
+					} catch {
+						/* non-fatal */
+					}
+				}
+				currentPhaseIndex++;
+				continue;
+			}
+
+			// ── 6b. Preflight gate ────────────────────────────────────────
+			// Skip preflight gate for triage phase of new bugs (PENDING- placeholder)
+			// because the bug record doesn't exist yet — gates referencing bug fields
+			// would always fail.
+			//
+			// Also skip for review phases when the bug is already in a terminal
+			// state ("fixed"). Path A bugs get fixed during triage, then the
+			// preflight gate's `forbid bug.status == fixed` and `after implement
+			// = n/a` checks block review-code/review-plan even though we
+			// deliberately want to run those reviews. The review subagent handles
+			// the already-fixed scenario internally.
+			const pendingBugId = bugId.startsWith("PENDING-");
+			const bugAlreadyFixed = bugNow?.status === "fixed" && phase.isReview;
+			if (!pendingBugId && !bugAlreadyFixed && fs.existsSync(preflightGate)) {
+				const preflightOutcome = runPreflightGateWithData(preflightGate, phase.role, bugId, cwd, "bug");
+				if (preflightOutcome.result === "halt") {
+					// Render structured failure reason if available.
+					if (preflightOutcome.gateFailure) {
+						ctx.ui.notify(
+							`× forge:fix-bug — preflight gate failed for phase ${phase.role} ` +
+								`[${preflightOutcome.gateFailure.reasonCode}]: ${preflightOutcome.gateFailure.detail}`,
+							"error",
+						);
+					} else {
+						ctx.ui.notify(
+							`× forge:fix-bug — preflight gate failed for phase ${phase.role} (exit 1); halting.`,
+							"error",
+						);
+					}
+					writeBugState(cwd, {
+						bugId,
+						phaseIndex: currentPhaseIndex,
+						iterationCounts,
+						halted: true,
+						lastError: `preflight gate exit 1 for ${phase.role}`,
+						savedAt: new Date().toISOString(),
+					});
+					// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
+					if (preflightOutcome.gateFailure) {
+						const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
+						void runHaltAdvisor({
+							gateFailure: preflightOutcome.gateFailure,
+							advisorModel,
+							taskId: bugId,
+							cwd,
+							ctx: { ui: ctx.ui as any },
+							forgeRoot,
+						});
+					}
+					return {
+						status: "halted",
+						lastPhaseIndex: currentPhaseIndex,
+						iterationCounts,
+						lastError: `preflight gate exit 1 for ${phase.role}`,
+					};
+				}
+				if (preflightOutcome.result === "escalate") {
+					ctx.ui.notify(
+						`× forge:fix-bug — preflight gate escalated for phase ${phase.role} (exit 2); manual intervention required.`,
+						"error",
+					);
+					writeBugState(cwd, {
+						bugId,
+						phaseIndex: currentPhaseIndex,
+						iterationCounts,
+						halted: true,
+						lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
+						savedAt: new Date().toISOString(),
+					});
+					return {
+						status: "escalated",
+						lastPhaseIndex: currentPhaseIndex,
+						iterationCounts,
+						lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
+					};
+				}
+			}
+
+			// ── 6. Materialization-marker check ───────────────────────────
+			// FORGE-BUG-040: every BUG phase is now a true `audience: subagent`
+			// sub-workflow — triage / plan-fix / implement no longer alias to
+			// fix_bug.md. The marker check is therefore unconditional; a missing
+			// marker is a hard failure on the first dispatch.
+			{
+				const markerCheck = checkMaterialization(subWorkflowPath, subWorkflowMd);
+				if (!markerCheck.ok) {
+					for (const marker of markerCheck.missing) {
+						ctx.ui.notify(`× workflow regression: ${marker} not found in ${subWorkflowPath}`, "error");
+					}
+					return {
+						status: "failed",
+						lastPhaseIndex: currentPhaseIndex,
+						iterationCounts,
+						lastError: `materialization markers missing: ${markerCheck.missing.join(", ")}`,
+					};
+				}
+			}
+
+			// ── 5. Audience check ─────────────────────────────────────────
+			// FORGE-BUG-040: every BUG phase is a true `audience: subagent`
+			// workflow now; the previous `fix_bug.md` audience-bypass is gone.
+			const audienceOk = CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
+				assertAudience({ workflowName: phase.workflowFile, audience: subWorkflowAudience }, ctx),
+			);
+			if (!audienceOk) {
+				writeBugState(cwd, {
+					bugId,
+					phaseIndex: currentPhaseIndex,
+					iterationCounts,
+					halted: true,
+					lastError: `audience check failed for ${phase.workflowFile}`,
+					savedAt: new Date().toISOString(),
+				});
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `audience check failed for ${phase.workflowFile}`,
+				};
+			}
+
+			// ── Persona load ──────────────────────────────────────────────
+			let persona;
+			try {
+				persona = loadForgePersona(phase.personaNoun, cwd);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				ctx.ui.notify(
+					`× forge:fix-bug — persona '${phase.personaNoun}' not found for phase ${phase.role}: ${e.message ?? "unknown"}. ` +
+						"Run /forge:regenerate to materialize persona files.",
+					"error",
+				);
+				writeBugState(cwd, {
+					bugId,
+					phaseIndex: currentPhaseIndex,
+					iterationCounts,
+					halted: true,
+					lastError: `persona load failed: ${e.message ?? "unknown"}`,
+					savedAt: new Date().toISOString(),
+				});
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `persona load failed: ${e.message ?? "unknown"}`,
+				};
+			}
+
+			// ── Read bug record for current status ────────────────────────
+			// Skip for PENDING bugIds (bug doesn't exist yet).
+			const bugRecordBefore = pendingBugId ? null : readBugRecord(bugId, storeCli, cwd);
+			const bugStatusBeforePhase = bugRecordBefore?.status;
+
+			// ── 4. Dispatch via runForgeSubagent (IL10) ───────────────────
+			// NEVER sendKickoff here — that would reproduce issue #30.
+			// Carry forward prior phase summaries (forge-cli#19).
+			const bugSummariesBlock =
+				currentPhaseIndex > 0 ? buildSummariesBlock(bugRecordBefore?.summaries) || undefined : undefined;
+			let bugBody = composeBugBody(subWorkflowMd, bugId, phase.role, bugStatusBeforePhase, bugSummariesBlock);
+
+			// For new bugs in triage, prepend the original free-form text so the
+			// subagent knows the user-provided bug description to triage.
+			// The bug record already exists (pre-created with status "reported"),
+			// so the subagent should update it, not create a new one.
+			if (phase.role === "triage" && isNewBug && originalArg) {
+				bugBody = `Bug description: ${originalArg}\n\n---\n\n${bugBody}`;
+			}
+
+			// Phase-scoped progress counters
+			const phaseStart = Date.now();
+
+			// Track tool_execution_end events for bugId capture (Findings #1, #2).
+			const toolExecutionEvents: Array<{ toolName?: string; result?: unknown }> = [];
+
+			// Stabilization debug log
+			// Skip for PENDING bugIds — create after real bugId is captured.
+			// Disable entirely with FORGE_DEBUG_LOG=0.
+			const debugLogDisabled = process.env.FORGE_DEBUG_LOG === "0";
+			let debugLogPath: string | null = null;
+			let writeDebug: (rec: Record<string, unknown>) => void = () => {};
+			if (!pendingBugId && !debugLogDisabled) {
 				debugLogPath = path.join(cwd, ".forge", "cache", `fix-bug-debug-${bugId}.jsonl`);
-				const savedWriteDebug = writeDebug;
 				writeDebug = (rec: Record<string, unknown>) => {
 					try {
 						fs.mkdirSync(path.dirname(debugLogPath!), { recursive: true });
+						// Cap at 10 MB: truncate head when size exceeds the cap.
 						try {
 							const st = fs.statSync(debugLogPath!);
 							if (st.size > 10 * 1024 * 1024) {
 								const all = fs.readFileSync(debugLogPath!, "utf8");
 								const lines = all.split("\n");
+								// Keep last 80% of lines
 								const keep = Math.floor(lines.length * 0.8);
 								fs.writeFileSync(debugLogPath!, lines.slice(-keep).join("\n"), "utf8");
 							}
@@ -1273,146 +992,110 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 							"utf8",
 						);
 					} catch {
-						// non-fatal
+						// non-fatal; debug log is best-effort
 					}
 				};
-				writeDebug({ kind: "bugid_captured", bugId });
 			}
-		}
+			writeDebug({ kind: "phase_start", phaseIndex: currentPhaseIndex });
+			registry.startPhase(bugId, phase.role, currentPhaseIndex);
 
-		{
-			const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
-			const { turn, toolCount, errCount, cumUsage, cumCompression } = observer.state;
-			ctx.ui.notify(
-				`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
-				"info",
-			);
-			orchTranscript.record({
-				kind: "phase-end",
-				ts: new Date().toISOString(),
-				phase: phase.role,
-				phaseIndex: currentPhaseIndex,
-				attempt: (iterationCounts[phase.role] ?? 0) + 1,
-				verdict: "n/a",
-				elapsedMs: Date.now() - phaseStart,
-				turns: turn,
-				toolCount,
-				errCount,
+			// Bridge: register phase in OrchestratorTree
+			const iteration = (iterationCounts[phase.role] ?? 0) + 1;
+			const phaseNodeId = `${bugId}:${phase.role}:${iteration}`;
+			tree.startNode(phaseNodeId, {
+				parentId: bugId,
+				label: `${phase.role}:${iteration}`,
+				kind: "leaf",
+				promptPreview: bugBody.slice(0, 200),
 			});
-			registry.appendTail(
-				bugId,
-				phase.role,
-				fmtPhaseSummary({
-					role: phase.role,
-					turns: turn,
-					tools: toolCount,
-					errors: errCount,
-					wallSeconds: elapsed,
-					usage: cumUsage,
-					model: result.model,
-					provider: result.provider,
-					compression: cumCompression.tokensSaved > 0 ? cumCompression : undefined,
-				}),
-			);
-		}
 
-		// ── Slice-2: orchestrator emits phase event ──────────────────
-		// sprintId for bug event emission is the literal "bugs" (routing key),
-		// matching the convention in .forge/workflows/fix_bug.md.
-		const phaseEndMs = Date.now();
-		const bugRecord = readBugRecord(bugId, storeCli, cwd);
-		const sprintId = "bugs"; // routing key for bug events — not a sprint reference
-		const phaseIteration = (iterationCounts[phase.role] ?? 0) + 1;
-
-		// Read summary judgement for review phases (using bug summary key map)
-		const judgement = phase.isReview
-			? judgementFromSummary(bugRecord ?? null, phase.role, BUG_SUMMARY_KEY_BY_ROLE)
-			: undefined;
-
-		const emitCtx: OrchestratorEmitContext = {
-			entityType: "bug",
-			bugId,
-			sprintId, // routing key "bugs" — not a sprint reference
-			phase,
-			iteration: phaseIteration,
-			startMs: phaseStart,
-			endMs: phaseEndMs,
-			model: result.model ?? "unknown",
-			provider: result.provider ?? "unknown",
-			usage: {
-				input: result.usage.input,
-				output: result.usage.output,
-				cacheRead: result.usage.cacheRead,
-				cacheWrite: result.usage.cacheWrite,
-			},
-			judgement,
-			storeCli,
-			cwd,
-		};
-		const phaseEvent = buildPhaseEvent(emitCtx);
-
-		// Set bug event type based on BUG_TYPE_TOKENS mapping.
-		const typeTokenEntry = BUG_TYPE_TOKENS[phase.role];
-		if (typeTokenEntry) {
-			if (phase.isReview && judgement?.verdict === "revision") {
-				phaseEvent.type = typeTokenEntry.fail;
-			} else {
-				phaseEvent.type = typeTokenEntry.pass;
-			}
-		}
-
-		const emitResult = emitEvent(storeCli, cwd, sprintId, phaseEvent);
-		if (!emitResult.ok) {
-			ctx.ui.notify(
-				`⚠ forge:fix-bug — phase event emit failed for ${phase.role}: ${emitResult.stderr.trim()}`,
-				"warning",
-			);
-			writeDebug({ kind: "emit_failed", stderr: emitResult.stderr });
-		} else {
-			writeDebug({ kind: "emit_ok", eventId: phaseEvent.eventId });
-		}
-
-		// Drain friction file for this phase.
-		const frictionPath = path.join(cwd, ".forge", "cache", `FRICTION-${phase.role}.jsonl`);
-		const drain = drainFrictionFile(frictionPath, emitCtx);
-		if (drain.emitted + drain.failed > 0) {
-			writeDebug({ kind: "friction_drain", ...drain });
-			if (drain.failed > 0) {
-				ctx.ui.notify(
-					`⚠ forge:fix-bug — friction drain for ${phase.role}: ${drain.emitted} ok, ${drain.failed} failed`,
-					"warning",
+			const refreshStatus = () => {
+				if (process.env.FORGE_VERBOSE !== "1") return;
+				const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
+				const tail = observer.state.lastTool ? ` · ${observer.state.lastTool}` : "";
+				ctx.ui.setStatus?.(
+					STATUS_KEY,
+					`fix-bug ${bugId}: ${phase.role} · t${observer.state.turn} · tools ${observer.state.toolCount}${observer.state.errCount ? ` · err ${observer.state.errCount}` : ""} · ${elapsed}s${tail}`,
 				);
-			}
-		}
+			};
 
-		// ── AC §C.16: Bug FSM canonical-enum assertion ────────────────
-		// After each phase that could transition bug status, validate the new
-		// status via store-cli (single source of truth). Surface a warning (not halt) if invalid.
-		const currentBugRecordForAssert = readBugRecord(bugId, storeCli, cwd);
-		if (currentBugRecordForAssert && currentBugRecordForAssert.status) {
-			// Defer to store-cli's isLegalTransition as authoritative guard.
-			// Only warn on statuses store-cli itself would reject.
-			const validateResult = spawnSync(
-				"node",
-				[storeCli, "validate", "bug", JSON.stringify(currentBugRecordForAssert)],
-				{ cwd, encoding: "utf8" },
-			);
-			if (validateResult.status !== 0) {
-				const detail = typeof validateResult.stderr === "string" ? validateResult.stderr.trim() : "unknown";
-				ctx.ui.notify(`⚠ forge:fix-bug — bug ${bugId} validation warning: ${detail}`, "warning");
-				writeDebug({ kind: "fsm_assertion_warning", bugId, status: currentBugRecordForAssert.status, detail });
-			}
-		}
+			const observer = attachViewportObserver({
+				registry,
+				sessionId: bugId,
+				phaseRole: phase.role,
+				beginHeader: `─── phase ${phase.role} begin ───`,
+				writeDebug,
+				notify: (msg, level) => ctx.ui.notify(msg, level),
+				setStatusVerbose: process.env.FORGE_VERBOSE === "1" ? (k, v) => ctx.ui.setStatus?.(k, v) : undefined,
+				verboseKeys: { messageKey: `${STATUS_KEY}:message` },
+				afterEach: refreshStatus,
+			});
 
-		// ── 6b. Verdict check (review phases only) ────────────────────
-		if (phase.isReview) {
-			// Re-read bug record for latest status after subagent ran
-			const updatedBugRecord = readBugRecord(bugId, storeCli, cwd);
-			const verdict = readBugVerdict(updatedBugRecord, phase.role, BUG_SUMMARY_KEY_BY_ROLE);
+			// Wrap the observer's onEvent to also capture tool_execution_end events
+			// for bugId capture downstream (findings #1, #2), plus the first turn_end
+			// per phase (IL10 visibility — stream-observed model id).
+			let modelObservedLogged = false;
+			const onSubagentEvent = (event: any) => {
+				if (event?.type === "tool_execution_end") {
+					toolExecutionEvents.push({ toolName: event.toolName, result: event.result });
+				}
+				if (!modelObservedLogged && event?.type === "turn_end" && event.message?.model) {
+					modelObservedLogged = true;
+					writeDebug({
+						kind: "model_observed",
+						provider: event.message.provider ?? null,
+						model: event.message.model,
+					});
+				}
+				observer.onEvent(event);
+			};
 
-			if (verdict === "missing") {
+			// Per-phase model resolution. When config is absent or cascade bottoms
+			// out, resolves to inherit (model: undefined) — setModel is skipped and
+			// pi's current model is used. IL10 still holds: result.model below is
+			// the stream-observed runtime model, not whatever we requested here.
+			const modelResolution = resolveModelForPhase("fix-bug", phase.role, phase.personaNoun, modelRoutingConfig);
+			writeDebug({
+				kind: "requested_model",
+				requested: modelResolution.model ?? null,
+				source: modelResolution.source,
+				persona: phase.personaNoun,
+			});
+
+			let result;
+			try {
+				// FORGE-BUG-040: wrap the runForgeSubagent dispatch in the phase
+				// caller context so downstream tool calls (forge_preflight,
+				// forge_store update-status / set-bug-summary / set-summary / emit)
+				// can verify the caller's phase matches the phase named in the
+				// tool's arguments. This is the single setter of phase context
+				// for the bug pipeline; the audience-test wrap above is a
+				// short-lived test, not the canonical dispatch context.
+				result = await CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
+					runForgeSubagent({
+						persona,
+						task: bugBody,
+						cwd,
+						exportTag: `${bugId}__${phase.role}`,
+						// Sprint-scoped if the bug is attached to one, else bug-scoped.
+						// Keeps every phase of this bug-fix pipeline in a single cache
+						// namespace so the system-prompt + persona prefix stays warm
+						// across the ~10-minute phases.
+						cacheSessionId:
+							typeof bugRecordBefore?.sprintId === "string"
+								? `forge:${bugRecordBefore.sprintId}`
+								: `forge:bug:${bugId}`,
+						onEvent: onSubagentEvent,
+						requestedModel: modelResolution.model,
+						modelRegistry: ctx.modelRegistry,
+						signal: opts.signal,
+						customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
+					}),
+				);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
 				ctx.ui.notify(
-					`× forge:fix-bug — verdict missing for phase ${phase.role} after subagent completed. Halting for advisory.`,
+					`× forge:fix-bug — runForgeSubagent threw for phase ${phase.role}: ${e.message ?? "unknown"}`,
 					"error",
 				);
 				writeBugState(cwd, {
@@ -1420,52 +1103,334 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					phaseIndex: currentPhaseIndex,
 					iterationCounts,
 					halted: true,
-					lastError: `verdict missing for ${phase.role}`,
+					lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 					savedAt: new Date().toISOString(),
 				});
-				// A missing verdict IS a postflight-outputs failure: the canonical
-				// phase summary the subagent must write (e.g. summaries.code_review,
-				// linked via set-bug-summary) was never recorded, so there is no
-				// verdict to route on. Route it through the halt-recovery advisor
-				// (FORGE-S26-T18) — the same hand-off the preflight/postflight gate
-				// failures use — instead of a bare escalation. Best-effort, non-fatal.
-				const advisorModel = resolveAdvisorModel(
-					modelRoutingConfig,
-					ctx.model as any,
-				);
-				void runHaltAdvisor({
-					gateFailure: {
-						phase: phase.role,
-						reasonCode: "verdict-missing",
-						detail:
-							`Phase '${phase.role}' completed but no verdict was found in the store. ` +
-							"The canonical phase summary was not written, so the orchestrator has no verdict to route on.",
-						remediation:
-							"Re-run the phase and ensure the subagent's forge_store set-bug-summary call " +
-							'uses args:["<bugId>", "<phaseKey>"] with the literal phase key as args[1] ' +
-							"(e.g. code_review), and that the call exits zero before the subagent returns.",
-					},
-					advisorModel,
-					taskId: bugId,
-					cwd,
-					ctx: { ui: ctx.ui as any },
-					forgeRoot,
-				});
 				return {
-					status: "halted",
+					status: "failed",
 					lastPhaseIndex: currentPhaseIndex,
 					iterationCounts,
-					lastError: `verdict missing for ${phase.role}`,
+					lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 				};
 			}
 
-			if (verdict === "revision") {
-				iterationCounts[phase.role] = (iterationCounts[phase.role] ?? 0) + 1;
+			// ── Post-subagent abort detection ─────────────────────────────────
+			if (result.stopReason === "aborted" || opts.signal?.aborted) {
+				ctx.ui.notify(`⊘ forge:fix-bug — ${bugId} phase ${phase.role} cancelled.`, "info");
+				registry.completePhase(bugId, phase.role, "cancelled");
+				tree.completeNode(phaseNodeId, "cancelled");
+				registry.confirmCancelled(bugId);
+				// Bug B parity with run-task: account billed tokens of the aborted attempt.
+				// sprintId "bugs" = routing key for bug events (matches success path).
+				// The optional `type` token is omitted — verdict carries the outcome.
+				emitIncompletePhaseEvent({
+					emitCtx: {
+						entityType: "bug",
+						bugId,
+						sprintId: "bugs",
+						phase,
+						iteration: (iterationCounts[phase.role] ?? 0) + 1,
+						startMs: phaseStart,
+						endMs: Date.now(),
+						model: result.model ?? "unknown",
+						provider: result.provider ?? "unknown",
+						usage: {
+							input: result.usage.input,
+							output: result.usage.output,
+							cacheRead: result.usage.cacheRead,
+							cacheWrite: result.usage.cacheWrite,
+						},
+						judgement: undefined,
+						storeCli,
+						cwd,
+					},
+					outcome: "aborted",
+					notes: result.errorMessage ?? result.stopReason ?? undefined,
+					onDebug: writeDebug,
+				});
+				// ADR-S21-01: preserve state file so cancelled runs are resumable
+				writeBugState(cwd, {
+					bugId,
+					phaseIndex: currentPhaseIndex,
+					iterationCounts,
+					halted: false,
+					status: "cancelled",
+					lastError: undefined,
+					savedAt: new Date().toISOString(),
+				});
+				return { status: "cancelled", lastPhaseIndex: currentPhaseIndex, iterationCounts };
+			}
 
-				if (iterationCounts[phase.role] >= phase.maxIterations) {
+			// ── Halt-on-failure ───────────────────────────────────────────
+			if (result.exitCode !== 0) {
+				ctx.ui.notify(
+					`× forge:fix-bug — phase ${phase.role} failed (exit ${result.exitCode})` +
+						(result.errorMessage ? `: ${result.errorMessage}` : "") +
+						(result.stopReason ? ` [${result.stopReason}]` : ""),
+					"error",
+				);
+				// Bug B parity with run-task: account billed tokens of the failed attempt.
+				emitIncompletePhaseEvent({
+					emitCtx: {
+						entityType: "bug",
+						bugId,
+						sprintId: "bugs",
+						phase,
+						iteration: (iterationCounts[phase.role] ?? 0) + 1,
+						startMs: phaseStart,
+						endMs: Date.now(),
+						model: result.model ?? "unknown",
+						provider: result.provider ?? "unknown",
+						usage: {
+							input: result.usage.input,
+							output: result.usage.output,
+							cacheRead: result.usage.cacheRead,
+							cacheWrite: result.usage.cacheWrite,
+						},
+						judgement: undefined,
+						storeCli,
+						cwd,
+					},
+					outcome: "failed",
+					notes: result.errorMessage ?? result.stopReason ?? undefined,
+					onDebug: writeDebug,
+				});
+				writeBugState(cwd, {
+					bugId,
+					phaseIndex: currentPhaseIndex,
+					iterationCounts,
+					halted: true,
+					lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
+					savedAt: new Date().toISOString(),
+				});
+				return {
+					status: "failed",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: result.errorMessage ?? result.stopReason ?? "subagent exit non-zero",
+				};
+			}
+
+			// Capture model/provider from subagent result.
+			if (result.model) lastModel = result.model;
+			if (result.provider) lastProvider = result.provider;
+
+			// ── BugId capture after triage phase (Finding #1, #2) ──────────
+			// For new bugs, the triage subagent creates the bug record via store-cli.
+			// We capture the bugId by scanning tool_execution_end events.
+			if (phase.role === "triage" && isNewBug && bugId.startsWith("PENDING-")) {
+				const capturedBugId = extractBugIdFromEvents(toolExecutionEvents, loadGovernorProjectConfig(cwd).prefix);
+				if (capturedBugId) {
+					ctx.ui.notify(`forge:fix-bug — captured bug ID: ${capturedBugId}`, "info");
+					bugId = capturedBugId;
+				} else {
+					// Fallback: list bugs and find the most recent one created after pipeline start.
+					const listResult = spawnSync("node", [storeCli, "list", "bug", "--json"], { cwd, encoding: "utf8" });
+					if (listResult.status === 0 && listResult.stdout) {
+						try {
+							const bugs = JSON.parse(listResult.stdout);
+							if (Array.isArray(bugs)) {
+								// Find most recent bug whose reportedAt is after the pipeline start
+								const pipelineStartIso = new Date(parseInt(bugId.replace("PENDING-", ""))).toISOString();
+								const recent = bugs
+									.filter((b: Record<string, unknown>) => b.reportedAt && b.reportedAt >= pipelineStartIso)
+									.sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+										String(b.reportedAt).localeCompare(String(a.reportedAt)),
+									)[0];
+								if (
+									recent &&
+									recent.bugId &&
+									typeof recent.bugId === "string" &&
+									recent.bugId.startsWith("FORGE-BUG-")
+								) {
+									bugId = recent.bugId;
+									ctx.ui.notify(`forge:fix-bug — captured bug ID via store fallback: ${bugId}`, "info");
+								}
+							}
+						} catch {
+							/* parse failure — fall through to assertion */
+						}
+					}
+				}
+
+				// Defensive guard: if bugId is still PENDING after triage, pipeline cannot proceed.
+				if (bugId.startsWith("PENDING-")) {
 					ctx.ui.notify(
-						`× forge:fix-bug — revision cap reached for phase ${phase.role} ` +
-							`(${iterationCounts[phase.role]}/${phase.maxIterations} iterations). Escalating.`,
+						"× forge:fix-bug — failed to capture real bug ID after triage. Cannot proceed with PENDING placeholder.",
+						"error",
+					);
+					return {
+						status: "failed",
+						lastPhaseIndex: currentPhaseIndex,
+						iterationCounts,
+						lastError: "bugId still PENDING after triage",
+					};
+				}
+
+				// Re-initialize debug log now that real bugId is available.
+				if (!debugLogDisabled) {
+					debugLogPath = path.join(cwd, ".forge", "cache", `fix-bug-debug-${bugId}.jsonl`);
+					const savedWriteDebug = writeDebug;
+					writeDebug = (rec: Record<string, unknown>) => {
+						try {
+							fs.mkdirSync(path.dirname(debugLogPath!), { recursive: true });
+							try {
+								const st = fs.statSync(debugLogPath!);
+								if (st.size > 10 * 1024 * 1024) {
+									const all = fs.readFileSync(debugLogPath!, "utf8");
+									const lines = all.split("\n");
+									const keep = Math.floor(lines.length * 0.8);
+									fs.writeFileSync(debugLogPath!, lines.slice(-keep).join("\n"), "utf8");
+								}
+							} catch {
+								/* file may not exist yet */
+							}
+							fs.appendFileSync(
+								debugLogPath!,
+								`${JSON.stringify({ ts: new Date().toISOString(), phase: phase.role, ...rec })}\n`,
+								"utf8",
+							);
+						} catch {
+							// non-fatal
+						}
+					};
+					writeDebug({ kind: "bugid_captured", bugId });
+				}
+			}
+
+			{
+				const elapsed = Math.floor((Date.now() - phaseStart) / 1000);
+				const { turn, toolCount, errCount, cumUsage, cumCompression } = observer.state;
+				ctx.ui.notify(
+					`✓ ${phase.role}: ${turn} turn${turn === 1 ? "" : "s"} · ${toolCount} tool call${toolCount === 1 ? "" : "s"}${errCount ? ` · ${errCount} err` : ""} · ${elapsed}s`,
+					"info",
+				);
+				orchTranscript.record({
+					kind: "phase-end",
+					ts: new Date().toISOString(),
+					phase: phase.role,
+					phaseIndex: currentPhaseIndex,
+					attempt: (iterationCounts[phase.role] ?? 0) + 1,
+					verdict: "n/a",
+					elapsedMs: Date.now() - phaseStart,
+					turns: turn,
+					toolCount,
+					errCount,
+				});
+				registry.appendTail(
+					bugId,
+					phase.role,
+					fmtPhaseSummary({
+						role: phase.role,
+						turns: turn,
+						tools: toolCount,
+						errors: errCount,
+						wallSeconds: elapsed,
+						usage: cumUsage,
+						model: result.model,
+						provider: result.provider,
+						compression: cumCompression.tokensSaved > 0 ? cumCompression : undefined,
+					}),
+				);
+			}
+
+			// ── Slice-2: orchestrator emits phase event ──────────────────
+			// sprintId for bug event emission is the literal "bugs" (routing key),
+			// matching the convention in .forge/workflows/fix_bug.md.
+			const phaseEndMs = Date.now();
+			const bugRecord = readBugRecord(bugId, storeCli, cwd);
+			const sprintId = "bugs"; // routing key for bug events — not a sprint reference
+			const phaseIteration = (iterationCounts[phase.role] ?? 0) + 1;
+
+			// Read summary judgement for review phases (using bug summary key map)
+			const judgement = phase.isReview
+				? judgementFromSummary(bugRecord ?? null, phase.role, BUG_SUMMARY_KEY_BY_ROLE)
+				: undefined;
+
+			const emitCtx: OrchestratorEmitContext = {
+				entityType: "bug",
+				bugId,
+				sprintId, // routing key "bugs" — not a sprint reference
+				phase,
+				iteration: phaseIteration,
+				startMs: phaseStart,
+				endMs: phaseEndMs,
+				model: result.model ?? "unknown",
+				provider: result.provider ?? "unknown",
+				usage: {
+					input: result.usage.input,
+					output: result.usage.output,
+					cacheRead: result.usage.cacheRead,
+					cacheWrite: result.usage.cacheWrite,
+				},
+				judgement,
+				storeCli,
+				cwd,
+			};
+			const phaseEvent = buildPhaseEvent(emitCtx);
+
+			// Set bug event type based on BUG_TYPE_TOKENS mapping.
+			const typeTokenEntry = BUG_TYPE_TOKENS[phase.role];
+			if (typeTokenEntry) {
+				if (phase.isReview && judgement?.verdict === "revision") {
+					phaseEvent.type = typeTokenEntry.fail;
+				} else {
+					phaseEvent.type = typeTokenEntry.pass;
+				}
+			}
+
+			const emitResult = emitEvent(storeCli, cwd, sprintId, phaseEvent);
+			if (!emitResult.ok) {
+				ctx.ui.notify(
+					`⚠ forge:fix-bug — phase event emit failed for ${phase.role}: ${emitResult.stderr.trim()}`,
+					"warning",
+				);
+				writeDebug({ kind: "emit_failed", stderr: emitResult.stderr });
+			} else {
+				writeDebug({ kind: "emit_ok", eventId: phaseEvent.eventId });
+			}
+
+			// Drain friction file for this phase.
+			const frictionPath = path.join(cwd, ".forge", "cache", `FRICTION-${phase.role}.jsonl`);
+			const drain = drainFrictionFile(frictionPath, emitCtx);
+			if (drain.emitted + drain.failed > 0) {
+				writeDebug({ kind: "friction_drain", ...drain });
+				if (drain.failed > 0) {
+					ctx.ui.notify(
+						`⚠ forge:fix-bug — friction drain for ${phase.role}: ${drain.emitted} ok, ${drain.failed} failed`,
+						"warning",
+					);
+				}
+			}
+
+			// ── AC §C.16: Bug FSM canonical-enum assertion ────────────────
+			// After each phase that could transition bug status, validate the new
+			// status via store-cli (single source of truth). Surface a warning (not halt) if invalid.
+			const currentBugRecordForAssert = readBugRecord(bugId, storeCli, cwd);
+			if (currentBugRecordForAssert && currentBugRecordForAssert.status) {
+				// Defer to store-cli's isLegalTransition as authoritative guard.
+				// Only warn on statuses store-cli itself would reject.
+				const validateResult = spawnSync(
+					"node",
+					[storeCli, "validate", "bug", JSON.stringify(currentBugRecordForAssert)],
+					{ cwd, encoding: "utf8" },
+				);
+				if (validateResult.status !== 0) {
+					const detail = typeof validateResult.stderr === "string" ? validateResult.stderr.trim() : "unknown";
+					ctx.ui.notify(`⚠ forge:fix-bug — bug ${bugId} validation warning: ${detail}`, "warning");
+					writeDebug({ kind: "fsm_assertion_warning", bugId, status: currentBugRecordForAssert.status, detail });
+				}
+			}
+
+			// ── 6b. Verdict check (review phases only) ────────────────────
+			if (phase.isReview) {
+				// Re-read bug record for latest status after subagent ran
+				const updatedBugRecord = readBugRecord(bugId, storeCli, cwd);
+				const verdict = readBugVerdict(updatedBugRecord, phase.role, BUG_SUMMARY_KEY_BY_ROLE);
+
+				if (verdict === "missing") {
+					ctx.ui.notify(
+						`× forge:fix-bug — verdict missing for phase ${phase.role} after subagent completed. Halting for advisory.`,
 						"error",
 					);
 					writeBugState(cwd, {
@@ -1473,127 +1438,184 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						phaseIndex: currentPhaseIndex,
 						iterationCounts,
 						halted: true,
-						lastError: `revision cap reached for ${phase.role}`,
+						lastError: `verdict missing for ${phase.role}`,
 						savedAt: new Date().toISOString(),
 					});
+					// A missing verdict IS a postflight-outputs failure: the canonical
+					// phase summary the subagent must write (e.g. summaries.code_review,
+					// linked via set-bug-summary) was never recorded, so there is no
+					// verdict to route on. Route it through the halt-recovery advisor
+					// (FORGE-S26-T18) — the same hand-off the preflight/postflight gate
+					// failures use — instead of a bare escalation. Best-effort, non-fatal.
+					const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
+					void runHaltAdvisor({
+						gateFailure: {
+							phase: phase.role,
+							reasonCode: "verdict-missing",
+							detail:
+								`Phase '${phase.role}' completed but no verdict was found in the store. ` +
+								"The canonical phase summary was not written, so the orchestrator has no verdict to route on.",
+							remediation:
+								"Re-run the phase and ensure the subagent's forge_store set-bug-summary call " +
+								'uses args:["<bugId>", "<phaseKey>"] with the literal phase key as args[1] ' +
+								"(e.g. code_review), and that the call exits zero before the subagent returns.",
+						},
+						advisorModel,
+						taskId: bugId,
+						cwd,
+						ctx: { ui: ctx.ui as any },
+						forgeRoot,
+					});
 					return {
-						status: "escalated",
+						status: "halted",
 						lastPhaseIndex: currentPhaseIndex,
 						iterationCounts,
-						lastError: `revision cap reached for ${phase.role}`,
+						lastError: `verdict missing for ${phase.role}`,
 					};
 				}
 
-				// Transition bug back to in-progress before re-dispatching implement.
-				// This is required for review-code → implement and approve → implement loops.
-				const currentBugStatus = updatedBugRecord?.status;
-				if (currentBugStatus === "fixed" || currentBugStatus === "approved") {
-					const transitionResult = spawnSync(
-						"node",
-						[storeCli, "update-status", "bug", bugId, "status", "in-progress"],
-						{ cwd, encoding: "utf8" },
-					);
-					if (transitionResult.status !== 0) {
+				if (verdict === "revision") {
+					iterationCounts[phase.role] = (iterationCounts[phase.role] ?? 0) + 1;
+
+					if (iterationCounts[phase.role] >= phase.maxIterations) {
 						ctx.ui.notify(
-							`⚠ forge:fix-bug — failed to transition bug ${bugId} from ${currentBugStatus} to in-progress: ${transitionResult.stderr ?? "unknown"}`,
-							"warning",
+							`× forge:fix-bug — revision cap reached for phase ${phase.role} ` +
+								`(${iterationCounts[phase.role]}/${phase.maxIterations} iterations). Escalating.`,
+							"error",
 						);
-					} else {
-						ctx.ui.notify(
-							`⟳ forge:fix-bug — transitioned bug ${bugId}: ${currentBugStatus} → in-progress`,
-							"info",
-						);
+						writeBugState(cwd, {
+							bugId,
+							phaseIndex: currentPhaseIndex,
+							iterationCounts,
+							halted: true,
+							lastError: `revision cap reached for ${phase.role}`,
+							savedAt: new Date().toISOString(),
+						});
+						return {
+							status: "escalated",
+							lastPhaseIndex: currentPhaseIndex,
+							iterationCounts,
+							lastError: `revision cap reached for ${phase.role}`,
+						};
 					}
-				}
 
-				const predIndex = findPredecessorIndex(BUG_PHASES, currentPhaseIndex);
-				ctx.ui.notify(
-					`⟳ forge:fix-bug — ${phase.role} returned revision; looping to ${BUG_PHASES[predIndex]?.role ?? predIndex} ` +
-						`(attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
-					"info",
-				);
-				orchTranscript.record({
-					kind: "phase-loopback",
-					ts: new Date().toISOString(),
-					fromPhase: phase.role,
-					toPhase: BUG_PHASES[predIndex]?.role ?? String(predIndex),
-					fromPhaseIndex: currentPhaseIndex,
-					toPhaseIndex: predIndex,
-					reason: `${phase.role} returned revision (attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
-				});
-				writeBugState(cwd, {
-					bugId,
-					phaseIndex: predIndex,
-					iterationCounts,
-					halted: false,
-					savedAt: new Date().toISOString(),
-				});
-				currentPhaseIndex = predIndex;
-				continue;
-			}
+					// Transition bug back to in-progress before re-dispatching implement.
+					// This is required for review-code → implement and approve → implement loops.
+					const currentBugStatus = updatedBugRecord?.status;
+					if (currentBugStatus === "fixed" || currentBugStatus === "approved") {
+						const transitionResult = spawnSync(
+							"node",
+							[storeCli, "update-status", "bug", bugId, "status", "in-progress"],
+							{ cwd, encoding: "utf8" },
+						);
+						if (transitionResult.status !== 0) {
+							ctx.ui.notify(
+								`⚠ forge:fix-bug — failed to transition bug ${bugId} from ${currentBugStatus} to in-progress: ${transitionResult.stderr ?? "unknown"}`,
+								"warning",
+							);
+						} else {
+							ctx.ui.notify(
+								`⟳ forge:fix-bug — transitioned bug ${bugId}: ${currentBugStatus} → in-progress`,
+								"info",
+							);
+						}
+					}
 
-			// verdict === "approved": fall through to advance
-		}
-
-		// ── Advance to next phase ─────────────────────────────────────
-		registry.completePhase(bugId, phase.role, "completed");
-		tree.completeNode(phaseNodeId, "completed");
-		tree.setNodeUsage(phaseNodeId, { input: result.usage.input, output: result.usage.output, cacheRead: result.usage.cacheRead });
-		if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
-		writeBugState(cwd, {
-			bugId,
-			phaseIndex: currentPhaseIndex,
-			iterationCounts,
-			halted: false,
-			savedAt: new Date().toISOString(),
-		});
-
-		// ── 6c. Path A / Path B branch (post-triage) ──────────────────
-		// Per meta-fix-bug.md § Triage Judgement (forge v0.44.0+), the
-		// triage subagent records the route decision in
-		// bug.summaries.triage.route. The orchestrator reads it after
-		// triage returns and selects the downstream phase list:
-		//   Path A (short-circuit): skip plan-fix + review-plan
-		//   Path B (default, full loop): run all phases
-		//
-		// If route is missing or malformed, default to Path B (the safe
-		// choice — running extra phases never produces an unsafe outcome).
-		// The PHASE_SKIP_STATES heuristic at section 6a remains as
-		// defense-in-depth for cases where the field is missing but the
-		// bug status proves the work happened.
-		if (phase.role === "triage") {
-			const bugAfterTriage = readBugRecord(bugId, storeCli, cwd);
-			const triageSummary = bugAfterTriage?.summaries?.triage as { route?: unknown } | undefined;
-			const route = triageSummary?.route;
-			if (route === "A") {
-				const skipUntilIndex = BUG_PHASES.findIndex((p) => p.role === "implement");
-				if (skipUntilIndex > currentPhaseIndex + 1) {
-					ctx.ui.notify(`⊘ forge:fix-bug — Path A selected by triage; skipping plan-fix and review-plan.`, "info");
-					currentPhaseIndex = skipUntilIndex;
+					const predIndex = findPredecessorIndex(BUG_PHASES, currentPhaseIndex);
+					ctx.ui.notify(
+						`⟳ forge:fix-bug — ${phase.role} returned revision; looping to ${BUG_PHASES[predIndex]?.role ?? predIndex} ` +
+							`(attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
+						"info",
+					);
+					orchTranscript.record({
+						kind: "phase-loopback",
+						ts: new Date().toISOString(),
+						fromPhase: phase.role,
+						toPhase: BUG_PHASES[predIndex]?.role ?? String(predIndex),
+						fromPhaseIndex: currentPhaseIndex,
+						toPhaseIndex: predIndex,
+						reason: `${phase.role} returned revision (attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
+					});
+					writeBugState(cwd, {
+						bugId,
+						phaseIndex: predIndex,
+						iterationCounts,
+						halted: false,
+						savedAt: new Date().toISOString(),
+					});
+					currentPhaseIndex = predIndex;
 					continue;
 				}
+
+				// verdict === "approved": fall through to advance
 			}
-			// route === "B", missing, or any other value → fall through to standard advance
+
+			// ── Advance to next phase ─────────────────────────────────────
+			registry.completePhase(bugId, phase.role, "completed");
+			tree.completeNode(phaseNodeId, "completed");
+			tree.setNodeUsage(phaseNodeId, {
+				input: result.usage.input,
+				output: result.usage.output,
+				cacheRead: result.usage.cacheRead,
+			});
+			if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
+			writeBugState(cwd, {
+				bugId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: false,
+				savedAt: new Date().toISOString(),
+			});
+
+			// ── 6c. Path A / Path B branch (post-triage) ──────────────────
+			// Per meta-fix-bug.md § Triage Judgement (forge v0.44.0+), the
+			// triage subagent records the route decision in
+			// bug.summaries.triage.route. The orchestrator reads it after
+			// triage returns and selects the downstream phase list:
+			//   Path A (short-circuit): skip plan-fix + review-plan
+			//   Path B (default, full loop): run all phases
+			//
+			// If route is missing or malformed, default to Path B (the safe
+			// choice — running extra phases never produces an unsafe outcome).
+			// The PHASE_SKIP_STATES heuristic at section 6a remains as
+			// defense-in-depth for cases where the field is missing but the
+			// bug status proves the work happened.
+			if (phase.role === "triage") {
+				const bugAfterTriage = readBugRecord(bugId, storeCli, cwd);
+				const triageSummary = bugAfterTriage?.summaries?.triage as { route?: unknown } | undefined;
+				const route = triageSummary?.route;
+				if (route === "A") {
+					const skipUntilIndex = BUG_PHASES.findIndex((p) => p.role === "implement");
+					if (skipUntilIndex > currentPhaseIndex + 1) {
+						ctx.ui.notify(
+							`⊘ forge:fix-bug — Path A selected by triage; skipping plan-fix and review-plan.`,
+							"info",
+						);
+						currentPhaseIndex = skipUntilIndex;
+						continue;
+					}
+				}
+				// route === "B", missing, or any other value → fall through to standard advance
+			}
+
+			currentPhaseIndex++;
 		}
 
-		currentPhaseIndex++;
-	}
-
-	// ── All phases complete ───────────────────────────────────────────
-	deleteBugState(cwd, bugId);
-	orchTranscript.record({
-		kind: "pipeline-end",
-		ts: new Date().toISOString(),
-		outcome: "complete",
-		elapsedMs: Date.now() - pipelineStartMs,
-	});
-	return {
-		status: "completed",
-		lastPhaseIndex: BUG_PHASES.length - 1,
-		iterationCounts,
-		model: lastModel,
-		provider: lastProvider,
-	};
+		// ── All phases complete ───────────────────────────────────────────
+		deleteBugState(cwd, bugId);
+		orchTranscript.record({
+			kind: "pipeline-end",
+			ts: new Date().toISOString(),
+			outcome: "complete",
+			elapsedMs: Date.now() - pipelineStartMs,
+		});
+		return {
+			status: "completed",
+			lastPhaseIndex: BUG_PHASES.length - 1,
+			iterationCounts,
+			model: lastModel,
+			provider: lastProvider,
+		};
 	} finally {
 		ctx.ui.notify = __origNotify;
 	}
@@ -1648,8 +1670,10 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			// Covers: FORGE-BUG-042, BUG-042, B042.
 			const looksLikeBugId = /^(?:[A-Z0-9]+-)?(?:BUG-?\d+|B\d+)$/i.test(rawArg) || /^BUG-\d+$/i.test(rawArg);
 
-			if (/^FORGE-BUG-\d+$/.test(rawArg)) {
-				// Canonical bug ID — verify it exists
+			if (/^[A-Z][A-Z0-9]*-BUG-\d+$/.test(rawArg)) {
+				// Canonical prefixed bug ID (any project prefix, e.g. FORGE-BUG-042,
+				// CART-BUG-001) — verify it exists. Previously hardcoded to FORGE-,
+				// which pushed other-prefix canonical IDs through the resolver.
 				bugId = rawArg;
 				const bugRecord = readBugRecord(bugId, storeCli, cwd);
 				if (!bugRecord) {
@@ -1816,7 +1840,7 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			// Previously this was done inside runBugPipeline, but the session registry
 			// needs the real ID before startSession is called.
 			if (isNewBug && bugId.startsWith("PENDING-")) {
-				const realBugId = assignNextBugId(storeCli, cwd);
+				const realBugId = assignNextBugId(storeCli, cwd, loadGovernorProjectConfig(cwd).prefix);
 				const title = rawArg && !rawArg.startsWith("@") ? rawArg.slice(0, 120) : "New bug (pending triage)";
 				if (preCreateBug(realBugId, title, storeCli, cwd)) {
 					ctx.ui.notify(`forge:fix-bug — pre-assigned bug ID: ${realBugId}`, "info");
