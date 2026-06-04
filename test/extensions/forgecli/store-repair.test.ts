@@ -10,7 +10,7 @@ import {
 	type ParsedStoreRepairArgs,
 	parseStoreRepairArgs,
 	registerStoreRepair,
-} from "../../../src/extensions/forgecli/store-repair.js";
+} from "../../../src/extensions/forgecli/commands/store-repair.js";
 
 function makePi() {
 	const commands = new Map<string, { handler: (a: string, ctx: unknown) => Promise<void> }>();

@@ -123,7 +123,7 @@ type HandlerEntry =
 const HANDLERS: HandlerEntry[] = [
 	// ── T06 ──────────────────────────────────────────────────────────────────
 	// FORGE-S26-T10: retrospective.ts now registers the renamed command forge:retro.
-	{ command: "forge:retro", file: "retrospective.ts", archetype: "KickoffShim", task: "T06" },
+	{ command: "forge:retro", file: "commands/retrospective.ts", archetype: "KickoffShim", task: "T06" },
 
 	// ── T07 ──────────────────────────────────────────────────────────────────
 	// /forge:health is registered in forge-commands.ts (delegateMarkdownCommand → pi.sendUserMessage).
@@ -147,12 +147,12 @@ const HANDLERS: HandlerEntry[] = [
 
 	// ── T11 ──────────────────────────────────────────────────────────────────
 	// quiz-agent.ts → forge:check-agent, store-repair.ts → forge:repair (FORGE-S26-T10).
-	{ command: "forge:add-task", file: "add-task.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:add-pipeline", file: "add-pipeline.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:check-agent", file: "quiz-agent.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:remove", file: "remove-command.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:report-bug", file: "report-bug.ts", archetype: "KickoffShim", task: "T11" },
-	{ command: "forge:repair", file: "store-repair.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:add-task", file: "commands/add-task.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:add-pipeline", file: "commands/add-pipeline.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:check-agent", file: "commands/quiz-agent.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:remove", file: "commands/remove-command.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:report-bug", file: "commands/report-bug.ts", archetype: "KickoffShim", task: "T11" },
+	{ command: "forge:repair", file: "commands/store-repair.ts", archetype: "KickoffShim", task: "T11" },
 ];
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

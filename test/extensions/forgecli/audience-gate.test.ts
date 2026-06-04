@@ -135,7 +135,7 @@ describe("assertAudience", () => {
 		const { resolve } = await import("node:path");
 		const { fileURLToPath } = await import("node:url");
 		const __dirname = fileURLToPath(new URL(".", import.meta.url));
-		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/enhance.ts"), "utf8");
+		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/commands/enhance.ts"), "utf8");
 		expect(src).toContain("assertAudience");
 		expect(src).toContain("sendKickoff");
 	});
@@ -146,7 +146,7 @@ describe("assertAudience", () => {
 		const { resolve } = await import("node:path");
 		const { fileURLToPath } = await import("node:url");
 		const __dirname = fileURLToPath(new URL(".", import.meta.url));
-		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/plan.ts"), "utf8");
+		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/commands/plan.ts"), "utf8");
 		expect(src).toContain("assertAudience");
 		expect(src).toContain("sendKickoff");
 	});
@@ -157,7 +157,7 @@ describe("assertAudience", () => {
 		const { resolve } = await import("node:path");
 		const { fileURLToPath } = await import("node:url");
 		const __dirname = fileURLToPath(new URL(".", import.meta.url));
-		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/implement.ts"), "utf8");
+		const src = readFileSync(resolve(__dirname, "../../../src/extensions/forgecli/commands/implement.ts"), "utf8");
 		expect(src).toContain("assertAudience");
 		expect(src).toContain("sendKickoff");
 	});

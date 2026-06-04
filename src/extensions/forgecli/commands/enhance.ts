@@ -32,17 +32,17 @@
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-import { assertAudience } from "./audience-gate.js";
-import { sendKickoff } from "./kickoff.js";
+import { assertAudience } from "../audience-gate.js";
+import { sendKickoff } from "../kickoff.js";
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.
-import { extractPersonaNames } from "./lib/frontmatter-parser.js";
-import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
-import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
+import { extractPersonaNames } from "../lib/frontmatter-parser.js";
+import { loadPersona, PersonaSkillLoaderError } from "../parsers/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "../parsers/workflow-loader.js";
 
 export { extractPersonaNames };
 
-import { checkMaterialization, type MaterializationCheck } from "./lib/manifest-checker.js";
+import { checkMaterialization, type MaterializationCheck } from "../lib/manifest-checker.js";
 
 export { checkMaterialization, type MaterializationCheck };
 
@@ -196,7 +196,7 @@ export function registerEnhance(pi: ExtensionAPI, options: RegisterEnhanceOption
 			const workflowPath = path.join(cwd, WORKFLOW_REL_PATH);
 
 			let workflowMd: string;
-			let workflowAudience: import("./parsers/workflow-loader.js").AudienceValue;
+			let workflowAudience: import("../parsers/workflow-loader.js").AudienceValue;
 			try {
 				const loaded = loadWorkflow(workflowPath);
 				workflowMd = loaded.rawMarkdown;

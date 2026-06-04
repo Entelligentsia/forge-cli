@@ -22,7 +22,7 @@ import {
 	parseReportBugArgs,
 	registerReportBug,
 	resolveBugRepo,
-} from "../../../src/extensions/forgecli/report-bug.js";
+} from "../../../src/extensions/forgecli/commands/report-bug.js";
 
 function makePi() {
 	const commands = new Map<string, { handler: (a: string, ctx: unknown) => Promise<void> }>();

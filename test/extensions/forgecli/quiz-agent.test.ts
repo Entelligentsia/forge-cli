@@ -10,7 +10,7 @@ import {
 	type ParsedQuizAgentArgs,
 	parseQuizAgentArgs,
 	registerQuizAgent,
-} from "../../../src/extensions/forgecli/quiz-agent.js";
+} from "../../../src/extensions/forgecli/commands/quiz-agent.js";
 
 function makePi() {
 	const commands = new Map<string, { handler: (a: string, ctx: unknown) => Promise<void> }>();

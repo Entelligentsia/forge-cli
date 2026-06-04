@@ -24,7 +24,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 // FORGE-S26-T11: registerEnhance imported to power `forge:rebuild --enrich`
-import { registerEnhance } from "./enhance.js";
+import { registerEnhance } from "./commands/enhance.js";
 import { getBundledPayloadRoot, getBundledToolsRoot } from "./forge-init.js";
 
 // ── Pre-write modification guard (forge-cli#26 / forge#106 / FORGE-BUG-037) ──

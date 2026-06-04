@@ -15,7 +15,7 @@ import {
 	extractPersonaNames,
 	parseImplementArgs,
 	registerImplement,
-} from "../../../src/extensions/forgecli/implement.js";
+} from "../../../src/extensions/forgecli/commands/implement.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────
 

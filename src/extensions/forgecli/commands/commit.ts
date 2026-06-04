@@ -1,10 +1,10 @@
-// forge:approve — native kickoff handler (FORGE-S21-T10).
+// forge:commit — native kickoff handler (FORGE-S21-T10).
 //
 // Replaces the auto-generated stub previously installed by
 // registerAllForgeCommands (forge-commands.ts). Kickoff Shim archetype
 // (Pack-04 + Pack-06): single LLM handoff in current context, no fork.
 //
-// Note: The materialized workflow (architect_approve.md) declares
+// Note: The materialized workflow (commit_task.md) declares
 // `audience: subagent` — advisory only. Users may invoke this command
 // manually from the CLI; assertAudience never refuses subagent-audience
 // workflows. Orchestrator chains still dispatch via runForgeSubagent
@@ -21,19 +21,19 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-import { assertAudience } from "./audience-gate.js";
-import { discoverForgeConfig } from "./lib/forge-root.js";
-import { sendKickoff } from "./kickoff.js";
+import { assertAudience } from "../audience-gate.js";
+import { discoverForgeConfig } from "../lib/forge-root.js";
+import { sendKickoff } from "../kickoff.js";
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.
-import { extractPersonaNames } from "./lib/frontmatter-parser.js";
-import { parseGuardArgs, runPipelineGuard } from "./lib/pipeline-guard.js";
-import { loadPersona, PersonaSkillLoaderError } from "./parsers/persona-skill-loader.js";
-import { loadWorkflow, WorkflowLoaderError } from "./parsers/workflow-loader.js";
+import { extractPersonaNames } from "../lib/frontmatter-parser.js";
+import { parseGuardArgs, runPipelineGuard } from "../lib/pipeline-guard.js";
+import { loadPersona, PersonaSkillLoaderError } from "../parsers/persona-skill-loader.js";
+import { loadWorkflow, WorkflowLoaderError } from "../parsers/workflow-loader.js";
 
 export { extractPersonaNames };
 
-import { checkMaterialization, type MaterializationCheck } from "./lib/manifest-checker.js";
+import { checkMaterialization, type MaterializationCheck } from "../lib/manifest-checker.js";
 
 export { checkMaterialization, type MaterializationCheck };
 
@@ -47,10 +47,10 @@ export interface ParsedArgs {
 	sourceLabel: string;
 }
 
-export function parseApproveArgs(rawArgs: string, cwd: string): ParsedArgs {
+export function parseCommitArgs(rawArgs: string, cwd: string): ParsedArgs {
 	const trimmed = (rawArgs ?? "").trim();
 	if (trimmed === "") {
-		return { mode: "empty", taskRef: "", sourceLabel: "(no input — architect infers task from store/context)" };
+		return { mode: "empty", taskRef: "", sourceLabel: "(no input — engineer infers task from store/context)" };
 	}
 	if (trimmed.startsWith("@")) {
 		const ref = trimmed.slice(1).trim();
@@ -72,7 +72,7 @@ export interface ComposeKickoffOpts {
 export function composeKickoff(opts: ComposeKickoffOpts): string {
 	const { workflowMd, personaIdentity, parsed } = opts;
 
-	const sections: string[] = ["# /forge:approve", ""];
+	const sections: string[] = ["# /forge:commit", ""];
 	if (personaIdentity.trim().length > 0) {
 		sections.push(personaIdentity.trim(), "");
 	}
@@ -82,11 +82,11 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 		"",
 		"Run the workflow below. Specifically:",
 		"",
-		"1. Read all review artifacts for `engineering/sprints/<SPRINT_ID>/<TASK_ID>/` (PLAN_REVIEW.md, CODE_REVIEW.md).",
+		"1. Read the task implementation at `engineering/sprints/<SPRINT_ID>/<TASK_ID>/PROGRESS.md` (the source of truth).",
 		"2. Query the store for the task and its sprint/feature context via `forge_store_query` — do NOT raw-read `.forge/store/`.",
-		"3. Follow the workflow Algorithm verbatim: assess the full task lifecycle against architecture and acceptance criteria.",
-		"4. Write `ARCHITECT_APPROVAL.md` and `APPROVAL-SUMMARY.json` to the task directory using the `write` tool.",
-		"5. Update task status by calling the `forge_store` MCP tool: `{command:'update-status', args:['task','<TASK_ID>','status','<new-status>']}`. Never raw-write `.forge/store/`. Do NOT bash-shell `forge store ...`.",
+		"3. Follow the workflow Algorithm verbatim: stage changes, write commit message, finalize store status.",
+		"4. Write `COMMIT-SUMMARY.json` to the task directory using the `write` tool.",
+		"5. Update task status by calling the `forge_store` MCP tool: `{command:'update-status', args:['task','<TASK_ID>','status','committed']}`. Never raw-write `.forge/store/`. Do NOT bash-shell `forge store ...`.",
 		"6. Honour Pack-06 Read/Write/Ask/Store discipline: writes go via the `forge_store` MCP tool; in-conversation clarifications use `forge_ask_user`.",
 	);
 
@@ -103,17 +103,17 @@ export function composeKickoff(opts: ComposeKickoffOpts): string {
 
 // Registration -------------------------------------------------------------
 
-const WORKFLOW_REL_PATH = path.join(".forge", "workflows", "architect_approve.md");
+const WORKFLOW_REL_PATH = path.join(".forge", "workflows", "commit_task.md");
 
-export interface RegisterApproveOptions {
+export interface RegisterCommitOptions {
 	cwd?: string;
 }
 
-export function registerApprove(pi: ExtensionAPI, options: RegisterApproveOptions = {}): void {
-	pi.registerCommand("forge:approve", {
+export function registerCommit(pi: ExtensionAPI, options: RegisterCommitOptions = {}): void {
+	pi.registerCommand("forge:commit", {
 		description:
-			"Run the architect-approve workflow for a Forge task. " +
-			"Usage: /forge:approve [@<file> | <free-form text>]. " +
+			"Run the commit-task workflow for a Forge task. " +
+			"Usage: /forge:commit [@<file> | <free-form text>]. " +
 			"Note: this workflow is subagent-only; standalone invocations are refused. " +
 			"Orchestrator chains dispatch directly via runForgeSubagent.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
@@ -125,7 +125,7 @@ export function registerApprove(pi: ExtensionAPI, options: RegisterApproveOption
 			if (!guardParsed.force) {
 				const forgeConfig = discoverForgeConfig(cwd);
 				if (forgeConfig) {
-					const guard = runPipelineGuard("approve", guardParsed.taskIdHint, forgeConfig.forgeRoot, cwd);
+					const guard = runPipelineGuard("commit", guardParsed.taskIdHint, forgeConfig.forgeRoot, cwd);
 					if (guard.blocked) {
 						ctx.ui.notify(guard.message, "error");
 						return;
@@ -135,7 +135,7 @@ export function registerApprove(pi: ExtensionAPI, options: RegisterApproveOption
 			const effectiveArgs = guardParsed.cleanArgs;
 
 			let workflowMd: string;
-			let workflowAudience: import("./parsers/workflow-loader.js").AudienceValue;
+			let workflowAudience: import("../parsers/workflow-loader.js").AudienceValue;
 			try {
 				const loaded = loadWorkflow(workflowPath);
 				workflowMd = loaded.rawMarkdown;
@@ -144,25 +144,25 @@ export function registerApprove(pi: ExtensionAPI, options: RegisterApproveOption
 				if (err instanceof WorkflowLoaderError) {
 					if (err.code === "missing_file") {
 						ctx.ui.notify(
-							`× forge:approve — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
+							`× forge:commit — workflow not found at ${WORKFLOW_REL_PATH}; run /forge:init or /forge:rebuild first.`,
 							"error",
 						);
 					} else {
-						ctx.ui.notify(`× forge:approve — workflow load failed (${err.code}): ${err.message}`, "error");
+						ctx.ui.notify(`× forge:commit — workflow load failed (${err.code}): ${err.message}`, "error");
 					}
 					return;
 				}
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:approve — failed to read workflow: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:commit — failed to read workflow: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 
 			let parsed: ParsedArgs;
 			try {
-				parsed = parseApproveArgs(effectiveArgs, cwd);
+				parsed = parseCommitArgs(effectiveArgs, cwd);
 			} catch (err: unknown) {
 				const e = err as { message?: string };
-				ctx.ui.notify(`× forge:approve — failed to read seed: ${e.message ?? "unknown"}`, "error");
+				ctx.ui.notify(`× forge:commit — failed to read seed: ${e.message ?? "unknown"}`, "error");
 				return;
 			}
 
@@ -183,18 +183,18 @@ export function registerApprove(pi: ExtensionAPI, options: RegisterApproveOption
 				} catch (err: unknown) {
 					if (err instanceof PersonaSkillLoaderError) {
 						ctx.ui.notify(
-							`× forge:approve — persona '${personas[0]}' load failed (${err.code}): ${err.message}`,
+							`× forge:commit — persona '${personas[0]}' load failed (${err.code}): ${err.message}`,
 							"error",
 						);
 						return;
 					}
 					const e = err as { message?: string };
-					ctx.ui.notify(`× forge:approve — persona load error: ${e.message ?? "unknown"}`, "error");
+					ctx.ui.notify(`× forge:commit — persona load error: ${e.message ?? "unknown"}`, "error");
 					return;
 				}
 			}
 
-			if (!assertAudience({ workflowName: "architect_approve", audience: workflowAudience }, ctx)) {
+			if (!assertAudience({ workflowName: "commit_task", audience: workflowAudience }, ctx)) {
 				return;
 			}
 

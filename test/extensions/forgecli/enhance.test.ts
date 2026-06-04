@@ -15,7 +15,7 @@ import {
 	extractPersonaNames,
 	parseEnhanceArgs,
 	registerEnhance,
-} from "../../../src/extensions/forgecli/enhance.js";
+} from "../../../src/extensions/forgecli/commands/enhance.js";
 
 // ── Tmp scaffolding ──────────────────────────────────────────────────────
 

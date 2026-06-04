@@ -32,7 +32,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { assertAudience } from "../audience-gate.js";
-import { checkMaterialization } from "../enhance.js";
+import { checkMaterialization } from "../commands/enhance.js";
 import { type InitCompleteEvent, onSyntheticEvent } from "../hook-dispatcher.js";
 import { sendKickoff } from "../kickoff.js";
 import { loadWorkflow, WorkflowLoaderError } from "../parsers/workflow-loader.js";
