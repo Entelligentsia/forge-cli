@@ -884,8 +884,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
 				if (preflightOutcome.gateFailure) {
 					const advisorModel = resolveAdvisorModel(
-						modelRoutingConfig.advisorModel,
-						ctx.modelRegistry as any,
+						modelRoutingConfig,
 						ctx.model as any,
 					);
 					void runHaltAdvisor({
@@ -893,7 +892,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						advisorModel,
 						taskId,
 						cwd,
-						ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+						ctx: { ui: ctx.ui as any },
 						forgeRoot,
 					});
 				}
@@ -1417,8 +1416,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						"(e.g. code_review), and that the call exits zero before the subagent returns.",
 				};
 				const advisorModel = resolveAdvisorModel(
-					modelRoutingConfig.advisorModel,
-					ctx.modelRegistry as any,
+					modelRoutingConfig,
 					ctx.model as any,
 				);
 				void runHaltAdvisor({
@@ -1426,7 +1424,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 					advisorModel,
 					taskId,
 					cwd,
-					ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+					ctx: { ui: ctx.ui as any },
 					forgeRoot,
 				});
 				return {
@@ -1526,8 +1524,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
 				if (postflightOutcome.gateFailure) {
 					const advisorModel = resolveAdvisorModel(
-						modelRoutingConfig.advisorModel,
-						ctx.modelRegistry as any,
+						modelRoutingConfig,
 						ctx.model as any,
 					);
 					void runHaltAdvisor({
@@ -1535,7 +1532,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 						advisorModel,
 						taskId,
 						cwd,
-						ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+						ctx: { ui: ctx.ui as any },
 						forgeRoot,
 					});
 				}

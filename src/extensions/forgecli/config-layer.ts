@@ -43,23 +43,12 @@ export interface ForgeCliFeatureFlags {
 export interface GlobalConfig {
 	"persona-models"?: PersonaModelsMap;
 	forgeCli?: ForgeCliFeatureFlags;
-	/**
-	 * FORGE-S26-T18: optional advisor model for halt-recovery advisory.
-	 * When present, the halt advisor spawns on this model instead of
-	 * falling back to modelRegistry.getAvailable()[0].
-	 */
-	advisorModel?: PersonaModel;
 }
 
 export interface ProjectConfig {
 	"persona-models"?: PersonaModelsMap;
 	forgeCli?: ForgeCliFeatureFlags;
 	pipelines?: Record<string, PipelineConfig>;
-	/**
-	 * FORGE-S26-T18: optional per-project advisor model override.
-	 * Project config (L2) wins over global config (L1).
-	 */
-	advisorModel?: PersonaModel;
 }
 
 // MergedConfig carries both the merged view and per-layer provenance for the resolver.
@@ -68,11 +57,6 @@ export interface MergedConfig {
 	"persona-models"?: PersonaModelsMap;
 	/** Project-only pipelines (L3/L4 config lives here). */
 	pipelines?: Record<string, PipelineConfig>;
-	/**
-	 * Resolved advisor model (project wins over global; same L2>L1 precedence).
-	 * Used by halt-recovery advisor (FORGE-S26-T18).
-	 */
-	advisorModel?: PersonaModel;
 	/** The raw global config for L1 lookups — null if absent or invalid. */
 	_global: GlobalConfig | null;
 	/** The raw project config for L2 lookups — null if absent or invalid. */
@@ -161,11 +145,6 @@ export function loadLayeredConfig(cwd: string): LayeredConfig {
 		merged.pipelines = projectConfig.pipelines;
 	}
 
-	// advisorModel: project (L2) wins over global (L1)
-	const advisorModel = projectConfig?.advisorModel ?? globalConfig?.advisorModel;
-	if (advisorModel) {
-		merged.advisorModel = advisorModel;
-	}
 
 	return { global: globalConfig, project: projectConfig, merged, errors };
 }

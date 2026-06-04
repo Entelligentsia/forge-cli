@@ -41,10 +41,6 @@
         }
       }
     },
-    "advisorModel": {
-      "$ref": "#/definitions/personaModel",
-      "description": "FORGE-S26-T18: optional model for the halt-recovery advisor. When set, the halt advisor spawns on this model instead of falling back to the first available model. Supports L1 (global) and L2 (project) config; project wins on collision."
-    },
     "pipelines": {
       "type": "object",
       "description": "Per-pipeline overrides. Pipeline names match the Forge plugin's pipeline catalogue.",

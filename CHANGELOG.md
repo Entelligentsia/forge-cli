@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.19] — 2026-06-04
+
+### Changed
+
+- **Halt-advisor model = the heavy model the runtime resolves point-in-time —
+  the `advisorModel` config entry is removed.** Supersedes the 1.0.18 advisor
+  resolution. There is no dedicated knob: "heavy" is the approve/architect
+  slot resolved through the existing routing cascade (L4 phase override →
+  project → user/global → default), exactly as the approve phase itself would
+  resolve; when the cascade bottoms out at inherit, the session's current
+  model (pi default) is used. This mirrors the Claude Code plugin route, where
+  the advisor runs on the opus-class session model. The `advisorModel` key is
+  dropped from `GlobalConfig`/`ProjectConfig`/`MergedConfig`, the config
+  merge, and `forge-cli-schema.json` (it was never exposed in `/forge:config`
+  and never set in practice).
+
 ## [1.0.18] — 2026-06-04
 
 Coordinated release matching forge plugin **v1.2.17** (postflight-gate

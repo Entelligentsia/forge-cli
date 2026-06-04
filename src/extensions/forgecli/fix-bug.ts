@@ -805,8 +805,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
 				if (preflightOutcome.gateFailure) {
 					const advisorModel = resolveAdvisorModel(
-						modelRoutingConfig.advisorModel,
-						ctx.modelRegistry as any,
+						modelRoutingConfig,
 						ctx.model as any,
 					);
 					void runHaltAdvisor({
@@ -814,7 +813,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 						advisorModel,
 						taskId: bugId,
 						cwd,
-						ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+						ctx: { ui: ctx.ui as any },
 						forgeRoot,
 					});
 				}
@@ -1430,8 +1429,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				// (FORGE-S26-T18) — the same hand-off the preflight/postflight gate
 				// failures use — instead of a bare escalation. Best-effort, non-fatal.
 				const advisorModel = resolveAdvisorModel(
-					modelRoutingConfig.advisorModel,
-					ctx.modelRegistry as any,
+					modelRoutingConfig,
 					ctx.model as any,
 				);
 				void runHaltAdvisor({
@@ -1449,7 +1447,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					advisorModel,
 					taskId: bugId,
 					cwd,
-					ctx: { ui: ctx.ui as any, modelRegistry: ctx.modelRegistry as any },
+					ctx: { ui: ctx.ui as any },
 					forgeRoot,
 				});
 				return {

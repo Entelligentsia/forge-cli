@@ -32,84 +32,68 @@ function makeCtx(availableModels: Array<{ provider: string; model: string }> = [
 }
 
 describe("halt-advisor :: resolveAdvisorModel()", () => {
-	it("uses advisorModel config slot when present", () => {
-		const slot: PersonaModel = { provider: "anthropic", model: "claude-opus-4-5" };
-		const ctx = makeCtx([{ provider: "anthropic", model: "claude-haiku-3" }]);
+	// Contract (rev. 2026-06-04): the advisor model is the HEAVY model the
+	// runtime resolves point-in-time — the approve/architect slot through the
+	// existing routing cascade (project > user > pi default). No dedicated
+	// advisorModel config entry exists.
 
-		const result = resolveAdvisorModel(slot, ctx.modelRegistry as any);
+	it("uses the configured architect persona-model (project layer) when present", () => {
+		const merged = {
+			_project: {
+				"persona-models": {
+					architect: { provider: "ollama-cloud", model: "glm-5.1" },
+				},
+			},
+		};
 
-		expect(result).toEqual(slot);
-	});
-
-	it("falls back to getAvailable()[0] when no config slot", () => {
-		const available = [{ provider: "anthropic", model: "claude-sonnet-4-5" }];
-		const ctx = makeCtx(available);
-
-		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any);
-
-		expect(result).toEqual(available[0]);
-	});
-
-	it("returns undefined when neither config slot nor available models", () => {
-		const ctx = makeCtx([]);
-
-		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any);
-
-		expect(result).toBeUndefined();
-	});
-
-	// ── CART-S03-T01 regression: "halt advisor running on anthropic/undefined" ──
-	// pi's ModelRegistry.getAvailable() returns Model objects with `.id` (not
-	// `.model`); the blind `available[0] as PersonaModel` cast yielded
-	// { provider, model: undefined } and the advisor ran on a nonexistent model.
-
-	it("maps pi-shaped registry entries ({provider, id}) to PersonaModel", () => {
-		const ctx = makeCtx([]);
-		(ctx.modelRegistry.getAvailable as ReturnType<typeof vi.fn>) = vi.fn(() => [
-			{ provider: "ollama-cloud", id: "glm-5.1", name: "GLM 5.1" },
-		]);
-
-		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any);
+		const result = resolveAdvisorModel(merged as never, undefined);
 
 		expect(result).toEqual({ provider: "ollama-cloud", model: "glm-5.1" });
 	});
 
-	it("skips registry entries with no usable model id", () => {
-		const ctx = makeCtx([]);
-		(ctx.modelRegistry.getAvailable as ReturnType<typeof vi.fn>) = vi.fn(() => [
-			{ provider: "anthropic" }, // neither .model nor .id — unusable
-			{ provider: "ollama-cloud", id: "minimax-m2.7" },
-		]);
+	it("honours an approve-phase L4 override over the persona model", () => {
+		const merged = {
+			_project: {
+				"persona-models": {
+					architect: { provider: "ollama-cloud", model: "glm-5.1" },
+				},
+			},
+			pipelines: {
+				default: {
+					phases: {
+						approve: { "model-override": { provider: "ollama-cloud", model: "minimax-m2.7" } },
+					},
+				},
+			},
+		};
 
-		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any);
+		const result = resolveAdvisorModel(merged as never, undefined);
 
 		expect(result).toEqual({ provider: "ollama-cloud", model: "minimax-m2.7" });
 	});
 
-	it("prefers the session's current model over available[0] (provider-neutral, known-good)", () => {
-		const ctx = makeCtx([]);
-		(ctx.modelRegistry.getAvailable as ReturnType<typeof vi.fn>) = vi.fn(() => [
-			{ provider: "anthropic", id: "claude-haiku-3" },
-		]);
-
-		const result = resolveAdvisorModel(undefined, ctx.modelRegistry as any, {
+	it("falls back to the session's current model (pi default) when nothing is routed", () => {
+		const result = resolveAdvisorModel({} as never, {
 			provider: "ollama-cloud",
-			id: "glm-5.1",
-		} as any);
+			id: "qwen3-coder-next",
+		});
 
-		expect(result).toEqual({ provider: "ollama-cloud", model: "glm-5.1" });
+		expect(result).toEqual({ provider: "ollama-cloud", model: "qwen3-coder-next" });
 	});
 
-	it("config slot still wins over the current model", () => {
-		const slot: PersonaModel = { provider: "ollama-cloud", model: "qwen3-coder-next" };
-		const ctx = makeCtx([]);
-
-		const result = resolveAdvisorModel(slot, ctx.modelRegistry as any, {
+	it("maps current models carrying .model instead of .id", () => {
+		const result = resolveAdvisorModel({} as never, {
 			provider: "ollama-cloud",
-			id: "glm-5.1",
-		} as any);
+			model: "gemma4:31b",
+		});
 
-		expect(result).toEqual(slot);
+		expect(result).toEqual({ provider: "ollama-cloud", model: "gemma4:31b" });
+	});
+
+	it("returns undefined (advisor skipped) when nothing is routed and no current model", () => {
+		const result = resolveAdvisorModel({} as never, undefined);
+
+		expect(result).toBeUndefined();
 	});
 });
 

@@ -6,18 +6,16 @@
 //
 // Design constraints:
 //   - Advisor is READ-ONLY: no store writes, no artifact mutations.
-//   - Model selected by resolveAdvisorModel: advisorModel config slot (L1/L2)
-//     first; falls back to ctx.modelRegistry.getAvailable()[0]; if neither,
-//     skips the advisor silently (non-fatal).
+//   - Model: the HEAVY model the runtime resolves point-in-time — the
+//     approve/architect slot through the existing routing cascade
+//     (project > user > pi default). NO dedicated advisorModel config entry.
+//     If nothing is routed and no current model exists, the advisor is
+//     skipped silently (non-fatal).
 //   - runHaltAdvisor is best-effort: failures must not mask the primary halt.
 
+import type { MergedConfig, PersonaModel } from "../config-layer.js";
 import { runForgeSubagent, loadForgePersona, type ForgePersona } from "../forge-subagent.js";
-import type { PersonaModel } from "../config-layer.js";
-
-// Minimal subset of the ModelRegistry interface needed here.
-export interface ModelRegistryLike {
-	getAvailable(): Array<{ provider: string; model: string }>;
-}
+import { resolveModelForPhase } from "../model-resolver.js";
 
 // Minimal subset of the ExtensionCommandContext.ui interface needed here.
 export interface UiLike {
@@ -26,7 +24,6 @@ export interface UiLike {
 
 export interface CtxLike {
 	ui: UiLike;
-	modelRegistry?: ModelRegistryLike;
 }
 
 // Structured gate failure shape emitted by preflight-gate.cjs on stdout.
@@ -57,50 +54,37 @@ export interface RunHaltAdvisorOptions {
  *
  * Priority:
  *   1. Explicit `advisorModel` config slot from forge-cli layered config.
- *   2. the session's current model — provider-neutral and known-good (it is
- *      streaming the session right now).
- *   3. first USABLE registry entry from getAvailable().
- *   4. undefined — caller should skip the advisor.
+ * Contract (rev. 2026-06-04): the advisor model is the HEAVY model the runtime
+ * resolves point-in-time. There is NO dedicated advisorModel config entry —
+ * "heavy" is the approve/architect slot resolved through the existing routing
+ * cascade (L4 phase override → L3/L2 project → L1 user/global → default),
+ * exactly as the approve phase itself would resolve. When the cascade bottoms
+ * out at inherit, the session's current model (pi default) is used. In the
+ * Claude Code plugin route the equivalent is the opus-class session model.
  *
- * Note: model-registry.ts does NOT expose a capability rank, so the config
- * slot is the canonical way to point at a "strongest" model.
+ * Returns undefined (advisor skipped, non-fatal) only when nothing is routed
+ * AND no current model is available.
  *
- * pi's ModelRegistry.getAvailable() returns Model objects whose identifier is
- * `.id`, not `.model` — the previous blind `available[0] as PersonaModel`
- * cast produced { provider, model: undefined } ("halt advisor running on
- * anthropic/undefined", CART-S03-T01 halt). Entries without a usable
- * identifier are skipped.
+ * (History: the original FORGE-S26-T18 implementation used a dedicated
+ * advisorModel config slot with a blind registry fallback that produced
+ * "anthropic/undefined" on the CART-S03-T01 halt — both retired.)
  */
 export function resolveAdvisorModel(
-	configSlot: PersonaModel | undefined,
-	modelRegistry: ModelRegistryLike | undefined,
+	merged: MergedConfig,
 	currentModel?: { provider?: string; model?: string; id?: string },
+	pipelineName = "default",
 ): PersonaModel | undefined {
-	if (configSlot) return configSlot;
-
-	const toPersonaModel = (entry: {
-		provider?: string;
-		model?: string;
-		id?: string;
-	}): PersonaModel | undefined => {
-		const model = entry.model ?? entry.id;
-		if (!entry.provider || !model) return undefined;
-		return { provider: entry.provider, model };
-	};
-
-	if (currentModel) {
-		const fromCurrent = toPersonaModel(currentModel);
-		if (fromCurrent) return fromCurrent;
+	// Heavy slot: the approve phase / architect persona routing resolution.
+	try {
+		const heavy = resolveModelForPhase(pipelineName, "approve", "architect", merged ?? {});
+		if (heavy.model) return heavy.model;
+	} catch {
+		// resolution errors are non-fatal — fall through to the current model
 	}
-
-	const available = (modelRegistry?.getAvailable?.() ?? []) as Array<{
-		provider?: string;
-		model?: string;
-		id?: string;
-	}>;
-	for (const entry of available) {
-		const mapped = toPersonaModel(entry);
-		if (mapped) return mapped;
+	// Inherit → pi's current model (provider-neutral, known-good).
+	if (currentModel?.provider) {
+		const model = currentModel.model ?? currentModel.id;
+		if (model) return { provider: currentModel.provider, model };
 	}
 	return undefined;
 }
