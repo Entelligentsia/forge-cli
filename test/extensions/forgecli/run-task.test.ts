@@ -78,14 +78,14 @@ vi.mock("../../../src/extensions/forgecli/store-resolver.js", () => ({
 // Mock the halt-recovery advisor so the verdict-missing path can be asserted
 // without spawning a real advisor subagent. Both exports are replaced; the
 // advisor itself is covered by halt-advisor.test.ts.
-vi.mock("../../../src/extensions/forgecli/lib/halt-advisor.js", () => ({
+vi.mock("../../../src/extensions/forgecli/halt-advisor.js", () => ({
 	resolveAdvisorModel: vi.fn(() => undefined),
 	runHaltAdvisor: vi.fn(() => Promise.resolve()),
 }));
 
 import { spawnSync } from "node:child_process";
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
-import { runHaltAdvisor } from "../../../src/extensions/forgecli/lib/halt-advisor.js";
+import { runHaltAdvisor } from "../../../src/extensions/forgecli/halt-advisor.js";
 import { buildSummariesBlock, composeTaskBody, registerRunTask, runPreflightGate, runPostflightGate } from "../../../src/extensions/forgecli/run-task.js";
 
 // ── Fixtures and helpers ────────────────────────────────────────────────────

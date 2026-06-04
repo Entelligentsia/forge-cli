@@ -32,9 +32,9 @@ import { loadForgePersona, runForgeSubagent } from "./forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "./forge-tools.js";
 import { readPersonaDir, readPipelineNames } from "./lib/catalog-helpers.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { resolveAdvisorModel, runHaltAdvisor } from "./lib/halt-advisor.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
-import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
+import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
 import {
 	isStateStale as isJsonStateStale,
 	readJsonState,
@@ -710,7 +710,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 	// Pre-flight model config validation (Plan 16 Slice 3).
 	// Warns on unknown persona names / unavailable models; errors on unresolvable
 	// overrides / unknown pipelines. With FORGE_STRICT_MODELS=1, warnings → errors.
-	// FORGE-S25-T17: delegated to lib/orchestrator-preflight.ts (H-13).
+	// FORGE-S25-T17: delegated to orchestrator-preflight.ts (H-13).
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),

@@ -33,7 +33,7 @@
 //     Evaluates declarative gate conditions from the workflow's gate block.
 //   This two-level design ensures both structural validity (model/persona config) and
 //   store-state validity (predecessor verdicts, status guards) are checked.
-//   Reference: lib/orchestrator-preflight.ts (N-H-H, FORGE-S25-T17).
+//   Reference: orchestrator-preflight.ts (N-H-H, FORGE-S25-T17).
 //
 // N-H-E tag: see inline comment at the materialization skip (~line 707 / checkMaterialization).
 
@@ -56,9 +56,9 @@ import {
 	readPipelineNames as readPipelineNamesBug,
 } from "./lib/catalog-helpers.js";
 import { discoverForgeConfigCached } from "./lib/forge-config.js";
-import { resolveAdvisorModel, runHaltAdvisor } from "./lib/halt-advisor.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
 import { checkMaterialization } from "./lib/manifest-checker.js";
-import { runOrchestratorPreflight } from "./lib/orchestrator-preflight.js";
+import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
 import { resolveModelForPhase } from "./model-resolver.js";
 import { type AudienceValue, loadWorkflow } from "./parsers/workflow-loader.js";
 import {
@@ -573,7 +573,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 	}
 
 	// Pre-flight validation — same shape as run-task / run-sprint.
-	// FORGE-S25-T17: delegated to lib/orchestrator-preflight.ts (H-13).
+	// FORGE-S25-T17: delegated to orchestrator-preflight.ts (H-13).
 	{
 		const personasDir = path.resolve(
 			path.dirname(fileURLToPath(import.meta.url)),

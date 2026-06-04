@@ -71,7 +71,7 @@ describe("discoverForgeConfigCached", () => {
 
 	it("matches the result of the uncached discoverForgeConfig", async () => {
 		setupForgeProject(tmpRoot);
-		const { discoverForgeConfig } = await import("../../../../src/extensions/forgecli/forge-root.js");
+		const { discoverForgeConfig } = await import("../../../../src/extensions/forgecli/lib/forge-root.js");
 		const cached = discoverForgeConfigCached(tmpRoot);
 		const uncached = discoverForgeConfig(tmpRoot);
 		expect(cached).toEqual(uncached);

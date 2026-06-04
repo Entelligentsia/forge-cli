@@ -17,7 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { discoverForgeConfig } from "../src/extensions/forgecli/forge-root.js";
+import { discoverForgeConfig } from "../src/extensions/forgecli/lib/forge-root.js";
 
 let tmpRoot: string;
 

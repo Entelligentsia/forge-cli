@@ -27,7 +27,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { assertAudience } from "./audience-gate.js";
-import { discoverForgeConfig } from "./forge-root.js";
+import { discoverForgeConfig } from "./lib/forge-root.js";
 import { sendKickoff } from "./kickoff.js";
 // FORGE-S25-T16: extracted to lib modules (H-1, H-2). Re-exported here for
 // backward compatibility with existing test and consumer imports.

@@ -68,7 +68,7 @@ describe("regression: forge-root.ts uses shared isFile", () => {
 		);
 
 		// discoverForgeConfig calls findNearestForgeConfig which uses isFile from lib
-		const { discoverForgeConfig } = await import("../../../../src/extensions/forgecli/forge-root.js");
+		const { discoverForgeConfig } = await import("../../../../src/extensions/forgecli/lib/forge-root.js");
 		const result = discoverForgeConfig(tmpRoot);
 		expect(result).not.toBeNull();
 		expect(result!.forgeRoot).toBe(forgeRoot);

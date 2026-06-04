@@ -1,4 +1,4 @@
-// lib/orchestrator-preflight.ts — FORGE-S25-T17 (H-13, N-H-D)
+// orchestrator-preflight.ts — FORGE-S25-T17 (H-13, N-H-D)
 //
 // Single shared preflight helper for orchestrator pipelines. Replaces the
 // duplicate pre-flight validation blocks in run-task.ts and fix-bug.ts.
@@ -21,9 +21,9 @@
 //   That block is architecturally distinct and is explicitly out of scope
 //   per the plan-review finding (N-H-D resolved, reviewer-approved).
 
-import type { MergedConfig } from "../config-layer.js";
-import { validateModelConfig } from "../model-validator.js";
-import type { OrchestratorResult } from "./orchestrator-types.js";
+import type { MergedConfig } from "./config-layer.js";
+import { validateModelConfig } from "./model-validator.js";
+import type { OrchestratorResult } from "./lib/orchestrator-types.js";
 
 // ---------------------------------------------------------------------------
 // Types

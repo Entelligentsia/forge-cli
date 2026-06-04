@@ -31,7 +31,7 @@
 //   Per-task dispatch is entirely delegated to runTaskPipeline, which calls
 //   runOrchestratorPreflight (persona/model config validation) at entry before
 //   any LLM dispatch. The two paths are deliberately separate.
-//   Reference: lib/orchestrator-preflight.ts (N-H-D, FORGE-S25-T17).
+//   Reference: orchestrator-preflight.ts (N-H-D, FORGE-S25-T17).
 
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
