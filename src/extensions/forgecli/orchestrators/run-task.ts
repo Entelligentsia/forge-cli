@@ -1059,7 +1059,9 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 			parentId: taskId,
 			label: `${phase.role}:${iteration}`,
 			kind: "leaf",
-			promptPreview: taskBody.slice(0, 200),
+			// Full body — display clamping/expansion is the view's decision
+			// (the tree applies only a storage cap).
+			promptPreview: taskBody,
 		});
 
 		// Capture the first stream-observed model on turn_end (IL10 visibility).

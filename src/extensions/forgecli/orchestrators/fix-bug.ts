@@ -1027,7 +1027,9 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 				parentId: bugId,
 				label: `${phase.role}:${iteration}`,
 				kind: "leaf",
-				promptPreview: bugBody.slice(0, 200),
+				// Full body — display clamping/expansion is the view's decision
+				// (the tree applies only a storage cap).
+				promptPreview: bugBody,
 			});
 
 			const refreshStatus = () => {

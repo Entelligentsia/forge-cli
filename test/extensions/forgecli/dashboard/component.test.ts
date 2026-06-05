@@ -126,6 +126,40 @@ describe("DashboardComponent activity-log clamp + ctrl+o expansion", () => {
 		controller.dispose();
 	});
 
+	it("prompt section: ⏎ shows 20-line clamp, ctrl+o reveals the full body", () => {
+		const tree = new OrchestratorTree();
+		tree.startNode("BUG-3", { label: "fix-bug BUG-3", kind: "orchestrator" });
+		const promptBody = Array.from({ length: 30 }, (_, i) => `prompt body line ${i + 1}`).join("\n");
+		tree.startNode("BUG-3:plan-fix:1", {
+			parentId: "BUG-3",
+			label: "plan-fix:1",
+			kind: "leaf",
+			promptPreview: promptBody,
+		});
+		const controller = new DashboardController(tree, "BUG-3:plan-fix:1");
+		const mockTui = { requestRender: vi.fn(), terminal: { rows: 60 } } as any;
+		const component = new DashboardComponent(controller, mockTui, mockTheme, vi.fn());
+
+		// Collapsed: header only.
+		let out = component.render(140).join("\n");
+		expect(out).toContain("Prompt · 30 lines · ⏎ expand");
+		expect(out).not.toContain("prompt body line 1");
+
+		// ⏎-expanded: clamped to 20 lines with a ^o hint.
+		controller.getState().promptExpanded = true;
+		out = component.render(140).join("\n");
+		expect(out).toContain("prompt body line 20");
+		expect(out).not.toContain("prompt body line 21");
+		expect(out).toContain("… 10 more lines · ^o expand");
+
+		// ctrl+o: full body.
+		controller.handleInput("\x0f");
+		out = component.render(140).join("\n");
+		expect(out).toContain("prompt body line 30");
+		expect(out).not.toContain("more lines");
+		controller.dispose();
+	});
+
 	it("never emits a row containing a raw newline in either mode", () => {
 		const { controller, component } = setup();
 		for (const toggle of [false, true]) {

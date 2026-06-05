@@ -189,6 +189,9 @@ export interface DashboardState {
 /** Max rendered rows per log entry when the activity log is clamped. */
 const LOG_CLAMP_ROWS = 2;
 
+/** Max prompt lines shown when expanded but not in full mode (ctrl+o). */
+const PROMPT_CLAMP_LINES = 20;
+
 // ── Controller ──────────────────────────────────────────────────────────────
 
 export class DashboardController {
@@ -877,21 +880,28 @@ export class DashboardComponent implements Component, Focusable {
 			lines.push("");
 		}
 
-		// ── Prompt preview (expandable) ─────────────────────────────────
+		// ── Prompt preview (⏎ open/close, ctrl+o lifts the line cap) ────
+		// Model stores the full body (storage-capped only); the view owns
+		// clamping: ⏎ toggles the section, the clamp shows PROMPT_CLAMP_LINES,
+		// and ctrl+o (the global full-content toggle) reveals everything.
 		if (node.promptPreview) {
-			const expandIcon = promptExpandIcon(this.controller.getState().promptExpanded, this.theme);
-			const lineCount = node.promptPreview.split("\n").length;
-			lines.push(...wrapLine(dim(`${expandIcon} Prompt · ${lineCount} lines · ⏎ expand`, this.theme), width));
-			if (this.controller.getState().promptExpanded) {
-				for (const pline of node.promptPreview.split("\n").slice(0, 20)) {
+			const st = this.controller.getState();
+			const expandIcon = promptExpandIcon(st.promptExpanded, this.theme);
+			const promptLines = toDisplayLines(node.promptPreview);
+			const lineCount = promptLines.length;
+			const hint = st.promptExpanded ? (st.logExpanded ? "⏎ collapse · ^o clamp" : "⏎ collapse · ^o full") : "⏎ expand";
+			lines.push(...wrapLine(dim(`${expandIcon} Prompt · ${lineCount} lines · ${hint}`, this.theme), width));
+			if (st.promptExpanded) {
+				const cap = st.logExpanded ? lineCount : PROMPT_CLAMP_LINES;
+				for (const pline of promptLines.slice(0, cap)) {
 					// Indent wrapped prompt lines by 2 spaces
 					const wrapped = wrapLine(pline, Math.max(0, width - 4));
 					for (let i = 0; i < wrapped.length; i++) {
 						lines.push(dim(i === 0 ? `  ${wrapped[i]}` : `  ${wrapped[i]}`, this.theme));
 					}
 				}
-				if (lineCount > 20) {
-					lines.push(dim(`  … ${lineCount - 20} more lines`, this.theme));
+				if (lineCount > cap) {
+					lines.push(dim(`  … ${lineCount - cap} more lines · ^o expand`, this.theme));
 				}
 			}
 			lines.push("");

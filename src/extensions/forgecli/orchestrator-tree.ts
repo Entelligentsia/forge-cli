@@ -81,10 +81,15 @@ const MAX_TAIL_APPEND = 500; // per-append cap before trimming
 // is owned by the views at render time.
 export const MAX_TAIL_ENTRY_CHARS = 4096;
 
-/** Cap a tail entry for storage. Marks the cut so views can surface it. */
-export function capTailEntry(raw: string): string {
-	if (raw.length <= MAX_TAIL_ENTRY_CHARS) return raw;
-	return `${raw.slice(0, MAX_TAIL_ENTRY_CHARS)}…(+${raw.length - MAX_TAIL_ENTRY_CHARS}c)`;
+// Prompt bodies (task/bug + inlined workflow) are larger than log events —
+// store enough for a meaningful full expansion (ctrl+o) while still bounding
+// memory.
+export const MAX_PROMPT_PREVIEW_CHARS = 16384;
+
+/** Cap an entry for storage. Marks the cut so views can surface it. */
+export function capTailEntry(raw: string, max = MAX_TAIL_ENTRY_CHARS): string {
+	if (raw.length <= max) return raw;
+	return `${raw.slice(0, max)}…(+${raw.length - max}c)`;
 }
 
 // ── OrchestratorTree ───────────────────────────────────────────────────────
@@ -115,7 +120,8 @@ export class OrchestratorTree extends EventEmitter {
 			// Re-apply label/kind if caller supplies them (resume may change role).
 			if (opts.label !== undefined) existing.label = opts.label;
 			if (opts.kind !== undefined) existing.kind = opts.kind;
-			if (opts.promptPreview !== undefined) existing.promptPreview = opts.promptPreview;
+			if (opts.promptPreview !== undefined)
+				existing.promptPreview = capTailEntry(opts.promptPreview, MAX_PROMPT_PREVIEW_CHARS);
 
 			this.emit("change", id);
 			this.emit("tree", id);
@@ -138,7 +144,7 @@ export class OrchestratorTree extends EventEmitter {
 		};
 
 		if (opts.promptPreview) {
-			node.promptPreview = opts.promptPreview;
+			node.promptPreview = capTailEntry(opts.promptPreview, MAX_PROMPT_PREVIEW_CHARS);
 		}
 
 		// Link to parent.
