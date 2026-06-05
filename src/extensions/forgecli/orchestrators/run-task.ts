@@ -1202,6 +1202,14 @@ async function runTaskPipelineInner(
 			};
 		}
 
+		// Persist the live tail-view stream next to the phase transcript on
+		// EVERY outcome — cancelled and failed phases are the runs most worth
+		// replaying. runForgeSubagent writes the transcript (and so sets the
+		// path) even on abort/error.
+		if (result.subagentTranscriptPath) {
+			persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
+		}
+
 		// Close this dispatch's tree node with final usage/model — MUST be
 		// called on every exit path below (failure, halt, escalation,
 		// loopback, advance). A node left `running` keeps a live spinner in
@@ -1358,11 +1366,6 @@ async function runTaskPipelineInner(
 				errCount,
 				subagentTranscriptPath: result.subagentTranscriptPath,
 			});
-			// Persist the live tail-view stream next to the phase transcript —
-			// transcript replay re-reads these exact lines (no reconstruction).
-			if (result.subagentTranscriptPath) {
-				persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
-			}
 			const { cumCompression } = observer.state;
 			registry.appendTail(
 				taskId,
