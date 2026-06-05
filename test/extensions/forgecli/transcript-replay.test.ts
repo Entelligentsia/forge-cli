@@ -69,6 +69,7 @@ function seedAndArchive(opts: { turns?: number; dropImplementFile?: boolean; wit
 			JSON.stringify({
 				schema: "forge-subagent-transcript/v1",
 				startedAt: startedIso,
+				prompt: `# Workflow for ${role}\n\nRun the ${role} workflow for ${ENTITY_ID}.`,
 				persona: role,
 				model: "claude-opus-4-8",
 				provider: "anthropic",
@@ -141,6 +142,15 @@ describe("hydrateRunTree", () => {
 
 		const implement = tree.getNode(`${RUN_ID}:implement:1`);
 		expect(implement!.outcomePreview).toBe("approved");
+	});
+
+	it("hydrates the phase prompt into promptPreview (Prompt panel parity)", () => {
+		seedAndArchive();
+		const resolved = resolveRun(RUN_ID)!;
+		const { tree } = hydrateRunTree(resolved.manifest, resolved.runDir);
+		const triage = tree.getNode(`${RUN_ID}:triage:1`)!;
+		expect(triage.promptPreview).toContain("# Workflow for triage");
+		expect(triage.promptPreview).toContain(`Run the triage workflow for ${ENTITY_ID}.`);
 	});
 
 	it("tails carry the verbose transcript digest (content, not just markers)", () => {

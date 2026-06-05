@@ -439,6 +439,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 			tag: opts.exportTag,
 			result,
 			startedAt,
+			prompt: task,
 		});
 	} catch (err: unknown) {
 		const e = err as { message?: string };
@@ -474,6 +475,12 @@ interface WriteTranscriptOptions {
 	tag?: string;
 	result: SubagentResult;
 	startedAt: Date;
+	/**
+	 * The task body sent to session.prompt(). Captured because it never
+	 * appears in result.messages (the capture records assistant/toolResult
+	 * only) — without it, transcript replay has no prompt to show.
+	 */
+	prompt?: string;
 }
 
 function sanitizeForFilename(s: string): string {
@@ -531,7 +538,7 @@ export function computeTranscriptPath(
 }
 
 export function writeSubagentTranscript(opts: WriteTranscriptOptions): string {
-	const { cwd, persona, tag, result, startedAt } = opts;
+	const { cwd, persona, tag, result, startedAt, prompt } = opts;
 	const outPath = computeTranscriptPath(cwd, persona, tag, startedAt);
 
 	fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -543,6 +550,7 @@ export function writeSubagentTranscript(opts: WriteTranscriptOptions): string {
 		cwd,
 		persona,
 		tag: tag ?? null,
+		prompt: prompt ?? null,
 		model: result.model ?? null,
 		provider: result.provider ?? null,
 		exitCode: result.exitCode,

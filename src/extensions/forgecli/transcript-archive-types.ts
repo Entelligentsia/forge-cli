@@ -132,7 +132,7 @@ export const IndexEntrySchema = Type.Object({
 });
 export type IndexEntry = Static<typeof IndexEntrySchema>;
 
-export const ProjectEntrySchema = Type.Object({
+const ProjectEntrySchema = Type.Object({
 	path: Type.String(),
 	prefix: Type.String(),
 	name: Type.String(),
@@ -140,7 +140,6 @@ export const ProjectEntrySchema = Type.Object({
 	lastSeen: Type.String(),
 	runCount: Type.Number(),
 });
-export type ProjectEntry = Static<typeof ProjectEntrySchema>;
 
 /** projects.json — projectKey → identity registry. */
 export const ProjectsRegistrySchema = Type.Object({

@@ -86,10 +86,15 @@ export function hydrateRunTree(manifest: RunManifest, runDir: string): ReplayRes
 
 	for (const phase of manifest.phases) {
 		const leafId = `${rootId}:${phase.role}:${phase.attempt}`;
+		// Read the archived payload once per phase: the prompt for the
+		// node's Prompt panel, and (legacy runs) the digest fallback below.
+		const payload = phase.file ? gunzipPhase(runDir, phase.file) : null;
+		const prompt = typeof payload?.prompt === "string" && payload.prompt.length > 0 ? payload.prompt : undefined;
 		tree.startNode(leafId, {
 			parentId: rootId,
 			kind: "leaf",
 			label: `${phase.role}#${phase.attempt}`,
+			...(prompt ? { promptPreview: prompt } : {}),
 		});
 
 		if (phase.model && phase.provider) tree.setNodeModel(leafId, phase.model, phase.provider);
@@ -123,7 +128,6 @@ export function hydrateRunTree(manifest: RunManifest, runDir: string): ReplayRes
 				tree.appendTail(leafId, `… (${tailEntries.length - head.length} more lines — see /forge:transcripts show)`);
 			}
 		} else {
-			const payload = phase.file ? gunzipPhase(runDir, phase.file) : null;
 			if (payload) {
 				const digest = digestPhasePayloadVerbose(payload);
 				const head = digest.slice(0, REPLAY_TAIL_BUDGET);
