@@ -13,6 +13,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+
+// Mock the dashboard entry point so the browse→replay wiring test can assert
+// the injected tree + readOnly flag without mounting a real overlay.
+const openDashboardTuiMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("../../../src/extensions/forgecli/tui/thread-switcher.js", () => ({
+	openDashboardTui: openDashboardTuiMock,
+}));
+
+import { OrchestratorTree } from "../../../src/extensions/forgecli/orchestrator-tree.js";
 import {
 	collectListRows,
 	collectTimeline,
@@ -289,30 +298,30 @@ describe("formatProjects", () => {
 
 // ── registration (outside any Forge project) ─────────────────────────────
 
-describe("registerTranscriptsCommand", () => {
-	function buildPi(): { pi: ExtensionAPI; handlers: Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void>> } {
-		const handlers = new Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void>>();
-		const pi = {
-			registerCommand: vi.fn((name: string, spec: { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }) => {
-				handlers.set(name, spec.handler);
+function buildPi(): { pi: ExtensionAPI; handlers: Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void>> } {
+	const handlers = new Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void>>();
+	const pi = {
+		registerCommand: vi.fn((name: string, spec: { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }) => {
+			handlers.set(name, spec.handler);
+		}),
+	} as unknown as ExtensionAPI;
+	return { pi, handlers };
+}
+
+function buildCtx(): { ctx: ExtensionCommandContext; notifications: Array<{ message: string; severity: string }> } {
+	const notifications: Array<{ message: string; severity: string }> = [];
+	const ctx = {
+		ui: {
+			notify: vi.fn((message: string, severity: string) => {
+				notifications.push({ message, severity });
 			}),
-		} as unknown as ExtensionAPI;
-		return { pi, handlers };
-	}
+			setStatus: vi.fn(),
+		},
+	} as unknown as ExtensionCommandContext;
+	return { ctx, notifications };
+}
 
-	function buildCtx(): { ctx: ExtensionCommandContext; notifications: Array<{ message: string; severity: string }> } {
-		const notifications: Array<{ message: string; severity: string }> = [];
-		const ctx = {
-			ui: {
-				notify: vi.fn((message: string, severity: string) => {
-					notifications.push({ message, severity });
-				}),
-				setStatus: vi.fn(),
-			},
-		} as unknown as ExtensionCommandContext;
-		return { ctx, notifications };
-	}
-
+describe("registerTranscriptsCommand", () => {
 	it("registers forge:transcripts and serves list with no forgeRoot (outside a project)", async () => {
 		seedArchivedRun();
 		const { pi, handlers } = buildPi();
@@ -353,5 +362,106 @@ describe("registerTranscriptsCommand", () => {
 		await handlers.get("forge:transcripts")!("list --json", ctx);
 		const parsed = JSON.parse(notifications.map((n) => n.message).join("\n")) as Array<{ runId: string }>;
 		expect(parsed[0].runId).toBe(RUN_ID);
+	});
+});
+
+// ── browse-TUI wiring (no-args interactive path) ─────────────────────────
+
+describe("browse wiring", () => {
+	const mockTheme = {
+		fg: (_c: string, t: string) => t,
+		bg: (_c: string, t: string) => t,
+		bold: (t: string) => t,
+		dim: (t: string) => t,
+	};
+
+	function patchTty(value: boolean): () => void {
+		const prior = process.stdout.isTTY;
+		(process.stdout as { isTTY: boolean }).isTTY = value;
+		return () => {
+			(process.stdout as { isTTY: boolean | undefined }).isTTY = prior;
+		};
+	}
+
+	beforeEach(() => {
+		openDashboardTuiMock.mockClear();
+	});
+
+	it("non-interactive no-args falls back to the text list (script-safe)", async () => {
+		seedArchivedRun();
+		const restore = patchTty(false);
+		try {
+			const { pi, handlers } = buildPi();
+			registerTranscriptsCommand(pi);
+			const { ctx, notifications } = buildCtx(); // ctx.ui has no custom either
+			await handlers.get("forge:transcripts")!("", ctx);
+			const joined = notifications.map((n) => n.message).join("\n");
+			expect(joined).toContain(ENTITY_ID);
+			expect(joined).toContain("archived run");
+			expect(openDashboardTuiMock).not.toHaveBeenCalled();
+		} finally {
+			restore();
+		}
+	});
+
+	it("interactive no-args opens the browser; selection replays in a read-only, non-singleton dashboard", async () => {
+		seedArchivedRun();
+		const restore = patchTty(true);
+		try {
+			const { pi, handlers } = buildPi();
+			registerTranscriptsCommand(pi);
+			const { ctx, notifications } = buildCtx();
+
+			// ui.custom mock: 1st overlay = browse → select first row (Enter);
+			// loop re-opens the browser after the (mocked) dashboard closes;
+			// 2nd overlay → quit (q).
+			let customCalls = 0;
+			type Factory = (
+				tui: unknown,
+				theme: unknown,
+				kb: unknown,
+				done: (result: string | null) => void,
+			) => { handleInput: (data: string) => void };
+			(ctx.ui as unknown as { custom: unknown }).custom = vi.fn((factory: Factory) => {
+				customCalls++;
+				const isFirst = customCalls === 1;
+				return new Promise<string | null>((resolve) => {
+					const component = factory({ requestRender: () => undefined }, mockTheme, null, resolve);
+					component.handleInput(isFirst ? "\r" : "q");
+				});
+			});
+
+			await handlers.get("forge:transcripts")!("", ctx);
+
+			expect(customCalls).toBe(2); // browse → replay → back to browse → quit
+			expect(openDashboardTuiMock).toHaveBeenCalledTimes(1);
+			const [, opts] = openDashboardTuiMock.mock.calls[0] as unknown as [
+				unknown,
+				{ tree: OrchestratorTree; readOnly: boolean },
+			];
+			expect(opts.readOnly).toBe(true);
+			expect(opts.tree).toBeInstanceOf(OrchestratorTree);
+			// Detached tree hydrated from the archive — root is the run.
+			expect(opts.tree.getNode(RUN_ID)).toBeDefined();
+			expect(notifications.filter((n) => n.severity === "error")).toEqual([]);
+		} finally {
+			restore();
+		}
+	});
+
+	it("explicit subcommands bypass the TUI even in interactive sessions", async () => {
+		seedArchivedRun();
+		const restore = patchTty(true);
+		try {
+			const { pi, handlers } = buildPi();
+			registerTranscriptsCommand(pi);
+			const { ctx, notifications } = buildCtx();
+			(ctx.ui as unknown as { custom: unknown }).custom = vi.fn();
+			await handlers.get("forge:transcripts")!("list", ctx);
+			expect((ctx.ui as unknown as { custom: ReturnType<typeof vi.fn> }).custom).not.toHaveBeenCalled();
+			expect(notifications.map((n) => n.message).join("\n")).toContain(ENTITY_ID);
+		} finally {
+			restore();
+		}
 	});
 });

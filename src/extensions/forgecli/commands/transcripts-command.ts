@@ -16,6 +16,10 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { hydrateRunTree } from "../transcript-replay.js";
+import { BrowseTuiComponent } from "../transcripts-tui/index.js";
+import { getInputRouter } from "../tui/input-router.js";
+import { openDashboardTui } from "../tui/thread-switcher.js";
 import {
 	digestPhasePayload,
 	gunzipPhase,
@@ -354,6 +358,64 @@ export function parseTranscriptsArgs(args: string): ParsedArgs {
 	return parsed;
 }
 
+// ── Interactive browse TUI + replay dashboard ───────────────────────────
+
+/**
+ * Interactive session check. False negatives (embedded contexts without a
+ * TTY) degrade to the text `list` output — the script-safe failure mode.
+ */
+function isInteractive(ctx: ExtensionCommandContext): boolean {
+	return typeof ctx.ui.custom === "function" && process.stdout.isTTY === true;
+}
+
+/** One browse-overlay pass: resolves to the chosen runId, or null on quit. */
+function browseOverlay(ctx: ExtensionCommandContext): Promise<string | null> {
+	const rows = collectListRows();
+	const knownProjects = Object.keys(readProjects().projects);
+	const router = getInputRouter();
+	router.pushOverlay();
+	return ctx.ui
+		.custom<string | null>(
+			(tui, theme, _kb, done) =>
+				new BrowseTuiComponent({
+					rows,
+					knownProjects,
+					theme,
+					requestRender: () => tui.requestRender(),
+					onSelect: (runId) => done(runId),
+					onExit: () => done(null),
+				}),
+			{
+				overlay: true,
+				overlayOptions: { width: "100%", anchor: "center", margin: 0 },
+			},
+		)
+		.finally(() => {
+			router.popOverlay();
+		});
+}
+
+/**
+ * Browse → replay re-entry loop. Overlays run strictly SEQUENTIALLY (each
+ * pushOverlay/popOverlay pair completes before the next overlay opens) so
+ * the input-router depth stays at exactly 1 — never stacked. Closing the
+ * replay dashboard (Esc) lands back in the browser; quitting the browser
+ * (q / Esc) ends the loop.
+ */
+export async function openTranscriptsBrowser(ctx: ExtensionCommandContext): Promise<void> {
+	for (;;) {
+		const runId = await browseOverlay(ctx);
+		if (!runId) return;
+		const resolved = resolveRun(runId);
+		if (!resolved) {
+			ctx.ui.notify(`× forge:transcripts — archived run ${runId} could not be resolved`, "error");
+			continue;
+		}
+		const { tree } = hydrateRunTree(resolved.manifest, resolved.runDir);
+		await openDashboardTui(ctx, { tree, readOnly: true });
+	}
+}
+
 /**
  * Register /forge:transcripts. Takes no forgeRoot — the archive is central
  * and the command must work outside any Forge project (cross-project recall).
@@ -361,9 +423,19 @@ export function parseTranscriptsArgs(args: string): ParsedArgs {
 export function registerTranscriptsCommand(pi: ExtensionAPI, _opts: Record<string, never> = {}): void {
 	pi.registerCommand("forge:transcripts", {
 		description:
-			"Browse the central transcript archive: list [entityId] | show <runId|entityId> [phase] | " +
-			"timeline [--by model|phase|outcome] | projects. Works outside any Forge project.",
+			"Browse the central transcript archive. No args: interactive browser with filters; " +
+			"⏎ replays a run in the read-only dashboard. Text subcommands: list [entityId] | " +
+			"show <runId|entityId> [phase] | timeline [--by model|phase|outcome] | projects. " +
+			"Works outside any Forge project.",
 		async handler(args: string, ctx: ExtensionCommandContext) {
+			// No args (or `browse`) in an interactive session → browse TUI.
+			// Non-interactive contexts fall through to the text `list` below.
+			const trimmed = args.trim();
+			if ((trimmed === "" || trimmed === "browse") && isInteractive(ctx)) {
+				await openTranscriptsBrowser(ctx);
+				return;
+			}
+
 			const parsed = parseTranscriptsArgs(args);
 			if (parsed.error) {
 				ctx.ui.notify(`× forge:transcripts — ${parsed.error}`, "error");
