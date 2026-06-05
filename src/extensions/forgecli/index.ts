@@ -72,6 +72,7 @@ import { registerRunTask } from "./orchestrators/run-task.js";
 import { registerSprintIntake } from "./commands/sprint-intake.js";
 import { registerSprintPlan } from "./commands/sprint-plan.js";
 import { registerStatusCommand } from "./commands/status-command.js";
+import { registerTranscriptsCommand } from "./commands/transcripts-command.js";
 import { registerStoreQuery } from "./commands/store-query.js";
 import { registerStoreRepair } from "./commands/store-repair.js";
 import { registerTestOrchestrate } from "./commands/test-orchestrate.js";
@@ -531,6 +532,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// forge:update-tools — REMOVED in v1.0. Deprecation stub registered by registerForgeCommands below.
 	registerStoreQuery(pi, { forgeRoot }); // FORGE-S26-T10: now registers forge:search
 	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget
+	registerTranscriptsCommand(pi); // Central transcript archive recall — works outside Forge projects
 	registerAddTask(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — add a task mid-sprint
 	registerAddPipeline(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — pipeline manager
 	registerQuizAgent(pi, { forgeRoot }); // FORGE-S26-T10: now registers forge:check-agent
