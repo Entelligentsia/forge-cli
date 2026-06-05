@@ -299,6 +299,49 @@ describe("attachViewportObserver — node-per-dispatch telemetry routing", () =>
 	});
 });
 
+describe("attachViewportObserver — single-line tail invariant", () => {
+	// Dashboard layout contract: pane composition is row-based; a raw \n in
+	// any tail entry makes the post-newline content flow into the left tree
+	// pane. Heredoc bash commands are the canonical multi-line producer
+	// (`cat << 'EOF' > /tmp/x.mjs\n// …`): the arg hint must arrive single-line
+	// AND both sinks must enforce the invariant regardless of producer.
+
+	it("heredoc bash command never produces a tail entry containing a newline", () => {
+		const tree = getOrchestratorTree();
+		const sessionId = "VPN-HEREDOC-1";
+		tree.startNode(sessionId, { kind: "orchestrator", label: sessionId });
+		tree.startNode(`${sessionId}:triage:1`, { parentId: sessionId, label: "triage:1" });
+
+		const registry = new SessionRegistry();
+		registry.startSession(sessionId);
+		registry.startPhase(sessionId, "triage", 0);
+		const observer = attachViewportObserver({
+			registry,
+			sessionId,
+			phaseRole: "triage",
+			nodeId: `${sessionId}:triage:1`,
+		});
+
+		const heredoc = `cat << 'EOF' > /tmp/triage-repro.mjs\n// Minimal reproduction of the exportMarkdown filter defect\nimport { exportMarkdown } from "./src/store/graph.js";\n${"x".repeat(2300)}\nEOF`;
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { command: heredoc } });
+		observer.onEvent({
+			type: "tool_execution_end",
+			toolCallId: "c1",
+			toolName: "bash",
+			isError: true,
+			result: { content: [{ type: "text", text: "Graph nodes: ['Alpha']\n\nnode:internal/modules/esm/resolve error" }] },
+		});
+
+		for (const line of registry.getTailLines(sessionId, "triage")) {
+			expect(line, `registry tail entry must be single-line: ${JSON.stringify(line)}`).not.toMatch(/[\r\n]/);
+		}
+		for (const line of tree.getNode(`${sessionId}:triage:1`)!.tailBuffer) {
+			expect(line, `tree tail entry must be single-line: ${JSON.stringify(line)}`).not.toMatch(/[\r\n]/);
+		}
+	});
+});
+
 describe("SessionRegistry.getAggregateUsage", () => {
 	it("returns zeros when no sessions", () => {
 		const reg = new SessionRegistry();

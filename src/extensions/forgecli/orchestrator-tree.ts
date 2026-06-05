@@ -75,6 +75,35 @@ const MAX_NODES = 50;
 const MAX_TAIL_LINES_PER_NODE = 2048;
 const MAX_TAIL_APPEND = 500; // per-append cap before trimming
 
+// ── Display-line normalization ─────────────────────────────────────────────
+//
+// Tail buffers hold DISPLAY LINES: pane composition in the dashboard (and the
+// chip-strip tail view) is row-based, so a raw \n inside one entry resets the
+// terminal cursor to column 0 mid-row and the remainder renders underneath the
+// left tree pane. The invariant "one entry = one visual line" is enforced HERE,
+// at the model boundary, so no producer (arg hints, error summaries, future
+// callers) can break the layout. Per-producer sanitization (collapse, first
+// line, etc.) remains a presentation choice — this is the structural guarantee.
+
+/**
+ * Normalize a raw string into display-safe lines: split on any line-break
+ * flavour, expand tabs (tabs break visible-width column math), and strip
+ * layout-breaking C0 control characters while preserving ANSI styling (\x1b).
+ * Blank continuation segments are dropped; a fully-empty input stays one
+ * empty line.
+ */
+export function toDisplayLines(raw: string): string[] {
+	const cleaned = raw
+		.replace(/\t/g, "  ")
+		// C0 controls except \n (0x0a), \r (0x0d — consumed by the split) and
+		// \x1b (ANSI escape introducer), plus DEL (0x7f).
+		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]/g, "");
+	const segments = cleaned.split(/\r\n|\r|\n/);
+	if (segments.length === 1) return segments;
+	const lines = segments.filter((s, i) => i === 0 || s.trim().length > 0);
+	return lines.length > 0 ? lines : [""];
+}
+
 // ── OrchestratorTree ───────────────────────────────────────────────────────
 
 export class OrchestratorTree extends EventEmitter {
@@ -224,7 +253,9 @@ export class OrchestratorTree extends EventEmitter {
 	appendTail(id: string, line: string, opts?: { warning?: boolean }): void {
 		const node = this.nodes.get(id);
 		if (!node) return;
-		node.tailBuffer.push(line);
+		// Single-line invariant: one buffer entry = one visual line (see
+		// toDisplayLines). A warning counts once per append, not per segment.
+		node.tailBuffer.push(...toDisplayLines(line));
 		if (node.tailBuffer.length > MAX_TAIL_LINES_PER_NODE) {
 			node.tailBuffer.splice(0, node.tailBuffer.length - MAX_TAIL_LINES_PER_NODE);
 		}

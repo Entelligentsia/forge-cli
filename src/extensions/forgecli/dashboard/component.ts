@@ -62,6 +62,15 @@ import {
 // truncation for individual tokens wider than maxWidth.
 
 function wrapLine(line: string, maxWidth: number): string[] {
+	// Row-integrity guard (layer 2 of the single-line invariant; layer 1 is
+	// toDisplayLines at the appendTail model boundary): a raw \n inside a
+	// composed pane row resets the terminal cursor to column 0 and the
+	// remainder renders under the LEFT pane. visibleWidth() counts \n as an
+	// ordinary character, so the short-line early-return below would pass a
+	// multi-line string through intact — split first, wrap each part.
+	if (/[\r\n]/.test(line)) {
+		return line.split(/\r\n|\r|\n/).flatMap((part) => wrapLine(part, maxWidth));
+	}
 	if (maxWidth <= 0) return [line];
 	const visW = visibleWidth(line);
 	if (visW <= maxWidth) return [line];
@@ -142,6 +151,14 @@ function wrapLine(line: string, maxWidth: number): string[] {
 	}
 
 	return lines.length > 0 ? lines : [line];
+}
+
+/** Last-resort flatten for the pane compose loop: replace any surviving line
+ * break with a visible ⏎ so a single corrupted string can't shift the whole
+ * row grid. Upstream layers (toDisplayLines at appendTail, wrapLine split)
+ * should make this a no-op. */
+function flattenRow(line: string): string {
+	return /[\r\n]/.test(line) ? line.replace(/\r\n|\r|\n/g, " ⏎ ") : line;
 }
 
 // ── Refresh timer ───────────────────────────────────────────────────────────
@@ -685,8 +702,11 @@ export class DashboardComponent implements Component, Focusable {
 		);
 
 		for (let i = 0; i < contentHeight; i++) {
-			const left = truncateToWidth(paddedLeftLines[i]!, leftWidth);
-			const right = truncateToWidth(paddedRightLines[i]!, rightWidth);
+			// Final row-integrity guard: by this point every line has passed
+			// wrapLine/truncate, but a stray line break would corrupt the whole
+			// row grid — flatten defensively (should never fire).
+			const left = truncateToWidth(flattenRow(paddedLeftLines[i]!), leftWidth);
+			const right = truncateToWidth(flattenRow(paddedRightLines[i]!), rightWidth);
 			const lPad = leftWidth - visibleWidth(left);
 			const rPad = rightWidth - visibleWidth(right);
 			lines.push(

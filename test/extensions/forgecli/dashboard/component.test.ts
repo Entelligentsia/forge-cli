@@ -43,6 +43,45 @@ describe("DashboardComponent Focusable conformance", () => {
 	});
 });
 
+// ── Row integrity: no rendered row may contain a raw newline ────────────────
+
+describe("DashboardComponent row integrity (single-line invariant, layer 2)", () => {
+	it("render() emits no row containing \\n or \\r even when node data is multi-line", () => {
+		// Layer 1 (appendTail) normally guarantees single-line tail entries;
+		// this exercises the view-layer guard (IL2-analog second layer) by
+		// force-feeding multi-line strings past the model boundary.
+		const tree = new OrchestratorTree();
+		tree.startNode("BUG-1", { label: "fix-bug BUG-1", kind: "orchestrator" });
+		tree.startNode("BUG-1:triage:1", {
+			parentId: "BUG-1",
+			label: "triage:1",
+			kind: "leaf",
+			promptPreview: "first prompt line\nsecond prompt line",
+		});
+		const node = tree.getNode("BUG-1:triage:1")!;
+		// Simulate legacy/foreign data that bypassed appendTail.
+		node.tailBuffer.push("[triage 06:44:22 t18] ╭ $ bash cat << 'EOF' > /tmp/repro.mjs\n// Minimal…(+2378c)");
+		node.tailBuffer.push("short\nbroken");
+		node.outcomePreview = "outcome line 1\noutcome line 2";
+
+		const controller = new DashboardController(tree);
+		const mockTui = { requestRender: vi.fn(), terminal: { rows: 24 } } as any;
+		const component = new DashboardComponent(controller, mockTui, mockTheme, vi.fn());
+
+		// Select the leaf so the detail panel renders its tail buffer.
+		controller.getState().cursorId = "BUG-1:triage:1";
+
+		for (const width of [80, 120, 200]) {
+			const rows = component.render(width);
+			for (const row of rows) {
+				expect(row, `row must not contain a raw line break: ${JSON.stringify(row)}`).not.toMatch(/[\r\n]/);
+			}
+		}
+
+		controller.dispose();
+	});
+});
+
 // ── Timer unmount-safety (IL7) ──────────────────────────────────────────────
 
 describe("DashboardController timer unmount-safety", () => {

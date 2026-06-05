@@ -50,9 +50,15 @@ export function argHint(toolName: string, args: unknown, maxLen = 60): string {
 	const a = args as Record<string, unknown>;
 	const fp = (a.file_path ?? a.path) as unknown;
 	if (typeof fp === "string") return path.basename(fp);
-	if (typeof a.command === "string") return truncateAtBoundary(a.command, maxLen);
-	if (typeof a.pattern === "string") return truncateAtBoundary(a.pattern, maxLen);
-	if (typeof a.query === "string") return truncateAtBoundary(a.query, maxLen);
+	// Collapse all whitespace (incl. newlines — heredocs, multi-line scripts)
+	// before truncating: the hint is a one-line summary by contract, same as
+	// extractTurnPreview. The structural single-line guarantee lives in
+	// appendTail (toDisplayLines); this keeps the hint *informative* — one
+	// readable line instead of a snipped first line + continuation.
+	const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+	if (typeof a.command === "string") return truncateAtBoundary(oneLine(a.command), maxLen);
+	if (typeof a.pattern === "string") return truncateAtBoundary(oneLine(a.pattern), maxLen);
+	if (typeof a.query === "string") return truncateAtBoundary(oneLine(a.query), maxLen);
 	return "";
 }
 
