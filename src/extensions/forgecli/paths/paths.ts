@@ -104,6 +104,28 @@ export function getMigrationMarkerPath(): string {
 	return path.join(userRoot(), ".migrated-from-legacy");
 }
 
+// ── Transcript archive (central, cross-project, full retention) ─────────────
+
+/** ~/.pi/forge-cli/transcripts/ — central run-transcript archive root */
+export function getTranscriptArchiveRoot(): string {
+	return path.join(userRoot(), "transcripts");
+}
+
+/** ~/.pi/forge-cli/transcripts/index.jsonl — append-only global run timeline */
+export function getTranscriptIndexPath(): string {
+	return path.join(getTranscriptArchiveRoot(), "index.jsonl");
+}
+
+/** ~/.pi/forge-cli/transcripts/projects.json — projectKey registry */
+export function getTranscriptProjectsPath(): string {
+	return path.join(getTranscriptArchiveRoot(), "projects.json");
+}
+
+/** ~/.pi/forge-cli/transcripts/<projectKey>/<entityId>/<runId>/ — one archived run */
+export function getRunArchiveDir(projectKey: string, entityId: string, runId: string): string {
+	return path.join(getTranscriptArchiveRoot(), projectKey, entityId, runId);
+}
+
 // ── Project-level accessors (unchanged) ─────────────────────────────────────
 
 /** <cwd>/.pi/forge-cli/ */
