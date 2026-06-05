@@ -16,6 +16,7 @@
 import type { SessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import {
+	argContent as fmtArgContent,
 	extractThinkingOneLiner,
 	extractTurnPreview,
 	argHint as fmtArgHint,
@@ -149,7 +150,6 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 	// Per-turn tree-connector state.
 	let toolsThisTurn = 0;
 	let firstLineOfTurn = true;
-	let currentTurnPrefixWidth = 0;
 	const argsByCallId = new Map<string, unknown>();
 
 	const formatTime = (ms: number): string => {
@@ -157,22 +157,34 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 		const pad = (n: number) => String(n).padStart(2, "0");
 		return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 	};
-	const tailPrefix = () => `[${role} ${formatTime(Date.now())} t${state.turn}]`;
+	// Compact turn stamp. No phase/role prefix — the tail renders inside a
+	// phase-scoped context (dashboard node / phase tail view), so repeating
+	// the role on every turn wastes log width.
+	const tailPrefix = () => `[T${state.turn}:${formatTime(Date.now())}]`;
 	const appendTail = (line: string, opts?: { warning?: boolean }) => {
 		registry.appendTail(sessionId, phaseRole, line, opts);
 		tree.appendTail(resolveNodeId(), line, opts);
 	};
+	const rawErrorText = (result: unknown): string =>
+		typeof result === "string"
+			? result
+			: typeof result === "object" && result !== null
+				? JSON.stringify(result)
+				: String(result);
+	// Short form for single-line UI surfaces (status/notify); the activity-log
+	// entry carries the full error — clamping is the view's decision.
 	const extractErrorSummary = (result: unknown): string => {
-		const raw =
-			typeof result === "string"
-				? result
-				: typeof result === "object" && result !== null
-					? JSON.stringify(result)
-					: String(result);
+		const raw = rawErrorText(result);
 		const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0) ?? raw;
 		return firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
 	};
 
+	// Turn grouping: bracket glyphs flush left on every line; the compact turn
+	// stamp rides inside the first line. No left margin on continuation lines —
+	// the full pane width carries log content.
+	//   ╭ [T18:06:44:22] $ bash …
+	//   │ ← bash ok 29L
+	//   ╰ » "next step …"
 	const emitTurnLine = (body: string, lineOpts?: { warning?: boolean; closing?: boolean }) => {
 		const isFirst = firstLineOfTurn;
 		const isClosing = lineOpts?.closing === true;
@@ -182,15 +194,9 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 		else if (isClosing) branch = "╰";
 		else branch = "│";
 
-		let prefix: string;
-		if (isFirst) {
-			prefix = tailPrefix();
-			currentTurnPrefixWidth = prefix.length;
-		} else {
-			prefix = " ".repeat(currentTurnPrefixWidth);
-		}
+		const stamp = isFirst ? ` ${tailPrefix()}` : "";
 		firstLineOfTurn = false;
-		appendTail(`${prefix} ${branch} ${body}`, lineOpts?.warning ? { warning: true } : undefined);
+		appendTail(`${branch}${stamp} ${body}`, lineOpts?.warning ? { warning: true } : undefined);
 	};
 
 	if (beginHeader) appendTail(`${tailPrefix()} ${beginHeader}`);
@@ -270,7 +276,11 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				state.toolCount++;
 				toolsThisTurn++;
 				argsByCallId.set(e.toolCallId, e.args);
+				// Status line gets a short hint (single-line UI constraint of
+				// setStatus); the activity-log entry carries the FULL argument
+				// content — display clamping/expansion is the view's decision.
 				const hint = fmtArgHint(e.toolName, e.args);
+				const content = fmtArgContent(e.toolName, e.args);
 				const { glyph, risky } = toolGlyph(e.toolName, e.args);
 				state.lastTool = `${e.toolName}${hint ? ` ${hint}` : ""}`;
 				writeDebug?.({
@@ -283,7 +293,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				tree.incrementNodeToolCount(resolveNodeId());
 				const riskPrefix = risky ? `${RISKY_TAG} ` : "";
 				emitTurnLine(
-					`${riskPrefix}${glyph} ${e.toolName}${hint ? ` ${hint}` : ""}`,
+					`${riskPrefix}${glyph} ${e.toolName}${content ? ` ${content}` : ""}`,
 					risky ? { warning: true } : undefined,
 				);
 				break;
@@ -303,7 +313,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				if (e.isError) {
 					state.errCount++;
 					tree.incrementNodeErrCount(nodeId);
-					emitTurnLine(`⚠ ${e.toolName} failed: ${extractErrorSummary(e.result)}`, { warning: true });
+					emitTurnLine(`⚠ ${e.toolName} failed: ${rawErrorText(e.result)}`, { warning: true });
 				} else {
 					const shape = resultShape(e.toolName, e.result);
 					const comp = extractCompression(e.result);

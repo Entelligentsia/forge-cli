@@ -40,16 +40,19 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 export function paintTailLine(line: string, theme: Theme | undefined): string {
 	if (!theme) return line;
 
-	// Prefix: `[role HH:MM:SS t<turn> ↑X↓Y]` — everything up to the first `]`.
-	const closeIdx = line.indexOf("]");
-	if (closeIdx === -1) {
-		// No structured prefix — phase begin lines like `─── phase … ───`
-		// still get themed via body matcher.
+	// Structured prefix: an optional leading turn-bracket glyph followed by a
+	// `[T<turn>:HH:MM:SS]` stamp (legacy: `[role HH:MM:SS t<turn>]`). Only a
+	// LEADING stamp is dimmed — a `]` inside the body (JSON errors, arrays)
+	// must not be mistaken for a prefix.
+	const m = line.match(/^(?:[╭│╰─] )?\[[^\]]*\]/);
+	if (!m) {
+		// No structured prefix — bracket continuation lines (`│ ← bash ok`)
+		// and phase begin lines (`─── phase … ───`) theme via body matcher.
 		return paintBody(line, theme);
 	}
 
-	const prefix = line.slice(0, closeIdx + 1);
-	const body = line.slice(closeIdx + 1);
+	const prefix = m[0];
+	const body = line.slice(prefix.length);
 
 	const paintedPrefix = theme.fg("dim", prefix);
 	const paintedBody = paintBody(body, theme);

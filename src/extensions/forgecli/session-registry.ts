@@ -8,7 +8,7 @@
 // LRU-capped at MAX_SESSIONS to bound memory across long-running forge processes.
 
 import { EventEmitter } from "node:events";
-import { toDisplayLines } from "./orchestrator-tree.js";
+import { capTailEntry } from "./orchestrator-tree.js";
 
 export interface PhaseSummary {
 	role: string;
@@ -430,9 +430,10 @@ export class SessionRegistry extends EventEmitter {
 	appendTail(taskId: string, phaseRole: string, line: string, opts?: { warning?: boolean }): void {
 		const p = this.findPhase(taskId, phaseRole);
 		if (!p) return;
-		// Single-line invariant: one buffer entry = one visual line (see
-		// toDisplayLines in orchestrator-tree.ts). Warning counts once per append.
-		p.tailBuffer.push(...toDisplayLines(line));
+		// Entries are stored verbatim (one entry per producer event, newlines
+		// and all) — display normalization is the views' job. Only a memory
+		// cap applies here (see orchestrator-tree.ts).
+		p.tailBuffer.push(capTailEntry(line));
 		if (p.tailBuffer.length > MAX_TAIL_LINES_PER_PHASE) {
 			p.tailBuffer.splice(0, p.tailBuffer.length - MAX_TAIL_LINES_PER_PHASE);
 		}

@@ -36,7 +36,7 @@ import type { OrchestratorTree } from "../orchestrator-tree.js";
 import { getSessionRegistry } from "../session-registry.js";
 import type { NodeViewModel, TreeViewModel } from "./view-model.js";
 import { buildViewModel } from "./view-model.js";
-import { fmtModelAndTokenFooter, fmtTokenMeter } from "../viewport/renderer.js";
+import { fmtModelAndTokenFooter, fmtTokenMeter, toDisplayLines } from "../viewport/renderer.js";
 import { paintTailLine } from "../viewport/theme.js";
 import {
 	cursor,
@@ -176,11 +176,18 @@ export interface DashboardState {
 	focusPanel: "tree" | "detail";
 	/** Whether the detail panel's prompt section is expanded. */
 	promptExpanded: boolean;
+	/** Activity-log expansion (ctrl+o): false = clamp long entries to a small
+	 * row budget, true = render full content. Display policy lives entirely in
+	 * the view — the model stores log entries verbatim. */
+	logExpanded: boolean;
 	/** Node ID targeted for cancellation confirmation, if active. */
 	cancelTargetId: string | null;
 	/** Scroll offset for the detail panel (0 = top). */
 	detailScroll: number;
 }
+
+/** Max rendered rows per log entry when the activity log is clamped. */
+const LOG_CLAMP_ROWS = 2;
 
 // ── Controller ──────────────────────────────────────────────────────────────
 
@@ -203,6 +210,7 @@ export class DashboardController {
 			expanded: new Set(),
 			focusPanel: "tree",
 			promptExpanded: false,
+			logExpanded: false,
 			cancelTargetId: null,
 			detailScroll: 0,
 		};
@@ -364,6 +372,13 @@ export class DashboardController {
 		// Cancel confirmation mode takes priority.
 		if (this.state.cancelTargetId) {
 			this.handleCancelConfirm(data);
+			if (!this.disposed) this.onInvalidate?.();
+			return;
+		}
+
+		// ctrl+o: toggle activity-log expansion (global — works in both panels).
+		if (matchesKey(data, Key.ctrl("o"))) {
+			this.state.logExpanded = !this.state.logExpanded;
 			if (!this.disposed) this.onInvalidate?.();
 			return;
 		}
@@ -724,7 +739,7 @@ export class DashboardComponent implements Component, Focusable {
 		// ── Footer: bottom border + key hints + model/token meter ────────
 		const hintsBase = state.cancelTargetId
 			? " y confirm · n dismiss · esc close"
-			: " ↑↓ nav · → expand · ← back · ⏎ focus · x cancel · esc close";
+			: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · x cancel · esc close";
 		lines.push(border("╰", this.theme) + border("─".repeat(contentWidth), this.theme) + border("╯", this.theme));
 
 		// Aggregate model + token footer (mirrors ViewportFooterComponent).
@@ -882,13 +897,29 @@ export class DashboardComponent implements Component, Focusable {
 			lines.push("");
 		}
 
-		// ── Activity: running full log of all turns ──────────────────────
+		// ── Activity: running log of all turns ───────────────────────────
+		// Entries are stored verbatim in the model (full commands, full
+		// errors, newlines and all); ALL display normalization happens here:
+		// toDisplayLines splits/sanitizes, wrapLine fits the pane width, and
+		// long entries clamp to LOG_CLAMP_ROWS unless expanded (ctrl+o).
 		if (node.kind === "leaf" && node.tailBuffer.length > 0) {
+			const expanded = this.controller.getState().logExpanded;
 			const total = node.tailBuffer.length;
-			lines.push(...wrapLine(dim(`Activity · ${total} log line${total === 1 ? "" : "s"}`, this.theme), width));
+			const modeHint = expanded ? "^o clamp" : "^o expand";
+			lines.push(
+				...wrapLine(dim(`Activity · ${total} log entr${total === 1 ? "y" : "ies"} · ${modeHint}`, this.theme), width),
+			);
 			for (const tline of node.tailBuffer) {
-				const painted = paintTailLine(tline, this.theme);
-				lines.push(...wrapLine(painted, width));
+				const rows: string[] = [];
+				for (const displayLine of toDisplayLines(tline)) {
+					rows.push(...wrapLine(paintTailLine(displayLine, this.theme), width));
+				}
+				if (expanded || rows.length <= LOG_CLAMP_ROWS) {
+					lines.push(...rows);
+				} else {
+					lines.push(...rows.slice(0, LOG_CLAMP_ROWS));
+					lines.push(dim(`  …(+${rows.length - LOG_CLAMP_ROWS} rows · ^o expand)`, this.theme));
+				}
 			}
 			lines.push("");
 		}

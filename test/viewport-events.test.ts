@@ -99,13 +99,16 @@ describe("attachViewportObserver", () => {
 		// 1 header + 4 tool lines + 3 closing lines (thinking, preview, batch)
 		expect(lines.length).toBe(8);
 		const turnLines = lines.slice(1); // drop header
-		expect(turnLines[0]).toMatch(/ ╭ \$ bash/);
-		expect(turnLines[1]).toMatch(/ │ \$ bash/);
-		expect(turnLines[2]).toMatch(/ │ ← bash ok/);
-		expect(turnLines[3]).toMatch(/ │ ← bash ok/);
-		expect(turnLines[4]).toMatch(/ │ ✱ First reconnaissance/);
-		expect(turnLines[5]).toMatch(/ │ » "Now I'll start the plan\."/);
-		expect(turnLines[6]).toMatch(/ ╰ ⇉ batched 2 tool calls/);
+		// Bracket-led flush-left layout: compact [T<turn>:HH:MM:SS] stamp on the
+		// first line only; continuation lines carry NO left margin so the full
+		// pane width holds log content.
+		expect(turnLines[0]).toMatch(/^╭ \[T1:\d{2}:\d{2}:\d{2}\] \$ bash/);
+		expect(turnLines[1]).toMatch(/^│ \$ bash/);
+		expect(turnLines[2]).toMatch(/^│ ← bash ok/);
+		expect(turnLines[3]).toMatch(/^│ ← bash ok/);
+		expect(turnLines[4]).toMatch(/^│ ✱ First reconnaissance/);
+		expect(turnLines[5]).toMatch(/^│ » "Now I'll start the plan\."/);
+		expect(turnLines[6]).toMatch(/^╰ ⇉ batched 2 tool calls/);
 	});
 
 	it("calls afterEach once per handled event", () => {
@@ -299,14 +302,13 @@ describe("attachViewportObserver — node-per-dispatch telemetry routing", () =>
 	});
 });
 
-describe("attachViewportObserver — single-line tail invariant", () => {
-	// Dashboard layout contract: pane composition is row-based; a raw \n in
-	// any tail entry makes the post-newline content flow into the left tree
-	// pane. Heredoc bash commands are the canonical multi-line producer
-	// (`cat << 'EOF' > /tmp/x.mjs\n// …`): the arg hint must arrive single-line
-	// AND both sinks must enforce the invariant regardless of producer.
+describe("attachViewportObserver — verbatim log entries (view owns display)", () => {
+	// Producers play no display role: the activity-log entry carries the FULL
+	// tool argument content (heredocs, multi-line scripts) and the full error
+	// text, verbatim. Clamping / wrapping / newline handling happen in the
+	// views (dashboard: toDisplayLines + wrapLine + ctrl+o clamp toggle).
 
-	it("heredoc bash command never produces a tail entry containing a newline", () => {
+	it("heredoc bash command stores the full command in the log entry, untruncated", () => {
 		const tree = getOrchestratorTree();
 		const sessionId = "VPN-HEREDOC-1";
 		tree.startNode(sessionId, { kind: "orchestrator", label: sessionId });
@@ -322,7 +324,7 @@ describe("attachViewportObserver — single-line tail invariant", () => {
 			nodeId: `${sessionId}:triage:1`,
 		});
 
-		const heredoc = `cat << 'EOF' > /tmp/triage-repro.mjs\n// Minimal reproduction of the exportMarkdown filter defect\nimport { exportMarkdown } from "./src/store/graph.js";\n${"x".repeat(2300)}\nEOF`;
+		const heredoc = `cat << 'EOF' > /tmp/triage-repro.mjs\n// Minimal reproduction of the exportMarkdown filter defect\nimport { exportMarkdown } from "./src/store/graph.js";\nEOF`;
 		observer.onEvent({ type: "turn_start" });
 		observer.onEvent({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { command: heredoc } });
 		observer.onEvent({
@@ -333,12 +335,36 @@ describe("attachViewportObserver — single-line tail invariant", () => {
 			result: { content: [{ type: "text", text: "Graph nodes: ['Alpha']\n\nnode:internal/modules/esm/resolve error" }] },
 		});
 
-		for (const line of registry.getTailLines(sessionId, "triage")) {
-			expect(line, `registry tail entry must be single-line: ${JSON.stringify(line)}`).not.toMatch(/[\r\n]/);
-		}
-		for (const line of tree.getNode(`${sessionId}:triage:1`)!.tailBuffer) {
-			expect(line, `tree tail entry must be single-line: ${JSON.stringify(line)}`).not.toMatch(/[\r\n]/);
-		}
+		const treeBuf = tree.getNode(`${sessionId}:triage:1`)!.tailBuffer;
+		const cmdEntry = treeBuf.find((l) => l.includes("$ bash"));
+		expect(cmdEntry, "tool-start entry must exist").toBeDefined();
+		// Full content, verbatim — no 60-char hint truncation, newlines intact.
+		expect(cmdEntry).toContain(heredoc);
+
+		const errEntry = treeBuf.find((l) => l.includes("⚠ bash failed"));
+		expect(errEntry, "tool-failure entry must exist").toBeDefined();
+		// Full error text — not clipped to a 160-char first line.
+		expect(errEntry).toContain("node:internal/modules/esm/resolve error");
+
+		// Registry sink stores the same verbatim entries.
+		const regCmd = registry.getTailLines(sessionId, "triage").find((l) => l.includes("$ bash"));
+		expect(regCmd).toContain(heredoc);
+	});
+
+	it("status-line hint (lastTool) stays short even when the command is huge", () => {
+		const registry = new SessionRegistry();
+		registry.startSession("VPN-HEREDOC-2");
+		registry.startPhase("VPN-HEREDOC-2", "triage", 0);
+		const observer = attachViewportObserver({ registry, sessionId: "VPN-HEREDOC-2", phaseRole: "triage" });
+		observer.onEvent({ type: "turn_start" });
+		observer.onEvent({
+			type: "tool_execution_start",
+			toolCallId: "c1",
+			toolName: "bash",
+			args: { command: `echo start\n${"y".repeat(500)}` },
+		});
+		// setStatus is a single-line UI surface — the hint contract (≤60c + marker) holds.
+		expect(observer.state.lastTool.length).toBeLessThan(90);
 	});
 });
 

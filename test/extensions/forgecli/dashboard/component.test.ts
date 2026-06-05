@@ -82,6 +82,62 @@ describe("DashboardComponent row integrity (single-line invariant, layer 2)", ()
 	});
 });
 
+// ── Activity log: clamp by default, ctrl+o expands ──────────────────────────
+
+describe("DashboardComponent activity-log clamp + ctrl+o expansion", () => {
+	function setup() {
+		const tree = new OrchestratorTree();
+		tree.startNode("BUG-2", { label: "fix-bug BUG-2", kind: "orchestrator" });
+		tree.startNode("BUG-2:triage:1", { parentId: "BUG-2", label: "triage:1", kind: "leaf" });
+		// A long multi-line entry (heredoc-style) — stored verbatim by the model.
+		const heredocLines = Array.from({ length: 12 }, (_, i) => `// heredoc body line ${i + 1}`);
+		tree.appendTail("BUG-2:triage:1", `[triage t1] ╭ $ bash cat << 'EOF'\n${heredocLines.join("\n")}\nEOF`);
+		tree.appendTail("BUG-2:triage:1", "[triage t1] │ ← bash ok 29L");
+
+		const controller = new DashboardController(tree, "BUG-2:triage:1");
+		const mockTui = { requestRender: vi.fn(), terminal: { rows: 40 } } as any;
+		const component = new DashboardComponent(controller, mockTui, mockTheme, vi.fn());
+		return { tree, controller, component };
+	}
+
+	it("clamps long entries to a small row budget with an expand hint", () => {
+		const { controller, component } = setup();
+		const out = component.render(120).join("\n");
+		// Clamp indicator present; deep heredoc body rows hidden.
+		expect(out).toContain("^o expand");
+		expect(out).toContain("rows");
+		expect(out).not.toContain("heredoc body line 12");
+		// Short entries unaffected.
+		expect(out).toContain("← bash ok 29L");
+		controller.dispose();
+	});
+
+	it("ctrl+o expands to full content and toggles back", () => {
+		const { controller, component } = setup();
+		// \x0f = ctrl+o
+		controller.handleInput("\x0f");
+		const expanded = component.render(120).join("\n");
+		expect(expanded).toContain("heredoc body line 12");
+		expect(expanded).toContain("^o clamp");
+
+		controller.handleInput("\x0f");
+		const clamped = component.render(120).join("\n");
+		expect(clamped).not.toContain("heredoc body line 12");
+		controller.dispose();
+	});
+
+	it("never emits a row containing a raw newline in either mode", () => {
+		const { controller, component } = setup();
+		for (const toggle of [false, true]) {
+			if (toggle) controller.handleInput("\x0f");
+			for (const row of component.render(100)) {
+				expect(row).not.toMatch(/[\r\n]/);
+			}
+		}
+		controller.dispose();
+	});
+});
+
 // ── Timer unmount-safety (IL7) ──────────────────────────────────────────────
 
 describe("DashboardController timer unmount-safety", () => {

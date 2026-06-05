@@ -4,7 +4,7 @@
 // No external dependencies — pure in-memory logic.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { OrchestratorTree, getOrchestratorTree } from "../../../src/extensions/forgecli/orchestrator-tree.js";
+import { MAX_TAIL_ENTRY_CHARS, OrchestratorTree, getOrchestratorTree } from "../../../src/extensions/forgecli/orchestrator-tree.js";
 
 describe("OrchestratorTree", () => {
 	let tree: OrchestratorTree;
@@ -143,43 +143,30 @@ describe("OrchestratorTree", () => {
 			expect(tree.getNode("phase-1")!.unreadWarnings).toBe(0);
 		});
 
-		// Single-line invariant (dashboard layout contract): the tail buffer is
-		// a buffer of DISPLAY LINES. Row-based pane composition breaks if an
-		// entry carries a raw newline — the post-\n content re-renders at
-		// terminal column 0, flowing into the left tree pane. The model
-		// boundary enforces the invariant so no producer can violate it.
-		it("appendTail splits multi-line input into one entry per display line", () => {
+		// Storage contract: the model stores entries VERBATIM — one entry per
+		// producer event, newlines and all. Display normalization (splitting,
+		// wrapping, clamping, truncation) is owned entirely by the views
+		// (toDisplayLines + wrapLine in the dashboard). The only model-side
+		// transformation is a memory cap (capTailEntry), which is a storage
+		// bound, not a display decision.
+		it("appendTail stores multi-line entries verbatim — one entry per event", () => {
 			tree.startNode("phase-1", { kind: "leaf" });
-			tree.appendTail("phase-1", "╭ $ bash cat << 'EOF' > /tmp/repro.mjs\n// Minimal…(+2378c)");
-			const buf = tree.getNode("phase-1")!.tailBuffer;
-			expect(buf).toEqual(["╭ $ bash cat << 'EOF' > /tmp/repro.mjs", "// Minimal…(+2378c)"]);
-			for (const entry of buf) {
-				expect(entry).not.toMatch(/[\r\n]/);
-			}
+			const heredoc = "╭ $ bash cat << 'EOF' > /tmp/repro.mjs\n// Minimal reproduction\nEOF";
+			tree.appendTail("phase-1", heredoc);
+			expect(tree.getNode("phase-1")!.tailBuffer).toEqual([heredoc]);
 		});
 
-		it("appendTail handles CRLF and lone CR line breaks", () => {
+		it("appendTail caps entry size for memory, marking the cut", () => {
 			tree.startNode("phase-1", { kind: "leaf" });
-			tree.appendTail("phase-1", "a\r\nb\rc");
-			expect(tree.getNode("phase-1")!.tailBuffer).toEqual(["a", "b", "c"]);
+			const huge = "x".repeat(MAX_TAIL_ENTRY_CHARS + 500);
+			tree.appendTail("phase-1", huge);
+			const entry = tree.getNode("phase-1")!.tailBuffer[0]!;
+			expect(entry.length).toBeLessThan(huge.length);
+			expect(entry.startsWith("x".repeat(100))).toBe(true);
+			expect(entry).toMatch(/…\(\+500c\)$/);
 		});
 
-		it("appendTail expands tabs and strips layout-breaking control chars, preserving ANSI", () => {
-			tree.startNode("phase-1", { kind: "leaf" });
-			tree.appendTail("phase-1", "x\ty\x08\x0bz \x1b[31mred\x1b[0m");
-			const buf = tree.getNode("phase-1")!.tailBuffer;
-			expect(buf).toEqual(["x  yz \x1b[31mred\x1b[0m"]);
-		});
-
-		it("appendTail drops blank continuation segments but keeps a fully-empty line", () => {
-			tree.startNode("phase-1", { kind: "leaf" });
-			tree.appendTail("phase-1", "head\n\n   \ntail");
-			expect(tree.getNode("phase-1")!.tailBuffer).toEqual(["head", "tail"]);
-			tree.appendTail("phase-1", "");
-			expect(tree.getNode("phase-1")!.tailBuffer).toEqual(["head", "tail", ""]);
-		});
-
-		it("appendTail counts a warning once even when the entry splits", () => {
+		it("appendTail counts a warning once per multi-line entry", () => {
 			tree.startNode("phase-1", { kind: "leaf" });
 			tree.appendTail("phase-1", "err line 1\nerr line 2\nerr line 3", { warning: true });
 			expect(tree.getNode("phase-1")!.unreadWarnings).toBe(1);

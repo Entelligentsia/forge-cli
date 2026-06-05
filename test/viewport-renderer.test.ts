@@ -13,8 +13,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	argContent,
 	argHint,
 	extractThinkingOneLiner,
+	toDisplayLines,
 	fmtPhaseSummary,
 	fmtTokenFooter,
 	fmtTokenMeter,
@@ -108,6 +110,47 @@ describe("argHint", () => {
 	it("returns empty for unknown shape", () => {
 		expect(argHint("anything", { random: "thing" })).toBe("");
 		expect(argHint("anything", null)).toBe("");
+	});
+});
+
+describe("argContent — full content for the activity log (view owns display)", () => {
+	it("returns the full command verbatim, newlines and all", () => {
+		const heredoc = "cat << 'EOF' > /tmp/x.mjs\n// body line 1\n// body line 2\nEOF";
+		expect(argContent("bash", { command: heredoc })).toBe(heredoc);
+	});
+
+	it("returns the full path (not basenamed)", () => {
+		expect(argContent("read", { file_path: "/abs/path/FINDINGS.md" })).toBe("/abs/path/FINDINGS.md");
+	});
+
+	it("returns pattern and query untruncated", () => {
+		const long = "p".repeat(500);
+		expect(argContent("grep", { pattern: long })).toBe(long);
+		expect(argContent("search", { query: long })).toBe(long);
+	});
+
+	it("returns empty for unknown shape", () => {
+		expect(argContent("anything", { random: "thing" })).toBe("");
+		expect(argContent("anything", null)).toBe("");
+	});
+});
+
+describe("toDisplayLines — view-side display normalization", () => {
+	it("splits LF / CRLF / CR into display lines", () => {
+		expect(toDisplayLines("a\nb\r\nc\rd")).toEqual(["a", "b", "c", "d"]);
+	});
+
+	it("expands tabs and strips layout-breaking C0 controls, preserving ANSI", () => {
+		expect(toDisplayLines("x\ty\x08\x0bz \x1b[31mred\x1b[0m")).toEqual(["x  yz \x1b[31mred\x1b[0m"]);
+	});
+
+	it("drops blank continuation segments, keeps fully-empty input as one line", () => {
+		expect(toDisplayLines("head\n\n   \ntail")).toEqual(["head", "tail"]);
+		expect(toDisplayLines("")).toEqual([""]);
+	});
+
+	it("passes single-line input through unchanged", () => {
+		expect(toDisplayLines("plain line")).toEqual(["plain line"]);
 	});
 });
 

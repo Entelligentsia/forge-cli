@@ -50,16 +50,50 @@ export function argHint(toolName: string, args: unknown, maxLen = 60): string {
 	const a = args as Record<string, unknown>;
 	const fp = (a.file_path ?? a.path) as unknown;
 	if (typeof fp === "string") return path.basename(fp);
-	// Collapse all whitespace (incl. newlines — heredocs, multi-line scripts)
-	// before truncating: the hint is a one-line summary by contract, same as
-	// extractTurnPreview. The structural single-line guarantee lives in
-	// appendTail (toDisplayLines); this keeps the hint *informative* — one
-	// readable line instead of a snipped first line + continuation.
-	const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
-	if (typeof a.command === "string") return truncateAtBoundary(oneLine(a.command), maxLen);
-	if (typeof a.pattern === "string") return truncateAtBoundary(oneLine(a.pattern), maxLen);
-	if (typeof a.query === "string") return truncateAtBoundary(oneLine(a.query), maxLen);
+	if (typeof a.command === "string") return truncateAtBoundary(a.command, maxLen);
+	if (typeof a.pattern === "string") return truncateAtBoundary(a.pattern, maxLen);
+	if (typeof a.query === "string") return truncateAtBoundary(a.query, maxLen);
 	return "";
+}
+
+/**
+ * Full argument content for the activity log — the producer plays no display
+ * role: the log entry carries the complete command/pattern/query (newlines
+ * and all) and the VIEWS decide how to clamp, wrap, or expand it (dashboard:
+ * 2-row clamp + ctrl+o expand). Paths stay full (not basenamed) — same
+ * principle.
+ */
+export function argContent(toolName: string, args: unknown): string {
+	if (!args || typeof args !== "object") return "";
+	const a = args as Record<string, unknown>;
+	const fp = (a.file_path ?? a.path) as unknown;
+	if (typeof fp === "string") return fp;
+	if (typeof a.command === "string") return a.command;
+	if (typeof a.pattern === "string") return a.pattern;
+	if (typeof a.query === "string") return a.query;
+	return "";
+}
+
+/**
+ * View-side display normalization: split a raw log entry (stored verbatim in
+ * the tail buffers) into display-safe lines — split on any line-break flavour,
+ * expand tabs (tabs break visible-width column math), strip layout-breaking C0
+ * control characters while preserving ANSI styling (\x1b). Blank continuation
+ * segments are dropped; fully-empty input stays one empty line. Every view
+ * that renders tail entries into a row-based layout MUST route them through
+ * this (a raw \n inside a composed pane row resets the terminal cursor to
+ * column 0 and the remainder renders under the adjacent pane).
+ */
+export function toDisplayLines(raw: string): string[] {
+	const cleaned = raw
+		.replace(/\t/g, "  ")
+		// C0 controls except \n (0x0a), \r (0x0d — consumed by the split) and
+		// \x1b (ANSI escape introducer), plus DEL (0x7f).
+		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]/g, "");
+	const segments = cleaned.split(/\r\n|\r|\n/);
+	if (segments.length === 1) return segments;
+	const lines = segments.filter((s, i) => i === 0 || s.trim().length > 0);
+	return lines.length > 0 ? lines : [""];
 }
 
 /**
