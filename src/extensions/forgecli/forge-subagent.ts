@@ -35,6 +35,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { FORGE_TOOL_DISCIPLINE } from "./forge-tools.js";
 import { buildProjectOrientation } from "./project-orientation.js";
+import { persistTailLog, type TailLogEntry } from "./viewport/events.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -118,6 +119,14 @@ export interface RunSubagentOptions {
 	 * filename slug. See forge-cli#8.
 	 */
 	exportTag?: string;
+	/**
+	 * LIVE reference to the viewport observer's tail-line record
+	 * (observer.state.tailLog). Read at export time — both on the normal
+	 * path and in the process-exit hook — and persisted next to the phase
+	 * transcript as `<transcript-base>.tail.jsonl` so transcript replay
+	 * shows the exact lines the dashboard rendered, even after /quit.
+	 */
+	tailLog?: TailLogEntry[];
 	/**
 	 * Optional prompt-cache session identifier forwarded to the underlying pi
 	 * Agent (which forwards it to the LLM provider as a cache namespace key).
@@ -261,8 +270,44 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		model: persona.model,
 	};
 
-	// ── spawn channel ─────────────────────────────────────────────────────
 	const cwdAbs = cwd ?? process.cwd();
+
+	// ── Transcript export — normal path AND hard-exit path ───────────────
+	// Exporting only at phase end loses the in-flight transcript when the
+	// user /quit's pi (or the process dies): the post-dispatch code never
+	// runs, leaving an empty run husk in the archive. A process 'exit' hook
+	// flushes the partial transcript + tail log synchronously; the normal
+	// path exports the same way and deregisters the hook. Idempotent —
+	// whichever fires first wins.
+	let exported = false;
+	const exportTranscripts = (): void => {
+		if (exported) return;
+		exported = true;
+		try {
+			result.subagentTranscriptPath = writeSubagentTranscript({
+				cwd: cwdAbs,
+				persona: persona.name,
+				tag: opts.exportTag,
+				result,
+				startedAt,
+				prompt: task,
+			});
+			if (opts.tailLog && opts.tailLog.length > 0) {
+				persistTailLog(result.subagentTranscriptPath, opts.tailLog);
+			}
+		} catch (err: unknown) {
+			const e = err as { message?: string };
+			process.stderr.write(`[forge-subagent] transcript export failed (non-fatal): ${e.message ?? "unknown"}\n`);
+		}
+	};
+	const onProcessExit = (): void => {
+		result.exitCode = 1;
+		result.stopReason = result.stopReason ?? "process-exit";
+		exportTranscripts();
+	};
+	process.once("exit", onProcessExit);
+
+	// ── spawn channel ─────────────────────────────────────────────────────
 	// Project orientation is prepended to the persona system prompt for every
 	// subagent dispatch — see project-orientation.ts and forge-cli#6.
 	const orientation = buildProjectOrientation(cwdAbs);
@@ -432,19 +477,8 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// Location: .forge/transcripts/<entity>/<ISO-compact>__<entity>__<phase>.json
 	// .forge/ is .gitignored by the existing .forge/ entry, so transcripts
 	// are excluded from version control by default.
-	try {
-		result.subagentTranscriptPath = writeSubagentTranscript({
-			cwd: cwdAbs,
-			persona: persona.name,
-			tag: opts.exportTag,
-			result,
-			startedAt,
-			prompt: task,
-		});
-	} catch (err: unknown) {
-		const e = err as { message?: string };
-		process.stderr.write(`[forge-subagent] transcript export failed (non-fatal): ${e.message ?? "unknown"}\n`);
-	}
+	process.removeListener("exit", onProcessExit);
+	exportTranscripts();
 
 	return result;
 }

@@ -97,6 +97,10 @@ export class OrchestratorTranscriptWriter {
 			const e = err as { message?: string };
 			process.stderr.write(`[orchestrator-transcript] append failed (non-fatal): ${e.message ?? "unknown"}\n`);
 		}
+		// A directly-recorded pipeline-end terminates the log just like
+		// close() — makes the safety-net close() in the pipeline wrappers
+		// idempotent (no duplicate pipeline-end lines).
+		if (event.kind === "pipeline-end") this.closed = true;
 	}
 
 	close(outcome: "complete" | "halted" | "cancelled" | "error", reason?: string): void {

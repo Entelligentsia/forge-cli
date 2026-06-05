@@ -48,7 +48,7 @@ import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
 import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
-import { attachViewportObserver, persistTailLog } from "../viewport/events.js";
+import { attachViewportObserver } from "../viewport/events.js";
 import { fmtPhaseSummary, type UsageDelta } from "../viewport/renderer.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
@@ -693,21 +693,44 @@ export { extractTurnPreview } from "../viewport/renderer.js";
 
 // ── runTaskPipeline ──────────────────────────────────────────────────────
 
+/** Map a pipeline status to the orchestrator-transcript outcome vocabulary.
+ *  Shared with fix-bug.ts (RunBugPipelineStatus is the same string union). */
+export function transcriptOutcomeFor(
+	status: RunTaskPipelineStatus,
+): "complete" | "halted" | "cancelled" | "error" {
+	switch (status) {
+		case "completed":
+			return "complete";
+		case "cancelled":
+			return "cancelled";
+		case "halted":
+		case "escalated":
+			return "halted";
+		case "failed":
+			return "error";
+	}
+}
+
 export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<RunTaskPipelineResult> {
-	// Thin wrapper: capture the orchestrator transcript path the inner
-	// pipeline creates and surface it on the result, so callers can archive
-	// the run without threading the path through every return site.
-	let orchestratorTranscriptPath: string | undefined;
-	const result = await runTaskPipelineInner(opts, (p) => {
-		orchestratorTranscriptPath = p;
+	// Thin wrapper: capture the orchestrator transcript writer the inner
+	// pipeline creates, surface its path on the result (so callers can
+	// archive the run), and GUARANTEE a pipeline-end on every outcome —
+	// cancel/halt/failure paths that return without recording one left runs
+	// archived as "incomplete" instead of their true outcome.
+	let orchTranscript: OrchestratorTranscriptWriter | undefined;
+	const result = await runTaskPipelineInner(opts, (writer) => {
+		orchTranscript = writer;
 	});
-	if (orchestratorTranscriptPath) result.orchestratorTranscriptPath = orchestratorTranscriptPath;
+	if (orchTranscript) {
+		orchTranscript.close(transcriptOutcomeFor(result.status), result.lastError);
+		result.orchestratorTranscriptPath = orchTranscript.filePath;
+	}
 	return result;
 }
 
 async function runTaskPipelineInner(
 	opts: RunTaskPipelineOptions,
-	onOrchestratorTranscriptPath: (p: string) => void,
+	onOrchestratorTranscript: (writer: OrchestratorTranscriptWriter) => void,
 ): Promise<RunTaskPipelineResult> {
 	const { taskId, cwd, ctx, forgeRoot, storeCli, preflightGate, registry, resumeFromState, onPhaseEvent } = opts;
 
@@ -799,7 +822,7 @@ async function runTaskPipelineInner(
 		entityKind: "task",
 		entityId: taskId,
 	});
-	onOrchestratorTranscriptPath(orchTranscript.filePath);
+	onOrchestratorTranscript(orchTranscript);
 	const __origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
 	ctx.ui.notify = ((msg: string, level?: Parameters<typeof __origNotify>[1]) => {
 		__origNotify(msg, level);
@@ -1169,6 +1192,7 @@ async function runTaskPipelineInner(
 				task: taskBody,
 				cwd,
 				exportTag: `${taskId}__${phase.role}`,
+				tailLog: observer.state.tailLog,
 				cacheSessionId,
 				streamFn: opts.streamFnFactory?.({ kind: "task-phase", persona: persona.name, phase: phase.role, taskId }),
 				onEvent: wrappedOnEvent,
@@ -1200,14 +1224,6 @@ async function runTaskPipelineInner(
 				iterationCounts,
 				lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 			};
-		}
-
-		// Persist the live tail-view stream next to the phase transcript on
-		// EVERY outcome — cancelled and failed phases are the runs most worth
-		// replaying. runForgeSubagent writes the transcript (and so sets the
-		// path) even on abort/error.
-		if (result.subagentTranscriptPath) {
-			persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
 		}
 
 		// Close this dispatch's tree node with final usage/model — MUST be

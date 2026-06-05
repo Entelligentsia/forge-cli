@@ -65,7 +65,7 @@ import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js
 import type { PhaseRole } from "../subagent/caller-context.js";
 import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
 import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
-import { attachViewportObserver, persistTailLog } from "../viewport/events.js";
+import { attachViewportObserver } from "../viewport/events.js";
 import { fmtPhaseSummary } from "../viewport/renderer.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
 import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
@@ -85,6 +85,7 @@ import {
 	type PreflightResult,
 	runPreflightGate,
 	runPreflightGateWithData,
+	transcriptOutcomeFor,
 	validateId,
 } from "./run-task.js";
 
@@ -566,20 +567,25 @@ const STATUS_KEY = "forge:fix-bug";
 const MESSAGE_KEY = "forge:fix-bug:message";
 
 export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBugPipelineResult> {
-	// Thin wrapper: capture the orchestrator transcript path the inner
-	// pipeline creates and surface it on the result, so callers can archive
-	// the run without threading the path through every return site.
-	let orchestratorTranscriptPath: string | undefined;
-	const result = await runBugPipelineInner(opts, (p) => {
-		orchestratorTranscriptPath = p;
+	// Thin wrapper: capture the orchestrator transcript writer the inner
+	// pipeline creates, surface its path on the result (so callers can
+	// archive the run), and GUARANTEE a pipeline-end on every outcome —
+	// cancel/halt/failure paths that return without recording one left runs
+	// archived as "incomplete" instead of their true outcome.
+	let orchTranscript: OrchestratorTranscriptWriter | undefined;
+	const result = await runBugPipelineInner(opts, (writer) => {
+		orchTranscript = writer;
 	});
-	if (orchestratorTranscriptPath) result.orchestratorTranscriptPath = orchestratorTranscriptPath;
+	if (orchTranscript) {
+		orchTranscript.close(transcriptOutcomeFor(result.status), result.lastError);
+		result.orchestratorTranscriptPath = orchTranscript.filePath;
+	}
 	return result;
 }
 
 async function runBugPipelineInner(
 	opts: RunBugPipelineOptions,
-	onOrchestratorTranscriptPath: (p: string) => void,
+	onOrchestratorTranscript: (writer: OrchestratorTranscriptWriter) => void,
 ): Promise<RunBugPipelineResult> {
 	const {
 		bugId: initialBugId,
@@ -680,7 +686,7 @@ async function runBugPipelineInner(
 		entityKind: "bug",
 		entityId: bugId,
 	});
-	onOrchestratorTranscriptPath(orchTranscript.filePath);
+	onOrchestratorTranscript(orchTranscript);
 	const __origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
 	ctx.ui.notify = ((msg: string, level?: Parameters<typeof __origNotify>[1]) => {
 		__origNotify(msg, level);
@@ -1124,6 +1130,7 @@ async function runBugPipelineInner(
 						task: bugBody,
 						cwd,
 						exportTag: `${bugId}__${phase.role}`,
+						tailLog: observer.state.tailLog,
 						// Sprint-scoped if the bug is attached to one, else bug-scoped.
 						// Keeps every phase of this bug-fix pipeline in a single cache
 						// namespace so the system-prompt + persona prefix stays warm
@@ -1160,14 +1167,6 @@ async function runBugPipelineInner(
 					iterationCounts,
 					lastError: `runForgeSubagent threw: ${e.message ?? "unknown"}`,
 				};
-			}
-
-			// Persist the live tail-view stream next to the phase transcript on
-			// EVERY outcome — cancelled and failed phases are the runs most
-			// worth replaying. runForgeSubagent writes the transcript (and so
-			// sets the path) even on abort/error.
-			if (result.subagentTranscriptPath) {
-				persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
 			}
 
 			// Close this dispatch's tree node with final usage/model — MUST be
