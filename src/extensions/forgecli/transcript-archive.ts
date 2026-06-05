@@ -666,4 +666,78 @@ export function digestPhasePayload(payload: Record<string, unknown>): string[] {
 	return lines;
 }
 
+function firstLineOf(s: string, max = 120): string {
+	const line = s.trim().split("\n")[0];
+	return line.length > max ? `${line.slice(0, max)}…` : line;
+}
+
+/** Extract readable text from a toolResult content value (string or parts array). */
+function toolResultText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) {
+		return content
+			.filter(
+				(p): p is { type: string; text: string } =>
+					!!p && typeof p === "object" && (p as { type?: unknown }).type === "text" && typeof (p as { text?: unknown }).text === "string",
+			)
+			.map((p) => p.text)
+			.join("\n");
+	}
+	if (content === undefined || content === null) return "";
+	try {
+		return JSON.stringify(content);
+	} catch {
+		return "";
+	}
+}
+
+/** Per-turn cap on assistant text in the verbose digest. */
+const VERBOSE_TEXT_CAP = 1500;
+
+/**
+ * VERBOSE digest of a gunzipped phase payload — the replay-dashboard feed.
+ * Unlike digestPhasePayload (compact markers for the `show` table), this
+ * carries the actual transcript content so a replayed run is readable:
+ * full assistant text (capped per turn), thinking first-lines, tool-call
+ * argument previews, and tool-result first-line previews.
+ *
+ * Multi-line assistant text is pushed as ONE entry — the dashboard splits
+ * lines at display time, and the tree's per-entry char cap still applies.
+ */
+export function digestPhasePayloadVerbose(payload: Record<string, unknown>): string[] {
+	const messages = Array.isArray(payload.messages) ? (payload.messages as MessageLike[]) : [];
+	const lines: string[] = [];
+	let turn = 0;
+	for (const msg of messages) {
+		if (msg.role === "assistant") {
+			turn++;
+			lines.push(`── t${turn} ──`);
+			const parts = Array.isArray(msg.content) ? (msg.content as Record<string, unknown>[]) : [];
+			for (const p of parts) {
+				if (p.type === "thinking" && typeof p.thinking === "string" && (p.thinking as string).trim()) {
+					lines.push(`✱ thinking: ${firstLineOf(p.thinking as string)}`);
+				} else if (p.type === "text" && typeof p.text === "string" && (p.text as string).trim()) {
+					const text = (p.text as string).trim();
+					lines.push(text.length > VERBOSE_TEXT_CAP ? `${text.slice(0, VERBOSE_TEXT_CAP)}…(+${text.length - VERBOSE_TEXT_CAP}c)` : text);
+				} else if (p.type === "toolCall" && typeof p.name === "string") {
+					let argsPreview = "";
+					try {
+						argsPreview = p.arguments === undefined ? "" : JSON.stringify(p.arguments);
+					} catch {
+						argsPreview = "";
+					}
+					if (argsPreview.length > 140) argsPreview = `${argsPreview.slice(0, 140)}…`;
+					lines.push(`→ ${p.name}${argsPreview && argsPreview !== "{}" ? ` ${argsPreview}` : ""}`);
+				}
+			}
+		} else if (msg.role === "toolResult") {
+			const text = toolResultText(msg.content);
+			const preview = firstLineOf(text);
+			lines.push(`← ${msg.toolName ?? "tool"} ${msg.isError ? "✗" : "✓"} (${fmtSize(text.length)}c)${preview ? `  ${preview}` : ""}`);
+		}
+	}
+	if (lines.length === 0) lines.push("(no messages in payload)");
+	return lines;
+}
+
 export { getTranscriptArchiveRoot };

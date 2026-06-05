@@ -128,15 +128,17 @@ describe("hydrateRunTree", () => {
 		expect(implement!.outcomePreview).toBe("approved");
 	});
 
-	it("tails carry the per-turn digest, not raw JSON", () => {
+	it("tails carry the verbose transcript digest (content, not just markers)", () => {
 		seedAndArchive();
 		const resolved = resolveRun(RUN_ID)!;
 		const { tree } = hydrateRunTree(resolved.manifest, resolved.runDir);
 		const tail = tree.getNode(`${RUN_ID}:triage:1`)!.tailBuffer;
 		const joined = tail.join("\n");
-		expect(joined).toContain("t1  Turn 1 narration.");
+		expect(joined).toContain("── t1 ──");
+		expect(joined).toContain("Turn 1 narration."); // full assistant text, not a "(no text)" marker
 		expect(joined).toContain("→ bash");
 		expect(joined).toContain("← bash ✓");
+		expect(joined).toContain("ok"); // tool-result preview
 		expect(joined).not.toContain('"messages"');
 	});
 
@@ -157,8 +159,8 @@ describe("hydrateRunTree", () => {
 	});
 
 	it("head-truncates oversized digests to REPLAY_TAIL_BUDGET (+1 marker line)", () => {
-		// Each turn yields 3 digest lines (text, → tool, ← result); make
-		// enough turns to exceed the budget.
+		// Each turn yields 4 verbose digest lines (header, text, → tool,
+		// ← result); make enough turns to exceed the budget.
 		const turns = Math.ceil((REPLAY_TAIL_BUDGET + 30) / 3);
 		seedAndArchive({ turns });
 		const resolved = resolveRun(RUN_ID)!;
@@ -167,7 +169,8 @@ describe("hydrateRunTree", () => {
 
 		expect(tail.length).toBe(REPLAY_TAIL_BUDGET + 1);
 		// HEAD preserved (live tail-buffer semantics would have dropped it)
-		expect(tail[0]).toContain("t1  Turn 1 narration.");
+		expect(tail[0]).toBe("── t1 ──");
+		expect(tail[1]).toContain("Turn 1 narration.");
 		expect(tail[tail.length - 1]).toMatch(/more digest lines/);
 	});
 

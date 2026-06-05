@@ -11,7 +11,7 @@
 // memoizing injected trees into its live `treeRef`.
 
 import { OrchestratorTree, type NodeStatus } from "./orchestrator-tree.js";
-import { digestPhasePayload, gunzipPhase } from "./transcript-archive.js";
+import { digestPhasePayloadVerbose, gunzipPhase } from "./transcript-archive.js";
 import type { RunManifest, RunOutcome } from "./transcript-archive-types.js";
 
 /**
@@ -105,11 +105,12 @@ export function hydrateRunTree(manifest: RunManifest, runDir: string): ReplayRes
 		tree.setNodeIteration(leafId, phase.attempt);
 		if (phase.verdict && phase.verdict !== "n/a") tree.setNodeOutcome(leafId, phase.verdict);
 
-		// Tail: per-turn digest of the archived payload, head-truncated to
-		// the replay budget (see REPLAY_TAIL_BUDGET).
+		// Tail: VERBOSE per-turn digest of the archived payload (full
+		// assistant text, tool args/result previews — a replay must be
+		// readable, not just markers), head-truncated to the replay budget.
 		const payload = phase.file ? gunzipPhase(runDir, phase.file) : null;
 		if (payload) {
-			const digest = digestPhasePayload(payload);
+			const digest = digestPhasePayloadVerbose(payload);
 			const head = digest.slice(0, REPLAY_TAIL_BUDGET);
 			for (const line of head) tree.appendTail(leafId, line);
 			if (digest.length > head.length) {
