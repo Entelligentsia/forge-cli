@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.21] — 2026-06-05
+
+The transcript-archive release: every orchestrator run is now permanently
+archived, browsable, and replayable.
+
+### Added
+
+- **Central transcript archive** under `~/.pi/forge-cli/transcripts/`
+  (honors `FORGE_CLI_HOME`): every run-task / fix-bug / run-sprint task run
+  is mirrored at pipeline end — gzipped phase transcripts, the orchestrator
+  JSONL, and a `manifest.json` with phases, verdicts, models, token usage,
+  totals (byModel/byProvider), revision loops, and outcome. Copy-up only,
+  zero delete paths, full retention. A pipeline-start sweep adopts orphans
+  (crash recovery + pre-existing history). Sprint runs carry `sprintId` as
+  a back-reference — no synthetic sprint container.
+- **`/forge:transcripts`** — cross-project recall surface that works
+  outside any Forge project. No args (interactive): a browse TUI with
+  kind/outcome/project/recency filters, `/` incremental search, local-time
+  timestamps, most-recent-first ordering; ⏎ replays a run. Text
+  subcommands for scripting: `list [entityId]`, `show <runId|entityId>
+  [phase]` (per-turn digest), `timeline [--by model|phase|outcome]`,
+  `projects`, all with `--json`.
+- **Read-only dashboard replay**: selecting a run hydrates a detached
+  OrchestratorTree and opens the existing dashboard — frozen elapsed
+  times, per-phase models/usage/verdicts, the archived prompt panel, and
+  the VERBATIM live tail stream (the exact lines the dashboard rendered
+  during the run, persisted per phase as `*.tail.jsonl`). Cancel is
+  disabled; the footer marks `replay (read-only)`. Esc returns to the
+  browser (sequential overlays — input-router depth stays 1).
+- Phase transcripts now record the dispatch `prompt`; phase-end events
+  populate the previously-always-empty `subagentTranscriptPath` field.
+
+### Fixed
+
+- **`/quit` mid-phase no longer loses the in-flight transcript**: a
+  process-exit hook flushes the partial transcript + tail log
+  synchronously (`stopReason: "process-exit"`).
+- **Cancelled/halted/failed runs archive their true outcome** instead of
+  `incomplete`: pipeline wrappers guarantee a single `pipeline-end` on
+  every exit path (idempotent writer close).
+- Vitest now sandboxes `FORGE_CLI_HOME` per test file — pipeline suites no
+  longer leak archive writes into the developer's real `~/.pi/forge-cli/`.
+
 ## [1.0.20] — 2026-06-04
 
 Release roll-up of the post-S30 stabilization train (1.0.15–1.0.19) plus the
