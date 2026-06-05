@@ -18,6 +18,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		environment: "node",
+		// Sandbox ~/.pi/forge-cli for every test file — see test/setup/forge-cli-home.ts.
+		setupFiles: ["test/setup/forge-cli-home.ts"],
 		include: [
 			"test/*.test.ts",
 			"test/bin/**/*.test.ts",
