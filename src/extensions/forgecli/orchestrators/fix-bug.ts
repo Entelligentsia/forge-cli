@@ -65,7 +65,7 @@ import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js
 import type { PhaseRole } from "../subagent/caller-context.js";
 import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
 import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
-import { attachViewportObserver } from "../viewport/events.js";
+import { attachViewportObserver, persistTailLog } from "../viewport/events.js";
 import { fmtPhaseSummary } from "../viewport/renderer.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
 import { runOrchestratorPreflight } from "./orchestrator-preflight.js";
@@ -1382,6 +1382,11 @@ async function runBugPipelineInner(
 					errCount,
 					subagentTranscriptPath: result.subagentTranscriptPath,
 				});
+				// Persist the live tail-view stream next to the phase transcript —
+				// transcript replay re-reads these exact lines (no reconstruction).
+				if (result.subagentTranscriptPath) {
+					persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
+				}
 				registry.appendTail(
 					bugId,
 					phase.role,

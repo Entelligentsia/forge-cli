@@ -13,6 +13,7 @@
 // "bubbles" usage up the same way. Top-level viewports read aggregate usage
 // via SessionRegistry.getAggregateUsage().
 
+import * as fs from "node:fs";
 import type { SessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import {
@@ -82,6 +83,20 @@ export interface ViewportObserverOpts {
 	afterEach?: () => void;
 }
 
+/** One persisted tail-view line — exactly what the live dashboard rendered. */
+export interface TailLogEntry {
+	line: string;
+	warning?: boolean;
+}
+
+/**
+ * Head-preserving cap on the recorded tail log. Live phases rarely exceed a
+ * few hundred lines; the cap only bounds pathological runs. Head-preserving
+ * (stop recording, don't drop oldest) because the log's consumer is the
+ * transcript-archive REPLAY, where the beginning is the valuable part.
+ */
+export const TAIL_LOG_CAP = 5000;
+
 export interface AttachedObserver {
 	onEvent: (event: SubagentEvent) => void;
 	/** Mutable counters orchestrator can read after subagent returns. */
@@ -92,7 +107,32 @@ export interface AttachedObserver {
 		lastTool: string;
 		cumUsage: UsageDelta;
 		cumCompression: { calls: number; tokensSaved: number };
+		/**
+		 * Verbatim record of every tail line this observer rendered, in
+		 * order — the live view stream. Orchestrators persist it next to
+		 * the phase transcript (`<transcript>.tail.jsonl`) so transcript
+		 * replay re-reads the EXACT lines the live dashboard showed
+		 * instead of reconstructing an approximation from messages.
+		 */
+		tailLog: TailLogEntry[];
 	};
+}
+
+/**
+ * Persist the recorded tail log next to its phase transcript as JSONL
+ * (`<transcript-base>.tail.jsonl`). The transcript archive sweeps it with
+ * the run; replay re-reads the exact lines the live dashboard showed.
+ * Best-effort — observability data, never throws.
+ */
+export function persistTailLog(subagentTranscriptPath: string, tailLog: TailLogEntry[]): string | null {
+	if (!subagentTranscriptPath.endsWith(".json") || tailLog.length === 0) return null;
+	try {
+		const outPath = `${subagentTranscriptPath.slice(0, -".json".length)}.tail.jsonl`;
+		fs.writeFileSync(outPath, `${tailLog.map((e) => JSON.stringify(e)).join("\n")}\n`, "utf8");
+		return outPath;
+	} catch {
+		return null;
+	}
 }
 
 export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObserver {
@@ -145,6 +185,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 		lastTool: "",
 		cumUsage: { input: 0, output: 0, cacheRead: 0 } as UsageDelta,
 		cumCompression: { calls: 0, tokensSaved: 0 },
+		tailLog: [] as TailLogEntry[],
 	};
 
 	// Per-turn tree-connector state.
@@ -164,6 +205,12 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 	const appendTail = (line: string, opts?: { warning?: boolean }) => {
 		registry.appendTail(sessionId, phaseRole, line, opts);
 		tree.appendTail(resolveNodeId(), line, opts);
+		// Record the exact rendered line for post-run persistence (replay).
+		if (state.tailLog.length < TAIL_LOG_CAP) {
+			state.tailLog.push(opts?.warning ? { line, warning: true } : { line });
+		} else if (state.tailLog.length === TAIL_LOG_CAP) {
+			state.tailLog.push({ line: `… tail log capped at ${TAIL_LOG_CAP} lines` });
+		}
 	};
 	const rawErrorText = (result: unknown): string =>
 		typeof result === "string"

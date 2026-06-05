@@ -46,7 +46,7 @@ afterEach(() => {
 	fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-function seedAndArchive(opts: { turns?: number; dropImplementFile?: boolean } = {}): void {
+function seedAndArchive(opts: { turns?: number; dropImplementFile?: boolean; withTailLog?: boolean } = {}): void {
 	const entityDir = path.join(projectDir, ".forge", "transcripts", ENTITY_ID);
 	fs.mkdirSync(entityDir, { recursive: true });
 
@@ -82,6 +82,21 @@ function seedAndArchive(opts: { turns?: number; dropImplementFile?: boolean } = 
 	};
 	writePhase("20260601T100001Z", "2026-06-01T10:00:01.000Z", "triage");
 	writePhase("20260601T100501Z", "2026-06-01T10:05:01.000Z", "implement");
+	if (opts.withTailLog) {
+		// The live tail-view stream as persistTailLog writes it — verbatim
+		// dashboard lines, one JSON object per line.
+		const tailEntries = [
+			{ line: "╭ [T1:10:00:02] $ bash node tools/banner.cjs" },
+			{ line: "│ ← bash ok 29L ⇌34%" },
+			{ line: '╰ » "reading the bug report next"' },
+			{ line: "⚠ bash failed: boom", warning: true },
+		];
+		fs.writeFileSync(
+			path.join(entityDir, `20260601T100001Z__${ENTITY_ID}__triage.tail.jsonl`),
+			`${tailEntries.map((e) => JSON.stringify(e)).join("\n")}\n`,
+			"utf8",
+		);
+	}
 	if (opts.dropImplementFile) {
 		fs.rmSync(path.join(entityDir, `20260601T100501Z__${ENTITY_ID}__implement.json`));
 	}
@@ -140,6 +155,29 @@ describe("hydrateRunTree", () => {
 		expect(joined).toContain("← bash ✓");
 		expect(joined).toContain("ok"); // tool-result preview
 		expect(joined).not.toContain('"messages"');
+	});
+
+	it("prefers the persisted live tail log VERBATIM over the digest", () => {
+		seedAndArchive({ withTailLog: true });
+		const resolved = resolveRun(RUN_ID)!;
+		// Manifest pairs the phase with its archived tail log
+		const triagePhase = resolved.manifest.phases.find((p) => p.role === "triage");
+		expect(triagePhase?.tailFile).toBe(`20260601T100001Z__${ENTITY_ID}__triage.tail.jsonl`);
+
+		const { tree } = hydrateRunTree(resolved.manifest, resolved.runDir);
+		const triage = tree.getNode(`${RUN_ID}:triage:1`)!;
+		// Exact live lines, not the digest reconstruction
+		expect(triage.tailBuffer).toEqual([
+			"╭ [T1:10:00:02] $ bash node tools/banner.cjs",
+			"│ ← bash ok 29L ⇌34%",
+			'╰ » "reading the bug report next"',
+			"⚠ bash failed: boom",
+		]);
+		expect(triage.unreadWarnings).toBe(1); // warning flag survives the round trip
+
+		// The implement phase had no tail log → digest fallback still applies
+		const implement = tree.getNode(`${RUN_ID}:implement:1`)!;
+		expect(implement.tailBuffer.join("\n")).toContain("── t1 ──");
 	});
 
 	it("freezes elapsed time: startedAt/endedAt backfilled from the archive", () => {

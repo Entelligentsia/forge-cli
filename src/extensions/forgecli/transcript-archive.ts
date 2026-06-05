@@ -154,6 +154,8 @@ interface PhaseFileInfo {
 /** Filename shape written by forge-subagent.ts / orchestrator-transcript.ts. */
 const PHASE_FILE_RE = /^(\d{8}T\d{6}Z)__(.+)__(.+)\.json$/;
 const ORCH_FILE_RE = /^(\d{8}T\d{6}Z)__(.+)__orchestrator\.jsonl$/;
+/** Live tail-view log written by persistTailLog (viewport/events.ts). */
+const TAIL_FILE_RE = /^(\d{8}T\d{6}Z)__(.+)__(.+)\.tail\.jsonl$/;
 
 interface PhaseHeader {
 	model?: string;
@@ -187,6 +189,8 @@ export interface DiscoveredRun {
 	runId: string;
 	jsonlPath: string;
 	phaseFiles: PhaseFileInfo[];
+	/** Live tail-view logs (`*.tail.jsonl`) belonging to this run. */
+	tailFiles: PhaseFileInfo[];
 	manifest: RunManifest;
 }
 
@@ -221,6 +225,7 @@ function buildManifestForRun(
 	runId: string,
 	events: JsonlEvent[],
 	phaseFiles: PhaseFileInfo[],
+	tailFileNames: Set<string>,
 	identity: ProjectIdentity,
 	projectKey: string,
 	fallbackEntityId: string,
@@ -264,6 +269,10 @@ function buildManifestForRun(
 			verdict: "n/a",
 			file: pf.file,
 		};
+		// Pair the phase with its live tail-view log when one was persisted
+		// (same basename, .tail.jsonl suffix) — replay prefers it verbatim.
+		const tailName = `${pf.file.slice(0, -".json".length)}.tail.jsonl`;
+		if (tailFileNames.has(tailName)) record.tailFile = tailName;
 		if (header?.model) record.model = header.model;
 		if (header?.provider) record.provider = header.provider;
 		if (header?.usage) record.usage = header.usage;
@@ -361,10 +370,21 @@ export function buildRunsForEntityDir(
 
 	const jsonls: { absPath: string; ts: string }[] = [];
 	const phaseFiles: PhaseFileInfo[] = [];
+	const tailFiles: PhaseFileInfo[] = [];
 	for (const name of names) {
 		const orchMatch = ORCH_FILE_RE.exec(name);
 		if (orchMatch) {
 			jsonls.push({ absPath: path.join(entityDir, name), ts: orchMatch[1] });
+			continue;
+		}
+		const tailMatch = TAIL_FILE_RE.exec(name);
+		if (tailMatch) {
+			tailFiles.push({
+				absPath: path.join(entityDir, name),
+				file: name,
+				ts: tailMatch[1],
+				role: tailMatch[3],
+			});
 			continue;
 		}
 		const phaseMatch = PHASE_FILE_RE.exec(name);
@@ -387,17 +407,19 @@ export function buildRunsForEntityDir(
 		const pipelineStart = events.find((e) => e.kind === "pipeline-start");
 		const runId =
 			typeof pipelineStart?.ts === "string" ? compactIso(pipelineStart.ts) : jsonl.ts;
-		const runPhaseFiles = phaseFiles.filter(
-			(pf) => pf.ts >= jsonl.ts && (nextTs === undefined || pf.ts < nextTs),
-		);
+		const inWindow = (pf: PhaseFileInfo) => pf.ts >= jsonl.ts && (nextTs === undefined || pf.ts < nextTs);
+		const runPhaseFiles = phaseFiles.filter(inWindow);
+		const runTailFiles = tailFiles.filter(inWindow);
 		runs.push({
 			runId,
 			jsonlPath: jsonl.absPath,
 			phaseFiles: runPhaseFiles,
+			tailFiles: runTailFiles,
 			manifest: buildManifestForRun(
 				runId,
 				events,
 				runPhaseFiles,
+				new Set(runTailFiles.map((tf) => tf.file)),
 				identity,
 				projectKey,
 				fallbackEntityId,
@@ -458,7 +480,7 @@ function writeRunArchive(run: DiscoveredRun, identity: ProjectIdentity, projectK
 		const runDir = getRunArchiveDir(projectKey, manifest.entityId, run.runId);
 		fs.mkdirSync(runDir, { recursive: true });
 
-		for (const pf of run.phaseFiles) {
+		for (const pf of [...run.phaseFiles, ...run.tailFiles]) {
 			const gz = gzipSync(fs.readFileSync(pf.absPath));
 			fs.writeFileSync(path.join(runDir, `${pf.file}.gz`), gz);
 		}
@@ -613,6 +635,40 @@ export function gunzipPhase(runDir: string, file: string): Record<string, unknow
 		// fall through
 	}
 	return null;
+}
+
+/** One persisted live tail-view line (see viewport/events.ts TailLogEntry). */
+export interface ArchivedTailEntry {
+	line: string;
+	warning?: boolean;
+}
+
+/**
+ * Gunzip + parse an archived live tail log (`*.tail.jsonl.gz`). Returns the
+ * exact lines the dashboard rendered during the run, in order. Tolerant of
+ * truncated tails; null when the file is missing/unreadable. Never throws.
+ */
+export function gunzipTailLog(runDir: string, file: string): ArchivedTailEntry[] | null {
+	try {
+		const gzPath = path.join(runDir, file.endsWith(".gz") ? file : `${file}.gz`);
+		const raw = gunzipSync(fs.readFileSync(gzPath)).toString("utf8");
+		const entries: ArchivedTailEntry[] = [];
+		for (const line of raw.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				const parsed = JSON.parse(trimmed) as { line?: unknown; warning?: unknown };
+				if (typeof parsed.line === "string") {
+					entries.push(parsed.warning === true ? { line: parsed.line, warning: true } : { line: parsed.line });
+				}
+			} catch {
+				// truncated tail line — skip
+			}
+		}
+		return entries;
+	} catch {
+		return null;
+	}
 }
 
 /** Resolve the archive dir for an index entry. */

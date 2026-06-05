@@ -61,7 +61,7 @@ import { loadWorkflow } from "../parsers/workflow-loader.js";
 import { getSessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
-import { attachViewportObserver } from "../viewport/events.js";
+import { attachViewportObserver, persistTailLog } from "../viewport/events.js";
 
 /**
  * Test-only seam (forge-cli#17). Resolves a StreamFn for a given dispatch
@@ -279,6 +279,11 @@ async function dispatchSprintCeremony(params: {
 		});
 		model = result.model;
 		provider = result.provider;
+		// Persist the live tail-view stream next to the ceremony transcript —
+		// transcript replay re-reads these exact lines (no reconstruction).
+		if (result.subagentTranscriptPath) {
+			persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
+		}
 		if (result.exitCode !== 0) {
 			errorMessage = result.errorMessage ?? "architect subagent exited non-zero";
 		}

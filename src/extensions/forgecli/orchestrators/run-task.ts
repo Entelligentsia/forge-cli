@@ -48,7 +48,7 @@ import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
 import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
-import { attachViewportObserver } from "../viewport/events.js";
+import { attachViewportObserver, persistTailLog } from "../viewport/events.js";
 import { fmtPhaseSummary, type UsageDelta } from "../viewport/renderer.js";
 
 // ── Non-interactive helpers ───────────────────────────────────────────────
@@ -1358,6 +1358,11 @@ async function runTaskPipelineInner(
 				errCount,
 				subagentTranscriptPath: result.subagentTranscriptPath,
 			});
+			// Persist the live tail-view stream next to the phase transcript —
+			// transcript replay re-reads these exact lines (no reconstruction).
+			if (result.subagentTranscriptPath) {
+				persistTailLog(result.subagentTranscriptPath, observer.state.tailLog);
+			}
 			const { cumCompression } = observer.state;
 			registry.appendTail(
 				taskId,

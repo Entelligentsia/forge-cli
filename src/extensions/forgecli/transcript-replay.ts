@@ -11,7 +11,7 @@
 // memoizing injected trees into its live `treeRef`.
 
 import { OrchestratorTree, type NodeStatus } from "./orchestrator-tree.js";
-import { digestPhasePayloadVerbose, gunzipPhase } from "./transcript-archive.js";
+import { digestPhasePayloadVerbose, gunzipPhase, gunzipTailLog } from "./transcript-archive.js";
 import type { RunManifest, RunOutcome } from "./transcript-archive-types.js";
 
 /**
@@ -105,19 +105,35 @@ export function hydrateRunTree(manifest: RunManifest, runDir: string): ReplayRes
 		tree.setNodeIteration(leafId, phase.attempt);
 		if (phase.verdict && phase.verdict !== "n/a") tree.setNodeOutcome(leafId, phase.verdict);
 
-		// Tail: VERBOSE per-turn digest of the archived payload (full
-		// assistant text, tool args/result previews — a replay must be
-		// readable, not just markers), head-truncated to the replay budget.
-		const payload = phase.file ? gunzipPhase(runDir, phase.file) : null;
-		if (payload) {
-			const digest = digestPhasePayloadVerbose(payload);
-			const head = digest.slice(0, REPLAY_TAIL_BUDGET);
-			for (const line of head) tree.appendTail(leafId, line);
-			if (digest.length > head.length) {
-				tree.appendTail(leafId, `… (${digest.length - head.length} more digest lines — see /forge:transcripts show)`);
+		// Tail, two sources in preference order:
+		//   1. The archived live tail log (`*.tail.jsonl`) — the EXACT lines
+		//      the dashboard rendered during the run. Replay = verbatim
+		//      re-read; identical to what the user saw live.
+		//   2. Legacy runs without a tail log: a verbose per-turn digest of
+		//      the archived payload (full assistant text, tool args/result
+		//      previews) — readable, but a reconstruction.
+		// Both head-truncated to the replay budget.
+		const tailEntries = phase.tailFile ? gunzipTailLog(runDir, phase.tailFile) : null;
+		if (tailEntries && tailEntries.length > 0) {
+			const head = tailEntries.slice(0, REPLAY_TAIL_BUDGET);
+			for (const entry of head) {
+				tree.appendTail(leafId, entry.line, entry.warning ? { warning: true } : undefined);
+			}
+			if (tailEntries.length > head.length) {
+				tree.appendTail(leafId, `… (${tailEntries.length - head.length} more lines — see /forge:transcripts show)`);
 			}
 		} else {
-			tree.appendTail(leafId, "(no archived transcript for this phase)");
+			const payload = phase.file ? gunzipPhase(runDir, phase.file) : null;
+			if (payload) {
+				const digest = digestPhasePayloadVerbose(payload);
+				const head = digest.slice(0, REPLAY_TAIL_BUDGET);
+				for (const line of head) tree.appendTail(leafId, line);
+				if (digest.length > head.length) {
+					tree.appendTail(leafId, `… (${digest.length - head.length} more digest lines — see /forge:transcripts show)`);
+				}
+			} else {
+				tree.appendTail(leafId, "(no archived transcript for this phase)");
+			}
 		}
 
 		tree.completeNode(leafId, mapVerdictToStatus(phase.verdict, manifest.outcome));

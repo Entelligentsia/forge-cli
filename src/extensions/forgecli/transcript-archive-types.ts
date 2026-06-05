@@ -42,6 +42,12 @@ export const PhaseRecordSchema = Type.Object({
 	usage: Type.Optional(PhaseUsageSchema),
 	/** Archived phase-transcript filename (without the .gz suffix). */
 	file: Type.Optional(Type.String()),
+	/**
+	 * Archived live tail-log filename (without the .gz suffix) — the exact
+	 * lines the dashboard rendered during the run (`*.tail.jsonl`). Replay
+	 * prefers this over reconstructing a digest from the transcript.
+	 */
+	tailFile: Type.Optional(Type.String()),
 	startedAt: Type.Optional(Type.String()),
 	elapsedMs: Type.Optional(Type.Number()),
 });
