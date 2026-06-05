@@ -6,7 +6,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { ListRow } from "../../../src/extensions/forgecli/commands/transcripts-command.js";
 import { BrowseTuiComponent } from "../../../src/extensions/forgecli/transcripts-tui/component.js";
-import { BrowseScreen, windowRows } from "../../../src/extensions/forgecli/transcripts-tui/screens/browse.js";
+import { BrowseScreen, fmtLocalTime, windowRows } from "../../../src/extensions/forgecli/transcripts-tui/screens/browse.js";
 import {
 	activeFilterSummary,
 	filteredRows,
@@ -114,6 +114,20 @@ describe("browse reducer", () => {
 
 // ── selectors ────────────────────────────────────────────────────────────
 
+describe("browse state init", () => {
+	it("sorts rows most recent first regardless of input order", () => {
+		const shuffled = [ROWS[2], ROWS[0], ROWS[1]]; // oldest, newest, middle
+		const s = initialBrowseState({ rows: shuffled, knownProjects: [], now: NOW });
+		expect(s.rows.map((r) => r.startedAt)).toEqual([
+			"2026-06-01T10:00:00.000Z",
+			"2026-05-20T09:00:00.000Z",
+			"2026-04-10T08:00:00.000Z",
+		]);
+		// filteredRows preserves that order — cursor 0 is the most recent run.
+		expect(filteredRows(s)[0].entityId).toBe("CART-BUG-001");
+	});
+});
+
 describe("browse selectors", () => {
 	it("filteredRows applies each dimension", () => {
 		const s = freshState();
@@ -199,6 +213,19 @@ describe("BrowseScreen render", () => {
 		const joined = screen.render(s, WIDTH, mockTheme).join("\n");
 		expect(joined).toContain("search: car");
 		expect(joined).toContain("esc clear");
+	});
+
+	it("renders timestamps in LOCAL time", () => {
+		const s = freshState();
+		const lines = screen.render(s, WIDTH, mockTheme);
+		// Expected local rendering of the first (most recent) row's UTC start.
+		const d = new Date("2026-06-01T10:00:00.000Z");
+		const pad = (n: number) => String(n).padStart(2, "0");
+		const expected = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+		expect(fmtLocalTime("2026-06-01T10:00:00.000Z")).toBe(expected);
+		expect(lines.some((l) => l.includes(expected))).toBe(true);
+		// Unparseable input falls back to the raw UTC slice.
+		expect(fmtLocalTime("not-a-date")).toBe("not-a-date");
 	});
 
 	it("windowRows centers the cursor and reports above/below counts", () => {

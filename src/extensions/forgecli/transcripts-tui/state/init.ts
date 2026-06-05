@@ -12,7 +12,9 @@ export interface BrowseInitOptions {
 
 export function initialBrowseState(opts: BrowseInitOptions): BrowseState {
 	return {
-		rows: opts.rows,
+		// Most recent first, guaranteed here rather than trusted from the
+		// caller — ISO startedAt compares lexicographically as time.
+		rows: [...opts.rows].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
 		knownProjects: opts.knownProjects,
 		cursor: 0,
 		filters: { kind: "all", outcome: "all", projectKey: null, sinceDays: null },

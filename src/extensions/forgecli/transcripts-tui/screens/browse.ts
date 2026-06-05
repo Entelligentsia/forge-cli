@@ -20,6 +20,19 @@ function fmtTokens(n: number): string {
 	return String(n);
 }
 
+/**
+ * Render an ISO timestamp in LOCAL time (YYYY-MM-DD HH:MM) for easy
+ * identification — archived startedAt values are UTC ISO strings, but the
+ * person scanning the table thinks in wall-clock time. Falls back to the
+ * raw UTC slice when the value doesn't parse.
+ */
+export function fmtLocalTime(iso: string): string {
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return iso.slice(0, 16).replace("T", " ");
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function fmtDuration(ms: number | undefined): string {
 	if (ms === undefined) return "—";
 	const s = Math.round(ms / 1000);
@@ -51,7 +64,7 @@ function headerRow(theme: Theme): string {
 function dataRow(row: ListRow, selected: boolean, theme: Theme): string {
 	const entity = row.entityId + (row.sprintId ? ` (${row.sprintId})` : "");
 	const cells = [
-		padOrTruncate(row.startedAt.slice(0, 16).replace("T", " "), COLS.started),
+		padOrTruncate(fmtLocalTime(row.startedAt), COLS.started),
 		padOrTruncate(row.projectName, COLS.project),
 		padOrTruncate(entity, COLS.entity),
 		padOrTruncate(row.runId, COLS.run),
