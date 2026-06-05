@@ -64,6 +64,7 @@ import { getSessionRegistry } from "../session-registry.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
 import type { PhaseRole } from "../subagent/caller-context.js";
 import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
+import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
 import { attachViewportObserver } from "../viewport/events.js";
 import { fmtPhaseSummary } from "../viewport/renderer.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "./halt-advisor.js";
@@ -528,6 +529,12 @@ export interface RunBugPipelineResult {
 	lastError?: string;
 	model?: string;
 	provider?: string;
+	/**
+	 * Project-local orchestrator JSONL path for this run. Callers hand it to
+	 * archiveRun() to mirror the run into the central transcript archive.
+	 * Unset only when the pipeline returned before the writer was created.
+	 */
+	orchestratorTranscriptPath?: string;
 }
 
 // ── Bug pipeline ──────────────────────────────────────────────────────────
@@ -559,6 +566,21 @@ const STATUS_KEY = "forge:fix-bug";
 const MESSAGE_KEY = "forge:fix-bug:message";
 
 export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBugPipelineResult> {
+	// Thin wrapper: capture the orchestrator transcript path the inner
+	// pipeline creates and surface it on the result, so callers can archive
+	// the run without threading the path through every return site.
+	let orchestratorTranscriptPath: string | undefined;
+	const result = await runBugPipelineInner(opts, (p) => {
+		orchestratorTranscriptPath = p;
+	});
+	if (orchestratorTranscriptPath) result.orchestratorTranscriptPath = orchestratorTranscriptPath;
+	return result;
+}
+
+async function runBugPipelineInner(
+	opts: RunBugPipelineOptions,
+	onOrchestratorTranscriptPath: (p: string) => void,
+): Promise<RunBugPipelineResult> {
 	const {
 		bugId: initialBugId,
 		originalArg,
@@ -658,6 +680,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 		entityKind: "bug",
 		entityId: bugId,
 	});
+	onOrchestratorTranscriptPath(orchTranscript.filePath);
 	const __origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
 	ctx.ui.notify = ((msg: string, level?: Parameters<typeof __origNotify>[1]) => {
 		__origNotify(msg, level);
@@ -1357,6 +1380,7 @@ export async function runBugPipeline(opts: RunBugPipelineOptions): Promise<RunBu
 					turns: turn,
 					toolCount,
 					errCount,
+					subagentTranscriptPath: result.subagentTranscriptPath,
 				});
 				registry.appendTail(
 					bugId,
@@ -1700,6 +1724,12 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			}
 			const forgeRoot = forgeConfig.forgeRoot;
 
+			// Best-effort transcript-archive sweep: adopt any project-local runs
+			// not yet in the central index (crash recovery + pre-existing
+			// history). Runs BEFORE this pipeline creates its own transcript
+			// writer, so the in-flight run is never swept half-written.
+			sweepProjectTranscripts(cwd);
+
 			// Tool paths
 			const storeCli = path.join(forgeRoot, "tools", "store-cli.cjs");
 			const preflightGate = path.join(forgeRoot, "tools", "preflight-gate.cjs");
@@ -1969,6 +1999,15 @@ export function registerFixBug(pi: ExtensionAPI, options: RegisterFixBugOptions 
 			} else {
 				registry.completeSession(bugId, "failed");
 				tree.completeNode(bugId, "failed");
+			}
+
+			// Mirror this run into the central transcript archive (best-effort —
+			// archiveRun never throws).
+			if (pipelineResult.orchestratorTranscriptPath) {
+				archiveRun({
+					cwd,
+					orchestratorJsonlPath: pipelineResult.orchestratorTranscriptPath,
+				});
 			}
 
 			ctx.ui.setStatus?.(STATUS_KEY, undefined);

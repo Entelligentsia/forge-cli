@@ -65,6 +65,13 @@ export interface SubagentResult {
 	errorMessage?: string;
 	model?: string;
 	provider?: string;
+	/**
+	 * Absolute path of the auto-exported subagent transcript
+	 * (.forge/transcripts/<entity>/<ISO>__<entity>__<phase>.json). Unset only
+	 * when the export failed (non-fatal). Orchestrators thread this into the
+	 * phase-end event's `subagentTranscriptPath` and the transcript archive.
+	 */
+	subagentTranscriptPath?: string;
 }
 
 export interface RunSubagentOptions {
@@ -426,7 +433,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// .forge/ is .gitignored by the existing .forge/ entry, so transcripts
 	// are excluded from version control by default.
 	try {
-		writeSubagentTranscript({
+		result.subagentTranscriptPath = writeSubagentTranscript({
 			cwd: cwdAbs,
 			persona: persona.name,
 			tag: opts.exportTag,

@@ -46,6 +46,7 @@ import { type AudienceValue, loadWorkflow } from "../parsers/workflow-loader.js"
 import { getSessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "../subagent/orchestrator-transcript.js";
+import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
 import { attachViewportObserver } from "../viewport/events.js";
 import { fmtPhaseSummary, type UsageDelta } from "../viewport/renderer.js";
@@ -231,6 +232,14 @@ export interface RunTaskPipelineResult {
 	model?: string;
 	/** Provider captured from last successful phase's subagent result (REVIEW FIX #1). */
 	provider?: string;
+	/**
+	 * Project-local orchestrator JSONL path for this run
+	 * (.forge/transcripts/<taskId>/<ISO>__<taskId>__orchestrator.jsonl).
+	 * Callers (registerRunTask, run-sprint) hand it to archiveRun() to mirror
+	 * the run into the central transcript archive. Unset only when the
+	 * pipeline returned before the transcript writer was created (preflight).
+	 */
+	orchestratorTranscriptPath?: string;
 }
 
 // ── Verdict read from store-cli ────────────────────────────────────────────
@@ -685,6 +694,21 @@ export { extractTurnPreview } from "../viewport/renderer.js";
 // ── runTaskPipeline ──────────────────────────────────────────────────────
 
 export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<RunTaskPipelineResult> {
+	// Thin wrapper: capture the orchestrator transcript path the inner
+	// pipeline creates and surface it on the result, so callers can archive
+	// the run without threading the path through every return site.
+	let orchestratorTranscriptPath: string | undefined;
+	const result = await runTaskPipelineInner(opts, (p) => {
+		orchestratorTranscriptPath = p;
+	});
+	if (orchestratorTranscriptPath) result.orchestratorTranscriptPath = orchestratorTranscriptPath;
+	return result;
+}
+
+async function runTaskPipelineInner(
+	opts: RunTaskPipelineOptions,
+	onOrchestratorTranscriptPath: (p: string) => void,
+): Promise<RunTaskPipelineResult> {
 	const { taskId, cwd, ctx, forgeRoot, storeCli, preflightGate, registry, resumeFromState, onPhaseEvent } = opts;
 
 	// Bridge: OrchestratorTree for the dashboard overlay.
@@ -775,6 +799,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 		entityKind: "task",
 		entityId: taskId,
 	});
+	onOrchestratorTranscriptPath(orchTranscript.filePath);
 	const __origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
 	ctx.ui.notify = ((msg: string, level?: Parameters<typeof __origNotify>[1]) => {
 		__origNotify(msg, level);
@@ -1331,6 +1356,7 @@ export async function runTaskPipeline(opts: RunTaskPipelineOptions): Promise<Run
 				turns: turn,
 				toolCount,
 				errCount,
+				subagentTranscriptPath: result.subagentTranscriptPath,
 			});
 			const { cumCompression } = observer.state;
 			registry.appendTail(
@@ -1657,6 +1683,12 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			}
 			const forgeRoot = forgeConfig.forgeRoot;
 
+			// Best-effort transcript-archive sweep: adopt any project-local runs
+			// not yet in the central index (crash recovery + pre-existing
+			// history). Runs BEFORE this pipeline creates its own transcript
+			// writer, so the in-flight run is never swept half-written.
+			sweepProjectTranscripts(cwd);
+
 			// ── Resolve task ID (prefix-normalize, suffix-match, NLP fallback) ──
 			// Handles unprefixed IDs like "S22-T03" → "FORGE-S22-T03".
 			// Issue #20: unprefixed task IDs silently poisoned substitutions.
@@ -1792,6 +1824,18 @@ export function registerRunTask(pi: ExtensionAPI, options: RegisterRunTaskOption
 			} else {
 				registry.completeSession(taskId, "failed");
 				tree.completeNode(taskId, "failed");
+			}
+
+			// Mirror this run into the central transcript archive (best-effort —
+			// archiveRun never throws). sprintId back-reference from the task
+			// record; list/timeline group on it (no synthetic sprint container).
+			if (pipelineResult.orchestratorTranscriptPath) {
+				const sprintIdForArchive = readTaskRecord(taskId, storeCli, cwd)?.sprintId;
+				archiveRun({
+					cwd,
+					orchestratorJsonlPath: pipelineResult.orchestratorTranscriptPath,
+					...(sprintIdForArchive ? { sprintId: sprintIdForArchive } : {}),
+				});
 			}
 
 			ctx.ui.setStatus?.(STATUS_KEY, undefined);

@@ -52,6 +52,7 @@ import {
 	readPipelineNames as readPipelineNamesSprint,
 } from "../lib/catalog-helpers.js";
 import { discoverForgeConfigCached } from "../lib/forge-config.js";
+import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
 import { checkMaterialization } from "../lib/manifest-checker.js";
 import { readJsonState, sprintStateFilePath, writeJsonState } from "../lib/state-helpers.js";
 import { lookupPersonaModel } from "../config/model-resolver.js";
@@ -367,6 +368,12 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			}
 			const forgeRoot = forgeConfig.forgeRoot;
 
+			// Best-effort transcript-archive sweep: adopt any project-local runs
+			// not yet in the central index (crash recovery + pre-existing
+			// history). Runs BEFORE any task pipeline creates its transcript
+			// writer, so in-flight runs are never swept half-written.
+			sweepProjectTranscripts(cwd);
+
 			// ── Resolve sprint ID (prefix-normalize, suffix-match, NLP fallback) ──
 			// Handles unprefixed IDs like "S22" → "FORGE-S22".
 			// Issue #20: unprefixed entity IDs silently poisoned substitutions.
@@ -674,6 +681,18 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				// Capture model/provider from last task result (REVIEW FIX #1)
 				if (taskResult.model) lastModel = taskResult.model;
 				if (taskResult.provider) lastProvider = taskResult.provider;
+
+				// Mirror the task run into the central transcript archive
+				// (best-effort — archiveRun never throws). The sprintId rides
+				// on the task manifest as a back-reference; a sprint surfaces
+				// as N task runs, no synthetic sprint container.
+				if (taskResult.orchestratorTranscriptPath) {
+					archiveRun({
+						cwd,
+						orchestratorJsonlPath: taskResult.orchestratorTranscriptPath,
+						sprintId,
+					});
+				}
 
 				// ── Handle task result ──────────────────────────────────────
 				if (taskResult.status === "completed") {
