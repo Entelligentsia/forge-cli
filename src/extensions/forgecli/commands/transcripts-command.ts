@@ -17,12 +17,17 @@
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
+	digestPhasePayload,
 	gunzipPhase,
 	readIndex,
 	readManifest,
 	readProjects,
 	runDirForEntry,
 } from "../transcript-archive.js";
+
+// Moved to transcript-archive.ts (shared with transcript-replay.ts);
+// re-exported here so existing importers/tests keep working.
+export { digestPhasePayload };
 import type {
 	IndexEntry,
 	ProjectsRegistry,
@@ -174,41 +179,6 @@ export function resolveRun(idArg: string): ResolvedRun | null {
 		if (manifest) return { entry, manifest, runDir, siblingCount: matches.length };
 	}
 	return null;
-}
-
-interface MessageLike {
-	role?: string;
-	toolName?: string;
-	isError?: boolean;
-	content?: unknown;
-}
-
-/**
- * Per-turn digest of a gunzipped phase payload — never a raw JSON dump.
- * Each assistant message is a turn: first text line + tool-call names;
- * toolResult messages render as compact result markers.
- */
-export function digestPhasePayload(payload: Record<string, unknown>): string[] {
-	const messages = Array.isArray(payload.messages) ? (payload.messages as MessageLike[]) : [];
-	const lines: string[] = [];
-	let turn = 0;
-	for (const msg of messages) {
-		if (msg.role === "assistant") {
-			turn++;
-			const parts = Array.isArray(msg.content) ? (msg.content as Record<string, unknown>[]) : [];
-			const textPart = parts.find((p) => p.type === "text" && typeof p.text === "string");
-			const firstLine = textPart ? (textPart.text as string).trim().split("\n")[0] : "";
-			lines.push(`  t${turn}  ${firstLine ? (firstLine.length > 100 ? `${firstLine.slice(0, 100)}…` : firstLine) : "(no text)"}`);
-			for (const p of parts) {
-				if (p.type === "toolCall" && typeof p.name === "string") lines.push(`       → ${p.name}`);
-			}
-		} else if (msg.role === "toolResult") {
-			const size = typeof msg.content === "string" ? msg.content.length : JSON.stringify(msg.content ?? "").length;
-			lines.push(`       ← ${msg.toolName ?? "tool"} ${msg.isError ? "✗" : "✓"} (${fmtTokens(size)} chars)`);
-		}
-	}
-	if (lines.length === 0) lines.push("  (no messages in payload)");
-	return lines;
 }
 
 export function formatShow(manifest: RunManifest, digest?: { role: string; file: string; lines: string[] }): string[] {

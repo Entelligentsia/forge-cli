@@ -91,31 +91,47 @@ let statusBarTui: import("@earendil-works/pi-tui").TUI | undefined;
 // without being nested inside registerThreadSwitcher.
 let treeRef: OrchestratorTree | undefined;
 
-/** Open the dashboard overlay. Shared by /forge:threads, /forge:dashboard,
- *  and the status bar Enter action. */
-export function openDashboardTui(ctx: ExtensionContext): void {
-	const tree = treeRef ?? getOrchestratorTree();
-	if (!treeRef) treeRef = tree;
+export interface OpenDashboardOptions {
+	/**
+	 * Inject a detached tree (transcript replay). Defaults to the live
+	 * singleton. Injected trees are NEVER memoized into the module-level
+	 * treeRef — a replay must not pollute the live dashboard entry points.
+	 */
+	tree?: OrchestratorTree;
+	/** Read-only mode: cancel (`x`) disabled; footer marks the replay. */
+	readOnly?: boolean;
+}
 
-	const controller = new DashboardController(tree);
+/** Open the dashboard overlay. Shared by /forge:threads, /forge:dashboard,
+ *  the status bar Enter action, and transcript replay (injected tree).
+ *  Returns the overlay's lifetime promise so callers (replay re-entry loop)
+ *  can await close; existing fire-and-forget call sites ignore it. */
+export function openDashboardTui(ctx: ExtensionContext, opts: OpenDashboardOptions = {}): Promise<void> {
+	const tree = opts.tree ?? treeRef ?? getOrchestratorTree();
+	if (!opts.tree && !treeRef) treeRef = tree;
+
+	const controller = new DashboardController(tree, undefined, { readOnly: opts.readOnly ?? false });
 	const router = getInputRouter();
 	router.pushOverlay();
-	ctx.ui.custom<null>(
-		(tui, theme, _kb, done) => {
-			const component = new DashboardComponent(controller, tui, theme, done);
-			return component;
-		},
-		{
-			overlay: true,
-			overlayOptions: {
-				width: "100%",
-				anchor: "center",
-				margin: 0,
+	return ctx.ui
+		.custom<null>(
+			(tui, theme, _kb, done) => {
+				const component = new DashboardComponent(controller, tui, theme, done);
+				return component;
 			},
-		}
-	).finally(() => {
-		router.popOverlay();
-	});
+			{
+				overlay: true,
+				overlayOptions: {
+					width: "100%",
+					anchor: "center",
+					margin: 0,
+				},
+			},
+		)
+		.then(() => undefined)
+		.finally(() => {
+			router.popOverlay();
+		});
 }
 
 export function registerThreadSwitcher(pi: ExtensionAPI): void {

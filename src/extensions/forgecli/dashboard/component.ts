@@ -201,9 +201,11 @@ export class DashboardController {
 	private onInvalidate?: () => void;
 	private refreshTimer?: NodeJS.Timeout;
 	private disposed = false; // IL7: guards interval callbacks after dispose
+	private readonly readOnly: boolean;
 	private _handlers: Array<{ event: string; handler: (...args: any[]) => void }>;
 
-	constructor(tree: OrchestratorTree, initialCursorId?: string) {
+	constructor(tree: OrchestratorTree, initialCursorId?: string, opts?: { readOnly?: boolean }) {
+		this.readOnly = opts?.readOnly ?? false;
 		this.tree = tree;
 		this.vm = buildViewModel(tree);
 		// Default cursor to the first active root, or empty string if tree is empty.
@@ -521,7 +523,16 @@ export class DashboardController {
 		}
 	}
 
+	/** Replay mode: read-only dashboards (archived trees) never cancel. */
+	isReadOnly(): boolean {
+		return this.readOnly;
+	}
+
 	private startCancel(): void {
+		// Read-only replay: cancel is meaningless on an archived tree, and
+		// cancelNodeAndSessions would touch the LIVE SessionRegistry
+		// singleton. Single guard here covers both `x` entry points.
+		if (this.readOnly) return;
 		const node = this.vm.nodes.get(this.state.cursorId);
 		if (!node) return;
 		// Can cancel any node under a running subtree — find the nearest
@@ -742,7 +753,9 @@ export class DashboardComponent implements Component, Focusable {
 		// ── Footer: bottom border + key hints + model/token meter ────────
 		const hintsBase = state.cancelTargetId
 			? " y confirm · n dismiss · esc close"
-			: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · x cancel · esc close";
+			: this.controller.isReadOnly()
+				? " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · esc close · replay (read-only)"
+				: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · x cancel · esc close";
 		lines.push(border("╰", this.theme) + border("─".repeat(contentWidth), this.theme) + border("╯", this.theme));
 
 		// Aggregate model + token footer (mirrors ViewportFooterComponent).

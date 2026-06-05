@@ -620,4 +620,50 @@ export function runDirForEntry(entry: IndexEntry): string {
 	return getRunArchiveDir(entry.projectKey, entry.entityId, entry.runId);
 }
 
+// ── Phase-payload digest ────────────────────────────────────────────────
+// Lives here (not in the command) so both the /forge:transcripts text
+// surface and the replay hydrator (transcript-replay.ts) can use it
+// without a command→replay→command import cycle.
+
+interface MessageLike {
+	role?: string;
+	toolName?: string;
+	isError?: boolean;
+	content?: unknown;
+}
+
+function fmtSize(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	return String(n);
+}
+
+/**
+ * Per-turn digest of a gunzipped phase payload — never a raw JSON dump.
+ * Each assistant message is a turn: first text line + tool-call names;
+ * toolResult messages render as compact result markers.
+ */
+export function digestPhasePayload(payload: Record<string, unknown>): string[] {
+	const messages = Array.isArray(payload.messages) ? (payload.messages as MessageLike[]) : [];
+	const lines: string[] = [];
+	let turn = 0;
+	for (const msg of messages) {
+		if (msg.role === "assistant") {
+			turn++;
+			const parts = Array.isArray(msg.content) ? (msg.content as Record<string, unknown>[]) : [];
+			const textPart = parts.find((p) => p.type === "text" && typeof p.text === "string");
+			const firstLine = textPart ? (textPart.text as string).trim().split("\n")[0] : "";
+			lines.push(`  t${turn}  ${firstLine ? (firstLine.length > 100 ? `${firstLine.slice(0, 100)}…` : firstLine) : "(no text)"}`);
+			for (const p of parts) {
+				if (p.type === "toolCall" && typeof p.name === "string") lines.push(`       → ${p.name}`);
+			}
+		} else if (msg.role === "toolResult") {
+			const size = typeof msg.content === "string" ? msg.content.length : JSON.stringify(msg.content ?? "").length;
+			lines.push(`       ← ${msg.toolName ?? "tool"} ${msg.isError ? "✗" : "✓"} (${fmtSize(size)} chars)`);
+		}
+	}
+	if (lines.length === 0) lines.push("  (no messages in payload)");
+	return lines;
+}
+
 export { getTranscriptArchiveRoot };
