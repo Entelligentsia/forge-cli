@@ -9,7 +9,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isFile } from "./shared-fs-utils.js";
+import { resolveBundledPayloadRoot } from "./catalog-loader.js";
+import { isDirectory, isFile } from "./shared-fs-utils.js";
 
 function findNearestForgeConfig(cwd: string): string | null {
 	let currentDir = cwd;
@@ -26,6 +27,11 @@ function findNearestForgeConfig(cwd: string): string | null {
 export interface ForgeConfig {
 	forgeRoot: string;
 	configPath: string;
+	/** Set when the configured forgeRoot did not exist and resolution fell
+	 *  back to this forgecli's bundled payload (testbench clone-portability:
+	 *  tracked configs carry another machine's global npm / plugin-cache
+	 *  path). Carries the original dangling path for diagnostics. */
+	healedFrom?: string;
 }
 
 /**
@@ -67,6 +73,19 @@ export function discoverForgeConfig(cwd: string = process.cwd()): ForgeConfig | 
 	// `<projectDir>/forge/forge`.
 	const projectDir = path.dirname(path.dirname(configPath));
 	const resolved = path.isAbsolute(forgeRootValue) ? forgeRootValue : path.resolve(projectDir, forgeRootValue);
+
+	// Self-heal a dangling forgeRoot (forge-engineering testbench parity):
+	// a git-tracked config may carry a path stamped on another machine
+	// (global npm prefix, Claude plugin cache). Handing callers a nonexistent
+	// root breaks forge_store (tools spawn from forgeRoot/tools) on every
+	// fresh clone. Fall back to this forgecli's bundled payload, which always
+	// exists in an installed or built package.
+	if (!isDirectory(resolved)) {
+		const bundled = resolveBundledPayloadRoot();
+		if (isDirectory(bundled)) {
+			return { forgeRoot: bundled, configPath, healedFrom: resolved };
+		}
+	}
 
 	return { forgeRoot: resolved, configPath };
 }

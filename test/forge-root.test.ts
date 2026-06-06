@@ -17,6 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { resolveBundledPayloadRoot } from "../src/extensions/forgecli/lib/catalog-loader.js";
 import { discoverForgeConfig } from "../src/extensions/forgecli/lib/forge-root.js";
 
 let tmpRoot: string;
@@ -52,6 +53,7 @@ describe("discoverForgeConfig", () => {
 		const project = path.join(tmpRoot, "proj2");
 		const deep = path.join(project, "a", "b", "c");
 		fs.mkdirSync(deep, { recursive: true });
+		fs.mkdirSync(path.join(project, "forge", "forge"), { recursive: true });
 		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "./forge/forge" } }));
 
 		const result = discoverForgeConfig(deep);
@@ -90,10 +92,57 @@ describe("discoverForgeConfig", () => {
 		const project = path.join(tmpRoot, "proj5");
 		fs.mkdirSync(project, { recursive: true });
 		const absForgeRoot = path.join(tmpRoot, "elsewhere", "forge");
+		fs.mkdirSync(absForgeRoot, { recursive: true });
 		writeConfig(project, JSON.stringify({ paths: { forgeRoot: absForgeRoot } }));
 
 		const result = discoverForgeConfig(project);
 		expect(result).not.toBeNull();
 		expect(result?.forgeRoot).toBe(absForgeRoot);
+	});
+});
+
+describe("discoverForgeConfig — forgeRoot self-heal (testbench clone-portability)", () => {
+	// A tracked .forge/config.json may carry a forgeRoot stamped on another
+	// machine (global npm prefix, Claude plugin cache). On a fresh clone that
+	// path does not exist — without healing, forge_store spawns tools from a
+	// dangling directory and every Forge command breaks. When the configured
+	// path is missing, resolution falls back to THIS forgecli's bundled
+	// payload (which always exists in an installed/built package).
+	it("falls back to the bundled payload when an absolute forgeRoot does not exist", () => {
+		const project = path.join(tmpRoot, "heal1");
+		fs.mkdirSync(project, { recursive: true });
+		writeConfig(
+			project,
+			JSON.stringify({ paths: { forgeRoot: "/home/some-other-user/.nvm/lib/node_modules/@entelligentsia/forgecli/dist/forge-payload" } }),
+		);
+
+		const result = discoverForgeConfig(project);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(resolveBundledPayloadRoot());
+		expect(result?.healedFrom).toBe(
+			"/home/some-other-user/.nvm/lib/node_modules/@entelligentsia/forgecli/dist/forge-payload",
+		);
+	});
+
+	it("falls back to the bundled payload when a relative forgeRoot does not exist", () => {
+		const project = path.join(tmpRoot, "heal2");
+		fs.mkdirSync(project, { recursive: true });
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "./does/not/exist" } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(resolveBundledPayloadRoot());
+		expect(result?.healedFrom).toBe(path.resolve(project, "does", "not", "exist"));
+	});
+
+	it("does NOT heal when the configured forgeRoot exists", () => {
+		const project = path.join(tmpRoot, "heal3");
+		const real = path.join(project, "forge", "forge");
+		fs.mkdirSync(real, { recursive: true });
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "./forge/forge" } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result?.forgeRoot).toBe(real);
+		expect(result?.healedFrom).toBeUndefined();
 	});
 });

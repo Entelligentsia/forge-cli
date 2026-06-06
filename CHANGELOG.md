@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.24] — 2026-06-06
+
+### Added
+
+- **`forgeRoot` self-heal** (testbench clone-portability). A git-tracked
+  `.forge/config.json` may carry a `paths.forgeRoot` stamped on another
+  machine (global npm prefix, Claude plugin cache). When the configured path
+  does not exist, `discoverForgeConfig` now falls back to this forgecli's
+  bundled payload instead of handing callers a dangling root that breaks
+  `forge_store` (and every Forge command) on a fresh clone. The original
+  path is preserved in `healedFrom` for diagnostics. Enables the
+  forge-testbench *clone → main → run* contract.
+
 ## [1.0.23] — 2026-06-06
 
 Coordinated release matching forge plugin **v1.2.20** (deterministic commit
