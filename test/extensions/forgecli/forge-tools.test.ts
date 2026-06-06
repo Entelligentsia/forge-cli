@@ -268,6 +268,70 @@ describe("forge_validate_store", () => {
 
 // ── forge_config ──────────────────────────────────────────────────────────────
 
+describe("forge_commit", () => {
+	// forge-engineering#40: the commit phase routes through commit-task.cjs.
+	// On forgecli the invocation surface is the typed forge_commit tool —
+	// argv-array spawn (no shell-quoting of the commit message), hook/governor
+	// visibility, and no operator-gated --force on the subagent surface.
+	it("happy path bug mode: typed params become argv (no shell)", async () => {
+		const capturedArgs: string[] = [];
+		mockExecFileCaptureArgs(capturedArgs, '{"ok":true,"committed":true,"sha":"abc"}');
+
+		const result = await callTool(tools, "forge_commit", {
+			entity: "bug",
+			id: "X-BUG-001",
+			message: 'fix: y "quoted" (X-BUG-001)',
+			trailer: "Co-authored-by: glm-5.1:cloud <noreply@ollama.ai>",
+		});
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const r = result as any;
+		expect(r.content[0].text).toContain('"ok":true');
+
+		const cjsIdx = capturedArgs.indexOf(`${FAKE_FORGE_ROOT}/commit-task.cjs`);
+		expect(cjsIdx).toBeGreaterThanOrEqual(0);
+		const after = capturedArgs.slice(cjsIdx + 1);
+		expect(after).toEqual([
+			"--bug",
+			"X-BUG-001",
+			"--message",
+			'fix: y "quoted" (X-BUG-001)',
+			"--trailer",
+			"Co-authored-by: glm-5.1:cloud <noreply@ollama.ai>",
+		]);
+	});
+
+	it("also[] repeats --also; dryRun and skipGate map to flags", async () => {
+		const capturedArgs: string[] = [];
+		mockExecFileCaptureArgs(capturedArgs, '{"dryRun":true}');
+
+		await callTool(tools, "forge_commit", {
+			entity: "task",
+			id: "X-S01-T01",
+			message: "feat: z (X-S01-T01)",
+			also: ["src/a.ts", "src/b.ts"],
+			dryRun: true,
+			skipGate: true,
+		});
+		const after = capturedArgs.slice(capturedArgs.indexOf(`${FAKE_FORGE_ROOT}/commit-task.cjs`) + 1);
+		expect(after.filter((a) => a === "--also")).toHaveLength(2);
+		expect(after).toContain("src/a.ts");
+		expect(after).toContain("src/b.ts");
+		expect(after).toContain("--dry-run");
+		expect(after).toContain("--skip-gate");
+		expect(after.slice(0, 2)).toEqual(["--task", "X-S01-T01"]);
+	});
+
+	it("schema rejects unknown entity and exposes no force parameter", () => {
+		const def = tools.get("forge_commit");
+		expect(def).toBeDefined();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const schema = (def as any).parameters;
+		expect(Value.Check(schema, { entity: "sprint", id: "X", message: "m" })).toBe(false);
+		expect(Value.Check(schema, { entity: "task", id: "X", message: "m" })).toBe(true);
+		expect(Value.Check(schema, { entity: "task", id: "X", message: "m", force: true })).toBe(false);
+	});
+});
+
 describe("forge_config", () => {
 	it("test 10 — get subcommand: correct argv passed to execFile", async () => {
 		const capturedArgs: string[] = [];

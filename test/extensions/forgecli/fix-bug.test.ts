@@ -22,6 +22,7 @@ import {
 	extractBugIdFromEvents,
 	extractBugIdFromReportText,
 	isBugStateStale,
+	postTriageTransitions,
 	type RunBugState,
 	readBugRecord,
 	readBugState,
@@ -300,6 +301,40 @@ describe("Bug FSM transitions", () => {
 		const record = mkBugRecord({ status: "in-progress" });
 		expect(record.status).toBe("in-progress");
 		// in-progress → fixed (when commit lands)
+	});
+});
+
+describe("post-triage status transitions (meta-fix-bug.md step 2 contract)", () => {
+	// First live firing of commit-task.cjs (HELLO-BUG-002 transcript): the bug
+	// reached the commit phase still in 'reported' because the orchestrator
+	// never performed the contract's two-step triaged → in-progress write
+	// after triage returned. The FSM forbids the one-step reported →
+	// in-progress jump, so the commit guard fired and the subagent flailed.
+	it("from reported: two-step triaged then in-progress", () => {
+		expect(postTriageTransitions("reported")).toEqual(["triaged", "in-progress"]);
+	});
+
+	it("from triaged: single step to in-progress (resume idempotence)", () => {
+		expect(postTriageTransitions("triaged")).toEqual(["in-progress"]);
+	});
+
+	it("from in-progress or terminal: no-op (already past)", () => {
+		expect(postTriageTransitions("in-progress")).toEqual([]);
+		expect(postTriageTransitions("fixed")).toEqual([]);
+		expect(postTriageTransitions(undefined)).toEqual([]);
+	});
+
+	it("fix-bug.ts wires the transitions into the triage phase-advance block", () => {
+		const src = fs.readFileSync(
+			path.resolve(__dirname, "../../../src/extensions/forgecli/orchestrators/fix-bug.ts"),
+			"utf8",
+		);
+		// The loop body (not just the helper definition) must consume the
+		// helper and write each status through store-cli update-status.
+		const callIdx = src.indexOf("for (const target of postTriageTransitions(");
+		expect(callIdx).toBeGreaterThan(-1);
+		const block = src.slice(callIdx, callIdx + 800);
+		expect(block).toContain('"update-status", "bug", bugId, "status", target');
 	});
 });
 

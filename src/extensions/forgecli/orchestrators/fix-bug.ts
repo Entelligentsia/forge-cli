@@ -143,6 +143,20 @@ export const BUG_TYPE_TOKENS: Record<string, { pass: string; fail: string }> = {
 
 const BUG_TERMINAL_STATES = new Set(["fixed"]);
 
+// Post-triage status transitions the ORCHESTRATOR owns (meta-fix-bug.md
+// step 2: "On return, orchestrator transitions status: triaged then
+// in-progress" — a required two-step state-machine contract; the FSM
+// forbids the one-step reported → in-progress jump). First live firing of
+// commit-task.cjs exposed this as unimplemented: bugs reached the commit
+// phase still 'reported' and the terminal-status guard fired every run.
+// Returns the ordered list of statuses to write from the given status —
+// idempotent on resume (already in-progress / terminal → no-op).
+export function postTriageTransitions(status: string | undefined): string[] {
+	if (status === "reported") return ["triaged", "in-progress"];
+	if (status === "triaged") return ["in-progress"];
+	return [];
+}
+
 // ── Bug state persistence ──────────────────────────────────────────────────
 
 export interface RunBugState {
@@ -1655,6 +1669,26 @@ async function runBugPipelineInner(
 			// bug status proves the work happened.
 			if (phase.role === "triage") {
 				const bugAfterTriage = readBugRecord(bugId, storeCli, cwd);
+
+				// Orchestrator-owned post-triage transitions (meta-fix-bug.md
+				// step 2). Two sequential writes through store-cli (the FSM
+				// authority); failure warns but does not halt — the commit
+				// phase's status guard is the backstop.
+				for (const target of postTriageTransitions(bugAfterTriage?.status as string | undefined)) {
+					const upd = spawnSync(
+						"node",
+						[storeCli, "update-status", "bug", bugId, "status", target],
+						{ cwd, encoding: "utf8" },
+					);
+					if (upd.status !== 0) {
+						ctx.ui.notify(
+							`⚠ forge:fix-bug — post-triage transition to '${target}' failed: ${(upd.stderr ?? "").toString().trim()}`,
+							"warning",
+						);
+						break;
+					}
+				}
+
 				const triageSummary = bugAfterTriage?.summaries?.triage as { route?: unknown } | undefined;
 				const route = triageSummary?.route;
 				if (route === "A") {

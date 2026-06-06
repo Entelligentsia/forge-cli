@@ -77,6 +77,7 @@ function compressWithTelemetry(
 
 export interface ForgeToolDefs {
 	store: ToolDefinition;
+	commit: ToolDefinition;
 	collate: ToolDefinition;
 	validateStore: ToolDefinition;
 	config: ToolDefinition;
@@ -155,6 +156,7 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 	const defs: ForgeToolDefs = {
 		collate: buildForgeCollate(toolDir, projectRoot),
 		store: buildForgeStore(toolDir, projectRoot),
+		commit: buildForgeCommit(toolDir, projectRoot),
 		validateStore: buildForgeValidateStore(toolDir, projectRoot),
 		config: buildForgeConfig(toolDir, projectRoot),
 		storeDescribe: buildForgeStoreDescribe(toolDir, projectRoot),
@@ -248,6 +250,94 @@ function buildForgeCollate(toolDir: string, projectRoot: string): ToolDefinition
 			} catch (err: unknown) {
 				const e = err as { message?: string };
 				return errResult(`forge_collate failed: ${e.message ?? "unknown error"}`);
+			}
+		},
+	};
+}
+
+// ── forge_commit ─────────────────────────────────────────────────────────────
+
+function buildForgeCommit(toolDir: string, projectRoot: string): ToolDefinition {
+	return {
+		name: "forge_commit",
+		label: "Forge Commit",
+		description:
+			"Direct exec of forge/tools/commit-task.cjs — the deterministic commit choreography " +
+			"(forge-engineering#40). ONE call owns: preflight gate, status precondition " +
+			"(task 'approved' / bug 'in-progress'), staging-set derivation (record artifact dir + " +
+			"summaries.implementation.files_changed provenance + 'also' extras; gitignored paths " +
+			"warn-skipped), commit-boundary guard (aborts on a pre-staged index), git commit, and the " +
+			"terminal status transition (task→committed / bug→fixed).\n\n" +
+			"Success JSON: {ok:true, committed:true, sha, staged[]} — or the no-op success " +
+			"{ok:true, committed:false, reason:'nothing-to-commit'} when the staging set is already " +
+			"clean (e.g. the fix was at HEAD): the record is STILL sealed; do not improvise staging.\n\n" +
+			"Never run git add / git commit / git reset yourself in the commit phase.",
+		promptSnippet:
+			"Commit phase: inspect once (git diff --stat), craft the message, then call forge_commit " +
+			"ONCE. Typed args — never pass the commit message through a bash string. " +
+			"committed:false with reason nothing-to-commit is SUCCESS.",
+		parameters: Type.Object(
+			{
+				entity: Type.Union([Type.Literal("task"), Type.Literal("bug")], {
+					description: "Record kind to seal.",
+				}),
+				id: Type.String({ description: "Record id, e.g. FORGE-S01-T01 or FORGE-BUG-001." }),
+				message: Type.String({
+					description: "Commit message (subject [+ body]). Include the record id; follow project conventions.",
+				}),
+				trailer: Type.Optional(Type.String({ description: "Optional Co-authored-by trailer line." })),
+				also: Type.Optional(
+					Type.Array(Type.String(), {
+						description:
+							"Extra repo-relative paths to stage — used when the implementation summary lacks files_changed provenance.",
+					}),
+				),
+				dryRun: Type.Optional(Type.Boolean({ description: "Print the staging plan without writing." })),
+				skipGate: Type.Optional(
+					Type.Boolean({ description: "Skip the embedded preflight gate (orchestrator already ran it)." }),
+				),
+				// NOTE: no `force` parameter by design — --force is operator-gated
+				// (FORGE_ALLOW_FORCE) and must never be reachable from a subagent.
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_toolCallId, _params, signal) {
+			const params = _params as {
+				entity: "task" | "bug";
+				id: string;
+				message: string;
+				trailer?: string;
+				also?: string[];
+				dryRun?: boolean;
+				skipGate?: boolean;
+			};
+
+			// Terminal-status ownership: forge_commit performs the terminal
+			// update-status internally — only the commit phase (or the
+			// orchestrator) may seal a record. Mirrors the forge_store
+			// update-status guard for `fixed`.
+			try {
+				if (params.entity === "bug" && !params.dryRun) {
+					assertBugStatusOwnership("forge_commit", "fixed");
+				}
+			} catch (err) {
+				if (err instanceof PhaseOwnershipError) return errResult(err.message);
+				throw err;
+			}
+
+			const toolPath = path.join(toolDir, "commit-task.cjs");
+			const argv: string[] = [`--${params.entity}`, params.id, "--message", params.message];
+			if (params.trailer) argv.push("--trailer", params.trailer);
+			for (const p of params.also ?? []) argv.push("--also", p);
+			if (params.dryRun) argv.push("--dry-run");
+			if (params.skipGate) argv.push("--skip-gate");
+
+			try {
+				const { stdout } = await runCjs(toolPath, argv, signal, 30_000, projectRoot);
+				return okResult(stdout);
+			} catch (err: unknown) {
+				const e = err as { message?: string };
+				return errResult(`forge_commit failed: ${e.message ?? "unknown error"}`);
 			}
 		},
 	};

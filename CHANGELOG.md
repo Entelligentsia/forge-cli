@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.25] — 2026-06-06
+
+Coordinated release matching forge plugin **v1.2.21**. Both changes come from
+the first live firing of the deterministic commit phase (HELLO-BUG-002
+transcript analysis).
+
+### Added
+
+- **`forge_commit` named tool** — the commit phase's primary invocation
+  surface on forgecli: typed TypeBox params (`entity`, `id`, `message`,
+  `trailer`, `also[]`, `dryRun`, `skipGate`; deliberately **no `force`** —
+  operator-gated, never reachable from a subagent), argv-array spawn of
+  `commit-task.cjs` (no shell-quoting of the commit message), terminal-status
+  phase-ownership guard, full hook/governor visibility. Injected into every
+  subagent via the standard `ForgeToolDefs` surface.
+
+### Fixed
+
+- **fix-bug pipeline now performs the orchestrator-owned post-triage status
+  transitions** (`reported → triaged → in-progress`, per `meta-fix-bug.md`
+  step 2). Previously unimplemented: every bug reached the commit phase still
+  `reported`, tripping `commit-task`'s status guard and sending the subagent
+  through an illegal-transition recovery loop. Idempotent on resume
+  (`postTriageTransitions` helper, unit-tested).
+- Re-vendored plugin payload at **v1.2.21** (commit-task check-ignore
+  pre-filter + nothing-to-commit no-op success).
+
 ## [1.0.24] — 2026-06-06
 
 ### Added
