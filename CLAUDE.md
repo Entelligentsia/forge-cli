@@ -156,3 +156,22 @@ consumed by the pi framework), add a justified suppression to `knip.config.ts`
 under `ignoreIssues` with an inline comment explaining why.
 
 See `knip.config.ts` for the current suppression list and rationale.
+
+## Release checklist — testbench parity
+
+Every forgecli release that changes the bundled payload (`forge.bundledVersion`
+bump, payload-affecting `TOOLS_TO_COPY`/base-pack changes) MUST re-baseline the
+forge-testbench projects so the clone-ready contract holds (a fresh clone of
+`Entelligentsia/forge-testbench` runs `/forge:run-sprint` / `/forge:run-task` /
+`/forge:fix-bug` at the released versions):
+
+```sh
+npm pack && npm install -g ./entelligentsia-forgecli-<ver>.tgz
+cd ../forge-testbench   # (or /home/boni/src/forge-testbench)
+testbench/rebaseline.sh cartographer   # then snapshot + commit + push per testbench/README.md
+testbench/readiness.sh cartographer    # must print CLONE-READY
+```
+
+The full procedure (and per-project onboarding) lives in
+`forge-testbench/testbench/README.md`. CI re-verifies via the testbench
+`readiness` workflow on push + weekly.
