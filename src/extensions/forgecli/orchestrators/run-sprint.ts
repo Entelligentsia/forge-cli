@@ -573,6 +573,33 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			// Bridge: register sprint root in OrchestratorTree.
 			tree.startNode(sprintId, { label: `wfl:run-sprint`, kind: "orchestrator" });
 
+			// ── sprint-start event (forge-engineering#39) ─────────────────────
+			// Per _fragments/event-vocabulary.md § Sprint grain: emitted once,
+			// before the task loop, on a fresh start only (resume re-entry must
+			// not duplicate it). Best-effort: emit failure warns, never halts.
+			if (startTaskIndex === 0) {
+				const sprintStartEvent: Record<string, unknown> = {
+					eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_start`,
+					sprintId,
+					role: "orchestrator",
+					action: "sprint-start",
+					startTimestamp: new Date(sprintStartMs).toISOString(),
+					endTimestamp: new Date(sprintStartMs).toISOString(),
+					durationMinutes: 0,
+					model: "orchestrator",
+					provider: "orchestrator",
+					type: "sprint-start",
+					taskCount: taskIds.length,
+				};
+				const startEmit = emitEvent(storeCli, cwd, sprintId, sprintStartEvent);
+				if (!startEmit.ok) {
+					ctx.ui.notify(
+						`⚠ forge:run-sprint — sprint-start event emit failed: ${startEmit.stderr.trim()}`,
+						"warning",
+					);
+				}
+			}
+
 			for (let i = startTaskIndex; i < taskIds.length; i++) {
 				const taskId = taskIds[i];
 				if (!taskId) continue;
@@ -653,6 +680,36 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 
 				// Bridge: register task in OrchestratorTree under sprint root.
 				tree.startNode(taskId, { parentId: sprintId, label: `▸ wfl:run-task`, kind: "orchestrator" });
+
+				// ── task-dispatch event (forge-engineering#39) ─────────────────
+				// Per _fragments/event-vocabulary.md § Sprint grain: emitted
+				// before each task dispatch (skipped tasks above never reach
+				// here). Best-effort: emit failure warns, never halts.
+				{
+					const dispatchMs = Date.now();
+					const dispatchEvent: Record<string, unknown> = {
+						eventId: `${isoCompact(dispatchMs)}_${taskId}_task_dispatch`,
+						sprintId,
+						taskId,
+						role: "orchestrator",
+						action: "task-dispatch",
+						phase: "dispatch",
+						iteration: 1,
+						startTimestamp: new Date(dispatchMs).toISOString(),
+						endTimestamp: new Date(dispatchMs).toISOString(),
+						durationMinutes: 0,
+						model: lastModel ?? "orchestrator",
+						provider: lastProvider ?? "orchestrator",
+						type: "task-dispatch",
+					};
+					const dispatchEmit = emitEvent(storeCli, cwd, sprintId, dispatchEvent);
+					if (!dispatchEmit.ok) {
+						ctx.ui.notify(
+							`⚠ forge:run-sprint — task-dispatch event emit failed for ${taskId}: ${dispatchEmit.stderr.trim()}`,
+							"warning",
+						);
+					}
+				}
 
 				const taskSignal = registry.getAbortSignal(taskId);
 

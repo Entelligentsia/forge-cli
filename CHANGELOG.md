@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.22] — 2026-06-06
+
+Coordinated release matching forge plugin **v1.2.18** (event-type vocabulary
+spec owner — forge-engineering#39).
+
+### Fixed
+
+- **Bug-pipeline fail events are no longer dropped.** `BUG_TYPE_TOKENS`'
+  `fix-revision-requested` (approve fail) and `bug-commit-failed` (commit
+  fail) were rejected by the bundled event schema since their introduction —
+  every fix-bug approve-revision/commit-failure event and its token telemetry
+  was silently discarded (warn-and-continue). The re-vendored v1.2.18 payload
+  accepts them; `forge.bundledVersion` pin moved 1.0.10 → 1.2.18.
+
+### Added
+
+- **Sprint-grain lifecycle events.** `forge:run-sprint` now store-emits
+  `sprint-start` (once, before the task loop, fresh starts only) and
+  `task-dispatch` (before each task dispatch), completing the four-token
+  sprint vocabulary it already half-emitted (`sprint-complete`/
+  `sprint-halted`) — parity with the `wfl:run-sprint` JS driver.
+- **Event-vocabulary contract test**
+  (`test/extensions/forgecli/event-vocabulary-contract.test.ts`): every
+  store-emitted `type` token in the orchestrators and skill-curation
+  emitters must be a member of the vendored schema enum. This is the
+  recurrence guard for the #39 drift class — an invented token now fails CI
+  instead of silently dropping events at runtime.
+
 ## [1.0.21] — 2026-06-05
 
 The transcript-archive release: every orchestrator run is now permanently

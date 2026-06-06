@@ -429,6 +429,55 @@ describe("registerRunSprint — registration", () => {
 	});
 });
 
+describe("sprint-grain lifecycle events — sprint-start + task-dispatch (forge-engineering#39)", () => {
+	// Collect every store-cli emit payload made through the mocked spawnSync.
+	function emittedStoreEvents(): Record<string, unknown>[] {
+		return vi
+			.mocked(spawnSync)
+			.mock.calls.filter((c) => {
+				const argArr = c[1] as readonly string[] | undefined;
+				return argArr?.[0]?.endsWith("store-cli.cjs") && argArr?.[1] === "emit";
+			})
+			.map((c) => JSON.parse((c[1] as readonly string[])[3] as string) as Record<string, unknown>);
+	}
+
+	it("fresh run emits one sprint-start before the loop and one task-dispatch per dispatched task", async () => {
+		const { proj, sprintId } = scaffoldProject({ taskIds: ["FORGE-S21-T01", "FORGE-S21-T02"] });
+		mockStoreCliForSprint(sprintId, ["FORGE-S21-T01", "FORGE-S21-T02"]);
+		process.env.FORGE_YES = "1";
+		mockRunTaskPipeline.mockImplementation(async () => completedTaskResult());
+
+		const pi = makePi();
+		registerRunSprint(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+		await invokeRunSprint(pi, ctx, sprintId);
+
+		const events = emittedStoreEvents();
+		const types = events.map((e) => e.type);
+
+		// Exactly one sprint-start, first among the store emissions.
+		expect(types.filter((t) => t === "sprint-start")).toHaveLength(1);
+		expect(types[0]).toBe("sprint-start");
+		const startEvent = events[0] as Record<string, unknown>;
+		expect(startEvent.sprintId).toBe(sprintId);
+		expect(startEvent.taskCount).toBe(2);
+		expect(startEvent.role).toBe("orchestrator");
+
+		// One task-dispatch per task, carrying taskId + schema-required fields.
+		const dispatches = events.filter((e) => e.type === "task-dispatch");
+		expect(dispatches.map((e) => e.taskId)).toEqual(["FORGE-S21-T01", "FORGE-S21-T02"]);
+		for (const d of dispatches) {
+			expect(d.eventId).toBeDefined();
+			expect(d.model).toBeDefined();
+			expect(d.provider).toBeDefined();
+			expect(d.iteration).toBe(1);
+		}
+
+		// sprint-start precedes the first task-dispatch.
+		expect(types.indexOf("sprint-start")).toBeLessThan(types.indexOf("task-dispatch"));
+	});
+});
+
 describe("Test 1: Refactor parity — existing run-task tests pass unchanged", () => {
 	it("extracted runTaskPipeline does not break existing run-task.test.ts", async () => {
 		// This test is validated by running the existing suite separately.
