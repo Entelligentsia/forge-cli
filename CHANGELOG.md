@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.23] — 2026-06-06
+
+Coordinated release matching forge plugin **v1.2.20** (deterministic commit
+choreography — forge-engineering#40).
+
+### Changed
+
+- **Commit phase cost collapse.** `forge.bundledVersion` 1.2.18 → 1.2.20:
+  the bundled `commit_task.md` now routes the entire commit choreography
+  through the new `commit-task.cjs` (added to `TOOLS_TO_COPY`) — preflight
+  gate, status precondition, staging from `files_changed` provenance,
+  commit-boundary guard, `git commit`, terminal transition in ONE tool call.
+  The commit phase, previously the most expensive phase of the pipeline
+  (15–31% of run input tokens; 25–55 turns on glm-4.7), shrinks to
+  inspect-once → craft message → one tool call. The generated workflow also
+  shrank 5.2KB → 3.9KB of per-turn context.
+- New allowlist pin: workflow-referenced tools (invisible to the TS
+  source-scan) are now asserted present in `TOOLS_TO_COPY` —
+  `commit-task.cjs` is the first entry.
+
 ## [1.0.22] — 2026-06-06
 
 Coordinated release matching forge plugin **v1.2.18** (event-type vocabulary

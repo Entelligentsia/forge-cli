@@ -215,6 +215,11 @@ const TOOLS_TO_COPY = [
 	// FORGE-S26-T17: init phase verification tool — called by verifiers.ts wrappers
 	// and by the phase prompt files themselves to validate phase deliverables.
 	"verify-phase.cjs",
+	// forge-engineering#40: deterministic commit choreography (plugin >= 1.2.20).
+	// commit_task.md routes the entire commit phase through this tool — staging
+	// from files_changed provenance, boundary guard, git commit, terminal
+	// transition. Missing it halts the commit phase on every project.
+	"commit-task.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");

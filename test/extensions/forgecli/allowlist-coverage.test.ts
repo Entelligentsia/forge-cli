@@ -130,3 +130,23 @@ describe("allowlist-coverage: every .cjs tool referenced in TS is in TOOLS_TO_CO
 		expect(uncovered).toHaveLength(0);
 	});
 });
+
+describe("allowlist-coverage: workflow-referenced tools pinned in TOOLS_TO_COPY", () => {
+	// The TS source-scan above cannot see tools that only the generated
+	// WORKFLOW MARKDOWN references (subagents invoke them via bash). Pin
+	// those explicitly so a payload rebuild never silently drops them.
+	const WORKFLOW_REFERENCED_TOOLS = [
+		// forge-engineering#40: commit_task.md (plugin >= 1.2.20) routes the
+		// entire commit choreography through this tool; without it the commit
+		// phase halts on every initialized project.
+		"commit-task.cjs",
+	];
+
+	it("every workflow-referenced tool is in TOOLS_TO_COPY", () => {
+		const scriptSource = fs.readFileSync(BUILD_PAYLOAD_SCRIPT, "utf8");
+		const toolsToCopy = extractToolsToCopy(scriptSource);
+		for (const tool of WORKFLOW_REFERENCED_TOOLS) {
+			expect(toolsToCopy.has(tool), `${tool} missing from TOOLS_TO_COPY (scripts/build-payload.cjs)`).toBe(true);
+		}
+	});
+});
