@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.35] — 2026-06-07
+
+Re-bundle forge-plugin 1.4.4 — CLI-first field-test gap fixes: paths.commands
+no longer prefix-derived (always `.claude/commands/forge`), explicit
+`paths.forgeRoot=".forge"` write, dev-only tools excluded from the
+structure manifest (instance expectation 49/49, no false /forge:health gaps).
+
 ## [1.0.34] — 2026-06-07
 
 No-dead-vendored-references gate (closes the forge#112 failure class).
