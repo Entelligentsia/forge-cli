@@ -247,6 +247,16 @@ else
 		record FAIL "BOOTSTRAP-8: idempotent second run exited non-zero" "see bootstrap-idempotent.out"
 	fi
 
+	# 9. No dead vendored references (forge#112 class — every .forge/… path
+	# referenced by vendored commands/drivers/rulebooks must exist post-bootstrap)
+	VENDORED_REFS_OUT="$TMP_SMOKE_OUT_DIR/vendored-refs.out"
+	if node "$PKG_DIR/tools/check-vendored-refs.cjs" "$TMP_PROJECT_DIR" \
+			>"$VENDORED_REFS_OUT" 2>&1; then
+		record PASS "BOOTSTRAP-9: no dead vendored references" "$(tail -1 "$VENDORED_REFS_OUT")"
+	else
+		record FAIL "BOOTSTRAP-9: dead vendored references found" "see vendored-refs.out"
+	fi
+
 	# Pin tool paths for downstream sections (health gate).
 	# Tools are vendored directly into .forge/tools/ by the bootstrap.
 	STORE_CLI="$TMP_PROJECT_DIR/.forge/tools/store-cli.cjs"

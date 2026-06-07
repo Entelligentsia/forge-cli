@@ -224,6 +224,9 @@ const TOOLS_TO_COPY = [
 	// $CLAUDE_PROJECT_DIR/.forge/tools/query-logger.cjs (plugin hooks.json parity).
 	// Missing it hard-fails (exit 1) on every Bash call in a bootstrapped project.
 	"query-logger.cjs",
+	// Referenced by wfl-run-task.js and meta-fix-bug/meta-orchestrate as
+	// .forge/tools/forge-preflight.cjs — caught by check-vendored-refs.cjs.
+	"forge-preflight.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
@@ -380,6 +383,19 @@ if (fs.existsSync(basePackSrc)) {
 // per-domain prompts wfl-init.js Phase 1/2 subagents read — bundling only
 // phases/ left discovery agents with dead rulebook references in the field.
 const INIT_RULEBOOK_DIRS = ["phases", "discovery", "generation"];
+// init-root data files referenced by vendored commands (rebuild.md reads
+// .forge/init/workflow-gen-plan.json) — caught by check-vendored-refs.cjs.
+const INIT_ROOT_FILES = ["workflow-gen-plan.json"];
+for (const file of INIT_ROOT_FILES) {
+	const src = path.join(forgeRoot, "init", file);
+	if (fs.existsSync(src)) {
+		fs.mkdirSync(path.join(outDir, "init"), { recursive: true });
+		copyFile(src, path.join(outDir, "init", file));
+		console.log(`build-payload: init/${file} copied`);
+	} else {
+		console.warn(`build-payload: forge/forge/init/${file} not found — skipping`);
+	}
+}
 for (const sub of INIT_RULEBOOK_DIRS) {
 	const subSrc = path.join(forgeRoot, "init", sub);
 	const subDest = path.join(outDir, "init", sub);

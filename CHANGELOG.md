@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.34] — 2026-06-07
+
+No-dead-vendored-references gate (closes the forge#112 failure class).
+
+### Added
+
+- **`tools/check-vendored-refs.cjs`** — scans every vendored text file
+  (commands, drivers, rulebooks, settings, agents, skills) for
+  `.forge/…` / `$FORGE_ROOT/…` path references and fails on any whose
+  target doesn't exist post-bootstrap. Wired in twice: vitest
+  (`vendored-refs.test.ts`, against the real payload) and `tmp-smoke.sh`
+  BOOTSTRAP-9.
+
+### Fixed
+
+- Two dead references the new gate caught immediately:
+  **`forge-preflight.cjs`** (referenced by the run-task driver +
+  meta-fix-bug/meta-orchestrate — /forge:run-task would have hit a dead tool
+  on first use) added to `TOOLS_TO_COPY`, and
+  **`init/workflow-gen-plan.json`** (referenced by rebuild.md) bundled.
+
 ## [1.0.33] — 2026-06-07
 
 Re-bundle forge-plugin 1.4.3 — wfl-init.js Phase 2 verify invocations carry
