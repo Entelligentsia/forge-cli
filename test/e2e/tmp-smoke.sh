@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tmp-smoke gate (FORGE-S25-T03).
+# Tmp-smoke gate (FORGE-S25-T03, FORGE-S31-T07).
 #
 # End-to-end smoke driver against a freshly-created OS-tmpdir project. Exercises
 # the three golden-path Forge surfaces:
 #
-#   1. /forge:init --fast            (auth-free structural assertions)
+#   1. `4ge init claude .`           (auth-free deterministic bootstrap — FORGE-S31-T07)
 #   2. /forge:plan SMOKE-TMP-S01-T01 (auth-required; SKIPs cleanly without
 #                                      ANTHROPIC_API_KEY)
 #   3. /forge:health                 (auth-free — validate-store --dry-run +
@@ -128,201 +128,132 @@ if [[ -n "${FORGE_TMP_SMOKE_PLUGIN_SRC:-}" ]]; then
 	fi
 fi
 
-# ── /forge:init --fast against fresh tmp project (auth-free, gate-critical) ─
+# ── `4ge init claude .` deterministic bootstrap (FORGE-S31-T07) ──────────────
+#
+# Auth-free. Runs in every CI environment regardless of ANTHROPIC_API_KEY.
+# Exercises: scaffold, vendor tools, four drivers, init.md dispatcher,
+# settings hooks, gitignore, idempotent second run.
 
-echo "▶ tmp-smoke — /forge:init --fast against fresh tmp project ($TMP_PROJECT_DIR)"
+echo "▶ tmp-smoke — 4ge init claude (deterministic bootstrap)"
 
-cd "$TMP_PROJECT_DIR"
-# Seed a minimal CLAUDE.md so Phase 0 discovery has something to read.
-echo "# Tmp Smoke Project" >CLAUDE.md
-
-# Verified at engineer-time (FORGE-S25-T03 land): the /forge:init --fast
-# command is LLM-driven end-to-end against current forge — the headless
-# `forge -p "/forge:init --fast"` invocation requires ANTHROPIC_API_KEY to do
-# any scaffolding at all. The PLAN claim that init has a deterministic
-# auth-free scaffolding pass was inaccurate against current main; this driver
-# treats the whole init block as auth-required and SKIPs cleanly when no key
-# is set. Structural assertions only run when init actually executed.
-INIT_RAN=0
-if [[ ! -x "$FORGE_BIN" ]]; then
-	record SKIP "E2E-T03-INIT: forge init --fast" "SKIP_REASON=skip:forge bin missing (install failed upstream)"
-elif [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-	record SKIP "E2E-T03-INIT: forge init --fast" "SKIP_REASON=env:ANTHROPIC_API_KEY not set (init is LLM-driven end-to-end)"
-else
-	# 600s ceiling — fast-mode init drives a 4-phase LLM workflow.
-	if timeout 600 "$FORGE_BIN" --non-interactive -p "/forge:init --fast" \
-			>"$TMP_SMOKE_OUT_DIR/init.out" 2>&1; then
-		record PASS "E2E-T03-INIT: forge init --fast exited cleanly" ""
-		INIT_RAN=1
-	else
-		INIT_RC=$?
-		record WARN "E2E-T03-INIT: forge init --fast rc=$INIT_RC" "see init.out (structural asserts below are authoritative)"
-		INIT_RAN=1
-	fi
-fi
-
-# Always-defined toolchain paths — set inside INIT_RAN gate, but declared here
-# so downstream blocks (run-task, health) can `[[ -z "$VAR" ]]` without
-# tripping `set -u`.
-FORGE_ROOT=""
+# Always-defined toolchain paths — declared here so downstream blocks (plan,
+# health) can `[[ -z "$VAR" ]]` without tripping `set -u`.
 STORE_CLI=""
 VALIDATE_STORE=""
 GENERATION_MANIFEST=""
 KB_PATH="engineering"
 
-# Structural assertions — gate-critical pass criteria when init ran.
-# When init was SKIPped, these SKIP too (no false-FAILs on missing scaffolding).
-# Each derives from forge/forge/init/smoke-test.md §Fast-mode invariants.
-
-if [[ "$INIT_RAN" -eq 0 ]]; then
-	for n in 1 2 3 4 5 6 7; do
-		record SKIP "E2E-T03-INIT-$n: structural invariant" "SKIP_REASON=skip:init did not run"
-	done
-	record SKIP "E2E-T03-INIT-FORGE-ROOT" "SKIP_REASON=skip:init did not run"
-	# FORGE-S25-T09: paired bundled-materialization gate for the _fragments/
-	# surface. Skipped here in lockstep with the other invariants when init
-	# did not run; the loud-on-regression assertion lives in the INIT_RAN=1
-	# block below.
-	record SKIP "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ materialized" \
-		"SKIP_REASON=skip:init did not run"
-fi
-
-if [[ "$INIT_RAN" -eq 1 ]]; then
-
-# 1. config.json exists, parses, mode == "fast".
-if [[ -f .forge/config.json ]] \
-		&& node -e "const c=require('$TMP_PROJECT_DIR/.forge/config.json'); process.exit(c.mode==='fast'?0:1)" 2>/dev/null; then
-	record PASS "E2E-T03-INIT-1: .forge/config.json valid + mode=fast" ""
+if [[ ! -x "$FORGE_BIN" ]]; then
+	record SKIP "BOOTSTRAP: 4ge init claude" "SKIP_REASON=skip:forge bin missing (install failed upstream)"
 else
-	record FAIL "E2E-T03-INIT-1: .forge/config.json missing/invalid/mode!=fast" "see init.out"
-fi
+	# Pre-seed a .gitignore so the append path is exercised (mirrors T06 setup).
+	echo ".DS_Store" > "$TMP_PROJECT_DIR/.gitignore"
 
-# Pin FORGE_ROOT + tool paths to absolute paths NOW (per PLAN §3.1 absolute-path
-# discipline). All subsequent node "$STORE_CLI"/etc. calls are cwd-agnostic.
-if [[ -f .forge/config.json ]]; then
-	FORGE_ROOT=$(node -e "console.log(require('path').resolve('.', require('./.forge/config.json').paths.forgeRoot))" 2>/dev/null || echo "")
-fi
-if [[ -n "$FORGE_ROOT" && -d "$FORGE_ROOT" ]]; then
-	STORE_CLI="$FORGE_ROOT/tools/store-cli.cjs"
-	VALIDATE_STORE="$FORGE_ROOT/tools/validate-store.cjs"
-	GENERATION_MANIFEST="$FORGE_ROOT/tools/generation-manifest.cjs"
-	record PASS "E2E-T03-INIT-FORGE-ROOT resolved" "$FORGE_ROOT"
-else
-	record FAIL "E2E-T03-INIT-FORGE-ROOT unresolved" "FORGE_ROOT=$FORGE_ROOT"
-fi
+	BOOTSTRAP_INIT_RAN=0
+	if "$FORGE_BIN" init claude "$TMP_PROJECT_DIR" \
+			>"$TMP_SMOKE_OUT_DIR/bootstrap.out" 2>&1; then
+		record PASS "BOOTSTRAP: 4ge init claude exited 0" ""
+		BOOTSTRAP_INIT_RAN=1
+	else
+		BOOTSTRAP_RC=$?
+		record FAIL "BOOTSTRAP: 4ge init claude rc=$BOOTSTRAP_RC" "see bootstrap.out"
+		# Structural assertions below will cascade-FAIL with meaningful messages.
+		BOOTSTRAP_INIT_RAN=1  # run assertions to expose root cause
+	fi
 
-# E2E-T05-TOOLS-VENDORED: .forge/tools/store-cli.cjs must exist after init (FORGE-S29-T05)
-TOOLS_DIR=".forge/tools"
-if [[ -f "$TOOLS_DIR/store-cli.cjs" ]]; then
-	record PASS "E2E-T05-TOOLS-VENDORED" "$TOOLS_DIR/store-cli.cjs"
-else
-	record FAIL "E2E-T05-TOOLS-VENDORED" ".forge/tools/store-cli.cjs missing after init"
-fi
+	# ── Structural assertions (auth-free, gate-critical) ──────────────────
+	# AC #1: vendored tools, four drivers, dispatcher, hooks, gitignore, idempotency.
 
-# 2. schemas/ exists with at least 3 .schema.json files.
-SCHEMA_COUNT=$(find .forge/schemas -maxdepth 1 -name "*.schema.json" 2>/dev/null | wc -l)
-if [[ "$SCHEMA_COUNT" -ge 3 ]]; then
-	record PASS "E2E-T03-INIT-2: .forge/schemas has ≥3 schema files" "count=$SCHEMA_COUNT"
-else
-	record FAIL "E2E-T03-INIT-2: .forge/schemas missing or sparse" "count=$SCHEMA_COUNT"
-fi
+	# 1. .forge/tools/store-cli.cjs present (vendor-tools contract)
+	if [[ -f "$TMP_PROJECT_DIR/.forge/tools/store-cli.cjs" ]]; then
+		record PASS "BOOTSTRAP-1: .forge/tools/store-cli.cjs vendored" ""
+	else
+		record FAIL "BOOTSTRAP-1: .forge/tools/store-cli.cjs missing" "see bootstrap.out"
+	fi
 
-# 3. .claude/commands/ exists with at least 10 *.md command wrappers.
-CMD_COUNT=$(find .claude/commands -maxdepth 2 -name "*.md" 2>/dev/null | wc -l)
-if [[ "$CMD_COUNT" -ge 10 ]]; then
-	record PASS "E2E-T03-INIT-3: .claude/commands has ≥10 command wrappers" "count=$CMD_COUNT"
-else
-	record FAIL "E2E-T03-INIT-3: .claude/commands missing or sparse" "count=$CMD_COUNT"
-fi
+	# 2. .forge/tools/verify-phase.cjs present
+	if [[ -f "$TMP_PROJECT_DIR/.forge/tools/verify-phase.cjs" ]]; then
+		record PASS "BOOTSTRAP-2: .forge/tools/verify-phase.cjs vendored" ""
+	else
+		record FAIL "BOOTSTRAP-2: .forge/tools/verify-phase.cjs missing" ""
+	fi
 
-# 4. .forge/workflows/ contains stub files all starting with the fast-mode sentinel.
-WORKFLOWS_DIR=".forge/workflows"
-if [[ -d "$WORKFLOWS_DIR" ]]; then
-	STUB_BAD=0
-	STUB_TOTAL=0
-	while IFS= read -r -d '' wf; do
-		STUB_TOTAL=$((STUB_TOTAL + 1))
-		# Sentinel must appear in the first line per smoke-test.md invariant 4.
-		if ! head -1 "$wf" | grep -q "^<!-- FORGE FAST-MODE STUB"; then
-			STUB_BAD=$((STUB_BAD + 1))
+	# 3. All four wfl-*.js drivers installed in .claude/workflows/
+	WFL_COUNT=$(find "$TMP_PROJECT_DIR/.claude/workflows" -maxdepth 1 -name "wfl-*.js" 2>/dev/null | wc -l)
+	if [[ "$WFL_COUNT" -eq 4 ]]; then
+		record PASS "BOOTSTRAP-3: four wfl-*.js drivers installed" "count=$WFL_COUNT"
+	else
+		record FAIL "BOOTSTRAP-3: expected 4 wfl-*.js drivers" "found=$WFL_COUNT"
+	fi
+
+	# 4. .claude/commands/forge/init.md dispatcher installed
+	if [[ -f "$TMP_PROJECT_DIR/.claude/commands/forge/init.md" ]]; then
+		record PASS "BOOTSTRAP-4: .claude/commands/forge/init.md installed" ""
+	else
+		record FAIL "BOOTSTRAP-4: .claude/commands/forge/init.md missing" ""
+	fi
+
+	# 5. Hooks merged into .claude/settings.json
+	SETTINGS_FILE="$TMP_PROJECT_DIR/.claude/settings.json"
+	if [[ -f "$SETTINGS_FILE" ]]; then
+		HOOK_KEYS=$(node -e "
+		  const s=require('$SETTINGS_FILE');
+		  const h=s.hooks||{};
+		  console.log(Object.keys(h).length);
+		" 2>/dev/null || echo "0")
+		if [[ "$HOOK_KEYS" -ge 4 ]]; then
+			record PASS "BOOTSTRAP-5: hooks merged into .claude/settings.json" "event-types=$HOOK_KEYS"
+		else
+			record FAIL "BOOTSTRAP-5: hooks not merged (expected ≥4 event types)" "found=$HOOK_KEYS"
 		fi
-	done < <(find "$WORKFLOWS_DIR" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
-	if [[ "$STUB_TOTAL" -gt 0 && "$STUB_BAD" -eq 0 ]]; then
-		record PASS "E2E-T03-INIT-4: all .forge/workflows/*.md start with FAST-MODE STUB sentinel" "count=$STUB_TOTAL"
 	else
-		record FAIL "E2E-T03-INIT-4: .forge/workflows stub sentinel violations" "total=$STUB_TOTAL bad=$STUB_BAD"
+		record FAIL "BOOTSTRAP-5: .claude/settings.json missing" ""
 	fi
-else
-	record FAIL "E2E-T03-INIT-4: .forge/workflows missing" "expected dir at $WORKFLOWS_DIR"
-fi
 
-# 5. MASTER_INDEX.md exists with <!-- forge-fast-stub --> sentinel.
-if [[ -f .forge/config.json ]]; then
-	KB_PATH=$(node -e "try{console.log(require('$TMP_PROJECT_DIR/.forge/config.json').paths.engineering)}catch{console.log('engineering')}" 2>/dev/null)
-fi
-MASTER_INDEX="$KB_PATH/MASTER_INDEX.md"
-if [[ -f "$MASTER_INDEX" ]] && grep -q "<!-- forge-fast-stub -->" "$MASTER_INDEX"; then
-	record PASS "E2E-T03-INIT-5: MASTER_INDEX.md exists + fast-stub sentinel present" "$MASTER_INDEX"
-else
-	record FAIL "E2E-T03-INIT-5: MASTER_INDEX.md missing or no fast-stub sentinel" "$MASTER_INDEX"
-fi
-
-# 6. CLAUDE.md contains the Forge-managed block.
-if [[ -f CLAUDE.md ]] && grep -q "Forge" CLAUDE.md && grep -qE "<!-- (BEGIN |FORGE)" CLAUDE.md; then
-	record PASS "E2E-T03-INIT-6: CLAUDE.md contains Forge-managed block" ""
-elif [[ -f CLAUDE.md ]] && grep -qE "<!-- (BEGIN |FORGE)" CLAUDE.md; then
-	record PASS "E2E-T03-INIT-6: CLAUDE.md contains Forge-managed block" "(sentinel-only match)"
-else
-	record WARN "E2E-T03-INIT-6: CLAUDE.md Forge-managed block not detected" "exact sentinel pending verify; non-fatal warn"
-fi
-
-# 7. Stub workflow files are NOT recorded in .forge/generation-manifest.json.
-if [[ -f .forge/generation-manifest.json ]]; then
-	STUB_IN_MANIFEST=$(node -e "
-		const m=require('$TMP_PROJECT_DIR/.forge/generation-manifest.json');
-		const files=(m.files||m);
-		let hit=0;
-		for (const k of Object.keys(files)) {
-			if (k.startsWith('.forge/workflows/') && k.endsWith('.md')) hit++;
-		}
-		console.log(hit);
-	" 2>/dev/null || echo "?")
-	if [[ "$STUB_IN_MANIFEST" == "0" ]]; then
-		record PASS "E2E-T03-INIT-7: no workflow stubs recorded in generation-manifest" ""
+	# 6. .gitignore appended with forge entries
+	if grep -q "forge/store/events" "$TMP_PROJECT_DIR/.gitignore" 2>/dev/null; then
+		record PASS "BOOTSTRAP-6: .gitignore appended with forge entries" ""
 	else
-		record FAIL "E2E-T03-INIT-7: workflow stubs leaked into generation-manifest" "count=$STUB_IN_MANIFEST"
+		record FAIL "BOOTSTRAP-6: forge entries missing from .gitignore" ""
 	fi
-else
-	record WARN "E2E-T03-INIT-7: .forge/generation-manifest.json missing" "init may not have stamped manifest"
-fi
 
-# FORGE-S25-T09: paired bundled-materialization gate for the _fragments/
-# surface. AC #5 (smoke passes) + AC #6 (shared-surface paired bundled smoke)
-# for `meta/workflows/_fragments/`. Defends the implicit recursive-copy
-# allowlist in forge-cli/scripts/build-payload.cjs: any future refactor that
-# silently drops _fragments/ from the bundled payload — or any plugin-side
-# regression in build-base-pack.cjs's fragment mirroring — fails this gate
-# loudly. See doc/decisions/meta-fragment-includes.md for the design contract.
-#
-# Plugin-side plugin-ci.yml :: tmp-smoke job picks this up automatically since
-# it clones forge-cli at main and runs the same script (no plugin CI wiring
-# change needed).
-FRAGMENTS_DIR=".forge/workflows/_fragments"
-if [[ -d "$FRAGMENTS_DIR" ]]; then
-	FRAG_COUNT=$(find "$FRAGMENTS_DIR" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
-	if [[ "$FRAG_COUNT" -ge 1 ]]; then
-		record PASS "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ materialized" \
-			"count=$FRAG_COUNT"
+	# 7. .forge/.bootstrap-manifest.json present with payloadVersion
+	MANIFEST_FILE="$TMP_PROJECT_DIR/.forge/.bootstrap-manifest.json"
+	if [[ -f "$MANIFEST_FILE" ]]; then
+		MANIFEST_VERSION=$(node -e "
+		  const m=require('$MANIFEST_FILE');
+		  console.log(m.payloadVersion||'');
+		" 2>/dev/null || echo "")
+		if [[ -n "$MANIFEST_VERSION" ]]; then
+			record PASS "BOOTSTRAP-7: .bootstrap-manifest.json present" "payloadVersion=$MANIFEST_VERSION"
+		else
+			record FAIL "BOOTSTRAP-7: .bootstrap-manifest.json missing payloadVersion" ""
+		fi
 	else
-		record FAIL "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ has no .md files" \
-			"dir exists but is empty (ls $FRAGMENTS_DIR: $(ls "$FRAGMENTS_DIR" 2>&1))"
+		record FAIL "BOOTSTRAP-7: .bootstrap-manifest.json missing" ""
 	fi
-else
-	record FAIL "E2E-T03-INIT-FRAGMENTS: .forge/workflows/_fragments/ missing" \
-		"expected dir at $FRAGMENTS_DIR; check build-payload.cjs + migration-engine workflows:_fragments resolver"
-fi
 
-fi  # end if INIT_RAN -eq 1
+	# 8. Idempotent second run (no files created, all skipped)
+	IDEMPOTENT_OUT="$TMP_SMOKE_OUT_DIR/bootstrap-idempotent.out"
+	if "$FORGE_BIN" init claude "$TMP_PROJECT_DIR" \
+			>"$IDEMPOTENT_OUT" 2>&1; then
+		CREATED_COUNT=$(grep -c "^  + " "$IDEMPOTENT_OUT" 2>/dev/null || echo "0")
+		if [[ "$CREATED_COUNT" -eq 0 ]]; then
+			record PASS "BOOTSTRAP-8: idempotent second run (no new files)" ""
+		else
+			record WARN "BOOTSTRAP-8: second run created $CREATED_COUNT files" "see bootstrap-idempotent.out"
+		fi
+	else
+		record FAIL "BOOTSTRAP-8: idempotent second run exited non-zero" "see bootstrap-idempotent.out"
+	fi
+
+	# Pin tool paths for downstream sections (health gate).
+	# Tools are vendored directly into .forge/tools/ by the bootstrap.
+	STORE_CLI="$TMP_PROJECT_DIR/.forge/tools/store-cli.cjs"
+	VALIDATE_STORE="$TMP_PROJECT_DIR/.forge/tools/validate-store.cjs"
+	GENERATION_MANIFEST="$TMP_PROJECT_DIR/.forge/tools/generation-manifest.cjs"
+	KB_PATH="engineering"
+fi
 
 # ── /forge:plan SMOKE-TMP-S01-T01 against seeded fixture (auth-required) ───
 #
@@ -338,7 +269,7 @@ echo "▶ tmp-smoke — /forge:plan SMOKE-TMP-S01-T01 (auth-required)"
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
 	record SKIP "E2E-T03-RUNTASK: /forge:plan against seeded fixture" "SKIP_REASON=env:ANTHROPIC_API_KEY not set"
 elif [[ -z "$STORE_CLI" || ! -f "$STORE_CLI" ]]; then
-	record SKIP "E2E-T03-RUNTASK: /forge:plan against seeded fixture" "SKIP_REASON=skip:store-cli unresolved (init failed)"
+	record SKIP "E2E-T03-RUNTASK: /forge:plan against seeded fixture" "SKIP_REASON=skip:store-cli unresolved (bootstrap failed)"
 elif [[ ! -x "$FORGE_BIN" ]]; then
 	record SKIP "E2E-T03-RUNTASK: /forge:plan against seeded fixture" "SKIP_REASON=skip:forge bin missing"
 else
@@ -472,7 +403,7 @@ fi
 	echo "- \`env:<VAR>\` — environmental skip; provision the named secret to enable."
 	echo "- \`skip:<rationale>\` — asserted/internal skip (e.g., upstream failure cascaded)."
 	echo ""
-	echo "Artifacts in \`$TMP_SMOKE_OUT_DIR\`: build.log, install.log, init.out, validate.out, manifest.out"
+	echo "Artifacts in \`$TMP_SMOKE_OUT_DIR\`: build.log, install.log, bootstrap.out, bootstrap-idempotent.out, validate.out, manifest.out"
 	[[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "+ seed-sprint.out, seed-task.out, plan.out"
 } >"$SUMMARY_FILE"
 

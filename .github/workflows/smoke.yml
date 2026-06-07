@@ -69,11 +69,12 @@ jobs:
           retention-days: 7
 
   tmp-smoke:
-    # FORGE-S25-T03 — fresh-tmp-project working-product gate. Runs after smoke
-    # so pack+install failures fail fast before we pay for a fresh-init run.
+    # FORGE-S25-T03, FORGE-S31-T07 — fresh-tmp-project working-product gate.
+    # Runs after smoke so pack+install failures fail fast before the bootstrap.
+    # Bootstrap is auth-free (no LLM round-trip); 10 min ceiling is conservative.
     name: tmp-smoke (fresh tmp project, linux, node 20)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     needs: smoke
 
     steps:
