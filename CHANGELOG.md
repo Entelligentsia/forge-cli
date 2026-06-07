@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.28] — 2026-06-07
+
+`4ge init claude` bootstrap repair — vendor hook scripts + schemas (first-field-test regressions in 1.0.27).
+
+### Fixed
+
+- **Bootstrap Step 3b — hook scripts vendored.** `bootstrapClaudeProject()` now copies
+  `payload/hooks/*.cjs` into `.forge/tools/hooks/` — the exact paths the Step 7 settings
+  wiring points at. In 1.0.27 the copy step was missing entirely, so every wired hook
+  (SessionStart, PreToolUse, PostToolUse, PermissionRequest) fired `node` against a
+  nonexistent file and failed with MODULE_NOT_FOUND on session start.
+
+- **Bootstrap Step 3c — schemas vendored.** `payload/schemas/*.json` + `schemas/_defs/`
+  are now copied into `.forge/schemas/` (previously scaffolded empty), per the
+  cli-first-bootstrap ADR ("vendor tools → `.forge/tools/` + schemas").
+
+- **`settings-merge.ts` — query-logger retarget.** `query-logger.cjs` is a tool, not a
+  hook script (plugin `hooks.json` points it at `tools/query-logger.cjs`); the settings
+  block now targets `$CLAUDE_PROJECT_DIR/.forge/tools/query-logger.cjs` instead of the
+  nonexistent `tools/hooks/query-logger.cjs`.
+
+- Bootstrap manifest `steps` now records `vendor-hooks` and `vendor-schemas`.
+
 ## [1.0.27] — 2026-06-07
 
 `4ge init claude` — settings hooks wiring, gitignore, preflight, hand-off UX (FORGE-S31-T03).

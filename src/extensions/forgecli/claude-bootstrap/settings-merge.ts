@@ -98,8 +98,10 @@ export function buildForgeHooksBlock(): ForgeSettingsHooks {
 						timeout: 5000,
 					},
 					{
+						// query-logger is a tool, not a hook script — the plugin's hooks.json
+						// points it at tools/query-logger.cjs, vendored to .forge/tools/ by Step 3.
 						type: "command",
-						command: 'node "$CLAUDE_PROJECT_DIR/.forge/tools/hooks/query-logger.cjs"',
+						command: 'node "$CLAUDE_PROJECT_DIR/.forge/tools/query-logger.cjs"',
 						timeout: 3000,
 					},
 					{
@@ -176,7 +178,10 @@ function mergeHooksIntoExisting(
 		// Check if any existing group already has Forge entries for this event type
 		const alreadyHasForge = existingGroups.some((group) => {
 			const g = group as { hooks?: Array<{ command?: string }> };
-			return Array.isArray(g.hooks) && g.hooks.some((h) => typeof h.command === "string" && h.command.includes(FORGE_HOOK_SENTINEL));
+			return (
+				Array.isArray(g.hooks) &&
+				g.hooks.some((h) => typeof h.command === "string" && h.command.includes(FORGE_HOOK_SENTINEL))
+			);
 		});
 
 		if (!alreadyHasForge) {

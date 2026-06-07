@@ -41,6 +41,22 @@ function makeMinimalPayload(dir: string): string {
 	fs.mkdirSync(libDir, { recursive: true });
 	fs.writeFileSync(path.join(libDir, "helper.cjs"), "// stub helper\n", "utf8");
 
+	// hooks dir with hook scripts (payload root, mirrors forge/forge/hooks/)
+	const hooksDir = path.join(payloadRoot, "hooks");
+	fs.mkdirSync(hooksDir, { recursive: true });
+	fs.writeFileSync(path.join(hooksDir, "check-update.cjs"), "// stub check-update hook\n", "utf8");
+	fs.writeFileSync(path.join(hooksDir, "preflight-session.cjs"), "// stub preflight-session hook\n", "utf8");
+	fs.writeFileSync(path.join(hooksDir, "validate-write.cjs"), "// stub validate-write hook\n", "utf8");
+	// non-script files in hooks/ (e.g. hooks.json) must NOT be vendored
+	fs.writeFileSync(path.join(hooksDir, "hooks.json"), "{}\n", "utf8");
+
+	// schemas dir with *.json + _defs/ subdir
+	const schemasDir = path.join(payloadRoot, "schemas");
+	fs.mkdirSync(path.join(schemasDir, "_defs"), { recursive: true });
+	fs.writeFileSync(path.join(schemasDir, "config.schema.json"), '{"type":"object"}\n', "utf8");
+	fs.writeFileSync(path.join(schemasDir, "task.schema.json"), '{"type":"object"}\n', "utf8");
+	fs.writeFileSync(path.join(schemasDir, "_defs", "common.json"), '{"$defs":{}}\n', "utf8");
+
 	// commands dir with init.md
 	const commandsDir = path.join(payloadRoot, "commands");
 	fs.mkdirSync(commandsDir, { recursive: true });
@@ -56,11 +72,7 @@ function makeMinimalPayload(dir: string): string {
 	// .claude-plugin/plugin.json for version reading
 	const pluginDir = path.join(payloadRoot, ".claude-plugin");
 	fs.mkdirSync(pluginDir, { recursive: true });
-	fs.writeFileSync(
-		path.join(pluginDir, "plugin.json"),
-		JSON.stringify({ version: "1.2.99" }),
-		"utf8",
-	);
+	fs.writeFileSync(path.join(pluginDir, "plugin.json"), JSON.stringify({ version: "1.2.99" }), "utf8");
 
 	// integrity.json for hash
 	fs.writeFileSync(path.join(payloadRoot, "integrity.json"), JSON.stringify({ hash: "abc123" }), "utf8");
@@ -145,6 +157,35 @@ describe("bootstrapClaudeProject", () => {
 			expect(fs.existsSync(path.join(dir, ".forge", "tools", ".forge-tools-version"))).toBe(true);
 		});
 
+		it("vendors hook scripts into .forge/tools/hooks/ (settings.json target)", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const hooksDest = path.join(dir, ".forge", "tools", "hooks");
+			expect(fs.existsSync(path.join(hooksDest, "check-update.cjs"))).toBe(true);
+			expect(fs.existsSync(path.join(hooksDest, "preflight-session.cjs"))).toBe(true);
+			expect(fs.existsSync(path.join(hooksDest, "validate-write.cjs"))).toBe(true);
+			// byte-identical to payload source
+			expect(fs.readFileSync(path.join(hooksDest, "check-update.cjs"), "utf8")).toBe(
+				fs.readFileSync(path.join(payloadRoot, "hooks", "check-update.cjs"), "utf8"),
+			);
+			// non-script files (hooks.json) are not vendored
+			expect(fs.existsSync(path.join(hooksDest, "hooks.json"))).toBe(false);
+		});
+
+		it("vendors schemas into .forge/schemas/ including _defs/", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const schemasDest = path.join(dir, ".forge", "schemas");
+			expect(fs.existsSync(path.join(schemasDest, "config.schema.json"))).toBe(true);
+			expect(fs.existsSync(path.join(schemasDest, "task.schema.json"))).toBe(true);
+			expect(fs.existsSync(path.join(schemasDest, "_defs", "common.json"))).toBe(true);
+			expect(fs.readFileSync(path.join(schemasDest, "config.schema.json"), "utf8")).toBe(
+				fs.readFileSync(path.join(payloadRoot, "schemas", "config.schema.json"), "utf8"),
+			);
+		});
+
 		it("writes .forge-tools-version marker with payload version", () => {
 			const dir = makeFreshProjectDir();
 			bootstrapClaudeProject({ dir, payloadRoot });
@@ -198,6 +239,8 @@ describe("bootstrapClaudeProject", () => {
 			expect(manifest.payloadVersion).toBe("1.2.99");
 			expect(manifest.steps).toContain("scaffold");
 			expect(manifest.steps).toContain("vendor-tools");
+			expect(manifest.steps).toContain("vendor-hooks");
+			expect(manifest.steps).toContain("vendor-schemas");
 			expect(manifest.steps).toContain("install-commands");
 			expect(manifest.steps).toContain("install-workflows");
 		});
@@ -445,16 +488,10 @@ describe("bootstrapClaudeProject", () => {
 
 			bootstrapClaudeProject({ dir, payloadRoot });
 			const settingsPath = path.join(dir, ".claude", "settings.json");
-			const hashAfterFirst = crypto
-				.createHash("sha256")
-				.update(fs.readFileSync(settingsPath))
-				.digest("hex");
+			const hashAfterFirst = crypto.createHash("sha256").update(fs.readFileSync(settingsPath)).digest("hex");
 
 			bootstrapClaudeProject({ dir, payloadRoot });
-			const hashAfterSecond = crypto
-				.createHash("sha256")
-				.update(fs.readFileSync(settingsPath))
-				.digest("hex");
+			const hashAfterSecond = crypto.createHash("sha256").update(fs.readFileSync(settingsPath)).digest("hex");
 
 			expect(hashAfterSecond).toBe(hashAfterFirst);
 		});

@@ -298,6 +298,74 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 		warnings.push(`tools-copy non-fatal: ${e.message ?? String(err)}`);
 	}
 
+	// ── Step 3b: Vendor hook scripts into .forge/tools/hooks/ ─────────────────
+	// settings-merge.ts wires .claude/settings.json hooks at these paths — without
+	// this copy every hook fires node against a nonexistent file (MODULE_NOT_FOUND).
+	const hooksSrc = path.join(payloadRoot, "hooks");
+	const hooksDest = path.join(toolsDest, "hooks");
+
+	if (fs.existsSync(hooksSrc)) {
+		try {
+			const hooksDirOutcome = ensureDir(hooksDest);
+			if (hooksDirOutcome === "created") created.push(hooksDest);
+			else skipped.push(hooksDest);
+
+			const hookFiles = fs.readdirSync(hooksSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
+			for (const f of hookFiles) {
+				const outcome = copyFile(path.join(hooksSrc, f), path.join(hooksDest, f));
+				const destPath = path.join(hooksDest, f);
+				if (outcome === "created") created.push(destPath);
+				else skipped.push(destPath);
+			}
+		} catch (err: unknown) {
+			const e = err as { message?: string };
+			warnings.push(`hooks-copy non-fatal: ${e.message ?? String(err)}`);
+		}
+	} else {
+		warnings.push(
+			`hooks/ not found in payload at ${hooksSrc} — .claude/settings.json hooks will fail with MODULE_NOT_FOUND.`,
+		);
+	}
+
+	// ── Step 3c: Vendor schemas into .forge/schemas/ ──────────────────────────
+	// validate-store.cjs and store tooling resolve schemas from .forge/schemas/.
+	const schemasSrc = path.join(payloadRoot, "schemas");
+	const schemasDest = path.join(dir, ".forge", "schemas");
+
+	if (fs.existsSync(schemasSrc)) {
+		try {
+			const schemaFiles = fs.readdirSync(schemasSrc).filter((f) => f.endsWith(".json"));
+			for (const f of schemaFiles) {
+				const outcome = copyFile(path.join(schemasSrc, f), path.join(schemasDest, f));
+				const destPath = path.join(schemasDest, f);
+				if (outcome === "created") created.push(destPath);
+				else skipped.push(destPath);
+			}
+
+			// Copy _defs/ subdirectory
+			const defsSrc = path.join(schemasSrc, "_defs");
+			const defsDest = path.join(schemasDest, "_defs");
+			if (fs.existsSync(defsSrc)) {
+				const defsDirOutcome = ensureDir(defsDest);
+				if (defsDirOutcome === "created") created.push(defsDest);
+				else skipped.push(defsDest);
+
+				const defsFiles = fs.readdirSync(defsSrc).filter((f) => f.endsWith(".json"));
+				for (const f of defsFiles) {
+					const outcome = copyFile(path.join(defsSrc, f), path.join(defsDest, f));
+					const destPath = path.join(defsDest, f);
+					if (outcome === "created") created.push(destPath);
+					else skipped.push(destPath);
+				}
+			}
+		} catch (err: unknown) {
+			const e = err as { message?: string };
+			warnings.push(`schemas-copy non-fatal: ${e.message ?? String(err)}`);
+		}
+	} else {
+		warnings.push(`schemas/ not found in payload at ${schemasSrc} — .forge/schemas/ left empty.`);
+	}
+
 	// ── Step 4: Install .claude/commands/forge/init.md ────────────────────────
 	const initMdSrc = path.join(payloadRoot, "commands", "init.md");
 	const initMdDest = path.join(dir, ".claude", "commands", "forge", "init.md");
@@ -336,9 +404,7 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 			warnings.push(`install-workflows non-fatal: ${e.message ?? String(err)}`);
 		}
 	} else {
-		warnings.push(
-			`wfl-*.js drivers not found at ${wflSrc} — .base-pack/workflows-js/ missing from payload.`,
-		);
+		warnings.push(`wfl-*.js drivers not found at ${wflSrc} — .base-pack/workflows-js/ missing from payload.`);
 	}
 
 	// ── Step 6: Write bootstrap manifest ──────────────────────────────────────
@@ -350,10 +416,7 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 	try {
 		const integrityPath = path.join(payloadRoot, "integrity.json");
 		if (fs.existsSync(integrityPath)) {
-			payloadIntegrityHash = crypto
-				.createHash("sha256")
-				.update(fs.readFileSync(integrityPath))
-				.digest("hex");
+			payloadIntegrityHash = crypto.createHash("sha256").update(fs.readFileSync(integrityPath)).digest("hex");
 		}
 	} catch {
 		// non-fatal
@@ -380,7 +443,7 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 			bootstrappedAt,
 			payloadVersion,
 			payloadIntegrityHash,
-			steps: ["scaffold", "vendor-tools", "install-commands", "install-workflows"],
+			steps: ["scaffold", "vendor-tools", "vendor-hooks", "vendor-schemas", "install-commands", "install-workflows"],
 		};
 		const manifestOutcome = writeJsonFile(manifestPath, manifest);
 		if (manifestOutcome === "created") created.push(manifestPath);

@@ -17,9 +17,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-	mergeForgeHooks,
 	buildForgeHooksBlock,
 	type MergeResult,
+	mergeForgeHooks,
 } from "../../../../src/extensions/forgecli/claude-bootstrap/settings-merge.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ describe("buildForgeHooksBlock", () => {
 		expect(cmds.some((c) => c.includes("post-sprint"))).toBe(true);
 	});
 
-	it("all hook commands reference $CLAUDE_PROJECT_DIR/.forge/tools/hooks/", () => {
+	it("all hook commands reference vendored $CLAUDE_PROJECT_DIR/.forge/tools/ paths", () => {
 		const block = buildForgeHooksBlock();
 		// Collect all hook commands across all event types
 		const allCommands: string[] = [];
@@ -102,10 +102,16 @@ describe("buildForgeHooksBlock", () => {
 				}
 			}
 		}
-		// Every command should reference the project-local hooks path
 		expect(allCommands.length).toBeGreaterThan(0);
 		for (const cmd of allCommands) {
-			expect(cmd).toMatch(/\.forge\/tools\/hooks\//);
+			// query-logger is a *tool* (lives at tools/query-logger.cjs in the plugin,
+			// per forge/forge/hooks/hooks.json) — everything else is a hook script
+			// vendored under tools/hooks/.
+			if (cmd.includes("query-logger")) {
+				expect(cmd).toBe('node "$CLAUDE_PROJECT_DIR/.forge/tools/query-logger.cjs"');
+			} else {
+				expect(cmd).toMatch(/\$CLAUDE_PROJECT_DIR\/\.forge\/tools\/hooks\//);
+			}
 		}
 	});
 });
