@@ -291,15 +291,18 @@ export function composeUpdateKickoff(updateMd: string, bundleRoot: string, prefl
 	let patched = updateMd;
 
 	// Patch 1: FORGE_ROOT — replace Claude Code directive with literal path
-	// Original:  FORGE_ROOT: !`echo "${CLAUDE_PLUGIN_ROOT}"`
-	// Patched:   FORGE_ROOT = <bundledPayloadRoot>
-	const forgeRootDirective = '!`echo "${CLAUDE_PLUGIN_ROOT}"`';
-	if (patched.includes(forgeRootDirective)) {
-		patched = patched.replaceAll(forgeRootDirective, bundleRoot);
+	// plugin >= 1.4.0:  FORGE_ROOT: !`echo "${CLAUDE_PLUGIN_ROOT:-$(pwd)/.forge}"`
+	// plugin <= 1.3.x:  FORGE_ROOT: !`echo "${CLAUDE_PLUGIN_ROOT}"`
+	// Patched:          FORGE_ROOT = <bundledPayloadRoot>
+	const forgeRootDirectives = ['!`echo "${CLAUDE_PLUGIN_ROOT:-$(pwd)/.forge}"`', '!`echo "${CLAUDE_PLUGIN_ROOT}"`'];
+	for (const directive of forgeRootDirectives) {
+		if (patched.includes(directive)) {
+			patched = patched.replaceAll(directive, bundleRoot);
+		}
 	}
 
-	// Patch 1b: Second occurrence is in Step 3's "Re-derive FORGE_ROOT"
-	// Same directive appears there. Already handled by replaceAll above.
+	// Patch 1b: Later occurrences (Step 3 "Re-derive FORGE_ROOT", etc.)
+	// are the same directive — already handled by replaceAll above.
 
 	// Patch 2: CLAUDE_PLUGIN_DATA — used for legacy cache fallback
 	// Replace with bundle root since forge-cli doesn't have plugin data dir

@@ -170,6 +170,30 @@ function copyFile(src: string, dst: string): "created" | "skipped" {
 }
 
 /**
+ * Recursively copy a directory tree. Only regular files are copied; each file
+ * goes through copyFile (idempotent: byte-identical → skipped). Tracks created
+ * and skipped paths into the provided arrays.
+ */
+function copyDirRecursive(src: string, dest: string, created: string[], skipped: string[]): void {
+	const destOutcome = ensureDir(dest);
+	if (destOutcome === "created") created.push(dest);
+	else skipped.push(dest);
+
+	const entries = fs.readdirSync(src, { withFileTypes: true });
+	for (const entry of entries) {
+		const srcPath = path.join(src, entry.name);
+		const destPath = path.join(dest, entry.name);
+		if (entry.isDirectory()) {
+			copyDirRecursive(srcPath, destPath, created, skipped);
+		} else if (entry.isFile()) {
+			const outcome = copyFile(srcPath, destPath);
+			if (outcome === "created") created.push(destPath);
+			else skipped.push(destPath);
+		}
+	}
+}
+
+/**
  * Write a JSON file. If dst already contains the same content → "skipped".
  * Otherwise → overwrite and return "created".
  */
@@ -388,24 +412,94 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 		warnings.push(`schemas/ not found in payload at ${schemasSrc} — .forge/schemas/ left empty.`);
 	}
 
-	// ── Step 4: Install .claude/commands/forge/init.md ────────────────────────
-	const initMdSrc = path.join(payloadRoot, "commands", "init.md");
-	const initMdDest = path.join(dir, ".claude", "commands", "forge", "init.md");
+	// ── Step 4: Vendor the full /forge:* command surface ──────────────────────
+	// CLI-first redesign: project-prefix namespaces (/acme:*, /hello:*) are
+	// retired. The union of .base-pack/commands/ (sprint-workflow shims, static
+	// /forge:* files) and commands/ (plugin utility commands) vendors into
+	// .claude/commands/forge/. On name collision (init.md, check-agent.md,
+	// enhance.md) the .base-pack version wins — it is the project-local,
+	// vendored-paths variant.
+	const commandsDest = path.join(dir, ".claude", "commands", "forge");
+	const bpCommandsSrc = path.join(payloadRoot, ".base-pack", "commands");
+	const utilCommandsSrc = path.join(payloadRoot, "commands");
 
-	if (fs.existsSync(initMdSrc)) {
+	try {
+		const vendoredNames = new Set<string>();
+
+		// 4a: .base-pack/commands/ — winners
+		if (fs.existsSync(bpCommandsSrc)) {
+			const bpFiles = fs.readdirSync(bpCommandsSrc).filter((f) => f.endsWith(".md"));
+			for (const f of bpFiles) {
+				const outcome = copyFile(path.join(bpCommandsSrc, f), path.join(commandsDest, f));
+				const destPath = path.join(commandsDest, f);
+				if (outcome === "created") created.push(destPath);
+				else skipped.push(destPath);
+				vendoredNames.add(f);
+			}
+		} else {
+			warnings.push(`.base-pack/commands/ not found at ${bpCommandsSrc} — workflow command shims missing.`);
+		}
+
+		// 4b: commands/ — utility commands fill the remaining names
+		if (fs.existsSync(utilCommandsSrc)) {
+			const utilFiles = fs.readdirSync(utilCommandsSrc).filter((f) => f.endsWith(".md") && !vendoredNames.has(f));
+			for (const f of utilFiles) {
+				const outcome = copyFile(path.join(utilCommandsSrc, f), path.join(commandsDest, f));
+				const destPath = path.join(commandsDest, f);
+				if (outcome === "created") created.push(destPath);
+				else skipped.push(destPath);
+			}
+		} else {
+			warnings.push(`commands/ not found at ${utilCommandsSrc} — utility commands missing.`);
+		}
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		warnings.push(`vendor-commands non-fatal: ${e.message ?? String(err)}`);
+	}
+
+	// ── Step 4c: Vendor Forge-root content into .forge/ ───────────────────────
+	// The vendored .forge/ IS the Forge root in plugin-less projects
+	// (FORGE_ROOT: ${CLAUDE_PLUGIN_ROOT:-$(pwd)/.forge}). wfl:init reads
+	// init/phases/ rulebooks; substitute-placeholders probes .base-pack/;
+	// meta/ serves rebuild/migrate workflows; .claude-plugin/plugin.json is the
+	// version source commands report.
+	const FORGE_ROOT_DIRS: Array<[string, string]> = [
+		["init", "init"],
+		[".base-pack", ".base-pack"],
+		["meta", "meta"],
+		[".claude-plugin", ".claude-plugin"],
+	];
+	for (const [srcName, destName] of FORGE_ROOT_DIRS) {
+		const src = path.join(payloadRoot, srcName);
+		if (!fs.existsSync(src)) {
+			warnings.push(`${srcName}/ not found in payload — .forge/${destName}/ not vendored.`);
+			continue;
+		}
 		try {
-			const outcome = copyFile(initMdSrc, initMdDest);
-			if (outcome === "created") created.push(initMdDest);
-			else skipped.push(initMdDest);
+			copyDirRecursive(src, path.join(dir, ".forge", destName), created, skipped);
 		} catch (err: unknown) {
 			const e = err as { message?: string };
-			warnings.push(`install-commands non-fatal: ${e.message ?? String(err)}`);
+			warnings.push(`vendor-forge-root (${srcName}) non-fatal: ${e.message ?? String(err)}`);
 		}
-	} else {
-		warnings.push(
-			`init.md not found in payload at ${initMdSrc} — will be added in T05. ` +
-				"Skipping .claude/commands/forge/init.md install.",
-		);
+	}
+
+	// ── Step 4d: Vendor Claude Code assets (agents, skills) into .claude/ ─────
+	const CLAUDE_ASSET_DIRS: Array<[string, string]> = [
+		["agents", "agents"],
+		["skills", "skills"],
+	];
+	for (const [srcName, destName] of CLAUDE_ASSET_DIRS) {
+		const src = path.join(payloadRoot, srcName);
+		if (!fs.existsSync(src)) {
+			warnings.push(`${srcName}/ not found in payload — .claude/${destName}/ not vendored.`);
+			continue;
+		}
+		try {
+			copyDirRecursive(src, path.join(dir, ".claude", destName), created, skipped);
+		} catch (err: unknown) {
+			const e = err as { message?: string };
+			warnings.push(`vendor-claude-assets (${srcName}) non-fatal: ${e.message ?? String(err)}`);
+		}
 	}
 
 	// ── Step 5: Install wfl-*.js drivers ──────────────────────────────────────
@@ -465,7 +559,16 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 			bootstrappedAt,
 			payloadVersion,
 			payloadIntegrityHash,
-			steps: ["scaffold", "vendor-tools", "vendor-hooks", "vendor-schemas", "install-commands", "install-workflows"],
+			steps: [
+				"scaffold",
+				"vendor-tools",
+				"vendor-hooks",
+				"vendor-schemas",
+				"vendor-commands",
+				"vendor-forge-root",
+				"vendor-claude-assets",
+				"install-workflows",
+			],
 		};
 		const manifestOutcome = writeJsonFile(manifestPath, manifest);
 		if (manifestOutcome === "created") created.push(manifestPath);

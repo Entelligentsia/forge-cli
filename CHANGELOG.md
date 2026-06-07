@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.30] — 2026-06-07
+
+Fixed `/forge:*` command namespace — full project vendoring (bundles forge-plugin 1.4.0).
+
+### Changed
+
+- **Bootstrap Step 4 — full `/forge:*` command surface vendored.** Replaces the
+  init.md-only install: the union of `.base-pack/commands/` (17 sprint-workflow
+  shims, now static `/forge:*` files) and `commands/` (utility commands) vendors
+  into `.claude/commands/forge/`. On name collision (`init.md`, `check-agent.md`,
+  `enhance.md`) the `.base-pack` version wins. Project-prefix namespaces
+  (`/acme:*`, `/hello:*`) are retired — wfl:init no longer generates them
+  (plugin 1.4.0 `getCommandsSubdir()` is fixed to `forge`).
+
+- **Bootstrap Step 4c — Forge-root content vendored into `.forge/`.** `init/`
+  (wfl:init phase rulebooks), `.base-pack/` (Phase 3 materialization source —
+  substitute-placeholders probes it first), `meta/` (rebuild/migrate sources +
+  skill-recommendations), and `.claude-plugin/plugin.json` (version source).
+  The vendored `.forge/` now serves as a complete Forge root for the
+  `${CLAUDE_PLUGIN_ROOT:-$(pwd)/.forge}` fallback every command carries.
+
+- **Bootstrap Step 4d — Claude Code assets vendored into `.claude/`.**
+  `agents/` (store-query-validator, tomoshibi) and `skills/` (4 skill dirs).
+
+- **`forge.bundledVersion`** corrected to track the actually-bundled plugin
+  (1.4.0; had drifted at 1.2.21).
+
+### Fixed
+
+- **`composeUpdateKickoff` directive patch** handles both the plugin ≥ 1.4.0
+  `${CLAUDE_PLUGIN_ROOT:-$(pwd)/.forge}` form and the legacy
+  `${CLAUDE_PLUGIN_ROOT}` form when retargeting `update.md`.
+
 ## [1.0.29] — 2026-06-07
 
 `4ge init claude` bootstrap repair, round 2 — hook runtime deps (PostToolUse MODULE_NOT_FOUND in 1.0.28).

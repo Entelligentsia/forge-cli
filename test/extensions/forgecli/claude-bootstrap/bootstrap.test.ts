@@ -66,10 +66,19 @@ function makeMinimalPayload(dir: string): string {
 	fs.writeFileSync(path.join(schemasDir, "task.schema.json"), '{"type":"object"}\n', "utf8");
 	fs.writeFileSync(path.join(schemasDir, "_defs", "common.json"), '{"$defs":{}}\n', "utf8");
 
-	// commands dir with init.md
+	// commands dir — plugin utility commands (init.md overlaps with .base-pack)
 	const commandsDir = path.join(payloadRoot, "commands");
 	fs.mkdirSync(commandsDir, { recursive: true });
-	fs.writeFileSync(path.join(commandsDir, "init.md"), "# /forge:init\nPlaceholder init command.\n", "utf8");
+	fs.writeFileSync(path.join(commandsDir, "init.md"), "# /forge:init\nPlaceholder PLUGIN init command.\n", "utf8");
+	fs.writeFileSync(path.join(commandsDir, "status.md"), "# /forge:status\nUtility status command.\n", "utf8");
+	fs.writeFileSync(path.join(commandsDir, "health.md"), "# /forge:health\nUtility health command.\n", "utf8");
+
+	// .base-pack/commands — sprint-workflow command shims (static /forge:* files)
+	const bpCommandsDir = path.join(payloadRoot, ".base-pack", "commands");
+	fs.mkdirSync(bpCommandsDir, { recursive: true });
+	fs.writeFileSync(path.join(bpCommandsDir, "plan.md"), "# /forge:plan\nWorkflow shim.\n", "utf8");
+	fs.writeFileSync(path.join(bpCommandsDir, "run-task.md"), "# /forge:run-task\nWorkflow shim.\n", "utf8");
+	fs.writeFileSync(path.join(bpCommandsDir, "init.md"), "# /forge:init\nProject-local BASE-PACK init.\n", "utf8");
 
 	// .base-pack/workflows-js with wfl-*.js drivers
 	const wflDir = path.join(payloadRoot, ".base-pack", "workflows-js");
@@ -77,6 +86,33 @@ function makeMinimalPayload(dir: string): string {
 	fs.writeFileSync(path.join(wflDir, "wfl-run-task.js"), "// wfl-run-task stub\n", "utf8");
 	fs.writeFileSync(path.join(wflDir, "wfl-run-sprint.js"), "// wfl-run-sprint stub\n", "utf8");
 	fs.writeFileSync(path.join(wflDir, "wfl-fix-bug.js"), "// wfl-fix-bug stub\n", "utf8");
+
+	// .base-pack/personas — Phase 3 materialization source (nested content)
+	const bpPersonasDir = path.join(payloadRoot, ".base-pack", "personas");
+	fs.mkdirSync(bpPersonasDir, { recursive: true });
+	fs.writeFileSync(path.join(bpPersonasDir, "engineer.md"), "# {{PREFIX}} engineer persona\n", "utf8");
+
+	// init/phases — wfl:init phase rulebooks (read from $forgeRoot/init/phases/)
+	const initPhasesDir = path.join(payloadRoot, "init", "phases");
+	fs.mkdirSync(initPhasesDir, { recursive: true });
+	fs.writeFileSync(path.join(initPhasesDir, "phase-1-collect.md"), "# Phase 1\n", "utf8");
+	fs.writeFileSync(path.join(initPhasesDir, "phase-2-discover.md"), "# Phase 2\n", "utf8");
+
+	// meta/ — generation sources + skill-recommendations (nested)
+	const metaDir = path.join(payloadRoot, "meta");
+	fs.mkdirSync(path.join(metaDir, "workflows"), { recursive: true });
+	fs.writeFileSync(path.join(metaDir, "skill-recommendations.md"), "# Skill recs\n", "utf8");
+	fs.writeFileSync(path.join(metaDir, "workflows", "meta-migrate.md"), "# Meta migrate\n", "utf8");
+
+	// agents/ — plugin agents → project .claude/agents/
+	const agentsDir = path.join(payloadRoot, "agents");
+	fs.mkdirSync(agentsDir, { recursive: true });
+	fs.writeFileSync(path.join(agentsDir, "tomoshibi.md"), "# Tomoshibi agent\n", "utf8");
+
+	// skills/ — plugin skills → project .claude/skills/
+	const skillsDir = path.join(payloadRoot, "skills", "refresh-kb-links");
+	fs.mkdirSync(skillsDir, { recursive: true });
+	fs.writeFileSync(path.join(skillsDir, "SKILL.md"), "# refresh-kb-links skill\n", "utf8");
 
 	// .claude-plugin/plugin.json for version reading
 	const pluginDir = path.join(payloadRoot, ".claude-plugin");
@@ -225,13 +261,53 @@ describe("bootstrapClaudeProject", () => {
 			expect(marker.version).toBe("1.2.99");
 		});
 
-		it("installs init.md byte-identical to payload source", () => {
+		it("vendors the full /forge:* command surface into .claude/commands/forge/", () => {
 			const dir = makeFreshProjectDir();
 			bootstrapClaudeProject({ dir, payloadRoot });
 
-			const payloadSrc = fs.readFileSync(path.join(payloadRoot, "commands", "init.md"));
-			const installed = fs.readFileSync(path.join(dir, ".claude", "commands", "forge", "init.md"));
-			expect(installed).toEqual(payloadSrc);
+			const cmdDir = path.join(dir, ".claude", "commands", "forge");
+			// workflow shims from .base-pack/commands/
+			expect(fs.existsSync(path.join(cmdDir, "plan.md"))).toBe(true);
+			expect(fs.existsSync(path.join(cmdDir, "run-task.md"))).toBe(true);
+			// utility commands from commands/
+			expect(fs.existsSync(path.join(cmdDir, "status.md"))).toBe(true);
+			expect(fs.existsSync(path.join(cmdDir, "health.md"))).toBe(true);
+		});
+
+		it("on name collision the .base-pack/commands version wins (init.md)", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const installed = fs.readFileSync(path.join(dir, ".claude", "commands", "forge", "init.md"), "utf8");
+			const basePackSrc = fs.readFileSync(path.join(payloadRoot, ".base-pack", "commands", "init.md"), "utf8");
+			expect(installed).toBe(basePackSrc);
+			expect(installed).toContain("BASE-PACK");
+		});
+
+		it("vendors init/, .base-pack/, meta/, .claude-plugin/ into .forge/ (Forge-root parity)", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const forgeDir = path.join(dir, ".forge");
+			// wfl:init phase rulebooks read from $forgeRoot/init/phases/
+			expect(fs.existsSync(path.join(forgeDir, "init", "phases", "phase-1-collect.md"))).toBe(true);
+			expect(fs.existsSync(path.join(forgeDir, "init", "phases", "phase-2-discover.md"))).toBe(true);
+			// substitute-placeholders probes $forgeRoot/.base-pack/ first
+			expect(fs.existsSync(path.join(forgeDir, ".base-pack", "commands", "plan.md"))).toBe(true);
+			expect(fs.existsSync(path.join(forgeDir, ".base-pack", "personas", "engineer.md"))).toBe(true);
+			// meta/ incl. nested dirs
+			expect(fs.existsSync(path.join(forgeDir, "meta", "skill-recommendations.md"))).toBe(true);
+			expect(fs.existsSync(path.join(forgeDir, "meta", "workflows", "meta-migrate.md"))).toBe(true);
+			// version source for FORGE_ROOT/.claude-plugin/plugin.json readers
+			expect(fs.existsSync(path.join(forgeDir, ".claude-plugin", "plugin.json"))).toBe(true);
+		});
+
+		it("vendors agents/ and skills/ into .claude/", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(fs.existsSync(path.join(dir, ".claude", "agents", "tomoshibi.md"))).toBe(true);
+			expect(fs.existsSync(path.join(dir, ".claude", "skills", "refresh-kb-links", "SKILL.md"))).toBe(true);
 		});
 
 		it("installs all wfl-*.js drivers", () => {
@@ -271,7 +347,9 @@ describe("bootstrapClaudeProject", () => {
 			expect(manifest.steps).toContain("vendor-tools");
 			expect(manifest.steps).toContain("vendor-hooks");
 			expect(manifest.steps).toContain("vendor-schemas");
-			expect(manifest.steps).toContain("install-commands");
+			expect(manifest.steps).toContain("vendor-commands");
+			expect(manifest.steps).toContain("vendor-forge-root");
+			expect(manifest.steps).toContain("vendor-claude-assets");
 			expect(manifest.steps).toContain("install-workflows");
 		});
 
