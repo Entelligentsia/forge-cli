@@ -20,6 +20,7 @@ import { isParseError, parseForgeArgv } from "./argv.js";
 import { runConfig } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { applyForgeOwnedEnvDefaults } from "./env-defaults.js";
+import { runInit } from "./init.js";
 import { runUpdate } from "./update-cli.js";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ Subcommands:
   doctor [--json]          Preflight check — pi auth, model availability, settings
   update [--check] [--yes] [--version <spec>]  Guided upgrade (npm i -g)
   config show [--resolved] [--json]  Model routing config inspector
+  init claude [dir]        Bootstrap a Claude Code project from the bundled forge-payload
 
 Slash commands (inside a Forge project):
   /forge:init              Bootstrap a new Forge SDLC project
@@ -134,6 +136,11 @@ async function run(): Promise<void> {
 
 	if (parsed.forgeAction === "config") {
 		const exitCode = await runConfig(parsed.subcommandArgs ?? []);
+		process.exit(exitCode);
+	}
+
+	if (parsed.forgeAction === "init") {
+		const exitCode = await runInit(parsed.subcommandArgs ?? []);
 		process.exit(exitCode);
 	}
 

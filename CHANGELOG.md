@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.26] — 2026-06-07
+
+CLI-first bootstrap: new `4ge init claude [dir]` bin subcommand (FORGE-S31-T02).
+
+### Added
+
+- **`forge init claude [dir]` subcommand** — new bin route that deterministically
+  bootstraps a Claude Code project from the bundled forge-payload in seconds.
+  Zero LLM tokens, zero network access, pure fs. Scaffolds `.forge/` skeleton
+  + store dirs, vendors tools+lib into `.forge/tools/`, installs
+  `.claude/commands/forge/init.md` from payload, and installs all four
+  `.claude/workflows/wfl-*.js` drivers. Writes `.forge/.bootstrap-manifest.json`
+  with payload version and integrity hash. Idempotent repair: a second consecutive
+  run is a byte-identical no-op; partial bootstraps are repaired file-by-file.
+  `.forge/config.json` and `.forge/store/**` are never touched.
+
+- **`src/extensions/forgecli/claude-bootstrap/bootstrap.ts`** — the pure-fs
+  bootstrap module (`bootstrapClaudeProject(opts)`) with clean/partial/complete
+  idempotency, fast-fail payload validation, and structured `BootstrapResult`
+  (created/skipped/warnings). Grep-negative: no fetch/network, no store writes,
+  no sendUserMessage, no ctx.ui.
+
+- **Vitest tests** in
+  `test/extensions/forgecli/claude-bootstrap/bootstrap.test.ts` — 17 tests
+  covering clean / partial / complete (no-op) / non-writable / payload-validation
+  / init.md install / wfl-drivers / grep-negative ACs branches. All integration-
+  style against the real function (no fs mocking).
+
+- **argv.ts**: extended `ForgeAction` union with `"init"`; added `init claude [dir]`
+  parse branch before the fast-path subcommand block.
+
+- **`src/bin/init.ts`** — `parseInitArgs()` + `runInit()` handler following the
+  `runDoctor` / `runUpdate` / `runConfig` structural convention.
+
+- **forge.ts**: wired `forgeAction === "init"` dispatch branch; updated help text.
+
 ## [1.0.25] — 2026-06-06
 
 Coordinated release matching forge plugin **v1.2.21**. Both changes come from

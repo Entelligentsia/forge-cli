@@ -20,8 +20,8 @@
 //   --model, --tools, --append-system-prompt, --no-tools, --thinking,
 //   --no-thinking, and bare non-flag arguments.
 
-/** Parsed result when `--version`, `--help`, `doctor`, `update`, `config`, or a fast-path subcommand is requested. */
-export type ForgeAction = "version" | "help" | "doctor" | "update" | "config" | "subcommand" | null;
+/** Parsed result when `--version`, `--help`, `doctor`, `update`, `config`, `init`, or a fast-path subcommand is requested. */
+export type ForgeAction = "version" | "help" | "doctor" | "update" | "config" | "init" | "subcommand" | null;
 
 /**
  * Whitelist of bare subcommands that bypass pi and exec a bundled cjs tool
@@ -188,6 +188,20 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 		if (token === "config" && piArgv.length === 0) {
 			return {
 				forgeAction: "config",
+				piArgv: [],
+				env,
+				subcommandArgs: argv.slice(i + 1),
+			};
+		}
+
+		// ── `forge init` — deterministic bootstrap (FORGE-S31-T02) ─────────
+		// Bootstraps a Claude Code project from the bundled forge-payload.
+		// Subcommand args (["claude", "[dir]", ...flags]) are forwarded to
+		// init.ts for further parsing. Only matches the first bare token,
+		// no flags collected yet.
+		if (token === "init" && piArgv.length === 0) {
+			return {
+				forgeAction: "init",
 				piArgv: [],
 				env,
 				subcommandArgs: argv.slice(i + 1),

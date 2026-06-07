@@ -337,4 +337,38 @@ describe("parseForgeArgv", () => {
 		expect(result.forgeAction).toBe("config");
 		expect(result.subcommandArgs).toEqual([]);
 	});
+
+	// ── forge init (FORGE-S31-T02) ────────────────────────────────────────────
+	it("'forge init' → forgeAction = init, empty subcommandArgs", () => {
+		const result = parseForgeArgv(["init"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("init");
+		expect(result.piArgv).toEqual([]);
+		expect(result.subcommandArgs).toEqual([]);
+	});
+
+	it("'forge init claude' → forgeAction = init, subcommandArgs = ['claude']", () => {
+		const result = parseForgeArgv(["init", "claude"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("init");
+		expect(result.subcommandArgs).toEqual(["claude"]);
+	});
+
+	it("'forge init claude /my/dir' → forgeAction = init, subcommandArgs = ['claude', '/my/dir']", () => {
+		const result = parseForgeArgv(["init", "claude", "/my/dir"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("init");
+		expect(result.subcommandArgs).toEqual(["claude", "/my/dir"]);
+	});
+
+	it("pi flag before init → init treated as pi arg, not forge-owned", () => {
+		const result = parseForgeArgv(["--cwd", "/tmp", "init", "claude"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBeNull();
+		expect(result.piArgv).toEqual(["--cwd", "/tmp", "init", "claude"]);
+	});
 });
