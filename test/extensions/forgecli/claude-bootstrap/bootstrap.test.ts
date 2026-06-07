@@ -1,4 +1,4 @@
-// bootstrap.test.ts — Tests for claude-bootstrap/bootstrap.ts (FORGE-S31-T02)
+// bootstrap.test.ts — Tests for claude-bootstrap/bootstrap.ts (FORGE-S31-T02 + T03)
 //
 // Integration-style unit tests against the real bootstrapClaudeProject() function
 // using actual fs operations on tmp dirs. No fs mocking.
@@ -11,6 +11,11 @@
 //   5. payload validation — fast-fail before any writes when store-cli.cjs absent
 //   6. init.md install from payload — byte-identical to payload source
 //   7. wfl drivers installed — all wfl-*.js present in .claude/workflows/
+//   FORGE-S31-T03:
+//   8. Step 7 — .claude/settings.json written with Forge hooks after clean bootstrap
+//   9. Step 8 — .gitignore appended when present; skipped when already contains pattern; skipped when absent
+//  10. Step 9 — result.preflight fields present (claudeAvailable is boolean, workflowToolChecked=false)
+//  11. Idempotent second run: settings.json hash unchanged
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -305,6 +310,164 @@ describe("bootstrapClaudeProject", () => {
 
 			// Restore permissions for cleanup
 			fs.chmodSync(readOnlyDir, 0o755);
+		});
+	});
+
+	describe("Step 7 — settings.json hooks wiring (FORGE-S31-T03)", () => {
+		it("creates .claude/settings.json with Forge hooks after clean bootstrap", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result.ok).toBe(true);
+			const settingsPath = path.join(dir, ".claude", "settings.json");
+			expect(fs.existsSync(settingsPath)).toBe(true);
+
+			const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as { hooks: unknown };
+			expect(parsed).toHaveProperty("hooks");
+		});
+
+		it("settings.json contains Forge hook commands pointing at .forge/tools/hooks/", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const settingsPath = path.join(dir, ".claude", "settings.json");
+			const content = fs.readFileSync(settingsPath, "utf8");
+			expect(content).toMatch(/\.forge\/tools\/hooks\//);
+		});
+
+		it("settings.json creation reported in result.created", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			const settingsPath = path.join(dir, ".claude", "settings.json");
+			expect(result.created.some((p) => p === settingsPath)).toBe(true);
+		});
+
+		it("existing settings.json without hooks: hooks merged in, other keys preserved", () => {
+			const dir = makeFreshProjectDir();
+			// Pre-bootstrap to create .claude/ dir
+			const firstResult = bootstrapClaudeProject({ dir, payloadRoot });
+			expect(firstResult.ok).toBe(true);
+
+			// Replace settings.json with a version that has no hooks but has other keys
+			const settingsPath = path.join(dir, ".claude", "settings.json");
+			const initial = { model: "claude-sonnet-4-5" };
+			fs.writeFileSync(settingsPath, JSON.stringify(initial, null, 2), "utf8");
+
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+			expect(result.ok).toBe(true);
+
+			const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+				model: string;
+				hooks: unknown;
+			};
+			expect(parsed.model).toBe("claude-sonnet-4-5");
+			expect(parsed).toHaveProperty("hooks");
+		});
+	});
+
+	describe("Step 8 — .gitignore append (FORGE-S31-T03)", () => {
+		it("appends Forge gitignore block when .gitignore is present and doesn't have the pattern", () => {
+			const dir = makeFreshProjectDir();
+			// Create a .gitignore without the Forge pattern
+			const gitignorePath = path.join(dir, ".gitignore");
+			fs.writeFileSync(gitignorePath, "node_modules/\ndist/\n", "utf8");
+
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+			expect(result.ok).toBe(true);
+
+			const content = fs.readFileSync(gitignorePath, "utf8");
+			expect(content).toMatch(/\.forge\/store\/events\//);
+		});
+
+		it("skips .gitignore append when pattern already present (idempotent)", () => {
+			const dir = makeFreshProjectDir();
+			const gitignorePath = path.join(dir, ".gitignore");
+			// Already has the .forge/ pattern
+			fs.writeFileSync(gitignorePath, "node_modules/\n.forge/\n", "utf8");
+
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const content = fs.readFileSync(gitignorePath, "utf8");
+			// Should not have duplicate entries
+			const forgeCount = (content.match(/\.forge\//g) ?? []).length;
+			expect(forgeCount).toBe(1);
+		});
+
+		it("skips .gitignore when file is absent (no .gitignore created)", () => {
+			const dir = makeFreshProjectDir();
+			// Confirm no .gitignore exists
+			const gitignorePath = path.join(dir, ".gitignore");
+			expect(fs.existsSync(gitignorePath)).toBe(false);
+
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+			expect(result.ok).toBe(true);
+
+			// Still no .gitignore — bootstrap does not create one
+			expect(fs.existsSync(gitignorePath)).toBe(false);
+		});
+	});
+
+	describe("Step 9 — preflight + BootstrapResult extension (FORGE-S31-T03)", () => {
+		it("result.preflight is present after bootstrap", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result.ok).toBe(true);
+			expect(result).toHaveProperty("preflight");
+		});
+
+		it("result.preflight.claudeAvailable is a boolean", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(typeof result.preflight.claudeAvailable).toBe("boolean");
+		});
+
+		it("result.preflight.workflowToolChecked is always false (offline limitation)", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result.preflight.workflowToolChecked).toBe(false);
+		});
+
+		it("result.preflight.warnings is an array", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(Array.isArray(result.preflight.warnings)).toBe(true);
+		});
+	});
+
+	describe("idempotent second run — T03 extended (settings hash unchanged)", () => {
+		it("second run: settings.json hash unchanged after first run", () => {
+			const dir = makeFreshProjectDir();
+
+			bootstrapClaudeProject({ dir, payloadRoot });
+			const settingsPath = path.join(dir, ".claude", "settings.json");
+			const hashAfterFirst = crypto
+				.createHash("sha256")
+				.update(fs.readFileSync(settingsPath))
+				.digest("hex");
+
+			bootstrapClaudeProject({ dir, payloadRoot });
+			const hashAfterSecond = crypto
+				.createHash("sha256")
+				.update(fs.readFileSync(settingsPath))
+				.digest("hex");
+
+			expect(hashAfterSecond).toBe(hashAfterFirst);
+		});
+
+		it("second run: settings.json wiring reported in result.skipped (already-present)", () => {
+			const dir = makeFreshProjectDir();
+
+			bootstrapClaudeProject({ dir, payloadRoot });
+			const result2 = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result2.ok).toBe(true);
+			const settingsPath = path.join(dir, ".claude", "settings.json");
+			expect(result2.skipped.some((p) => p === settingsPath)).toBe(true);
 		});
 	});
 

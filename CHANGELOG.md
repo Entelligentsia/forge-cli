@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.27] — 2026-06-07
+
+`4ge init claude` — settings hooks wiring, gitignore, preflight, hand-off UX (FORGE-S31-T03).
+
+### Added
+
+- **`settings-merge.ts`** — new `mergeForgeHooks()` + `buildForgeHooksBlock()` module with
+  merge-not-clobber semantics for wiring Forge hooks into project `.claude/settings.json`.
+  Handles 6 branches: absent file (create), empty object (add hooks key), existing without hooks
+  (merge in), unrelated hooks (merge Forge entries without overwriting), already-present (no-op),
+  malformed JSON (error, never overwrites). Fully idempotent: second run returns `"already-present"`.
+
+- **Bootstrap Step 7** — `bootstrapClaudeProject()` now wires Forge hooks into project
+  `.claude/settings.json` via `mergeForgeHooks()`. All 8 hook entries (7 task-workflow hooks +
+  `forge-permissions`) are written with commands pointing at
+  `$CLAUDE_PROJECT_DIR/.forge/tools/hooks/<name>.cjs`. Outcome (`created`/`skipped`/`warnings`)
+  reported in `BootstrapResult` per existing conventions.
+
+- **Bootstrap Step 8** — idempotent `.gitignore` append. Ported `updateGitignore()` from
+  `phase4-register.ts` as a pure standalone function (no `ctx.ui`). If `.gitignore` is present
+  and does not already contain a `.forge/store/events/` parent pattern, appends the standard
+  Forge gitignore block. Skips silently when absent or already covered.
+
+- **Bootstrap Step 9** — preflight check for Claude Code availability (`runPreflight()`). Detects
+  `claude` binary reachability via `execFileSync("claude", ["--version"])`. Non-fatal: adds an
+  actionable warning to `result.warnings` if unavailable, but does not flip `result.ok`. Returns
+  `BootstrapPreflight { claudeAvailable, workflowToolChecked, warnings }` attached to `BootstrapResult`.
+
+- **`BootstrapPreflight` type** — new sub-object on `BootstrapResult` with `claudeAvailable: boolean`,
+  `workflowToolChecked: boolean` (always `false` in T03 — no reliable offline check), and `warnings: string[]`.
+  Additive change — T02 tests remain green.
+
+- **Hand-off UX** — `init.ts` now prints a structured multi-line message naming `/forge:init`,
+  explaining the one-time hooks-approval prompt, and listing all 7 task-workflow hooks by name
+  and event type. Prepends a warning line if Claude Code was not found on PATH.
+
+- **Test suite** — 9-fixture `settings-merge.test.ts` covering all merge branches; 11 new assertions
+  in `bootstrap.test.ts` for Steps 7–9 and idempotency.
+
 ## [1.0.26] — 2026-06-07
 
 CLI-first bootstrap: new `4ge init claude [dir]` bin subcommand (FORGE-S31-T02).

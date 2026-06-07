@@ -125,8 +125,30 @@ export async function runInit(args: readonly string[]): Promise<number> {
 		}
 	}
 
+	// Hand-off message (FORGE-S31-T03): names /forge:init, lists 7 hooks, mentions one-time approval prompt.
+	// Prepend preflight warning if Claude Code was not found.
+	const claudeUnavailableWarning = result.preflight.claudeAvailable
+		? ""
+		: "  Warning: Claude Code not found on PATH — install before opening this project.\n\n";
+
 	process.stdout.write(
-		`\n✓ forge init complete — open Claude Code in ${dir} and run /forge:init to complete setup.\n`,
+		`\n✓ forge init complete — project bootstrapped in ${dir}\n` +
+			`\nNext step:\n` +
+			`${claudeUnavailableWarning}` +
+			`  Open Claude Code in ${dir} and run: /forge:init\n` +
+			`\nWhat to expect:\n` +
+			`  Claude Code will ask you to approve 7 project hooks (one-time prompt).\n` +
+			`  Approve them — they are scoped to this project only.\n` +
+			`\n  Hooks registered:\n` +
+			`    • check-update       (SessionStart)\n` +
+			`    • preflight-session  (SessionStart)\n` +
+			`    • validate-write     (PreToolUse — Write/Edit/MultiEdit)\n` +
+			`    • triage-error       (PostToolUse — Bash)\n` +
+			`    • query-logger       (PostToolUse — Bash)\n` +
+			`    • post-init          (PostToolUse — Bash)\n` +
+			`    • post-sprint        (PostToolUse — Bash)\n` +
+			`\n  After approval, /forge:init runs discovery, KB generation,\n` +
+			`  and project configuration. Zero tokens until you open Claude Code.\n`,
 	);
 
 	return 0;
