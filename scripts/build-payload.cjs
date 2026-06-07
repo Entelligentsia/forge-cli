@@ -374,21 +374,25 @@ if (fs.existsSync(basePackSrc)) {
 	console.warn("build-payload: forge/forge/init/base-pack/ not found — skipping");
 }
 
-// 2e-pre: init/phases/ — per-phase prompt files (FORGE-S26-T17)
-// Phase prompt files are read by verifiers.ts / run-phases.ts at runtime to
-// build the prompt sent to the agent for each init phase.
-const phasesSrc = path.join(forgeRoot, "init", "phases");
-const phasesDestDir = path.join(outDir, "init", "phases");
-
-if (fs.existsSync(phasesSrc)) {
-	fs.mkdirSync(phasesDestDir, { recursive: true });
-	const phaseFiles = fs.readdirSync(phasesSrc).filter(f => f.endsWith(".md"));
-	for (const file of phaseFiles) {
-		copyFile(path.join(phasesSrc, file), path.join(phasesDestDir, file));
+// 2e-pre: init/ rulebook tree — phases/, discovery/, generation/ (forge#112)
+// phases/ is read by verifiers.ts / run-phases.ts AND by wfl-init.js subagents
+// (vendored to .forge/init/phases/). discovery/ and generation/ are the
+// per-domain prompts wfl-init.js Phase 1/2 subagents read — bundling only
+// phases/ left discovery agents with dead rulebook references in the field.
+const INIT_RULEBOOK_DIRS = ["phases", "discovery", "generation"];
+for (const sub of INIT_RULEBOOK_DIRS) {
+	const subSrc = path.join(forgeRoot, "init", sub);
+	const subDest = path.join(outDir, "init", sub);
+	if (fs.existsSync(subSrc)) {
+		fs.mkdirSync(subDest, { recursive: true });
+		const subFiles = fs.readdirSync(subSrc).filter((f) => f.endsWith(".md"));
+		for (const file of subFiles) {
+			copyFile(path.join(subSrc, file), path.join(subDest, file));
+		}
+		console.log(`build-payload: init/${sub}/ — ${subFiles.length} files copied`);
+	} else {
+		console.warn(`build-payload: forge/forge/init/${sub}/ not found — skipping`);
 	}
-	console.log(`build-payload: init/phases/ — ${phaseFiles.length} files copied`);
-} else {
-	console.warn("build-payload: forge/forge/init/phases/ not found — skipping");
 }
 
 // 2e: .schemas/ — forge/forge/schemas/*.schema.json

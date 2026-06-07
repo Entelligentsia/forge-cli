@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.32] — 2026-06-07
+
+Re-bundle forge-plugin 1.4.2 — wfl-init.js Workflow-API rewrite
+([forge#112](https://github.com/Entelligentsia/forge/issues/112): phase
+callbacks silently discarded → init ran 0 agents but reported success;
+parallel() thunks; agent(prompt, opts) arg order; missing schema opts).
+
+### Fixed
+
+- **`build-payload` bundles the full `init/` rulebook tree** — `discovery/`
+  (5 prompts) and `generation/` (11 rulebooks) join `phases/`. Bundling only
+  `phases/` left wfl-init.js discovery/KB-doc subagents with dead rulebook
+  references in vendored projects.
+
 ## [1.0.31] — 2026-06-07
 
 Re-bundle forge-plugin 1.4.1 — wfl-init.js Workflow-harness parse fix
