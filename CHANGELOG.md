@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.33] — 2026-06-07
+
+Re-bundle forge-plugin 1.4.3 — wfl-init.js Phase 2 verify invocations carry
+the required `--kb-path` ([forge#112](https://github.com/Entelligentsia/forge/issues/112) follow-up).
+
 ## [1.0.32] — 2026-06-07
 
 Re-bundle forge-plugin 1.4.2 — wfl-init.js Workflow-API rewrite
