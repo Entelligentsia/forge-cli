@@ -36,7 +36,7 @@ import type { OrchestratorTree } from "../orchestrator-tree.js";
 import { getSessionRegistry } from "../session-registry.js";
 import type { NodeViewModel, TreeViewModel } from "./view-model.js";
 import { buildViewModel } from "./view-model.js";
-import { fmtModelAndTokenFooter, fmtTokenMeter, toDisplayLines } from "../viewport/renderer.js";
+import { fmtModelAndTokenFooter, fmtTokenFooter, toDisplayLines } from "../viewport/renderer.js";
 import { paintTailLine } from "../viewport/theme.js";
 import {
 	cursor,
@@ -762,17 +762,16 @@ export class DashboardComponent implements Component, Focusable {
 		const aggUsage = this.controller.getAggregateUsage();
 		const aggCompression = this.controller.getAggregateCompression();
 		const activeModel = this.controller.getActiveModel();
-		const meter = fmtTokenMeter(aggUsage);
-		const compSuffix = aggCompression.tokensSaved > 0 ? ` ⇌${aggCompression.tokensSaved}t` : "";
+		const meter = fmtTokenFooter(aggUsage, aggCompression.tokensSaved > 0 ? aggCompression : undefined);
 		const modelLabel = activeModel?.provider && activeModel?.model
 			? `${activeModel.provider} ${activeModel.model}`
 			: (activeModel?.provider ?? activeModel?.model ?? "");
 
 		let footerLine = "";
 		if (modelLabel && meter) {
-			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}  Σ ${meter}${compSuffix}`;
+			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}  Σ ${meter}`;
 		} else if (meter) {
-			footerLine = `${hintsBase}   Σ ${meter}${compSuffix}`;
+			footerLine = `${hintsBase}   Σ ${meter}`;
 		} else if (modelLabel) {
 			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}`;
 		} else {
@@ -1046,7 +1045,7 @@ export class DashboardComponent implements Component, Focusable {
 	private formatMetrics(node: NodeViewModel): string {
 		const parts: string[] = [];
 		if (node.usage.input || node.usage.output || node.usage.cacheRead) {
-			parts.push(fmtTokenMeter(node.usage));
+			parts.push(fmtTokenFooter(node.usage));
 		}
 		if (node.metrics.toolCount) {
 			parts.push(`${node.metrics.toolCount} tool${node.metrics.toolCount === 1 ? "" : "s"}`);
