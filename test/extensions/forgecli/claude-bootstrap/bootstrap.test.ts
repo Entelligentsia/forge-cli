@@ -41,6 +41,9 @@ function makeMinimalPayload(dir: string): string {
 	fs.mkdirSync(libDir, { recursive: true });
 	fs.writeFileSync(path.join(libDir, "helper.cjs"), "// stub helper\n", "utf8");
 
+	// tools/package.json CJS scope marker (FORGE-BUG-030 — written by build-payload)
+	fs.writeFileSync(path.join(toolsDir, "package.json"), '{\n  "type": "commonjs"\n}\n', "utf8");
+
 	// hooks dir with hook scripts (payload root, mirrors forge/forge/hooks/)
 	const hooksDir = path.join(payloadRoot, "hooks");
 	fs.mkdirSync(hooksDir, { recursive: true });
@@ -49,6 +52,12 @@ function makeMinimalPayload(dir: string): string {
 	fs.writeFileSync(path.join(hooksDir, "validate-write.cjs"), "// stub validate-write hook\n", "utf8");
 	// non-script files in hooks/ (e.g. hooks.json) must NOT be vendored
 	fs.writeFileSync(path.join(hooksDir, "hooks.json"), "{}\n", "utf8");
+
+	// hooks/lib dir — hook scripts require ./lib/common.cjs etc. at runtime
+	const hooksLibDir = path.join(hooksDir, "lib");
+	fs.mkdirSync(hooksLibDir, { recursive: true });
+	fs.writeFileSync(path.join(hooksLibDir, "common.cjs"), "// stub hooks lib common\n", "utf8");
+	fs.writeFileSync(path.join(hooksLibDir, "write-registry.js"), "// stub write-registry\n", "utf8");
 
 	// schemas dir with *.json + _defs/ subdir
 	const schemasDir = path.join(payloadRoot, "schemas");
@@ -171,6 +180,27 @@ describe("bootstrapClaudeProject", () => {
 			);
 			// non-script files (hooks.json) are not vendored
 			expect(fs.existsSync(path.join(hooksDest, "hooks.json"))).toBe(false);
+		});
+
+		it("vendors hooks/lib/ runtime deps alongside hook scripts", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const hooksLibDest = path.join(dir, ".forge", "tools", "hooks", "lib");
+			// hook scripts require ./lib/common.cjs etc. — without these every
+			// PostToolUse hook fails with MODULE_NOT_FOUND at runtime
+			expect(fs.existsSync(path.join(hooksLibDest, "common.cjs"))).toBe(true);
+			expect(fs.existsSync(path.join(hooksLibDest, "write-registry.js"))).toBe(true);
+		});
+
+		it("vendors tools/package.json CJS scope marker (FORGE-BUG-030)", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+
+			const markerPath = path.join(dir, ".forge", "tools", "package.json");
+			expect(fs.existsSync(markerPath)).toBe(true);
+			const parsed = JSON.parse(fs.readFileSync(markerPath, "utf8")) as { type?: string };
+			expect(parsed.type).toBe("commonjs");
 		});
 
 		it("vendors schemas into .forge/schemas/ including _defs/", () => {

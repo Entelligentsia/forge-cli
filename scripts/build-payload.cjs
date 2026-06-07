@@ -220,6 +220,10 @@ const TOOLS_TO_COPY = [
 	// from files_changed provenance, boundary guard, git commit, terminal
 	// transition. Missing it halts the commit phase on every project.
 	"commit-task.cjs",
+	// CLI-first bootstrap: settings.json PostToolUse:Bash hook points at
+	// $CLAUDE_PROJECT_DIR/.forge/tools/query-logger.cjs (plugin hooks.json parity).
+	// Missing it hard-fails (exit 1) on every Bash call in a bootstrapped project.
+	"query-logger.cjs",
 ];
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
@@ -556,10 +560,12 @@ if (fs.existsSync(pluginAgentsSrc)) {
 
 // 2e4: hooks/ — forge/forge/hooks/*.cjs (Claude Code plugin hooks tracked
 // by integrity.json: check-update.cjs, forge-permissions.cjs, triage-error.cjs,
-// validate-write.cjs). Not executed by forge-cli runtime (pi-coding-agent
-// doesn't run Claude Code hooks) but bundled to satisfy integrity tracking.
-// Per integrity.json scope: only top-level *.cjs are tracked — hooks/lib/,
-// hooks/__tests__/, and hooks.json are intentionally excluded.
+// validate-write.cjs). Since the CLI-first bootstrap (FORGE-S31), these are
+// vendored into project .forge/tools/hooks/ and executed via project
+// .claude/settings.json — hooks/lib/ runtime deps (common.cjs,
+// write-registry.js, …) MUST ship with them or every hook fails with
+// MODULE_NOT_FOUND. hooks/__tests__/ and hooks.json stay excluded.
+// Per integrity.json scope: only top-level *.cjs are tracked.
 // Updated .js → .cjs by FORGE-S25-T14 (hooks rename).
 const pluginHooksSrc = path.join(forgeRoot, "hooks");
 const pluginHooksDest = path.join(outDir, "hooks");
@@ -572,7 +578,22 @@ if (fs.existsSync(pluginHooksSrc)) {
 	for (const file of hookFiles) {
 		copyFile(path.join(pluginHooksSrc, file), path.join(pluginHooksDest, file));
 	}
-	console.log(`build-payload: hooks/ — ${hookFiles.length} files copied`);
+	// hooks/lib/ — runtime deps required by the hook scripts (./lib/*.cjs|.js)
+	const pluginHooksLibSrc = path.join(pluginHooksSrc, "lib");
+	const pluginHooksLibDest = path.join(pluginHooksDest, "lib");
+	let hooksLibCount = 0;
+	if (fs.existsSync(pluginHooksLibSrc)) {
+		fs.mkdirSync(pluginHooksLibDest, { recursive: true });
+		const hooksLibFiles = fs
+			.readdirSync(pluginHooksLibSrc, { withFileTypes: true })
+			.filter((e) => e.isFile() && (e.name.endsWith(".cjs") || e.name.endsWith(".js")))
+			.map((e) => e.name);
+		for (const file of hooksLibFiles) {
+			copyFile(path.join(pluginHooksLibSrc, file), path.join(pluginHooksLibDest, file));
+		}
+		hooksLibCount = hooksLibFiles.length;
+	}
+	console.log(`build-payload: hooks/ — ${hookFiles.length} files + ${hooksLibCount} lib files copied`);
 } else {
 	console.warn("build-payload: forge/forge/hooks/ not found — skipping");
 }

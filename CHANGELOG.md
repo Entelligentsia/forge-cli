@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.29] — 2026-06-07
+
+`4ge init claude` bootstrap repair, round 2 — hook runtime deps (PostToolUse MODULE_NOT_FOUND in 1.0.28).
+
+### Fixed
+
+- **`hooks/lib/` vendored (bootstrap Step 3b + build-payload 2e4).** Hook scripts
+  require `./lib/common.cjs` / `./lib/write-registry.js` at runtime; neither the
+  payload nor the bootstrap shipped `hooks/lib/`, so `validate-write`, `post-init`,
+  and `post-sprint` failed with MODULE_NOT_FOUND on every matching tool call
+  (fail-open, but noisy in the Claude Code UI).
+
+- **`query-logger.cjs` added to `TOOLS_TO_COPY`.** The settings.json PostToolUse:Bash
+  hook points at `.forge/tools/query-logger.cjs`, but the tool was never bundled into
+  the payload — a hard exit-1 hook error on every Bash call in a bootstrapped project.
+
+- **`tools/package.json` CJS scope marker vendored (FORGE-BUG-030 parity).** The
+  bootstrap copy filter (`*.cjs`/`*.js` only) dropped the `{"type":"commonjs"}`
+  marker build-payload writes into `tools/` — vendored `lib/*.js` would resolve as
+  ESM and crash in `"type":"module"` host projects.
+
 ## [1.0.28] — 2026-06-07
 
 `4ge init claude` bootstrap repair — vendor hook scripts + schemas (first-field-test regressions in 1.0.27).

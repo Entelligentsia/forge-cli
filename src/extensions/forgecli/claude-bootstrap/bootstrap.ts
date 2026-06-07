@@ -261,8 +261,12 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 	const toolsDest = path.join(dir, ".forge", "tools");
 
 	try {
-		// Copy *.cjs and *.js files
-		const toolFiles = fs.readdirSync(toolsSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
+		// Copy *.cjs and *.js files, plus the package.json CJS scope marker
+		// (FORGE-BUG-030: lib/*.js are CommonJS; without the marker they resolve
+		// as ESM in "type":"module" host projects and crash on module.exports).
+		const toolFiles = fs
+			.readdirSync(toolsSrc)
+			.filter((f) => f.endsWith(".cjs") || f.endsWith(".js") || f === "package.json");
 		for (const f of toolFiles) {
 			const outcome = copyFile(path.join(toolsSrc, f), path.join(toolsDest, f));
 			const destPath = path.join(toolsDest, f);
@@ -316,6 +320,24 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 				const destPath = path.join(hooksDest, f);
 				if (outcome === "created") created.push(destPath);
 				else skipped.push(destPath);
+			}
+
+			// Copy hooks/lib/ — hook scripts require ./lib/common.cjs etc. at runtime;
+			// without these every PostToolUse hook fails with MODULE_NOT_FOUND.
+			const hooksLibSrc = path.join(hooksSrc, "lib");
+			const hooksLibDest = path.join(hooksDest, "lib");
+			if (fs.existsSync(hooksLibSrc)) {
+				const hooksLibOutcome = ensureDir(hooksLibDest);
+				if (hooksLibOutcome === "created") created.push(hooksLibDest);
+				else skipped.push(hooksLibDest);
+
+				const hooksLibFiles = fs.readdirSync(hooksLibSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
+				for (const f of hooksLibFiles) {
+					const outcome = copyFile(path.join(hooksLibSrc, f), path.join(hooksLibDest, f));
+					const destPath = path.join(hooksLibDest, f);
+					if (outcome === "created") created.push(destPath);
+					else skipped.push(destPath);
+				}
 			}
 		} catch (err: unknown) {
 			const e = err as { message?: string };
