@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.31] — 2026-06-07
+
+Re-bundle forge-plugin 1.4.1 — wfl-init.js Workflow-harness parse fix
+(`export default` wrapper stripped; every `/forge:init` dispatch previously
+failed at launch with "SyntaxError: Unexpected keyword 'export'").
+Projects bootstrapped with the broken driver: re-run `4ge init claude .`
+(idempotent repair overwrites `.claude/workflows/wfl-init.js`).
+
 ## [1.0.30] — 2026-06-07
 
 Fixed `/forge:*` command namespace — full project vendoring (bundles forge-plugin 1.4.0).
