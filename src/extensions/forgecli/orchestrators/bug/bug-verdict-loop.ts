@@ -1,0 +1,192 @@
+// bug-verdict-loop.ts — review-phase verdict + revision/loopback handling for
+// the fix-bug pipeline. Extracted VERBATIM from fix-bug.ts's phase loop
+// (FORGE-S31 file-size refactor) as a pure decision function: it performs the
+// same store reads, ctx.ui notifications, state writes, transcript records,
+// tree-node finalization, status-reset transition, and halt-advisor dispatch the
+// inline block did, and returns a small discriminated result the caller's loop
+// switches on.
+//
+// Behavior-preserving: no logic changes. The only structural change is that the
+// inline `return {...}` paths now return `{ kind: "return"; result }`, the
+// `continue` path returns `{ kind: "loopback"; toIndex }`, and the fall-through
+// (approved) path returns `{ kind: "advance" }`.
+
+import { spawnSync } from "node:child_process";
+
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+
+import type { MergedConfig } from "../../config/config-layer.js";
+import type { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import { findPredecessorIndex, type PhaseDescriptor } from "../run-task.js";
+import { BUG_PHASES } from "./bug-phases.js";
+import { readBugRecord } from "./bug-id.js";
+import { writeBugState } from "./bug-state.js";
+import { readBugVerdict } from "./bug-verdict.js";
+import type { RunBugPipelineResult } from "./run-bug-types.js";
+
+export type BugVerdictLoopOutcome =
+	| { kind: "advance" }
+	| { kind: "loopback"; toIndex: number }
+	| { kind: "return"; result: RunBugPipelineResult };
+
+export interface BugVerdictLoopParams {
+	phase: PhaseDescriptor;
+	bugId: string;
+	storeCli: string;
+	cwd: string;
+	forgeRoot: string;
+	iterationCounts: Record<string, number>;
+	currentPhaseIndex: number;
+	modelRoutingConfig: MergedConfig;
+	ctx: ExtensionCommandContext;
+	orchTranscript: OrchestratorTranscriptWriter;
+	/** Per-role phase-summary key map (BUG_SUMMARY_KEY_BY_ROLE). */
+	summaryKeyByRole: Record<string, string | null>;
+	/** Closure that finalizes this dispatch's OrchestratorTree node. */
+	finishPhaseNode: (status: "completed" | "failed" | "escalated") => void;
+}
+
+/**
+ * Evaluate the review-phase verdict and decide the loop's next move.
+ * Mirrors the inline block that previously lived in runBugPipelineInner.
+ */
+export function handleBugReviewVerdict(p: BugVerdictLoopParams): BugVerdictLoopOutcome {
+	const { phase, bugId, storeCli, cwd, forgeRoot, iterationCounts, currentPhaseIndex, modelRoutingConfig, ctx } = p;
+	const { orchTranscript, finishPhaseNode, summaryKeyByRole } = p;
+
+	// Re-read bug record for latest status after subagent ran
+	const updatedBugRecord = readBugRecord(bugId, storeCli, cwd);
+	const verdict = readBugVerdict(updatedBugRecord, phase.role, summaryKeyByRole);
+
+	if (verdict === "missing") {
+		ctx.ui.notify(
+			`× forge:fix-bug — verdict missing for phase ${phase.role} after subagent completed. Halting for advisory.`,
+			"error",
+		);
+		finishPhaseNode("failed");
+		writeBugState(cwd, {
+			bugId,
+			phaseIndex: currentPhaseIndex,
+			iterationCounts,
+			halted: true,
+			lastError: `verdict missing for ${phase.role}`,
+			savedAt: new Date().toISOString(),
+		});
+		// A missing verdict IS a postflight-outputs failure: the canonical
+		// phase summary the subagent must write (e.g. summaries.code_review,
+		// linked via set-bug-summary) was never recorded, so there is no
+		// verdict to route on. Route it through the halt-recovery advisor
+		// (FORGE-S26-T18) — the same hand-off the preflight/postflight gate
+		// failures use — instead of a bare escalation. Best-effort, non-fatal.
+		const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
+		void runHaltAdvisor({
+			gateFailure: {
+				phase: phase.role,
+				reasonCode: "verdict-missing",
+				detail:
+					`Phase '${phase.role}' completed but no verdict was found in the store. ` +
+					"The canonical phase summary was not written, so the orchestrator has no verdict to route on.",
+				remediation:
+					"Re-run the phase and ensure the subagent's forge_store set-bug-summary call " +
+					'uses args:["<bugId>", "<phaseKey>"] with the literal phase key as args[1] ' +
+					"(e.g. code_review), and that the call exits zero before the subagent returns.",
+			},
+			advisorModel,
+			taskId: bugId,
+			cwd,
+			ctx: { ui: ctx.ui as any },
+			forgeRoot,
+		});
+		return {
+			kind: "return",
+			result: {
+				status: "halted",
+				lastPhaseIndex: currentPhaseIndex,
+				iterationCounts,
+				lastError: `verdict missing for ${phase.role}`,
+			},
+		};
+	}
+
+	if (verdict === "revision") {
+		iterationCounts[phase.role] = (iterationCounts[phase.role] ?? 0) + 1;
+
+		if (iterationCounts[phase.role] >= phase.maxIterations) {
+			ctx.ui.notify(
+				`× forge:fix-bug — revision cap reached for phase ${phase.role} ` +
+					`(${iterationCounts[phase.role]}/${phase.maxIterations} iterations). Escalating.`,
+				"error",
+			);
+			finishPhaseNode("escalated");
+			writeBugState(cwd, {
+				bugId,
+				phaseIndex: currentPhaseIndex,
+				iterationCounts,
+				halted: true,
+				lastError: `revision cap reached for ${phase.role}`,
+				savedAt: new Date().toISOString(),
+			});
+			return {
+				kind: "return",
+				result: {
+					status: "escalated",
+					lastPhaseIndex: currentPhaseIndex,
+					iterationCounts,
+					lastError: `revision cap reached for ${phase.role}`,
+				},
+			};
+		}
+
+		// Transition bug back to in-progress before re-dispatching implement.
+		// This is required for review-code → implement and approve → implement loops.
+		const currentBugStatus = updatedBugRecord?.status;
+		if (currentBugStatus === "fixed" || currentBugStatus === "approved") {
+			const transitionResult = spawnSync(
+				"node",
+				[storeCli, "update-status", "bug", bugId, "status", "in-progress"],
+				{ cwd, encoding: "utf8" },
+			);
+			if (transitionResult.status !== 0) {
+				ctx.ui.notify(
+					`⚠ forge:fix-bug — failed to transition bug ${bugId} from ${currentBugStatus} to in-progress: ${transitionResult.stderr ?? "unknown"}`,
+					"warning",
+				);
+			} else {
+				ctx.ui.notify(`⟳ forge:fix-bug — transitioned bug ${bugId}: ${currentBugStatus} → in-progress`, "info");
+			}
+		}
+
+		// The review subagent itself finished cleanly — `revision`
+		// is its verdict, not a failure — so its node closes as
+		// completed before the predecessor re-dispatches under a
+		// fresh node ID.
+		finishPhaseNode("completed");
+		const predIndex = findPredecessorIndex(BUG_PHASES, currentPhaseIndex);
+		ctx.ui.notify(
+			`⟳ forge:fix-bug — ${phase.role} returned revision; looping to ${BUG_PHASES[predIndex]?.role ?? predIndex} ` +
+				`(attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
+			"info",
+		);
+		orchTranscript.record({
+			kind: "phase-loopback",
+			ts: new Date().toISOString(),
+			fromPhase: phase.role,
+			toPhase: BUG_PHASES[predIndex]?.role ?? String(predIndex),
+			fromPhaseIndex: currentPhaseIndex,
+			toPhaseIndex: predIndex,
+			reason: `${phase.role} returned revision (attempt ${iterationCounts[phase.role]}/${phase.maxIterations})`,
+		});
+		writeBugState(cwd, {
+			bugId,
+			phaseIndex: predIndex,
+			iterationCounts,
+			halted: false,
+			savedAt: new Date().toISOString(),
+		});
+		return { kind: "loopback", toIndex: predIndex };
+	}
+
+	// verdict === "approved": fall through to advance
+	return { kind: "advance" };
+}

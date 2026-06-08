@@ -34,45 +34,40 @@
 //   Reference: orchestrator-preflight.ts (N-H-D, FORGE-S25-T17).
 
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
 // ModelRegistry/AuthStorage no longer instantiated here — see fix-bug.ts note
 // (FORGE-BUG-001). Use ctx.modelRegistry so session-registered providers are
 // honored by validateModelConfig.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { assertAudience } from "../audience-gate.js";
 import { loadLayeredConfig } from "../config/config-layer.js";
-import { loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
-import { type ForgeToolDefs, getSubagentTools } from "../forge-tools.js";
+import type { ForgeToolDefs } from "../forge-tools.js";
 import { emitSyntheticEvent, type SprintCollateCompleteEvent } from "../hook-dispatcher.js";
-import {
-	readPersonaDir as readPersonaDirSprint,
-	readPipelineNames as readPipelineNamesSprint,
-} from "../lib/catalog-helpers.js";
-import { discoverForgeConfigCached } from "../lib/forge-config.js";
-import { archiveRun, sweepProjectTranscripts } from "../transcript-archive.js";
+import { createOrchestratorNotifier } from "./common/orchestrator-notify.js";
+import { gatherModelValidationInputs, resolveOrchestratorEntry } from "./common/orchestrator-entry.js";
+import { archiveRun } from "../transcript-archive.js";
 import { checkMaterialization } from "../lib/manifest-checker.js";
-import { readJsonState, sprintStateFilePath, writeJsonState } from "../lib/state-helpers.js";
-import { lookupPersonaModel } from "../config/model-resolver.js";
 import { validateModelConfig } from "../config/model-validator.js";
 import { loadWorkflow } from "../parsers/workflow-loader.js";
 import { getSessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
-import { attachViewportObserver } from "../viewport/events.js";
+import {
+	type SprintCeremonyResult,
+	type SprintStreamFnFactory,
+	dispatchSprintCeremony,
+} from "./sprint/sprint-ceremony.js";
+import {
+	deleteSprintState,
+	isSprintStateStale,
+	readSprintRecord,
+	readSprintState,
+	writeSprintState,
+} from "./sprint/sprint-state.js";
 
-/**
- * Test-only seam (forge-cli#17). Resolves a StreamFn for a given dispatch
- * context — ceremony or per-phase. Production callers leave this undefined.
- */
-export type SprintStreamFnFactory = (ctx: {
-	kind: "task-phase" | "ceremony";
-	persona: string;
-	phase?: string;
-	taskId?: string;
-}) => StreamFn | undefined;
+// Re-export for test seams + RegisterRunSprintOptions (forge-cli#17). The type
+// is defined in sprint-ceremony.ts; both that module and this handler share it.
+export type { SprintStreamFnFactory } from "./sprint/sprint-ceremony.js";
 
 import {
 	emitEvent,
@@ -86,238 +81,6 @@ import {
 	runTaskPipeline,
 	validateId,
 } from "./run-task.js";
-
-// ── Sprint-level state persistence ────────────────────────────────────────
-
-interface RunSprintState {
-	sprintId: string;
-	taskIndex: number; // index into sprint.taskIds (points to NEXT task to run)
-	completedTaskIds: string[]; // only tasks that returned status "completed" (advisory #6)
-	halted: boolean;
-	lastError?: string;
-	savedAt: string;
-}
-
-// FORGE-S25-T16 (N-H-B): sprint state helpers delegate to lib/state-helpers.ts.
-
-function getSprintStatePath(cwd: string, sprintId: string): string {
-	if (!validateId(sprintId)) {
-		throw new Error(`Invalid sprintId for state file path: ${sprintId}`);
-	}
-	return sprintStateFilePath(cwd, sprintId);
-}
-
-function readSprintState(cwd: string, sprintId: string): RunSprintState | null {
-	return readJsonState<RunSprintState>(getSprintStatePath(cwd, sprintId));
-}
-
-function writeSprintState(cwd: string, state: RunSprintState): void {
-	writeJsonState(getSprintStatePath(cwd, state.sprintId), state);
-}
-
-function deleteSprintState(cwd: string, sprintId: string): void {
-	const fp = getSprintStatePath(cwd, sprintId);
-	try {
-		if (fs.existsSync(fp)) fs.unlinkSync(fp);
-	} catch {
-		// non-fatal
-	}
-}
-
-function isSprintStateStale(state: RunSprintState): boolean {
-	const savedAt = new Date(state.savedAt).getTime();
-	const ageMs = Date.now() - savedAt;
-	const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-	return ageMs > sevenDaysMs;
-}
-
-// ── Sprint record resolution ──────────────────────────────────────────────
-
-interface SprintRecord {
-	sprintId: string;
-	taskIds: string[];
-	[pk: string]: unknown;
-}
-
-function readSprintRecord(sprintId: string, storeCli: string, cwd: string): SprintRecord | null {
-	const result = spawnSync("node", [storeCli, "read", "sprint", sprintId], { cwd, encoding: "utf8" });
-	if (result.status !== 0) return null;
-	try {
-		const raw: string = typeof result.stdout === "string" ? result.stdout : String(result.stdout);
-		const record = JSON.parse(raw) as SprintRecord;
-		// Validate taskIds is a non-empty array of strings
-		if (!Array.isArray(record.taskIds) || record.taskIds.length === 0) return null;
-		if (!record.taskIds.every((id: unknown) => typeof id === "string")) return null;
-		return record;
-	} catch {
-		return null;
-	}
-}
-
-// ── Sprint ceremony dispatch (Plan 12 §6.2) ────────────────────────────────
-
-type SprintCeremonyResult = {
-	verdict: "complete" | "partial" | "revision-required";
-	model?: string;
-	provider?: string;
-	durationMs: number;
-	errorMessage?: string;
-};
-
-async function dispatchSprintCeremony(params: {
-	sprintId: string;
-	mode: "complete" | "partial";
-	completedTaskIds: string[];
-	pausedAfterIndex?: number;
-	cwd: string;
-	forgeRoot: string;
-	ctx: ExtensionCommandContext;
-	registry: ReturnType<typeof getSessionRegistry>;
-	streamFnFactory?: SprintStreamFnFactory;
-	forgeToolDefs?: ForgeToolDefs;
-}): Promise<SprintCeremonyResult> {
-	const {
-		sprintId,
-		mode,
-		completedTaskIds,
-		pausedAfterIndex,
-		cwd,
-		forgeRoot,
-		ctx,
-		registry,
-		streamFnFactory,
-		forgeToolDefs,
-	} = params;
-	const startMs = Date.now();
-
-	// Materialized workflow path — already shipped from base pack.
-	const workflowName = "architect_review_sprint_completion";
-	const personaName = "architect";
-
-	let persona;
-	try {
-		persona = loadForgePersona(personaName, cwd);
-	} catch {
-		return {
-			verdict: "revision-required",
-			durationMs: Date.now() - startMs,
-			errorMessage: `architect persona not found`,
-		};
-	}
-
-	const taskLines = [
-		`# Sprint Completion Review — ${sprintId}`,
-		``,
-		`Mode: ${mode}`,
-		`Completed tasks: ${completedTaskIds.join(", ") || "(none)"}`,
-	];
-	if (pausedAfterIndex !== undefined) {
-		taskLines.push(`Paused after task index: ${pausedAfterIndex}`);
-	}
-	taskLines.push(
-		``,
-		`Execute the materialized workflow at \`.forge/workflows/${workflowName}.md\`.`,
-		`Do not emit any phase event yourself; the orchestrator owns event emission.`,
-	);
-	const task = taskLines.join("\n");
-
-	// Use a dedicated session id (NOT a taskId) so the thread-switcher renders it
-	// as a sprint-scoped chip distinct from per-task sessions.
-	const sessionId = `${sprintId}:ceremony`;
-	registry.startSession(sessionId);
-	registry.startPhase(sessionId, "ceremony", 0);
-
-	// Bridge: register ceremony phase in OrchestratorTree so the dashboard
-	// shows the ceremony as a leaf under the sprint root.
-	const tree = getOrchestratorTree();
-	tree.startNode(sessionId, { parentId: sprintId, label: "ceremony", kind: "leaf" });
-
-	let model: string | undefined;
-	let provider: string | undefined;
-	let errorMessage: string | undefined;
-
-	const observer = attachViewportObserver({
-		registry,
-		sessionId,
-		phaseRole: "ceremony",
-		displayRole: "ceremony",
-		beginHeader: `─── sprint ${sprintId} ceremony begin · ${personaName} ───`,
-	});
-
-	// Resolve model routing for the ceremony's architect persona (Plan 16 Slice 2).
-	// N-B-E: surface schema errors to caller (Decision 9 — orchestrators fail-fast).
-	// See doc/decisions/layered-config-error-policy.md.
-	const { merged: ceremonyModelConfig, errors: ceremonyCfgErrors } = loadLayeredConfig(cwd);
-	if (ceremonyCfgErrors.length > 0) {
-		for (const e of ceremonyCfgErrors) {
-			ctx.ui.notify(`× forge:run-sprint ceremony — forge-cli config schema error: ${e}`, "error");
-		}
-		return {
-			verdict: "revision-required",
-			durationMs: Date.now() - startMs,
-			errorMessage: `forge-cli config schema errors: ${ceremonyCfgErrors.join("; ")}`,
-		};
-	}
-	const ceremonyModelLookup = lookupPersonaModel(personaName, "default", ceremonyModelConfig);
-
-	try {
-		const result = await runForgeSubagent({
-			persona,
-			task,
-			cwd,
-			exportTag: `${sprintId}__ceremony`,
-			tailLog: observer.state.tailLog,
-			forgeRoot,
-			streamFn: streamFnFactory?.({ kind: "ceremony", persona: personaName }),
-			// Sprint-scoped prompt-cache key — every subagent spawned across
-			// the sprint (ceremonies + per-task phases) shares this namespace
-			// so the system-prompt + persona prefix stays warm.
-			cacheSessionId: `forge:${sprintId}`,
-			onEvent: observer.onEvent,
-			requestedModel: ceremonyModelLookup.model,
-			modelRegistry: ctx.modelRegistry,
-			customTools: forgeToolDefs ? getSubagentTools(forgeToolDefs, persona.name) : undefined,
-		});
-		model = result.model;
-		provider = result.provider;
-		if (result.exitCode !== 0) {
-			errorMessage = result.errorMessage ?? "architect subagent exited non-zero";
-		}
-	} catch (e: unknown) {
-		const err = e as { message?: string };
-		errorMessage = err?.message ?? "runForgeSubagent threw";
-	} finally {
-		registry.completeSession(sessionId, errorMessage ? "failed" : "completed");
-		tree.completeNode(sessionId, errorMessage ? "failed" : "completed");
-	}
-
-	// Parse verdict from store: did the architect actually transition the sprint?
-	// The store is the source of truth — verdict text in SPRINT_COMPLETION_REVIEW.md
-	// is human-readable but the store status is authoritative.
-	let verdict: "complete" | "partial" | "revision-required" = "revision-required";
-	const readResult = spawnSync("node", [`${forgeRoot}/tools/store-cli.cjs`, "read", "sprint", sprintId], {
-		cwd,
-		encoding: "utf8",
-	});
-	if (readResult.status === 0) {
-		try {
-			const sprint = JSON.parse(readResult.stdout as string);
-			if (sprint.status === "completed") verdict = "complete";
-			else if (sprint.status === "partially-completed") verdict = "partial";
-			// else: status unchanged → revision-required
-		} catch {
-			// fall through with revision-required
-		}
-	}
-
-	return {
-		verdict,
-		model,
-		provider,
-		durationMs: Date.now() - startMs,
-		errorMessage,
-	};
-}
 
 // ── Registration ──────────────────────────────────────────────────────────
 
@@ -358,22 +121,16 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				return;
 			}
 
-			ctx.ui.setStatus?.(SPRINT_STATUS_KEY, `run-sprint ${sprintId}: initializing…`);
+			const notify = createOrchestratorNotifier(ctx, {
+				label: "forge:run-sprint",
+				statusKey: SPRINT_STATUS_KEY,
+			});
+			notify.setStatus(`run-sprint ${sprintId}: initializing…`);
 
-			// ── Discover forge config ────────────────────────────────────────
-			const forgeConfig = discoverForgeConfigCached(cwd);
-			if (!forgeConfig) {
-				ctx.ui.notify("× forge:run-sprint — no Forge project found at cwd. Run /forge:init first.", "error");
-				ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
-				return;
-			}
-			const forgeRoot = forgeConfig.forgeRoot;
-
-			// Best-effort transcript-archive sweep: adopt any project-local runs
-			// not yet in the central index (crash recovery + pre-existing
-			// history). Runs BEFORE any task pipeline creates its transcript
-			// writer, so in-flight runs are never swept half-written.
-			sweepProjectTranscripts(cwd);
+			// ── Discover forge config + sweep orphaned transcripts ───────────
+			const entry = resolveOrchestratorEntry({ cwd, notify });
+			if (!entry) return;
+			const { forgeRoot, storeCli, preflightGate } = entry;
 
 			// ── Resolve sprint ID (prefix-normalize, suffix-match, NLP fallback) ──
 			// Handles unprefixed IDs like "S22" → "FORGE-S22".
@@ -385,7 +142,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			});
 			if (!resolvedSprintId) {
 				// Error already emitted by resolver
-				ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+				notify.clearStatus();
 				return;
 			}
 
@@ -393,9 +150,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			sprintId = resolvedSprintId;
 
 			// Update status with canonical ID so the user sees the resolved form.
-			ctx.ui.setStatus?.(SPRINT_STATUS_KEY, `run-sprint ${sprintId}: ready`);
-			const storeCli = path.join(forgeRoot, "tools", "store-cli.cjs");
-			const preflightGate = path.join(forgeRoot, "tools", "preflight-gate.cjs");
+			notify.setStatus(`run-sprint ${sprintId}: ready`);
 
 			// ── Sprint resolution ────────────────────────────────────────────
 			const sprintRecord = readSprintRecord(sprintId, storeCli, cwd);
@@ -525,40 +280,28 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 				const { merged: modelRoutingConfig, errors: schemaErrors } = loadLayeredConfig(cwd);
 				if (schemaErrors.length > 0) {
 					for (const e of schemaErrors) {
-						ctx.ui.notify(`× forge:run-sprint — forge-cli config schema error: ${e}`, "error");
+						notify.error(`forge-cli config schema error: ${e}`);
 					}
-					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+					notify.clearStatus();
 					return;
 				}
-				const personasDir = path.resolve(
-					path.dirname(fileURLToPath(import.meta.url)),
-					"..",
-					"..",
-					"..",
-					"forge-payload",
-					".base-pack",
-					"personas",
-				);
-				const personaCatalogue = readPersonaDirSprint(personasDir);
-				const forgeCfgPath = path.join(cwd, ".forge", "config.json");
-				const pipelineCatalogue = readPipelineNamesSprint(forgeCfgPath);
-				const availableModels = ctx.modelRegistry?.getAvailable?.() ?? [];
+				const { personaCatalogue, pipelineCatalogue, availableModels } = gatherModelValidationInputs(cwd, ctx);
 				const strict = process.env.FORGE_STRICT_MODELS === "1";
 				const { errors, warnings } = validateModelConfig(
 					personaCatalogue,
 					pipelineCatalogue,
 					modelRoutingConfig,
-					availableModels.map((m) => ({ provider: m.provider, id: m.id })),
+					availableModels,
 					strict,
 				);
 				for (const w of warnings) {
-					ctx.ui.notify(`⚠ forge:run-sprint — model routing: ${w.message}`, "warning");
+					notify.warn(`model routing: ${w.message}`);
 				}
 				if (errors.length > 0) {
 					for (const e of errors) {
-						ctx.ui.notify(`× forge:run-sprint — model routing: ${e.message}`, "error");
+						notify.error(`model routing: ${e.message}`);
 					}
-					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
+					notify.clearStatus();
 					return;
 				}
 			}

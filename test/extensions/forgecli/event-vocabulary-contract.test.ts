@@ -65,10 +65,10 @@ describe("event vocabulary contract — emitted tokens ⊆ vendored schema enum 
 
 	it("every BUG_TYPE_TOKENS pass/fail token is in the schema enum", () => {
 		const enumSet = loadEnum();
-		const src = fs.readFileSync(path.join(orchestratorsDir, "fix-bug.ts"), "utf8");
+		const src = fs.readFileSync(path.join(orchestratorsDir, "bug", "bug-phases.ts"), "utf8");
 		// Extract the BUG_TYPE_TOKENS literal block.
 		const blockStart = src.indexOf("export const BUG_TYPE_TOKENS");
-		expect(blockStart, "BUG_TYPE_TOKENS not found in fix-bug.ts").toBeGreaterThan(-1);
+		expect(blockStart, "BUG_TYPE_TOKENS not found in bug/bug-phases.ts").toBeGreaterThan(-1);
 		const block = src.slice(blockStart, src.indexOf("};", blockStart));
 		const tokens = [...block.matchAll(/(?:pass|fail):\s*"([a-z-]+)"/g)].map((m) => m[1]);
 		expect(tokens.length, "expected pass/fail tokens inside BUG_TYPE_TOKENS").toBeGreaterThanOrEqual(14);
@@ -79,10 +79,30 @@ describe("event vocabulary contract — emitted tokens ⊆ vendored schema enum 
 
 	it("every literal store-emitted type token in the orchestrators is in the schema enum", () => {
 		const enumSet = loadEnum();
-		for (const file of ["run-task.ts", "run-sprint.ts", "fix-bug.ts"]) {
-			const src = fs.readFileSync(path.join(orchestratorsDir, file), "utf8");
+		// The run-task / run-sprint / fix-bug pipelines were decomposed into
+		// task/, bug/, sprint/ submodules in FORGE-S31 — store-event emit sites now
+		// live across those subtrees plus the run-sprint handler. Scan the three
+		// barrels + those subdirs (NOT sibling orchestrator commands like
+		// calibrate.ts / migrate.ts, whose `type:` fields are unrelated domains).
+		const walk = (dir: string): string[] =>
+			fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+				const full = path.join(dir, d.name);
+				if (d.isDirectory()) return walk(full);
+				return d.isFile() && d.name.endsWith(".ts") ? [full] : [];
+			});
+		const files = [
+			path.join(orchestratorsDir, "run-task.ts"),
+			path.join(orchestratorsDir, "run-sprint.ts"),
+			path.join(orchestratorsDir, "fix-bug.ts"),
+			...walk(path.join(orchestratorsDir, "task")),
+			...walk(path.join(orchestratorsDir, "bug")),
+			...walk(path.join(orchestratorsDir, "sprint")),
+		];
+		for (const file of files) {
+			const src = fs.readFileSync(file, "utf8");
 			for (const tok of literalTypeTokens(src)) {
-				expect(enumSet.has(tok), `${file} emits type "${tok}" — not in vendored schema enum`).toBe(true);
+				const rel = path.relative(orchestratorsDir, file);
+				expect(enumSet.has(tok), `${rel} emits type "${tok}" — not in vendored schema enum`).toBe(true);
 			}
 		}
 	});

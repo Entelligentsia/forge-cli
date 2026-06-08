@@ -324,13 +324,13 @@ describe("post-triage status transitions (meta-fix-bug.md step 2 contract)", () 
 		expect(postTriageTransitions(undefined)).toEqual([]);
 	});
 
-	it("fix-bug.ts wires the transitions into the triage phase-advance block", () => {
+	it("bug-triage-routing.ts wires the transitions into the post-triage routing", () => {
 		const src = fs.readFileSync(
-			path.resolve(__dirname, "../../../src/extensions/forgecli/orchestrators/fix-bug.ts"),
+			path.resolve(__dirname, "../../../src/extensions/forgecli/orchestrators/bug/bug-triage-routing.ts"),
 			"utf8",
 		);
-		// The loop body (not just the helper definition) must consume the
-		// helper and write each status through store-cli update-status.
+		// The routing helper (not just postTriageTransitions's definition) must
+		// consume the helper and write each status through store-cli update-status.
 		const callIdx = src.indexOf("for (const target of postTriageTransitions(");
 		expect(callIdx).toBeGreaterThan(-1);
 		const block = src.slice(callIdx, callIdx + 800);

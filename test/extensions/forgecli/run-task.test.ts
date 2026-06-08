@@ -652,21 +652,27 @@ describe("Test 6: Materialization marker missing", () => {
 });
 
 describe("Test 7: IL10 enforcement", () => {
-	it("createAgentSession is called per phase; run-task.ts source has no sendKickoff(", () => {
-		// Source-grep test: read run-task.ts and assert no sendKickoff(
+	it("dispatch goes through runForgeSubagent per phase; task/ source has no sendKickoff(", () => {
+		// Source-grep test (IL10): the per-phase dispatch is implemented in
+		// task/task-phase-dispatch.ts after the FORGE-S31 decomposition. Assert it
+		// calls runForgeSubagent, and that NO file in task/ calls sendKickoff(.
 		const thisDir = path.dirname(fileURLToPath(import.meta.url));
-		const runTaskPath = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/run-task.ts");
-		expect(fs.existsSync(runTaskPath), `run-task.ts must exist at ${runTaskPath}`).toBe(true);
+		const taskDir = path.resolve(thisDir, "../../../src/extensions/forgecli/orchestrators/task");
+		const dispatchPath = path.join(taskDir, "task-phase-dispatch.ts");
+		expect(fs.existsSync(dispatchPath), `task-phase-dispatch.ts must exist at ${dispatchPath}`).toBe(true);
 
-		const source = fs.readFileSync(runTaskPath, "utf8");
-		// Strip single-line comments before checking to avoid matching comment text.
-		// Real call sites are NOT in comments.
-		const sourceWithoutComments = source
-			.split("\n")
-			.filter((line) => !line.trimStart().startsWith("//"))
-			.join("\n");
-		expect(sourceWithoutComments).not.toMatch(/sendKickoff\s*[(]/);
-		expect(source).toMatch(/runForgeSubagent\s*[(]/);
+		// Positive: real dispatch call site lives in task-phase-dispatch.ts.
+		expect(fs.readFileSync(dispatchPath, "utf8")).toMatch(/runForgeSubagent\s*[(]/);
+
+		// Negative: no sendKickoff( call site anywhere under task/ (comments stripped).
+		for (const file of fs.readdirSync(taskDir).filter((f) => f.endsWith(".ts"))) {
+			const sourceWithoutComments = fs
+				.readFileSync(path.join(taskDir, file), "utf8")
+				.split("\n")
+				.filter((line) => !line.trimStart().startsWith("//"))
+				.join("\n");
+			expect(sourceWithoutComments, `${file} must not call sendKickoff(`).not.toMatch(/sendKickoff\s*[(]/);
+		}
 	});
 
 	it("createAgentSession spawn count equals phase count when no revisions", async () => {

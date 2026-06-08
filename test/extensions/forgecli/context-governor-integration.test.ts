@@ -326,10 +326,13 @@ describe("AC3: Contract-unchanged — runForgeSubagent signature and orchestrato
 		// 2. extensionFactories field is present in RunSubagentOptions (IL10 — T09 wiring)
 		expect(subagentSrc).toContain("extensionFactories");
 
-		// 3. run-task.ts uses store-cli.cjs emit (orchestrator emit path)
-		const runTaskSrc = readFileSync(path.join(forgeCliSrc, "orchestrators", "run-task.ts"), "utf8");
-		expect(runTaskSrc).toContain("store-cli.cjs");
-		expect(runTaskSrc).toContain('"emit"');
+		// 3. the task orchestrator emit path. After the FORGE-S31 decomposition the
+		//    emit call (`[storeCli, "emit", …]`) lives in task/task-events.ts, and the
+		//    store-cli.cjs tool path is resolved in common/orchestrator-entry.ts.
+		const taskEventsSrc = readFileSync(path.join(forgeCliSrc, "orchestrators", "task", "task-events.ts"), "utf8");
+		expect(taskEventsSrc).toMatch(/\[storeCli,\s*"emit"/);
+		const entrySrc = readFileSync(path.join(forgeCliSrc, "orchestrators", "common", "orchestrator-entry.ts"), "utf8");
+		expect(entrySrc).toContain("store-cli.cjs");
 
 		// 4. run-sprint.ts also uses store-cli.cjs (orchestrator emit path)
 		const runSprintSrc = readFileSync(path.join(forgeCliSrc, "orchestrators", "run-sprint.ts"), "utf8");
