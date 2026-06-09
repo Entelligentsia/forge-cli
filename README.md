@@ -18,6 +18,8 @@
 
 forge-cli generates a project-specific engineering knowledge base, sprint workflows, agent personas, and an SDLC pipeline — then drives them from your terminal on the [pi-coding-agent] runtime. Model-agnostic. No editor lock-in.
 
+> **Two ways to run Forge.** Drive it headless in your terminal on the pi runtime (this README), **or** scaffold Forge into a Claude Code project with `4ge init claude .` and run the `/forge:*` slash commands inside Claude Code — remove it with `4ge uninstall claude`. The `4ge init` path is the supported way to add Forge to Claude Code and **replaces the deprecated marketplace plugin install** ([why](https://github.com/Entelligentsia/forge#distribution)).
+
 ## Why
 
 - **Structured SDLC, in any terminal.** Plan → implement → review → validate → commit chains, gated by your own personas and audience rules.
