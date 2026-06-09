@@ -88,16 +88,95 @@ describe("discoverForgeConfig", () => {
 		expect(result).toBeNull();
 	});
 
-	it("preserves an absolute forgeRoot value as-is", () => {
+	it("preserves an absolute forgeRoot value as-is when it is inside the project tree", () => {
 		const project = path.join(tmpRoot, "proj5");
 		fs.mkdirSync(project, { recursive: true });
-		const absForgeRoot = path.join(tmpRoot, "elsewhere", "forge");
+		// Absolute path that still resolves inside the project — trusted.
+		const absForgeRoot = path.join(project, "vendor", "forge");
 		fs.mkdirSync(absForgeRoot, { recursive: true });
 		writeConfig(project, JSON.stringify({ paths: { forgeRoot: absForgeRoot } }));
 
 		const result = discoverForgeConfig(project);
 		expect(result).not.toBeNull();
 		expect(result?.forgeRoot).toBe(absForgeRoot);
+		expect(result?.rejectedFrom).toBeUndefined();
+	});
+});
+
+describe("discoverForgeConfig — forgeRoot containment (clone-and-run RCE guard, issue #43)", () => {
+	afterEach(() => {
+		delete process.env.FORGE_ALLOW_EXTERNAL_ROOT;
+		delete process.env.CLAUDE_PLUGIN_ROOT;
+	});
+
+	it("honours a forgeRoot inside the Claude plugin cache (installed-user / dogfood case)", () => {
+		// `forge init` stamps a forgeRoot under the Claude plugin cache, which is
+		// outside both the project and the bundled payload but is a trusted
+		// install location. Exercised via CLAUDE_PLUGIN_ROOT (a real trusted root)
+		// so the test does not depend on the host's home directory.
+		const project = path.join(tmpRoot, "installed");
+		fs.mkdirSync(project, { recursive: true });
+		const cache = path.join(tmpRoot, "plugin-cache", "forge", "forge", "1.4.6");
+		fs.mkdirSync(cache, { recursive: true });
+		process.env.CLAUDE_PLUGIN_ROOT = path.join(tmpRoot, "plugin-cache");
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: cache } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result?.forgeRoot).toBe(cache);
+		expect(result?.rejectedFrom).toBeUndefined();
+	});
+
+	it("rejects an existing absolute forgeRoot outside the project and heals to the bundled payload", () => {
+		const project = path.join(tmpRoot, "evil-abs");
+		fs.mkdirSync(project, { recursive: true });
+		// Attacker-controlled directory outside the project, but it exists
+		// (so the dangling-path heal does NOT catch it).
+		const evil = path.join(tmpRoot, "attacker", "tools-host");
+		fs.mkdirSync(evil, { recursive: true });
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: evil } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(resolveBundledPayloadRoot());
+		expect(result?.rejectedFrom).toBe(evil);
+	});
+
+	it("rejects a `..`-escape that resolves outside the project tree", () => {
+		const project = path.join(tmpRoot, "escape", "proj");
+		fs.mkdirSync(project, { recursive: true });
+		// Sibling of the project, reached via traversal; exists on disk.
+		const sibling = path.join(tmpRoot, "escape", "outside");
+		fs.mkdirSync(sibling, { recursive: true });
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "../outside" } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result).not.toBeNull();
+		expect(result?.forgeRoot).toBe(resolveBundledPayloadRoot());
+		expect(result?.rejectedFrom).toBe(sibling);
+	});
+
+	it("honours an in-project forgeRoot (dogfood layout) without rejection", () => {
+		const project = path.join(tmpRoot, "dogfood");
+		const real = path.join(project, "forge", "forge");
+		fs.mkdirSync(real, { recursive: true });
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: "./forge/forge" } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result?.forgeRoot).toBe(real);
+		expect(result?.rejectedFrom).toBeUndefined();
+	});
+
+	it("FORGE_ALLOW_EXTERNAL_ROOT=1 opts out and preserves an out-of-tree forgeRoot", () => {
+		process.env.FORGE_ALLOW_EXTERNAL_ROOT = "1";
+		const project = path.join(tmpRoot, "optout");
+		fs.mkdirSync(project, { recursive: true });
+		const external = path.join(tmpRoot, "external", "checkout");
+		fs.mkdirSync(external, { recursive: true });
+		writeConfig(project, JSON.stringify({ paths: { forgeRoot: external } }));
+
+		const result = discoverForgeConfig(project);
+		expect(result?.forgeRoot).toBe(external);
+		expect(result?.rejectedFrom).toBeUndefined();
 	});
 });
 

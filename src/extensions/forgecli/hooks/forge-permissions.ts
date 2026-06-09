@@ -35,19 +35,32 @@ interface PermissionPattern {
 
 // ── Pattern registries — ported verbatim from forge-permissions.js ──────────
 
+// SECURITY (issue #43 / forge-engineering #42): patterns are anchored to their
+// argument shape so the dangerous read-secret → exfiltrate → execute shapes are
+// NOT auto-allowed. Kept byte-for-byte in sync with the Claude Code plugin hook
+// forge/forge/hooks/forge-permissions.cjs (BASH_PATTERNS). In the pi runtime a
+// match only suppresses the audit-log/two-layer skip — pi has no permission
+// gate — but parity keeps the two surfaces auditable against one another.
 /** Bash command patterns that are auto-allowed. */
 export const BASH_PATTERNS: PermissionPattern[] = [
-	// Node tool invocations — covers $FORGE_ROOT/tools/*.cjs and $CLAUDE_PLUGIN_ROOT
-	{ pattern: /^node\s+.*\/tools\/[\w-]+\.(cjs|js)\b/, rule: "node ~/.claude/plugins/cache/forge/forge/*/tools/*" },
+	// Node tool invocations — only when the dir before /tools/ is a trusted Forge
+	// root ($FORGE_ROOT/$CLAUDE_PLUGIN_ROOT, the plugin cache, or a /.forge path).
+	{
+		pattern:
+			/^node\s+(?:"?\$(?:CLAUDE_PLUGIN_ROOT|FORGE_ROOT)"?|\S*\/\.claude\/plugins\/cache\/forge\/\S*|\S*\/\.forge)\/tools\/[\w-]+\.(?:cjs|js)\b/,
+		rule: "node ~/.claude/plugins/cache/forge/forge/*/tools/*",
+	},
 	// NOTE: node -e and node -p are intentionally excluded — arbitrary code
 	// execution must not be auto-approved. Forge workflows use node .../tools/*.cjs
 	// for tool invocations; inline node -e/p requires explicit user approval.
 	// Shell commands used by Forge workflows
 	{ pattern: /^mkdir\s+-p\s+/, rule: "mkdir -p .forge/*" },
 	{ pattern: /^mkdir\s+-p\s+\S+/, rule: "mkdir -p .forge/*" },
-	{ pattern: /^cp\s+/, rule: "cp */schemas/*.schema.json .forge/schemas/" },
+	// cp only when the destination (last arg) is under .forge/.
+	{ pattern: /^cp\s+\S.*\s\.?\/?\.forge\/\S*\s*$/, rule: "cp */schemas/*.schema.json .forge/schemas/" },
 	{ pattern: /^ls\s+/, rule: "ls *" },
-	{ pattern: /^cat\s+/, rule: "cat .forge/*" },
+	// cat only within .forge/ or engineering/.
+	{ pattern: /^cat\s+(?:-\S+\s+)*\.?\/?(?:\.forge|engineering)\//, rule: "cat .forge/*" },
 	{ pattern: /^date\s+-u\s+/, rule: "date -u *" },
 	{ pattern: /^date\s+/, rule: "date -u *" },
 	{ pattern: /^jq\s+/, rule: "jq *" },
@@ -57,14 +70,16 @@ export const BASH_PATTERNS: PermissionPattern[] = [
 	{ pattern: /^rm\s+-rf\s+\.forge/, rule: "rm -rf .forge/*" },
 	{ pattern: /^rmdir\s+/, rule: "rmdir .forge/*" },
 	{ pattern: /^gh\s+auth\s+/, rule: "gh auth status *" },
-	{ pattern: /^gh\s+issue\s+/, rule: "gh issue create *" },
+	// gh issue only against the current repo (no -R/--repo to a foreign repo).
+	{ pattern: /^gh\s+issue\s+(?!.*(?:\s-R\b|\s--repo\b))/, rule: "gh issue create *" },
 	// git read-only commands (already auto-approved by Claude Code, but belt-and-suspenders)
 	{ pattern: /^git\s+status\b/, rule: "git status *" },
 	{ pattern: /^git\s+log\b/, rule: "git log *" },
 	{ pattern: /^git\s+diff\b/, rule: "git diff *" },
 	{ pattern: /^git\s+add\s+/, rule: "git add *" },
 	{ pattern: /^git\s+commit\s+-m\s+/, rule: "git commit -m *" },
-	{ pattern: /^git\s+push\b/, rule: "git push *" },
+	// git push only to a named remote (no explicit attacker URL).
+	{ pattern: /^git\s+push\b(?!.*(?:https?:\/\/|git@|ssh:\/\/|file:\/\/))/, rule: "git push *" },
 	{ pattern: /^git\s+checkout\s+/, rule: "git checkout *" },
 	{ pattern: /^git\s+branch\s+/, rule: "git branch *" },
 	{ pattern: /^git\s+stash\b/, rule: "git stash *" },
