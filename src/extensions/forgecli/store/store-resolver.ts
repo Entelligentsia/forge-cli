@@ -21,6 +21,18 @@ export const ID_PATTERNS = {
 	idFragment: /^(S|B|F|T)\d+(-T\d+)?$/i,
 };
 
+// Fully-qualified IDs carry a real project prefix segment *before* the S/B/F/T
+// token (e.g. "CART-S01-T01"). Bare fragments like "S01-T01" or "S01" are NOT
+// fully-qualified — they must fall through to suffix matching for
+// prefix-normalization. Treating "S01-T01" as canonical (the old behaviour)
+// hard-failed before suffix matching could resolve it to "CART-S01-T01".
+export const FQ_ID_PATTERNS = {
+	task: /^[A-Z0-9]+-S\d+-T\d+$/i,
+	sprint: /^[A-Z0-9]+-S\d+$/i,
+	bug: /^[A-Z0-9]+-B\d+$/i,
+	feature: /^[A-Z0-9]+-F\d+$/i,
+};
+
 export type ResolverHit = { dir: string } | { item: any };
 
 export interface ResolveOptions {
@@ -103,6 +115,53 @@ export async function suffixMatch(
 }
 
 /**
+ * Expand a sprint-shaped arg (fragment "S01" or fully-qualified "CART-S01")
+ * into the list of tasks belonging to the matching sprint(s), in the picker
+ * shape ({ id, type, title, status }). Used when the caller wants a task but
+ * supplied a sprint reference (e.g. `/forge:run-task S01`) — we surface the
+ * sprint's tasks for selection rather than (incorrectly) running the sprint
+ * record as if it were a task.
+ */
+export async function tasksForSprintArg(toolDir: string, cwd: string, arg: string): Promise<any[]> {
+	const upper = arg.toUpperCase();
+
+	// Resolve the canonical sprint id(s) the arg refers to.
+	let sprintIds: string[] = [];
+	if (FQ_ID_PATTERNS.sprint.test(arg)) {
+		sprintIds = [upper];
+	} else {
+		const fast = await suffixMatch(toolDir, cwd, "sprint", upper);
+		if (fast && fast.length > 0) {
+			sprintIds = fast.map((s: any) => s.id).filter(Boolean);
+		} else {
+			try {
+				const r = await runStoreCli(toolDir, ["query", "--list-sprints"], cwd);
+				sprintIds = (r?.results ?? [])
+					.filter((s: any) => s.id?.toUpperCase().endsWith(`-${upper}`) || s.id?.toUpperCase() === upper)
+					.map((s: any) => s.id);
+			} catch (err: any) {
+				if (isDebug()) console.error(`[forge:resolver] list-sprints failed: ${err.message}`);
+			}
+		}
+	}
+
+	const tasks: any[] = [];
+	for (const sid of sprintIds) {
+		try {
+			const list = await runStoreCli(toolDir, ["list", "task", `sprintId=${sid}`], cwd);
+			const arr = Array.isArray(list) ? list : (list?.results ?? []);
+			for (const t of arr) {
+				const id = t.taskId ?? t.id;
+				if (id) tasks.push({ id, type: "task", title: t.title, status: t.status });
+			}
+		} catch (err: any) {
+			if (isDebug()) console.error(`[forge:resolver] list tasks failed for ${sid}: ${err.message}`);
+		}
+	}
+	return tasks;
+}
+
+/**
  * Resolution cascade:
  *   1. @path        → use the path directly as artifact directory
  *   2. Canonical ID → store-cli query --task/--bug/--feature/--sprint
@@ -130,13 +189,30 @@ export async function resolveEntityRef(
 		return { dir: resolved };
 	}
 
+	const wantTask = entityTypes.has("task");
+	const wantSprint = entityTypes.has("sprint");
+
+	// A sprint reference ("S01" or "CART-S01") when the caller wants a *task*
+	// (e.g. `/forge:run-task S01`) must NOT resolve to the sprint record. Expand
+	// the sprint into its task list and let the user pick. Done before the
+	// structured/canonical handling so a fully-qualified sprint id is expanded
+	// too — never run as a task.
+	const isSprintShaped = ID_PATTERNS.sprint.test(arg) && !ID_PATTERNS.task.test(arg);
+	if (isSprintShaped && wantTask && !wantSprint) {
+		setStatus(`Listing tasks in sprint ${arg}…`);
+		const sprintTasks = await tasksForSprintArg(toolDir, cwd, arg);
+		if (sprintTasks.length > 0) return pick(sprintTasks);
+		// No tasks under the sprint → fall through to keyword/NLP / error.
+	}
+
 	// ── 2. Canonical structured ID ────────────────────────────────────────────
-	const isCanonical =
-		/^[A-Z0-9]+-/i.test(arg) &&
-		(ID_PATTERNS.task.test(arg) ||
-			ID_PATTERNS.bug.test(arg) ||
-			ID_PATTERNS.feature.test(arg) ||
-			ID_PATTERNS.sprint.test(arg));
+	// Only a fully-qualified id (project prefix present) is treated as canonical;
+	// bare fragments fall through to suffix matching for prefix-normalization.
+	const isFullyQualified =
+		FQ_ID_PATTERNS.task.test(arg) ||
+		FQ_ID_PATTERNS.bug.test(arg) ||
+		FQ_ID_PATTERNS.feature.test(arg) ||
+		FQ_ID_PATTERNS.sprint.test(arg);
 	let structuredResult: any | null = null;
 	try {
 		if (ID_PATTERNS.task.test(arg)) {
@@ -156,11 +232,14 @@ export async function resolveEntityRef(
 		if (isDebug()) console.error(`[forge:resolver] structured query failed: ${err.message}`);
 	}
 
-	if (structuredResult?.results?.length > 0) {
-		return pick(structuredResult.results);
+	// Honour the requested entity types: never return a record whose type was
+	// not asked for (e.g. a sprint when a task was requested).
+	const structuredHits = filterEntities(structuredResult?.results ?? [], entityTypes);
+	if (structuredHits.length > 0) {
+		return pick(structuredHits);
 	}
 
-	if (isCanonical) {
+	if (isFullyQualified) {
 		setStatus(undefined);
 		ctx?.ui.notify(`No record found for canonical ID "${arg}"`, "warning");
 		return null;
@@ -173,9 +252,11 @@ export async function resolveEntityRef(
 		try {
 			const suffix = arg.toUpperCase();
 
-			// Sprint-shaped fragment (e.g. "S01"): native sprint-suffix first,
-			// fall back to list-and-filter.
-			if (ID_PATTERNS.sprint.test(arg) && !ID_PATTERNS.task.test(arg)) {
+			// Sprint-shaped fragment (e.g. "S01") when a sprint is wanted: native
+			// sprint-suffix first, fall back to list-and-filter. (When a *task* is
+			// wanted, sprint fragments were already expanded to their task list
+			// above.)
+			if (isSprintShaped && wantSprint) {
 				const fast = await suffixMatch(toolDir, cwd, "sprint", suffix);
 				if (fast && fast.length > 0) return pick(fast);
 				if (fast === null) {
@@ -199,22 +280,29 @@ export async function resolveEntityRef(
 				}
 			}
 
-			// Task-shaped fragment (e.g. "T01" or "S01-T01"): native task-suffix
-			// first; fall back to N sprint × Tnn loop.
-			if (ID_PATTERNS.task.test(arg) || ID_PATTERNS.bareTask.test(arg)) {
-				const tPart = ID_PATTERNS.bareTask.test(arg) ? suffix : suffix.split("-")[1];
-				const fast = await suffixMatch(toolDir, cwd, "task", tPart);
+			// Task-shaped fragment (e.g. "T01" or "S01-T01") when a task is wanted:
+			// native task-suffix first; fall back to N sprint × Tnn loop. The FULL
+			// fragment is used as the suffix so "S01-T01" matches only
+			// "CART-S01-T01" (endsWith "-S01-T01"), while bare "T01" still matches
+			// every task ending in T01 (→ picker).
+			if (wantTask && (ID_PATTERNS.task.test(arg) || ID_PATTERNS.bareTask.test(arg))) {
+				const fast = await suffixMatch(toolDir, cwd, "task", suffix);
 				if (fast && fast.length > 0) return pick(fast);
 				if (fast === null) {
+					// Legacy store-cli without --task-suffix: reconstruct candidate ids.
+					const tOnly = suffix.match(/T\d+$/i)?.[0] ?? suffix;
+					const sPart = ID_PATTERNS.bareTask.test(arg) ? null : suffix.split("-")[0];
 					const r = await runStoreCli(toolDir, ["query", "--list-sprints"], cwd);
 					for (const s of r?.results ?? []) {
+						const sid = s.id?.toUpperCase() ?? "";
+						if (sPart && !(sid.endsWith(`-${sPart}`) || sid === sPart)) continue;
 						try {
-							const taskId = `${s.id}-${tPart}`;
+							const taskId = `${s.id}-${tOnly}`;
 							const rr = await runStoreCli(toolDir, ["query", "--task", taskId], cwd);
 							if (rr?.results?.length > 0) return pick(rr.results);
 						} catch (err: any) {
 							if (isDebug())
-								console.error(`[forge:resolver] task lookup failed for ${s.id}-${tPart}: ${err.message}`);
+								console.error(`[forge:resolver] task lookup failed for ${s.id}-${tOnly}: ${err.message}`);
 						}
 					}
 				}
@@ -304,6 +392,19 @@ export async function resolveToCanonicalId(
 		ctx?.ui.notify(
 			`× ${commandLabel} — "${arg}" resolved to a directory path, not a ${kind} ID. ` +
 				`Provide a canonical ${kind} ID instead.`,
+			"error",
+		);
+		return null;
+	}
+
+	// Defence in depth: never hand back a record whose type was not requested
+	// (e.g. a sprint when run-task asked for a task). The cascade should already
+	// honour entityTypes, but a stray match must never be run through the wrong
+	// pipeline.
+	const resolvedType = resolved.item?.type;
+	if (resolvedType && !entityTypes.has(resolvedType)) {
+		ctx?.ui.notify(
+			`× ${commandLabel} — "${arg}" matched a ${resolvedType} (${resolved.item?.id}), but a ${kind} is required.`,
 			"error",
 		);
 		return null;
