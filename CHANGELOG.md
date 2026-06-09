@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`4ge uninstall claude [dir] [--purge] [--yes]`** — the counterpart to
+  `4ge init claude`. Deterministically reverses the bootstrap: removes the
+  vendored Forge scaffold (`.forge/{tools,schemas,init,.base-pack,meta,
+  .claude-plugin,cache}`, `.bootstrap-manifest.json`, `.claude/commands/forge`,
+  `.claude/workflows`, and the payload's agents/skills), un-merges the Forge
+  hooks from `.claude/settings.json`, and un-appends the Forge block from
+  `.gitignore`. Safety: **preserves user data by default** (`.forge/config.json`,
+  `.forge/store/**`, the KB folder); `--purge` also removes config + store (KB
+  is never auto-removed). Refuses to act without a `.bootstrap-manifest.json`
+  (proof the project was forge-bootstrapped), edits `settings.json`/`.gitignore`
+  rather than deleting them, preserves user-authored agents/skills not in the
+  payload, and is idempotent. A `[y/N]` confirm guards it unless `--yes`/`-y` or
+  `FORGE_NON_INTERACTIVE=1`.
+
 ## [1.0.36] — 2026-06-09
 
 Orchestrator dashboard logs + autonomous run-sprint + KB-refresh, re-landed onto

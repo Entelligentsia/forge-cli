@@ -21,7 +21,16 @@
 //   --no-thinking, and bare non-flag arguments.
 
 /** Parsed result when `--version`, `--help`, `doctor`, `update`, `config`, `init`, or a fast-path subcommand is requested. */
-export type ForgeAction = "version" | "help" | "doctor" | "update" | "config" | "init" | "subcommand" | null;
+export type ForgeAction =
+	| "version"
+	| "help"
+	| "doctor"
+	| "update"
+	| "config"
+	| "init"
+	| "uninstall"
+	| "subcommand"
+	| null;
 
 /**
  * Whitelist of bare subcommands that bypass pi and exec a bundled cjs tool
@@ -202,6 +211,19 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 		if (token === "init" && piArgv.length === 0) {
 			return {
 				forgeAction: "init",
+				piArgv: [],
+				env,
+				subcommandArgs: argv.slice(i + 1),
+			};
+		}
+
+		// ── `forge uninstall` — deterministic reverse of `init` ─────────────
+		// Removes the Forge scaffold a prior `init claude` placed in a project.
+		// Subcommand args (["claude", "[dir]", "--purge", "--yes"]) forwarded to
+		// uninstall.ts. Only matches the first bare token, no flags collected yet.
+		if (token === "uninstall" && piArgv.length === 0) {
+			return {
+				forgeAction: "uninstall",
 				piArgv: [],
 				env,
 				subcommandArgs: argv.slice(i + 1),

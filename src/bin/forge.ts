@@ -21,6 +21,7 @@ import { runConfig } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { applyForgeOwnedEnvDefaults } from "./env-defaults.js";
 import { runInit } from "./init.js";
+import { runUninstall } from "./uninstall.js";
 import { runUpdate } from "./update-cli.js";
 
 // ---------------------------------------------------------------------------
@@ -80,6 +81,7 @@ Subcommands:
   update [--check] [--yes] [--version <spec>]  Guided upgrade (npm i -g)
   config show [--resolved] [--json]  Model routing config inspector
   init claude [dir]        Bootstrap a Claude Code project from the bundled forge-payload
+  uninstall claude [dir] [--purge] [--yes]  Remove the Forge scaffold (--purge also removes config + store)
 
 Slash commands (inside a Forge project):
   /forge:init              Bootstrap a new Forge SDLC project
@@ -141,6 +143,11 @@ async function run(): Promise<void> {
 
 	if (parsed.forgeAction === "init") {
 		const exitCode = await runInit(parsed.subcommandArgs ?? []);
+		process.exit(exitCode);
+	}
+
+	if (parsed.forgeAction === "uninstall") {
+		const exitCode = await runUninstall(parsed.subcommandArgs ?? []);
 		process.exit(exitCode);
 	}
 

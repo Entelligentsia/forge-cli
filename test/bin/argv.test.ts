@@ -364,6 +364,14 @@ describe("parseForgeArgv", () => {
 		expect(result.subcommandArgs).toEqual(["claude", "/my/dir"]);
 	});
 
+	it("'forge uninstall claude /my/dir --purge' → forgeAction = uninstall, subcommandArgs forwarded", () => {
+		const result = parseForgeArgv(["uninstall", "claude", "/my/dir", "--purge"]);
+		expect(isParseError(result)).toBe(false);
+		if (isParseError(result)) return;
+		expect(result.forgeAction).toBe("uninstall");
+		expect(result.subcommandArgs).toEqual(["claude", "/my/dir", "--purge"]);
+	});
+
 	it("pi flag before init → init treated as pi arg, not forge-owned", () => {
 		const result = parseForgeArgv(["--cwd", "/tmp", "init", "claude"]);
 		expect(isParseError(result)).toBe(false);
