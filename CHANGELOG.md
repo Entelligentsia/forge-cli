@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.36] — 2026-06-09
+
+Orchestrator dashboard logs + autonomous run-sprint + KB-refresh, re-landed onto
+the modular-orchestrator decomposition.
+
+### Added
+
+- **Orchestrator decision logs on the dashboard.** The shared
+  `withOrchestratorTranscript` notify-interception now mirrors every
+  orchestrator notify onto its root node (`tree.appendTail(entityId, …)`), and
+  the dashboard renders the Activity log for ALL node kinds (not just leaf). The
+  task/sprint/bug root node now carries the orchestrator's own narrative — gate
+  results, review verdicts, escalations, halts — alongside the per-phase leaf
+  nodes' subagent tool-call activity. New granular per-phase lines: `〇 preflight
+  ok`, `dispatch persona/model`, resolved `verdict`, `〇 postflight ok`.
+- **KB-link refresh is orchestrator-owned in run-task.** After the writeback
+  phase, the pipeline calls `runRefreshKbLinks(cwd)` directly (forge-cli
+  subagents run via the Pi runtime and have no Skill tool, so the prior
+  `forge:refresh-kb-links` Skill-tool instruction caused a multi-call probe
+  loop).
+
+### Changed
+
+- **`/forge:run-sprint` runs to completion.** Removed the per-task "Continue to
+  next task?" confirm and the partial-ceremony-on-decline branch. A sprint
+  command now runs all of its tasks, then the single clean-complete ceremony.
+  The mid-sprint modal previously turned any UI hiccup into a premature partial
+  ceremony (ceremony firing after task 1 with later tasks still draft).
+  Deliberate cancellation (abort signal / task halt) still stops the sprint.
+
+### Fixed
+
+- Dispatch line printed `model=[object Object]` — `modelResolution.model` is a
+  `{provider, model}` object; now formatted as `provider:model`.
+
 ## [1.0.35] — 2026-06-07
 
 Re-bundle forge-plugin 1.4.4 — CLI-first field-test gap fixes: paths.commands
