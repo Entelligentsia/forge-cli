@@ -53,7 +53,6 @@ import { getSessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import { resolveToCanonicalId, resolveToolDir } from "../store/store-resolver.js";
 import {
-	type SprintCeremonyResult,
 	type SprintStreamFnFactory,
 	dispatchSprintCeremony,
 } from "./sprint/sprint-ceremony.js";
@@ -316,6 +315,18 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			// Bridge: register sprint root in OrchestratorTree.
 			tree.startNode(sprintId, { label: `wfl:run-sprint`, kind: "orchestrator" });
 
+			// Mirror sprint-level orchestrator decisions onto the sprint root node
+			// so the dashboard surfaces the sprint's own narrative (task progress,
+			// completion verdict). Per-task/per-phase detail already lands on child
+			// task nodes via run-task's notify mirror (withOrchestratorTranscript).
+			// run-sprint installs no ctx.ui.notify wrapper (multiple early-return
+			// exits make a restore-safe override impractical), so this is an explicit
+			// helper.
+			const noteSprint = (msg: string, level: "info" | "warning" | "error" = "info"): void => {
+				ctx.ui.notify(msg, level);
+				tree.appendTail(sprintId, msg, level === "info" ? undefined : { warning: true });
+			};
+
 			// ── sprint-start event (forge-engineering#39) ─────────────────────
 			// Per _fragments/event-vocabulary.md § Sprint grain: emitted once,
 			// before the task loop, on a fresh start only (resume re-entry must
@@ -386,7 +397,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					SPRINT_STATUS_KEY,
 					`run-sprint ${sprintId}: task ${i + 1}/${taskIds.length} (${taskId})`,
 				);
-				ctx.ui.notify(`▶ ${sprintId}: task ${i + 1}/${taskIds.length} — ${taskId}`, "info");
+				noteSprint(`▶ ${sprintId}: task ${i + 1}/${taskIds.length} — ${taskId}`, "info");
 
 				// Determine resumeFromState for mid-task resume (REVIEW FIX #2).
 				// If a halted or cancelled task state exists for this task,
@@ -531,7 +542,7 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 						lastError: "cancelled",
 						savedAt: new Date().toISOString(),
 					});
-					ctx.ui.notify(`⊘ forge:run-sprint — ${sprintId} halted: task ${taskId} cancelled.`, "info");
+					noteSprint(`⊘ forge:run-sprint — ${sprintId} halted: task ${taskId} cancelled.`, "info");
 					ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
 					return;
 				} else {
@@ -568,70 +579,15 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 					return;
 				}
 
-				// ── Post-task confirm (AC B-9) ────────────────────────────
-				// Skip after final task
-				if (i < taskIds.length - 1 && !isNonInteractive()) {
-					const proceed = await ctx.ui.confirm(
-						`Continue to next task?`,
-						`${taskIds[i + 1]} is next. ${taskIds.length - i - 1} task(s) remaining.`,
-					);
-					if (!proceed) {
-						// Persist sprint state for resume.
-						writeSprintState(cwd, {
-							sprintId,
-							taskIndex: i + 1,
-							completedTaskIds,
-							halted: false,
-							savedAt: new Date().toISOString(),
-						});
-
-						// User-paused branch: dispatch ceremony if ≥1 task completed, emit partial event.
-						const pauseEndMs = Date.now();
-						let ceremonyResult: SprintCeremonyResult | undefined;
-
-						if (completedTaskIds.length > 0) {
-							// Only dispatch ceremony if at least one task completed.
-							// A zero-progress pause has nothing to review.
-							ceremonyResult = await dispatchSprintCeremony({
-								sprintId,
-								mode: "partial",
-								completedTaskIds,
-								pausedAfterIndex: i,
-								cwd,
-								forgeRoot,
-								ctx,
-								registry,
-								streamFnFactory: options.streamFnFactory,
-								forgeToolDefs: options.forgeToolDefs,
-							});
-						}
-
-						const pausedEvent: Record<string, unknown> = {
-							eventId: `${isoCompact(sprintStartMs)}_${sprintId}_sprint_complete`,
-							sprintId,
-							role: "architect",
-							action: "sprint-complete",
-							startTimestamp: new Date(sprintStartMs).toISOString(),
-							endTimestamp: new Date(pauseEndMs).toISOString(),
-							durationMinutes: Math.round(((pauseEndMs - sprintStartMs) / 60000) * 100) / 100,
-							model: ceremonyResult?.model ?? lastModel ?? "orchestrator",
-							provider: ceremonyResult?.provider ?? lastProvider ?? "orchestrator",
-							type: "sprint-complete",
-							taskCount: taskIds.length,
-							completedTaskIds,
-							verdict: "partial",
-							pausedAfterTaskIndex: i,
-							waveCount: 1,
-							maxConcurrency: 1,
-						};
-						emitEvent(storeCli, cwd, sprintId, pausedEvent);
-
-						tree.completeNode(sprintId, "completed");
-						ctx.ui.notify("forge:run-sprint — sprint paused after task completion.", "info");
-						ctx.ui.setStatus?.(SPRINT_STATUS_KEY, undefined);
-						return;
-					}
-				}
+				// Autonomous run-to-completion: no per-task "Continue to next task?"
+				// gate. /forge:run-sprint runs ALL of its tasks and then the single
+				// clean-complete ceremony below. The former per-task confirm +
+				// partial-ceremony-on-decline was removed — a sprint command should
+				// run its sprint, and the mid-sprint modal turned any UI hiccup into a
+				// premature partial ceremony (ceremony firing after task 1 with later
+				// tasks still draft). Deliberate cancellation (abort signal /
+				// task-halt) still stops the sprint via the cancelled/halted branches
+				// above; resume picks up the persisted taskIndex.
 
 				// Persist sprint state after each task transition (AC B-10)
 				writeSprintState(cwd, {
@@ -715,19 +671,19 @@ export function registerRunSprint(pi: ExtensionAPI, options: RegisterRunSprintOp
 			tree.completeNode(sprintId, sprintTreeStatus);
 
 			if (ceremony.verdict === "complete") {
-				ctx.ui.notify(
+				noteSprint(
 					`〇 forge:run-sprint — sprint ${sprintId} complete (${completedTaskIds.length}/${taskIds.length} tasks).`,
 					"info",
 				);
 			} else if (ceremony.verdict === "revision-required") {
 				// Architect did not approve; surface to user.
-				ctx.ui.notify(
+				noteSprint(
 					`▲ forge:run-sprint — sprint ${sprintId} ceremony returned "Revision Required". ` +
 						`See engineering/sprints/${sprintId}/SPRINT_COMPLETION_REVIEW.md.`,
 					"warning",
 				);
 			} else {
-				ctx.ui.notify(
+				noteSprint(
 					`▲ forge:run-sprint — sprint ${sprintId} marked partially-completed by architect.`,
 					"warning",
 				);

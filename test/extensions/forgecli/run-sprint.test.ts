@@ -1204,32 +1204,26 @@ describe("Plan 12: Clean-complete with architect failure falls back gracefully",
 	});
 });
 
-describe("Plan 12: User-paused with zero completed tasks skips ceremony", () => {
-	it("does NOT dispatch ceremony and does NOT emit event when user pauses before first task completes", async () => {
-		// This tests the "zero-progress pause has nothing to review" logic.
-		// However, in the current handler, the user-paused branch only occurs between tasks
-		// (after a completed task), so it's impossible to pause before the first task completes
-		// with zero completed. We verify that the ceremony is NOT dispatched when paused with
-		// zero tasks by testing the structural code path — in practice this branch is unreachable
-		// because FORGE_YES=1 bypasses the inter-task confirm.
-		//
-		// Instead test: a single-task sprint where the user declines "Continue?" (but there are
-		// no more tasks after it — but the inter-task confirm is skipped for the last task).
-		// So this test verifies the user-pause ceremony path with partial completion.
+describe("Autonomous run-to-completion: no per-task confirm, single complete ceremony", () => {
+	it("runs ALL tasks then dispatches one mode=complete ceremony — never prompts 'Continue to next task?'", async () => {
+		// The per-task "Continue to next task?" confirm + partial-ceremony-on-decline
+		// was removed: /forge:run-sprint runs its whole sprint, then the single
+		// clean-complete ceremony. Run in INTERACTIVE mode (no FORGE_YES) to prove
+		// the inter-task gate is gone even when confirms are live.
+		delete process.env.FORGE_YES;
+		delete process.env.FORGE_NON_INTERACTIVE;
 
-		// Use 2 tasks, decline after the first
 		const { proj, sprintId } = scaffoldProject({ taskIds: ["FORGE-S21-T01", "FORGE-S21-T02"] });
 		mockStoreCliForSprint(sprintId, ["FORGE-S21-T01", "FORGE-S21-T02"]);
 
 		mockRunTaskPipeline.mockImplementation(async () => completedTaskResult());
 
-		let confirmCount = 0;
+		// Record every confirm prompt. Only the initial "Begin sprint?" should fire.
+		const confirmPrompts: string[] = [];
 		const ctx = makeCtx({
-			confirm: () => {
-				confirmCount++;
-				// First call: "Begin sprint?" → yes
-				// Second call: "Continue to next task?" → no
-				return Promise.resolve(confirmCount === 1);
+			confirm: (title: string) => {
+				confirmPrompts.push(title);
+				return Promise.resolve(true);
 			},
 		});
 
@@ -1238,62 +1232,40 @@ describe("Plan 12: User-paused with zero completed tasks skips ceremony", () => 
 
 		await invokeRunSprint(pi, ctx, sprintId);
 
-		// Ceremony dispatched once (for the partial pause)
-		expect(mockRunForgeSubagent).toHaveBeenCalledTimes(1);
+		// No mid-sprint "Continue to next task?" prompt was ever issued.
+		expect(confirmPrompts.some((p) => /continue to next task/i.test(p))).toBe(false);
 
-		// Sprint state persisted (not deleted)
-		const stateFile = path.join(proj, ".forge", "cache", `run-sprint-state-${sprintId}.json`);
-		expect(fs.existsSync(stateFile)).toBe(true);
-		const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
-		expect(state.halted).toBe(false);
-	});
-});
+		// Both tasks ran to completion.
+		expect(mockRunTaskPipeline).toHaveBeenCalledTimes(2);
 
-describe("Plan 12: User-paused with N completed tasks dispatches partial ceremony", () => {
-	it("dispatches ceremony with mode=partial and emits sprint-complete with verdict=partial and pausedAfterTaskIndex", async () => {
-		const { proj, sprintId } = scaffoldProject({ taskIds: ["FORGE-S21-T01", "FORGE-S21-T02"] });
-		mockStoreCliForSprint(sprintId, ["FORGE-S21-T01", "FORGE-S21-T02"]);
-
-		mockRunTaskPipeline.mockImplementation(async () => completedTaskResult());
-
-		let confirmCount = 0;
-		const ctx = makeCtx({
-			confirm: () => {
-				confirmCount++;
-				return Promise.resolve(confirmCount === 1);
-			},
-		});
-
-		const pi = makePi();
-		registerRunSprint(pi as never, { cwd: proj });
-
-		await invokeRunSprint(pi, ctx, sprintId);
-
-		// Ceremony dispatched with mode=partial
+		// Exactly one ceremony, dispatched in mode=complete.
 		expect(mockRunForgeSubagent).toHaveBeenCalledTimes(1);
 		const callArgs = mockRunForgeSubagent.mock.calls[0][0];
-		expect(callArgs.task).toContain("Mode: partial");
+		expect(callArgs.task).toContain("Mode: complete");
 
-		// Emit event has pausedAfterTaskIndex
+		// sprint-complete emitted with no pausedAfterTaskIndex (not a partial pause).
 		const emitCalls = vi
 			.mocked(spawnSync)
 			.mock.calls.filter((call) => call[1] && (call[1] as string[]).some((arg: string) => arg === "emit"));
-		let foundPausedEvent = false;
+		let foundComplete = false;
 		for (const call of emitCalls) {
 			const args = call[1] as string[];
 			const jsonArg = args.find((a: string) => a.includes && a.includes("sprint_complete"));
 			if (jsonArg) {
 				try {
 					const evt = JSON.parse(jsonArg);
-					expect(evt.verdict).toBe("partial");
-					expect(evt.pausedAfterTaskIndex).toBe(0);
-					foundPausedEvent = true;
+					expect(evt.pausedAfterTaskIndex).toBeUndefined();
+					foundComplete = true;
 				} catch {
 					// continue
 				}
 			}
 		}
-		expect(foundPausedEvent).toBe(true);
+		expect(foundComplete).toBe(true);
+
+		// Sprint state deleted on clean completion.
+		const stateFile = path.join(proj, ".forge", "cache", `run-sprint-state-${sprintId}.json`);
+		expect(fs.existsSync(stateFile)).toBe(false);
 	});
 });
 

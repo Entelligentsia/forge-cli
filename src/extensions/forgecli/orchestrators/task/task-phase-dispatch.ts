@@ -147,6 +147,13 @@ export async function dispatchPhase(p: PhaseDispatchParams): Promise<PhaseDispat
 	// When config is absent or cascade bottoms out, resolves to inherit
 	// (model: undefined) — setModel is skipped and pi's current model is used.
 	const modelResolution = resolveModelForPhase("default", phase.role, phase.personaNoun, modelRoutingConfig);
+	const dispatchModelLabel = modelResolution.model
+		? `${modelResolution.model.provider}:${modelResolution.model.model}`
+		: "inherit";
+	ctx.ui.notify(
+		`  dispatch: persona=${phase.personaNoun} · model=${dispatchModelLabel} [${modelResolution.source}]`,
+		"info",
+	);
 
 	const phaseStart = Date.now();
 

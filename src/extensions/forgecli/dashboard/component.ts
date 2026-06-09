@@ -924,7 +924,11 @@ export class DashboardComponent implements Component, Focusable {
 		// errors, newlines and all); ALL display normalization happens here:
 		// toDisplayLines splits/sanitizes, wrapLine fits the pane width, and
 		// long entries clamp to LOG_CLAMP_ROWS unless expanded (ctrl+o).
-		if (node.kind === "leaf" && node.tailBuffer.length > 0) {
+		// Rendered for ALL node kinds: leaf nodes carry subagent tool-call
+		// activity (via the viewport observer); orchestrator-kind root nodes
+		// carry the orchestrator's own decision log (gates, verdicts,
+		// escalations, halts) mirrored from its notify stream.
+		if (node.tailBuffer.length > 0) {
 			const expanded = this.controller.getState().logExpanded;
 			const total = node.tailBuffer.length;
 			const modeHint = expanded ? "^o clamp" : "^o expand";

@@ -80,6 +80,12 @@ export function handleReviewVerdict(p: VerdictLoopParams): VerdictLoopOutcome {
 		}
 	}
 
+	// Surface the resolved verdict on the dashboard (mirrored to the root node).
+	ctx.ui.notify(
+		`  verdict: ${phase.role} → ${verdict === "approved" ? "〇 approved" : verdict === "revision" ? "⟳ revision" : `× ${verdict}`}`,
+		verdict === "approved" || verdict === "revision" ? "info" : "error",
+	);
+
 	if (verdict === "missing") {
 		ctx.ui.notify(
 			`× forge:run-task — verdict missing for phase ${phase.role} after subagent completed. ` +

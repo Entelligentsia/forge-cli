@@ -19,6 +19,7 @@ import type { PhaseRole } from "../../subagent/caller-context.js";
 import type { MergedConfig } from "../../config/config-layer.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
 import { checkMaterialization } from "../../lib/manifest-checker.js";
+import { runRefreshKbLinks } from "../../refresh-kb-links.js";
 import { createOrchestratorNotifier } from "../common/orchestrator-notify.js";
 import { runPipelinePreflight } from "../common/orchestrator-entry.js";
 import { recoverPhaseSummary } from "../common/summary-recovery.js";
@@ -259,6 +260,8 @@ async function runTaskPipelineInner(
 					lastError: `preflight gate exit 2 (escalate) for ${phase.role}`,
 				};
 			}
+			// Preflight passed — notify (mirrored to the root node's dashboard log).
+			ctx.ui.notify(`〇 preflight: ${phase.role} — ok`, "info");
 		}
 
 		// ── 6. Materialization-marker check ───────────────────────────
@@ -524,11 +527,32 @@ async function runTaskPipelineInner(
 				};
 			}
 			// "ok" or "error" — proceed to advance
+			if (postflightOutcome.result === "ok") {
+				ctx.ui.notify(`〇 postflight: ${phase.role} — ok`, "info");
+			}
 		}
 
 		// ── Advance to next phase ─────────────────────────────────────
 		registry.completePhase(taskId, phase.role, "completed");
 		finishPhaseNode("completed");
+		// KB link refresh is orchestrator-owned in forge-cli (subagents run via Pi
+		// runtime and have no Skill tool). Mirrors the init phase-4 pattern.
+		if (phase.role === "writeback") {
+			try {
+				const kbResult = await runRefreshKbLinks(cwd);
+				ctx.ui.notify(
+					kbResult.filesUpdated > 0
+						? `〇 KB links refreshed (${kbResult.filesUpdated} file${kbResult.filesUpdated === 1 ? "" : "s"} updated)`
+						: `  KB links — already up to date`,
+					"info",
+				);
+			} catch (e: unknown) {
+				ctx.ui.notify(
+					`△ KB links refresh failed (best-effort): ${(e as { message?: string }).message ?? "unknown"}`,
+					"warning",
+				);
+			}
+		}
 		writeState(cwd, {
 			taskId,
 			phaseIndex: currentPhaseIndex,

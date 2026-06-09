@@ -23,6 +23,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import type { OrchestratorResult, OrchestratorStatus } from "../../lib/orchestrator-types.js";
+import { getOrchestratorTree } from "../../orchestrator-tree.js";
 import { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
 
 /** Map a pipeline status to the orchestrator-transcript outcome vocabulary.
@@ -65,15 +66,22 @@ export async function withOrchestratorTranscript<
 >(opts: WithOrchestratorTranscriptOpts, inner: (session: OrchestratorTranscriptSession) => Promise<T>): Promise<T> {
 	const { cwd, entityKind, entityId, ctx } = opts;
 	const writer = new OrchestratorTranscriptWriter({ cwd, entityKind, entityId });
+	const tree = getOrchestratorTree();
 	const origNotify: typeof ctx.ui.notify = ctx.ui.notify.bind(ctx.ui);
 	ctx.ui.notify = ((msg: string, level?: Parameters<typeof origNotify>[1]) => {
 		origNotify(msg, level);
+		const text = typeof msg === "string" ? msg : String(msg);
 		writer.record({
 			kind: "notify",
 			ts: new Date().toISOString(),
 			level: (level ?? "info") as "info" | "warn" | "error" | "success",
-			message: typeof msg === "string" ? msg : String(msg),
+			message: text,
 		});
+		// Mirror the orchestrator's decision log onto its root node so the
+		// dashboard surfaces it. Leaf phase nodes carry subagent tool-call
+		// activity (via the viewport observer); this root node (entityId) carries
+		// the orchestrator's own narrative — gates, verdicts, escalations, halts.
+		tree.appendTail(entityId, text, level === "error" || level === "warning" ? { warning: true } : undefined);
 	}) as typeof ctx.ui.notify;
 
 	try {
