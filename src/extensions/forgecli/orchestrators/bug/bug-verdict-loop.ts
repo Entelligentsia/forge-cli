@@ -18,6 +18,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { MergedConfig } from "../../config/config-layer.js";
 import type { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import { recoverPhaseSummary } from "../common/summary-recovery.js";
 import { findPredecessorIndex, type PhaseDescriptor } from "../run-task.js";
 import { BUG_PHASES } from "./bug-phases.js";
 import { readBugRecord } from "./bug-id.js";
@@ -45,6 +46,9 @@ export interface BugVerdictLoopParams {
 	summaryKeyByRole: Record<string, string | null>;
 	/** Closure that finalizes this dispatch's OrchestratorTree node. */
 	finishPhaseNode: (status: "completed" | "failed" | "escalated") => void;
+	/** Per-phase completion-recovery guard (forge-engineering#41) — roles that
+	 *  already consumed their one set-bug-summary recovery attempt this run. */
+	recoveredPhases: Set<string>;
 }
 
 /**
@@ -53,11 +57,41 @@ export interface BugVerdictLoopParams {
  */
 export function handleBugReviewVerdict(p: BugVerdictLoopParams): BugVerdictLoopOutcome {
 	const { phase, bugId, storeCli, cwd, forgeRoot, iterationCounts, currentPhaseIndex, modelRoutingConfig, ctx } = p;
-	const { orchTranscript, finishPhaseNode, summaryKeyByRole } = p;
+	const { orchTranscript, finishPhaseNode, summaryKeyByRole, recoveredPhases } = p;
 
 	// Re-read bug record for latest status after subagent ran
 	const updatedBugRecord = readBugRecord(bugId, storeCli, cwd);
-	const verdict = readBugVerdict(updatedBugRecord, phase.role, summaryKeyByRole);
+	let verdict = readBugVerdict(updatedBugRecord, phase.role, summaryKeyByRole);
+
+	// Completion recovery (forge-engineering#41): a clean stop with no verdict in
+	// the store is most often the subagent writing the {PHASE}-SUMMARY.json
+	// sidecar but eliding the set-bug-summary that registers it. Register the
+	// sidecar ourselves (once per phase), then re-read. Phases whose verdict comes
+	// from bug.status (e.g. commit → summaryKey null) are not recoverable this way.
+	if (verdict === "missing") {
+		const summaryKey = summaryKeyByRole[phase.role];
+		if (summaryKey && !recoveredPhases.has(phase.role)) {
+			recoveredPhases.add(phase.role);
+			const rec = recoverPhaseSummary({
+				storeCli,
+				entityId: bugId,
+				summaryKey,
+				cwd,
+				summaryVerb: "set-bug-summary",
+			});
+			if (rec.ok) {
+				const recheck = readBugVerdict(readBugRecord(bugId, storeCli, cwd), phase.role, summaryKeyByRole);
+				if (recheck !== "missing") {
+					ctx.ui.notify(
+						`⟳ forge:fix-bug — ${phase.role}: subagent skipped set-bug-summary; orchestrator registered ` +
+							`the '${summaryKey}' sidecar and the verdict is now present.`,
+						"info",
+					);
+					verdict = recheck;
+				}
+			}
+		}
+	}
 
 	if (verdict === "missing") {
 		ctx.ui.notify(

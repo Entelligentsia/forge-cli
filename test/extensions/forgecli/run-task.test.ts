@@ -465,6 +465,96 @@ describe("Test 1d: verdict missing routes through halt-recovery advisor (advisor
 	});
 });
 
+describe("Test 1e: completion recovery — orchestrator registers a skipped summary sidecar (forge-engineering#41)", () => {
+	// A phase's subagent stops cleanly but elides forge_store set-summary, so the
+	// {PHASE}-SUMMARY.json sidecar is on disk yet the store has no verdict. The
+	// orchestrator must register the sidecar itself (set-summary, auto-resolved
+	// from record.path) and re-read, recovering without halting — instead of the
+	// old hard-fail that forced the operator to rerun the whole task.
+
+	// Stateful store-cli mock: `registered` phases expose an "approved" verdict;
+	// a `set-summary <id> <phaseKey>` for a phase in `recoverable` flips it to
+	// registered (exit 0); otherwise set-summary exits 1 (no sidecar on disk).
+	function mockStoreCliWithRecovery(initialApproved: string[], recoverable: Set<string>) {
+		const registered = new Set(initialApproved);
+		vi.mocked(spawnSync).mockImplementation((cmd: string, args?: readonly string[]) => {
+			const a = args as string[] | undefined;
+			if (a?.[0]?.endsWith("store-cli.cjs")) {
+				if (a[1] === "read" && a[2] === "task") {
+					const summaries: Record<string, { verdict: string }> = {};
+					let status = "in-progress";
+					for (const ph of registered) {
+						if (ph === "approve") status = "approved";
+						else summaries[ph] = { verdict: "approved" };
+					}
+					return {
+						status: 0,
+						stdout: Buffer.from(JSON.stringify({ taskId: a[3], status, summaries })),
+						stderr: Buffer.from(""),
+					};
+				}
+				if (a[1] === "set-summary") {
+					const phaseKey = a[3];
+					if (phaseKey && recoverable.has(phaseKey)) {
+						registered.add(phaseKey);
+						return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+					}
+					return { status: 1, stdout: Buffer.from(""), stderr: Buffer.from("no PLAN-SUMMARY.json on disk") };
+				}
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+	}
+
+	it("recovers a missing review-code verdict via set-summary and does NOT halt", async () => {
+		const { proj, taskId } = scaffoldProject();
+		// review_code starts missing (subagent skipped set-summary); everything
+		// else is registered. review_code is recoverable (sidecar exists on disk).
+		mockStoreCliWithRecovery(["review_plan", "validation", "approve"], new Set(["code_review"]));
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+		vi.mocked(runHaltAdvisor).mockClear();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		// No hard-fail: the verdict-missing halt must NOT fire for review-code…
+		const missingNotify = ctx.notifications.find((n) => n.msg.includes("verdict missing"));
+		expect(missingNotify).toBeUndefined();
+		// …and the halt-recovery advisor must NOT be invoked.
+		expect(runHaltAdvisor).not.toHaveBeenCalled();
+		// The recovery path announced itself.
+		const recoveryNotify = ctx.notifications.find(
+			(n) => n.msg.includes("skipped set-summary") && n.msg.includes("code_review"),
+		);
+		expect(recoveryNotify).toBeDefined();
+		// And the orchestrator actually attempted the registration.
+		const setSummaryCall = vi
+			.mocked(spawnSync)
+			.mock.calls.find((c) => (c[1] as string[] | undefined)?.[1] === "set-summary");
+		expect(setSummaryCall).toBeDefined();
+		expect((setSummaryCall![1] as string[])[3]).toBe("code_review");
+	});
+
+	it("still halts when the sidecar is genuinely absent (set-summary fails)", async () => {
+		const { proj, taskId } = scaffoldProject();
+		// review_code missing AND not recoverable → set-summary exits 1 → halt.
+		mockStoreCliWithRecovery(["review_plan"], new Set());
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+		vi.mocked(runHaltAdvisor).mockClear();
+
+		await invokeRunTask(pi, ctx, taskId);
+
+		const missingNotify = ctx.notifications.find((n) => n.msg.includes("verdict missing"));
+		expect(missingNotify).toBeDefined();
+		expect(runHaltAdvisor).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe("Test 1a: readVerdict tolerates underscore summary keys (forge-cli#?)", () => {
 	// phase.role is "review-plan" (hyphen) but set-summary stores at "review_plan"
 	// (underscore — matches the verb form workflow text uses). readVerdict must

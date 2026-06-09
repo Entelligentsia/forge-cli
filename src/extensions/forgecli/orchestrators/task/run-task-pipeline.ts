@@ -21,6 +21,7 @@ import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
 import { checkMaterialization } from "../../lib/manifest-checker.js";
 import { createOrchestratorNotifier } from "../common/orchestrator-notify.js";
 import { runPipelinePreflight } from "../common/orchestrator-entry.js";
+import { recoverPhaseSummary } from "../common/summary-recovery.js";
 import {
 	type OrchestratorTranscriptSession,
 	withOrchestratorTranscript,
@@ -36,7 +37,7 @@ import {
 	judgementFromSummary,
 } from "./task-events.js";
 import { runPostflightGate, runPreflightGateWithData } from "./task-gates.js";
-import { PHASES } from "./task-phases.js";
+import { PHASES, SUMMARY_KEY_BY_ROLE } from "./task-phases.js";
 import { readTaskRecord } from "./task-record.js";
 import { writeState, deleteState } from "./task-state.js";
 import type { RunTaskPipelineOptions, RunTaskPipelineResult } from "./run-task-types.js";
@@ -83,6 +84,11 @@ async function runTaskPipelineInner(
 	// Determine starting phase from resumeFromState (if provided) or phase 0.
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
 	const iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
+
+	// Per-phase completion-recovery guard (forge-engineering#41): each role gets
+	// at most one deterministic set-summary recovery attempt before a
+	// missing-summary hard-fail. Prevents recovery loops.
+	const recoveredPhases = new Set<string>();
 
 	// Per-role dispatch counter for OrchestratorTree node identity. Distinct
 	// from iterationCounts (which only tracks review-verdict revisions): every
@@ -434,6 +440,7 @@ async function runTaskPipelineInner(
 				ctx,
 				orchTranscript,
 				finishPhaseNode,
+				recoveredPhases,
 			});
 			if (outcome.kind === "return") return outcome.result;
 			if (outcome.kind === "loopback") {
@@ -449,7 +456,34 @@ async function runTaskPipelineInner(
 		// advance currentPhaseIndex, halt, hand off to existing runHaltAdvisor.
 		{
 			const postflightGatePath = preflightGate.replace("preflight-gate.cjs", "postflight-gate.cjs");
-			const postflightOutcome = runPostflightGate(postflightGatePath, phase.role, taskId, cwd);
+			let postflightOutcome = runPostflightGate(postflightGatePath, phase.role, taskId, cwd);
+
+			// Completion recovery (forge-engineering#41): a clean stop with an
+			// unsatisfied postflight is most often the subagent writing the
+			// {PHASE}-SUMMARY.json sidecar but eliding the set-summary that
+			// registers it. Register the sidecar ourselves (once per phase), then
+			// re-run the gate. Only the existing hard-fail remains if it's still
+			// unsatisfied (sidecar genuinely absent → set-summary exits non-zero).
+			if (postflightOutcome.result === "unsatisfied") {
+				const summaryKey = SUMMARY_KEY_BY_ROLE[phase.role];
+				if (summaryKey && !recoveredPhases.has(phase.role)) {
+					recoveredPhases.add(phase.role);
+					const rec = recoverPhaseSummary({ storeCli, entityId: taskId, summaryKey, cwd });
+					writeDebug({ kind: "summary_recovery", phase: phase.role, gate: "postflight", ok: rec.ok });
+					if (rec.ok) {
+						const recheck = runPostflightGate(postflightGatePath, phase.role, taskId, cwd);
+						if (recheck.result !== "unsatisfied") {
+							ctx.ui.notify(
+								`⟳ forge:run-task — ${phase.role}: subagent skipped set-summary; orchestrator registered ` +
+									`the '${summaryKey}' sidecar and postflight now passes.`,
+								"info",
+							);
+						}
+						postflightOutcome = recheck;
+					}
+				}
+			}
+
 			if (postflightOutcome.result === "unsatisfied") {
 				finishPhaseNode("failed");
 				if (postflightOutcome.gateFailure) {

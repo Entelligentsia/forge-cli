@@ -104,6 +104,11 @@ async function runBugPipelineInner(
 	let currentPhaseIndex = resumeFromState?.phaseIndex ?? 0;
 	const iterationCounts: Record<string, number> = resumeFromState?.iterationCounts ?? {};
 
+	// Per-phase completion-recovery guard (forge-engineering#41): each role gets
+	// at most one deterministic set-bug-summary recovery attempt before a
+	// missing-summary hard-fail. Prevents recovery loops.
+	const recoveredPhases = new Set<string>();
+
 	// Per-role dispatch counter for OrchestratorTree node identity. Distinct
 	// from iterationCounts (which only tracks review-verdict revisions): every
 	// dispatch of a role — including a plan-fix re-run after a review
@@ -529,6 +534,7 @@ async function runBugPipelineInner(
 				ctx,
 				orchTranscript,
 				summaryKeyByRole: BUG_SUMMARY_KEY_BY_ROLE,
+				recoveredPhases,
 				finishPhaseNode,
 			});
 			if (outcome.kind === "return") return outcome.result;

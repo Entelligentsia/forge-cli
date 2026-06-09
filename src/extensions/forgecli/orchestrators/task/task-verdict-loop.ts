@@ -14,10 +14,11 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import type { MergedConfig } from "../../config/config-layer.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import { recoverPhaseSummary } from "../common/summary-recovery.js";
 import type { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
 import { findPredecessorIndex } from "./task-body.js";
 import type { GateFailureData } from "./task-gates.js";
-import { type PhaseDescriptor, PHASES } from "./task-phases.js";
+import { type PhaseDescriptor, PHASES, SUMMARY_KEY_BY_ROLE } from "./task-phases.js";
 import { readVerdict } from "./task-record.js";
 import { type RunTaskState, writeState } from "./task-state.js";
 import type { RunTaskPipelineResult } from "./run-task-types.js";
@@ -40,6 +41,9 @@ export interface VerdictLoopParams {
 	orchTranscript: OrchestratorTranscriptWriter;
 	/** Closure that finalizes this dispatch's OrchestratorTree node. */
 	finishPhaseNode: (status: "completed" | "failed" | "escalated") => void;
+	/** Per-phase completion-recovery guard (forge-engineering#41) — roles that
+	 *  already consumed their one set-summary recovery attempt this run. */
+	recoveredPhases: Set<string>;
 }
 
 /**
@@ -48,9 +52,33 @@ export interface VerdictLoopParams {
  */
 export function handleReviewVerdict(p: VerdictLoopParams): VerdictLoopOutcome {
 	const { phase, taskId, storeCli, cwd, forgeRoot, iterationCounts, currentPhaseIndex, modelRoutingConfig, ctx } = p;
-	const { orchTranscript, finishPhaseNode } = p;
+	const { orchTranscript, finishPhaseNode, recoveredPhases } = p;
 
-	const verdict = readVerdict(taskId, phase.role, storeCli, cwd);
+	let verdict = readVerdict(taskId, phase.role, storeCli, cwd);
+
+	// Completion recovery (forge-engineering#41): a clean stop with no verdict in
+	// the store is most often the subagent writing the {PHASE}-SUMMARY.json
+	// sidecar but eliding the set-summary that registers it. Register the sidecar
+	// ourselves (once per phase), then re-read. Phases whose verdict comes from
+	// task.status (approve → summaryKey null) are not recoverable this way.
+	if (verdict === "missing") {
+		const summaryKey = SUMMARY_KEY_BY_ROLE[phase.role];
+		if (summaryKey && !recoveredPhases.has(phase.role)) {
+			recoveredPhases.add(phase.role);
+			const rec = recoverPhaseSummary({ storeCli, entityId: taskId, summaryKey, cwd });
+			if (rec.ok) {
+				const recheck = readVerdict(taskId, phase.role, storeCli, cwd);
+				if (recheck !== "missing") {
+					ctx.ui.notify(
+						`⟳ forge:run-task — ${phase.role}: subagent skipped set-summary; orchestrator registered ` +
+							`the '${summaryKey}' sidecar and the verdict is now present.`,
+						"info",
+					);
+					verdict = recheck;
+				}
+			}
+		}
+	}
 
 	if (verdict === "missing") {
 		ctx.ui.notify(
