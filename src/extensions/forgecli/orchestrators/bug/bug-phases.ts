@@ -30,6 +30,30 @@ export const BUG_PHASES: PhaseDescriptor[] = [
 	{ role: "commit", workflowFile: "commit_task", personaNoun: "engineer", isReview: false, maxIterations: 1 },
 ];
 
+// FEAT-009 (halt-recovery UX): the bug status a record must hold for a given
+// phase to (re-)run — the status `resetPipelineState` sets when rewinding the
+// fix-bug pipeline to that phase. The bug FSM is intentionally coarse
+// (reported → triaged → in-progress → fixed): `triage` owns reported→triaged→
+// in-progress, then NO phase writes bug.status until `commit` does
+// in-progress→fixed (meta-fix-bug.md § Iron Laws #2 — verdicts travel through
+// summaries, not status). So every post-triage phase resets to `in-progress`;
+// only `triage` resets to `reported`. The reset is therefore dominated by the
+// resume-state phaseIndex, with status forced to the right coarse bucket.
+export const BUG_PHASE_PRE_STATUS: Record<string, string> = {
+	triage: "reported",
+	"plan-fix": "in-progress",
+	"review-plan": "in-progress",
+	implement: "in-progress",
+	"review-code": "in-progress",
+	approve: "in-progress",
+	commit: "in-progress",
+};
+
+/** Index of a bug phase in the BUG_PHASES table by role, or -1 if unknown. */
+export function bugPhaseIndexByRole(role: string): number {
+	return BUG_PHASES.findIndex((p) => p.role === role);
+}
+
 // ── Bug-event type tokens ──────────────────────────────────────────────────
 // Explicit mapping per review finding #3. Non-review phases always emit the
 // pass token. Review phases select pass or fail based on ec.judgement.verdict.
