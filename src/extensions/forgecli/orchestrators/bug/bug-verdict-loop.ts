@@ -55,7 +55,7 @@ export interface BugVerdictLoopParams {
  * Evaluate the review-phase verdict and decide the loop's next move.
  * Mirrors the inline block that previously lived in runBugPipelineInner.
  */
-export function handleBugReviewVerdict(p: BugVerdictLoopParams): BugVerdictLoopOutcome {
+export async function handleBugReviewVerdict(p: BugVerdictLoopParams): Promise<BugVerdictLoopOutcome> {
 	const { phase, bugId, storeCli, cwd, forgeRoot, iterationCounts, currentPhaseIndex, modelRoutingConfig, ctx } = p;
 	const { orchTranscript, finishPhaseNode, summaryKeyByRole, recoveredPhases } = p;
 
@@ -114,7 +114,9 @@ export function handleBugReviewVerdict(p: BugVerdictLoopParams): BugVerdictLoopO
 		// (FORGE-S26-T18) — the same hand-off the preflight/postflight gate
 		// failures use — instead of a bare escalation. Best-effort, non-fatal.
 		const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
-		void runHaltAdvisor({
+		// FORGE-BUG-046: await the advisor so its diagnosis surfaces BEFORE the
+		// pipeline tears down (was `void` — fire-and-forget before pipeline-end).
+		await runHaltAdvisor({
 			gateFailure: {
 				phase: phase.role,
 				reasonCode: "verdict-missing",

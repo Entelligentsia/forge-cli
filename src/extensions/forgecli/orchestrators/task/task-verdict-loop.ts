@@ -50,7 +50,7 @@ export interface VerdictLoopParams {
  * Evaluate the review-phase verdict and decide the loop's next move.
  * Mirrors the inline block that previously lived in runTaskPipelineInner.
  */
-export function handleReviewVerdict(p: VerdictLoopParams): VerdictLoopOutcome {
+export async function handleReviewVerdict(p: VerdictLoopParams): Promise<VerdictLoopOutcome> {
 	const { phase, taskId, storeCli, cwd, forgeRoot, iterationCounts, currentPhaseIndex, modelRoutingConfig, ctx } = p;
 	const { orchTranscript, finishPhaseNode, recoveredPhases } = p;
 
@@ -122,7 +122,10 @@ export function handleReviewVerdict(p: VerdictLoopParams): VerdictLoopOutcome {
 				"(e.g. code_review), and that the call exits zero before the subagent returns.",
 		};
 		const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
-		void runHaltAdvisor({
+		// FORGE-BUG-046: await the advisor so its diagnosis surfaces BEFORE the
+		// pipeline tears down. Previously `void` returned immediately and
+		// pipeline-end fired ~1ms later, before the LLM advisory existed.
+		await runHaltAdvisor({
 			gateFailure,
 			advisorModel,
 			taskId,

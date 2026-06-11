@@ -14,7 +14,7 @@
 //   - runHaltAdvisor is best-effort: failures must not mask the primary halt.
 
 import type { MergedConfig, PersonaModel } from "../config/config-layer.js";
-import { runForgeSubagent, loadForgePersona, type ForgePersona } from "../forge-subagent.js";
+import { runForgeSubagent, loadForgePersona, getFinalOutput, type ForgePersona } from "../forge-subagent.js";
 import { resolveModelForPhase } from "../config/model-resolver.js";
 
 // Minimal subset of the ExtensionCommandContext.ui interface needed here.
@@ -98,8 +98,17 @@ export function resolveAdvisorModel(
 export async function runHaltAdvisor(opts: RunHaltAdvisorOptions): Promise<void> {
 	const { gateFailure, advisorModel, taskId, cwd, ctx, forgeRoot } = opts;
 
+	// FORGE-BUG-046: surface the structured remediation deterministically, before
+	// (and independent of) the LLM advisor. A skipped or failed advisor must still
+	// leave the human a concrete next step — previously the only thing the viewport
+	// showed on halt was the generic "Halting for advisory" error.
+	if (gateFailure.remediation) {
+		ctx.ui.notify(`  ↳ remediation: ${gateFailure.remediation}`, "info");
+	}
+
 	if (!advisorModel) {
-		// No model available — skip advisor silently.
+		// No model available — skip the LLM advisor (deterministic remediation
+		// above already surfaced the next step).
 		return;
 	}
 
@@ -141,13 +150,26 @@ export async function runHaltAdvisor(opts: RunHaltAdvisorOptions): Promise<void>
 			};
 		}
 
-		await runForgeSubagent({
+		const result = await runForgeSubagent({
 			persona,
 			task: advisoryPrompt,
 			cwd,
 			forgeRoot,
 			requestedModel: advisorModel,
 		});
+
+		// FORGE-BUG-046: surface the advisor's diagnosis to the viewport + the
+		// orchestrator.jsonl transcript. Previously this result was discarded —
+		// the advisory was generated (and billed) but never shown to the human.
+		const advice = getFinalOutput(result.messages ?? []).trim();
+		if (advice) {
+			ctx.ui.notify(`  ↳ advisor: ${advice}`, "info");
+		} else {
+			ctx.ui.notify(
+				"  ↳ advisor produced no text output (see the subagent transcript).",
+				"warning",
+			);
+		}
 	} catch (err: unknown) {
 		const e = err as { message?: string };
 		ctx.ui.notify(

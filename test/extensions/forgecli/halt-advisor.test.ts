@@ -9,9 +9,22 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mock forge-subagent before importing halt-advisor ──────────────────────
+// getFinalOutput is the real (pure) extractor so the advisory-surfacing tests
+// exercise the genuine assistant-text extraction path.
 vi.mock("../../../src/extensions/forgecli/forge-subagent.js", () => ({
-	runForgeSubagent: vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" }),
+	runForgeSubagent: vi.fn().mockResolvedValue({ exitCode: 0, messages: [], usage: {} }),
 	loadForgePersona: vi.fn().mockReturnValue("# Persona\nYou are an advisor."),
+	getFinalOutput: (messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }>) => {
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant") {
+				for (const part of msg.content) {
+					if (part.type === "text" && part.text) return part.text;
+				}
+			}
+		}
+		return "";
+	},
 }));
 
 import type { PersonaModel } from "../../../src/extensions/forgecli/config/config-layer.js";
@@ -137,5 +150,62 @@ describe("halt-advisor :: runHaltAdvisor()", () => {
 			expect.stringContaining("halt advisor"),
 			expect.any(String),
 		);
+	});
+
+	// FORGE-BUG-046: the advisor's LLM output must reach the viewport, not be
+	// discarded after runForgeSubagent returns.
+	it("surfaces the advisor's final output via ctx.ui.notify", async () => {
+		(runForgeSubagent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+			exitCode: 0,
+			usage: {},
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "The review subagent skipped set-summary; re-run review-code." }],
+				},
+			],
+		});
+
+		const ctx = makeCtx();
+		await runHaltAdvisor({
+			gateFailure: {
+				phase: "review-code",
+				reasonCode: "verdict-missing",
+				detail: "no verdict in store",
+				remediation: "Re-run the phase.",
+			},
+			advisorModel: { provider: "anthropic", model: "claude-opus-4-5" },
+			taskId: "TEST-T1",
+			cwd: "/tmp/test",
+			ctx: ctx as any,
+		});
+
+		const notified = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+		expect(notified.some((m) => m.includes("The review subagent skipped set-summary; re-run review-code."))).toBe(true);
+	});
+
+	// FORGE-BUG-046: the structured remediation must surface deterministically
+	// even when no advisor model is available (LLM advisor skipped) — the human
+	// still gets an actionable next step.
+	it("surfaces the structured remediation even when no advisor model is resolved", async () => {
+		const ctx = makeCtx();
+		await runHaltAdvisor({
+			gateFailure: {
+				phase: "review-code",
+				reasonCode: "verdict-missing",
+				detail: "no verdict in store",
+				remediation: "Re-run /forge:plan then retry.",
+			},
+			advisorModel: undefined,
+			taskId: "TEST-T1",
+			cwd: "/tmp/test",
+			ctx: ctx as any,
+		});
+
+		// No LLM dispatched when model is undefined…
+		expect(runForgeSubagent).not.toHaveBeenCalled();
+		// …but the remediation still reaches the viewport.
+		const notified = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+		expect(notified.some((m) => m.includes("Re-run /forge:plan then retry."))).toBe(true);
 	});
 });

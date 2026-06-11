@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   payload, and is idempotent. A `[y/N]` confirm guards it unless `--yes`/`-y` or
   `FORGE_NON_INTERACTIVE=1`.
 
+### Fixed
+
+- **Halt-recovery advisor output now reaches the human (FORGE-BUG-046).** When a
+  `run-task` / `fix-bug` phase halted on a missing verdict or a preflight/
+  postflight gate failure, the orchestrator spawned an opus-class read-only
+  advisor — but its diagnosis was never surfaced. Two compounding defects:
+  `runHaltAdvisor` discarded the subagent result (never extracted or notified
+  the advisory text), and every caller invoked it with `void` and returned
+  `halted` immediately, so `pipeline-end` fired ~1 ms after the advisor started
+  — before the LLM had produced anything. Now the advisor is awaited before
+  teardown, its final output is surfaced via `ctx.ui.notify` (reaching both the
+  viewport tail and `orchestrator.jsonl`), and the structured `remediation` is
+  printed deterministically — independent of the LLM — so a skipped or failed
+  advisor still leaves a concrete next step. Applies to both the task and bug
+  verdict loops and all five gate-halt call sites.
+
 ## [1.0.36] — 2026-06-09
 
 Orchestrator dashboard logs + autonomous run-sprint + KB-refresh, re-landed onto

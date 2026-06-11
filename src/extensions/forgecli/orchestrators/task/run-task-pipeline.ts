@@ -224,7 +224,7 @@ async function runTaskPipelineInner(
 				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
 				if (preflightOutcome.gateFailure) {
 					const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
-					void runHaltAdvisor({
+					await runHaltAdvisor({
 						gateFailure: preflightOutcome.gateFailure,
 						advisorModel,
 						taskId,
@@ -431,7 +431,7 @@ async function runTaskPipelineInner(
 
 		// ── 6b. Verdict check (review phases only) ────────────────────
 		if (phase.isReview) {
-			const outcome = handleReviewVerdict({
+			const outcome = await handleReviewVerdict({
 				phase,
 				taskId,
 				storeCli,
@@ -510,7 +510,7 @@ async function runTaskPipelineInner(
 				// Spawn halt-recovery advisor (Tier 1, best-effort — non-fatal).
 				if (postflightOutcome.gateFailure) {
 					const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
-					void runHaltAdvisor({
+					await runHaltAdvisor({
 						gateFailure: postflightOutcome.gateFailure,
 						advisorModel,
 						taskId,
