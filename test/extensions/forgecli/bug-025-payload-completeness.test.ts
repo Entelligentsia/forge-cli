@@ -49,7 +49,7 @@ describe("forge-cli#25 defect B — three missing tools present in bundled paylo
 		const p = path.join(TOOLS_DIR, "check-structure.cjs");
 		expect(
 			fs.existsSync(p),
-			`check-structure.cjs missing from bundled tools/ at ${p}. ` + "Add it to TOOLS_TO_COPY in build-payload.cjs.",
+			`check-structure.cjs missing from bundled tools/ at ${p}. ` + "Add it to the payload manifest (forge/forge/payload-manifest.json, tools entry).",
 		).toBe(true);
 	});
 
@@ -57,7 +57,7 @@ describe("forge-cli#25 defect B — three missing tools present in bundled paylo
 		const p = path.join(TOOLS_DIR, "list-skills.js");
 		expect(
 			fs.existsSync(p),
-			`list-skills.js missing from bundled tools/ at ${p}. ` + "Add it to TOOLS_TO_COPY in build-payload.cjs.",
+			`list-skills.js missing from bundled tools/ at ${p}. ` + "Add it to the payload manifest (forge/forge/payload-manifest.json, tools entry).",
 		).toBe(true);
 	});
 
@@ -65,7 +65,7 @@ describe("forge-cli#25 defect B — three missing tools present in bundled paylo
 		const p = path.join(TOOLS_DIR, "verify-integrity.cjs");
 		expect(
 			fs.existsSync(p),
-			`verify-integrity.cjs missing from bundled tools/ at ${p}. ` + "Add it to TOOLS_TO_COPY in build-payload.cjs.",
+			`verify-integrity.cjs missing from bundled tools/ at ${p}. ` + "Add it to the payload manifest (forge/forge/payload-manifest.json, tools entry).",
 		).toBe(true);
 	});
 });

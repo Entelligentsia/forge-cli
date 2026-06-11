@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Payload consumers now read a single declarative manifest (FORGE-S32-T03).**
+  `scripts/build-payload.cjs` (bundle), `claude-bootstrap/bootstrap.ts` (vendor)
+  and `claude-bootstrap/uninstall.ts` (remove) are wired to
+  `forge/forge/payload-manifest.json` (authored in T02) instead of the
+  hand-maintained copy/removal lists each carried. build-payload's
+  `TOOLS_TO_COPY` / `LIB_ALLOWLIST` / `SKILLS_TO_COPY` arrays are deleted and
+  derived from the manifest; bootstrap vendors `payloadRoot/<bundle>` →
+  `<project>/<install>` driven solely by the manifest (the entry order encodes
+  the `commands` / `.base-pack/commands` union precedence); uninstall removes
+  install destinations grouped by `owner`, bounding agents/skills removal to
+  payload-declared names so user-authored siblings survive. `bundleOnly`
+  entries (`schemas/transitions`, `migrations.json`, `integrity.json`) ship to
+  the bundle for tool resolution but are never vendored. The build now bundles
+  `payload-manifest.json` itself so the runtime consumers can read it. Adding a
+  payload file is now a single manifest edit — the FORGE-BUG-030/036
+  MODULE_NOT_FOUND lockstep is retired. `4ge init claude .` output is
+  byte-identical (frozen-install-set parity guard in `bootstrap.test.ts`).
+
 ### Added
 
 - **`4ge uninstall claude [dir] [--purge] [--yes]`** — the counterpart to

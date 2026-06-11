@@ -19,6 +19,7 @@
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const { loadManifest, applySelect } = require("./lib/payload-manifest.cjs");
 
 // ── Argv ──────────────────────────────────────────────────────────────────
 // `--include-full` restores the historical superset bundle (Pass 1 top-level
@@ -78,6 +79,32 @@ if (!forgeRootRel || typeof forgeRootRel !== "string") {
 const forgeRoot = path.resolve(repoRoot, forgeRootRel);
 const toolPath = path.join(forgeRoot, "tools", "substitute-placeholders.cjs");
 const outDir = path.resolve(repoRoot, "dist", "forge-payload");
+
+// ── Payload manifest (single source of truth, FORGE-S32-T03) ───────────────
+// The curated tools / lib / skills selections are read from
+// forge/forge/payload-manifest.json instead of hand-maintained arrays (the
+// FORGE-BUG-030 / FORGE-BUG-036 MODULE_NOT_FOUND lockstep class). Helper that
+// resolves an entry by its `source` field and returns the selected relative
+// file paths under forgeRoot/<source>.
+let payloadManifest;
+try {
+	payloadManifest = loadManifest(forgeRoot);
+} catch (err) {
+	console.error("build-payload:", err.message);
+	process.exit(1);
+}
+function manifestEntry(source) {
+	const entry = payloadManifest.entries.find((e) => e.source === source);
+	if (!entry) {
+		console.error(`build-payload: payload-manifest.json has no entry for source "${source}".`);
+		process.exit(1);
+	}
+	return entry;
+}
+function manifestSelect(source) {
+	const entry = manifestEntry(source);
+	return applySelect(path.join(forgeRoot, source), entry.select);
+}
 
 // ── Guard: tool must exist ─────────────────────────────────────────────────
 if (!fs.existsSync(toolPath)) {
@@ -162,72 +189,11 @@ function copyDir(srcDir, destDir, filter) {
 // ── Pass 2: selective copy for expanded bundle layout ─────────────────────
 console.log("build-payload: pass 2 — expanded bundle layout");
 
-// 2a: tools/ — selective list of .cjs tools + full lib/ directory
-const TOOLS_TO_COPY = [
-	"substitute-placeholders.cjs",
-	"build-init-context.cjs",
-	"build-overlay.cjs",
-	"manage-versions.cjs",
-	"generation-manifest.cjs",
-	"build-persona-pack.cjs",
-	"build-context-pack.cjs",
-	"seed-store.cjs",
-	"manage-config.cjs",
-	"banners.cjs",
-	"validate-store.cjs",
-	"collate.cjs",
-	"store-cli.cjs",
-	"store.cjs",
-	"store-query.cjs",
-	// Orchestrator-pipeline tools: invoked by every materialized workflow
-	// via "$FORGE_ROOT/tools/<tool>.cjs" and by run-task.ts. Missing any of
-	// these breaks the plan/review/validate phases at the bash boundary.
-	"preflight-gate.cjs",
-	"postflight-gate.cjs",
-	"read-verdict.cjs",
-	"parse-gates.cjs",
-	// Plan-11 / Slice 2: friction recorder (subagent) and provider backfill helper.
-	"friction-emit.cjs",
-	"backfill-provider.cjs",
-	// forge-cli#25 defect B: health-check tools omitted from previous build.
-	// /forge:health invokes all three; missing tools produce "(skipped — <tool>
-	// not available in this Forge version)" for 3 of 14 checks on every install.
-	"check-structure.cjs",
-	"list-skills.js",
-	"verify-integrity.cjs",
-	// FORGE-S24 SKILL-CURATION Phase 2 pipeline tools — required by the new
-	// meta-enhance workflow shipped in forge-plugin 0.45.1–0.46.x. Missing any
-	// of these breaks /forge:enhance with `Cannot find module './forge/tools/<X>.cjs'`
-	// because the workflow `require()`s them from $FORGE_ROOT/tools/.
-	"queue-drain.cjs",
-	"compression-gate.cjs",
-	"judge-proposal.cjs",
-	"delete-candidate-detector.cjs",
-	"replay-scoring.cjs",
-	// FORGE-S26-T16: backported plugin tools — artifact.cjs and verify-apply.cjs
-	// are canonical plugin-side implementations; forge-cli shims delegate to them.
-	"artifact.cjs",
-	// issue #111 Phase 3: artifact.cjs now require()s artifact-store.cjs (the
-	// ArtifactStore/FsArtifactImpl provider seam). REQUIRED — without it the
-	// bundled artifact.cjs crashes with "Cannot find module './artifact-store.cjs'".
-	"artifact-store.cjs",
-	"verify-apply.cjs",
-	// FORGE-S26-T17: init phase verification tool — called by verifiers.ts wrappers
-	// and by the phase prompt files themselves to validate phase deliverables.
-	"verify-phase.cjs",
-	// forge-engineering#40: deterministic commit choreography (plugin >= 1.2.20).
-	// commit_task.md routes the entire commit phase through this tool — staging
-	// from files_changed provenance, boundary guard, git commit, terminal
-	// transition. Missing it halts the commit phase on every project.
-	"commit-task.cjs",
-	// CLI-first bootstrap: settings.json PostToolUse:Bash hook points at
-	// $CLAUDE_PROJECT_DIR/.forge/tools/query-logger.cjs (plugin hooks.json parity).
-	// Missing it hard-fails (exit 1) on every Bash call in a bootstrapped project.
-	"query-logger.cjs",
-	// Referenced by wfl-run-task.js and meta-fix-bug/meta-orchestrate as
-	// .forge/tools/forge-preflight.cjs — caught by check-vendored-refs.cjs.
-	"forge-preflight.cjs",
-];
+// 2a: tools/ — curated .cjs/.js tools (manifest source:"tools") + lib/ directory.
+// The selection lives in forge/forge/payload-manifest.json (single source of
+// truth); adding a runtime-required tool is a manifest edit, not a code edit
+// here (retires the FORGE-BUG-030 / FORGE-BUG-036 MODULE_NOT_FOUND lockstep).
+const TOOLS_TO_COPY = manifestSelect("tools");
 
 const toolsSrcDir = path.join(forgeRoot, "tools");
 const toolsDestDir = path.join(outDir, "tools");
@@ -254,35 +220,11 @@ for (const toolName of TOOLS_TO_COPY) {
 }
 
 // Copy lib/ subdirectory.
-// Default: allowlist mirrors what bundled tools require. Source citations:
-//   forge-root.cjs, paths.cjs, pricing.cjs, project-root.cjs — required by
-//     bundled store-cli.cjs / manage-config.cjs / manage-versions.cjs /
-//     collate.cjs / store.cjs / substitute-placeholders.cjs.
-//   result.js, validate.js — required by store-cli.cjs.
-// Excluded by default: *.test.cjs (node:test units, never run from bundle),
-//   store-{nlp,query-exec,facade}.cjs (only consumed by store-query.cjs,
-//   which is not in TOOLS_TO_COPY).
-const LIB_ALLOWLIST = new Set([
-	// Canonical artifact-kind registry (ADR artifact-resolution). REQUIRED:
-	// artifact.cjs and store-cli.cjs `require('./lib/artifact-kinds.cjs')`, so the
-	// bundled payload crashes without it.
-	"artifact-kinds.cjs",
-	"forge-root.cjs",
-	"frontmatter.cjs",
-	"fsutil.cjs",
-	"json-io.cjs",
-	"paths.cjs",
-	"pricing.cjs",
-	"project-root.cjs",
-	"result.js",
-	"schema-loader.cjs",
-	"slug.cjs",
-	"suggest.cjs",
-	"validate.js",
-	"store-facade.cjs",
-	"store-nlp.cjs",
-	"store-query-exec.cjs",
-]);
+// Default: allowlist read from the manifest (source:"tools/lib") — the curated
+// set the bundled tools require at runtime. Excluded by default: *.test.cjs
+// (node:test units, never run from the bundle). --include-full restores the
+// whole lib/ tree for /forge:enhance precursor work.
+const LIB_ALLOWLIST = new Set(manifestSelect("tools/lib"));
 const libSrc = path.join(toolsSrcDir, "lib");
 const libDest = path.join(toolsDestDir, "lib");
 if (fs.existsSync(libSrc)) {
@@ -693,11 +635,14 @@ if (fs.existsSync(piChangelogSrc)) {
 // `pi.skills` points here for auto-discovery; index.ts also reads the same dir
 // via loadSkillsFromDir(). No pkg-root copy — that path caused untracked dirs
 // after every build and dual-loaded skills under two source labels.
+//
+// Curated skill-directory names read from the manifest (source:"skills",
+// select.include). applySelect returns SKILL.md paths under each curated dir;
+// reduce to the unique top-level directory names to copy each whole.
 const SKILLS_TO_COPY = [
-	"store-custodian",
-	"store-query-grammar",
-	"store-query-nlp",
-	"refresh-kb-links",
+	...new Set(
+		manifestSelect("skills").map((rel) => rel.split(path.sep)[0]),
+	),
 ];
 
 const skillsSrcDir = path.join(forgeRoot, "skills");
@@ -714,6 +659,18 @@ for (const skillName of SKILLS_TO_COPY) {
 	skillsCopiedCount++;
 }
 console.log(`build-payload: skills/ — ${skillsCopiedCount}/${SKILLS_TO_COPY.length} skill directories copied to payload`);
+
+// 2j: payload-manifest.json — bundle the single source of truth itself so the
+// runtime consumers (bootstrap.ts vendor loop, uninstall.ts removal grouping)
+// can read it from payloadRoot/payload-manifest.json (FORGE-S32-T03).
+const manifestSrc = path.join(forgeRoot, "payload-manifest.json");
+const manifestDest = path.join(outDir, "payload-manifest.json");
+if (fs.existsSync(manifestSrc)) {
+	copyFile(manifestSrc, manifestDest);
+	console.log("build-payload: payload-manifest.json bundled");
+} else {
+	console.warn("build-payload: forge/forge/payload-manifest.json not found — bootstrap/uninstall cannot read the manifest");
+}
 
 console.log("build-payload: forge-payload written to", outDir);
 console.log("build-payload: expanded bundle layout complete");

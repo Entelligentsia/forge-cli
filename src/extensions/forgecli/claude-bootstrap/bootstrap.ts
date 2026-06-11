@@ -18,6 +18,7 @@ import * as child_process from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { applySelect, installEntries, loadManifest } from "../lib/payload-manifest.js";
 import { mergeForgeHooks } from "./settings-merge.js";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -170,30 +171,6 @@ function copyFile(src: string, dst: string): "created" | "skipped" {
 }
 
 /**
- * Recursively copy a directory tree. Only regular files are copied; each file
- * goes through copyFile (idempotent: byte-identical → skipped). Tracks created
- * and skipped paths into the provided arrays.
- */
-function copyDirRecursive(src: string, dest: string, created: string[], skipped: string[]): void {
-	const destOutcome = ensureDir(dest);
-	if (destOutcome === "created") created.push(dest);
-	else skipped.push(dest);
-
-	const entries = fs.readdirSync(src, { withFileTypes: true });
-	for (const entry of entries) {
-		const srcPath = path.join(src, entry.name);
-		const destPath = path.join(dest, entry.name);
-		if (entry.isDirectory()) {
-			copyDirRecursive(srcPath, destPath, created, skipped);
-		} else if (entry.isFile()) {
-			const outcome = copyFile(srcPath, destPath);
-			if (outcome === "created") created.push(destPath);
-			else skipped.push(destPath);
-		}
-	}
-}
-
-/**
  * Write a JSON file. If dst already contains the same content → "skipped".
  * Otherwise → overwrite and return "created".
  */
@@ -280,42 +257,63 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 		return { ok: false, created, skipped, warnings, preflight };
 	}
 
-	// ── Step 3: Vendor tools + lib into .forge/tools/ ─────────────────────────
-	const toolsSrc = path.join(payloadRoot, "tools");
 	const toolsDest = path.join(dir, ".forge", "tools");
 
+	// ── Step 3: Manifest-driven vendor loop (single source of truth) ──────────
+	// Every vendored payload artifact is declared in payload-manifest.json
+	// (FORGE-S32-T03). bootstrap copies payloadRoot/<entry.bundle> →
+	// dir/<entry.install>, applying entry.select for dir entries. The manifest
+	// is the curated set, so there is NO second consumer-side allowlist or
+	// skip-list — a file that must NOT be vendored is marked bundleOnly in the
+	// manifest (FORGE-BUG-044/045: transitions, migrations.json, integrity.json),
+	// excluded here by installEntries(). The manifest entry ORDER encodes the
+	// commands-union precedence: the loser `commands/` entry precedes the winner
+	// `.base-pack/commands/`, and the later copy overwrites on a name collision,
+	// so the .base-pack variant wins exactly as the legacy Step 4a/4b ordering did.
 	try {
-		// Copy *.cjs and *.js files, plus the package.json CJS scope marker
-		// (FORGE-BUG-030: lib/*.js are CommonJS; without the marker they resolve
-		// as ESM in "type":"module" host projects and crash on module.exports).
-		const toolFiles = fs
-			.readdirSync(toolsSrc)
-			.filter((f) => f.endsWith(".cjs") || f.endsWith(".js") || f === "package.json");
-		for (const f of toolFiles) {
-			const outcome = copyFile(path.join(toolsSrc, f), path.join(toolsDest, f));
-			const destPath = path.join(toolsDest, f);
-			if (outcome === "created") created.push(destPath);
-			else skipped.push(destPath);
-		}
-
-		// Copy lib/ subdirectory
-		const libSrc = path.join(toolsSrc, "lib");
-		const libDest = path.join(toolsDest, "lib");
-		if (fs.existsSync(libSrc)) {
-			const libOutcome = ensureDir(libDest);
-			if (libOutcome === "created") created.push(libDest);
-			else skipped.push(libDest);
-
-			const libFiles = fs.readdirSync(libSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
-			for (const f of libFiles) {
-				const outcome = copyFile(path.join(libSrc, f), path.join(libDest, f));
-				const destPath = path.join(libDest, f);
+		const manifest = loadManifest(payloadRoot);
+		for (const entry of installEntries(manifest)) {
+			const installRoot = path.join(dir, entry.install as string);
+			if (entry.kind === "file") {
+				const src = path.join(payloadRoot, entry.bundle);
+				if (!fs.existsSync(src)) {
+					warnings.push(`payload entry ${entry.source} missing from bundle at ${src} — not vendored.`);
+					continue;
+				}
+				const dirOutcome = ensureDir(installRoot);
+				if (dirOutcome === "created") created.push(installRoot);
+				const destPath = path.join(installRoot, path.basename(entry.bundle));
+				const outcome = copyFile(src, destPath);
+				if (outcome === "created") created.push(destPath);
+				else skipped.push(destPath);
+				continue;
+			}
+			// dir entry — select bundled files and copy preserving relative paths.
+			const bundleDir = path.join(payloadRoot, entry.bundle);
+			if (!fs.existsSync(bundleDir)) {
+				warnings.push(`payload entry ${entry.source} missing from bundle at ${bundleDir} — not vendored.`);
+				continue;
+			}
+			const dirOutcome = ensureDir(installRoot);
+			if (dirOutcome === "created") created.push(installRoot);
+			else skipped.push(installRoot);
+			for (const rel of applySelect(bundleDir, entry.select)) {
+				const destPath = path.join(installRoot, rel);
+				ensureDir(path.dirname(destPath));
+				const outcome = copyFile(path.join(bundleDir, rel), destPath);
 				if (outcome === "created") created.push(destPath);
 				else skipped.push(destPath);
 			}
 		}
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		warnings.push(`vendor-payload non-fatal: ${e.message ?? String(err)}`);
+	}
 
-		// Write .forge-tools-version marker
+	// ── Step 3b: .forge-tools-version marker (not a payload entry) ─────────────
+	// Written by bootstrap, not declared in the manifest — records the bundled
+	// forge version so project-orientation.ts can detect a stale vendored toolset.
+	try {
 		const payloadVersion = readPayloadVersion(payloadRoot);
 		const markerPath = path.join(toolsDest, ".forge-tools-version");
 		const markerOutcome = writeJsonFile(markerPath, { version: payloadVersion });
@@ -323,204 +321,7 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 		else skipped.push(markerPath);
 	} catch (err: unknown) {
 		const e = err as { message?: string };
-		warnings.push(`tools-copy non-fatal: ${e.message ?? String(err)}`);
-	}
-
-	// ── Step 3b: Vendor hook scripts into .forge/tools/hooks/ ─────────────────
-	// settings-merge.ts wires .claude/settings.json hooks at these paths — without
-	// this copy every hook fires node against a nonexistent file (MODULE_NOT_FOUND).
-	const hooksSrc = path.join(payloadRoot, "hooks");
-	const hooksDest = path.join(toolsDest, "hooks");
-
-	if (fs.existsSync(hooksSrc)) {
-		try {
-			const hooksDirOutcome = ensureDir(hooksDest);
-			if (hooksDirOutcome === "created") created.push(hooksDest);
-			else skipped.push(hooksDest);
-
-			const hookFiles = fs.readdirSync(hooksSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
-			for (const f of hookFiles) {
-				const outcome = copyFile(path.join(hooksSrc, f), path.join(hooksDest, f));
-				const destPath = path.join(hooksDest, f);
-				if (outcome === "created") created.push(destPath);
-				else skipped.push(destPath);
-			}
-
-			// Copy hooks/lib/ — hook scripts require ./lib/common.cjs etc. at runtime;
-			// without these every PostToolUse hook fails with MODULE_NOT_FOUND.
-			const hooksLibSrc = path.join(hooksSrc, "lib");
-			const hooksLibDest = path.join(hooksDest, "lib");
-			if (fs.existsSync(hooksLibSrc)) {
-				const hooksLibOutcome = ensureDir(hooksLibDest);
-				if (hooksLibOutcome === "created") created.push(hooksLibDest);
-				else skipped.push(hooksLibDest);
-
-				const hooksLibFiles = fs.readdirSync(hooksLibSrc).filter((f) => f.endsWith(".cjs") || f.endsWith(".js"));
-				for (const f of hooksLibFiles) {
-					const outcome = copyFile(path.join(hooksLibSrc, f), path.join(hooksLibDest, f));
-					const destPath = path.join(hooksLibDest, f);
-					if (outcome === "created") created.push(destPath);
-					else skipped.push(destPath);
-				}
-			}
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			warnings.push(`hooks-copy non-fatal: ${e.message ?? String(err)}`);
-		}
-	} else {
-		warnings.push(
-			`hooks/ not found in payload at ${hooksSrc} — .claude/settings.json hooks will fail with MODULE_NOT_FOUND.`,
-		);
-	}
-
-	// ── Step 3c: Vendor schemas into .forge/schemas/ ──────────────────────────
-	// validate-store.cjs and store tooling resolve schemas from .forge/schemas/.
-	const schemasSrc = path.join(payloadRoot, "schemas");
-	const schemasDest = path.join(dir, ".forge", "schemas");
-
-	if (fs.existsSync(schemasSrc)) {
-		try {
-			const schemaFiles = fs.readdirSync(schemasSrc).filter((f) => f.endsWith(".json"));
-			for (const f of schemaFiles) {
-				const outcome = copyFile(path.join(schemasSrc, f), path.join(schemasDest, f));
-				const destPath = path.join(schemasDest, f);
-				if (outcome === "created") created.push(destPath);
-				else skipped.push(destPath);
-			}
-
-			// Copy _defs/ subdirectory
-			const defsSrc = path.join(schemasSrc, "_defs");
-			const defsDest = path.join(schemasDest, "_defs");
-			if (fs.existsSync(defsSrc)) {
-				const defsDirOutcome = ensureDir(defsDest);
-				if (defsDirOutcome === "created") created.push(defsDest);
-				else skipped.push(defsDest);
-
-				const defsFiles = fs.readdirSync(defsSrc).filter((f) => f.endsWith(".json"));
-				for (const f of defsFiles) {
-					const outcome = copyFile(path.join(defsSrc, f), path.join(defsDest, f));
-					const destPath = path.join(defsDest, f);
-					if (outcome === "created") created.push(destPath);
-					else skipped.push(destPath);
-				}
-			}
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			warnings.push(`schemas-copy non-fatal: ${e.message ?? String(err)}`);
-		}
-	} else {
-		warnings.push(`schemas/ not found in payload at ${schemasSrc} — .forge/schemas/ left empty.`);
-	}
-
-	// ── Step 4: Vendor the full /forge:* command surface ──────────────────────
-	// CLI-first redesign: project-prefix namespaces (/acme:*, /hello:*) are
-	// retired. The union of .base-pack/commands/ (sprint-workflow shims, static
-	// /forge:* files) and commands/ (plugin utility commands) vendors into
-	// .claude/commands/forge/. On name collision (init.md, check-agent.md,
-	// enhance.md) the .base-pack version wins — it is the project-local,
-	// vendored-paths variant.
-	const commandsDest = path.join(dir, ".claude", "commands", "forge");
-	const bpCommandsSrc = path.join(payloadRoot, ".base-pack", "commands");
-	const utilCommandsSrc = path.join(payloadRoot, "commands");
-
-	try {
-		const vendoredNames = new Set<string>();
-
-		// 4a: .base-pack/commands/ — winners
-		if (fs.existsSync(bpCommandsSrc)) {
-			const bpFiles = fs.readdirSync(bpCommandsSrc).filter((f) => f.endsWith(".md"));
-			for (const f of bpFiles) {
-				const outcome = copyFile(path.join(bpCommandsSrc, f), path.join(commandsDest, f));
-				const destPath = path.join(commandsDest, f);
-				if (outcome === "created") created.push(destPath);
-				else skipped.push(destPath);
-				vendoredNames.add(f);
-			}
-		} else {
-			warnings.push(`.base-pack/commands/ not found at ${bpCommandsSrc} — workflow command shims missing.`);
-		}
-
-		// 4b: commands/ — utility commands fill the remaining names
-		if (fs.existsSync(utilCommandsSrc)) {
-			const utilFiles = fs.readdirSync(utilCommandsSrc).filter((f) => f.endsWith(".md") && !vendoredNames.has(f));
-			for (const f of utilFiles) {
-				const outcome = copyFile(path.join(utilCommandsSrc, f), path.join(commandsDest, f));
-				const destPath = path.join(commandsDest, f);
-				if (outcome === "created") created.push(destPath);
-				else skipped.push(destPath);
-			}
-		} else {
-			warnings.push(`commands/ not found at ${utilCommandsSrc} — utility commands missing.`);
-		}
-	} catch (err: unknown) {
-		const e = err as { message?: string };
-		warnings.push(`vendor-commands non-fatal: ${e.message ?? String(err)}`);
-	}
-
-	// ── Step 4c: Vendor Forge-root content into .forge/ ───────────────────────
-	// The vendored .forge/ IS the Forge root in plugin-less projects
-	// (FORGE_ROOT: ${CLAUDE_PLUGIN_ROOT:-$(pwd)/.forge}). wfl:init reads
-	// init/phases/ rulebooks; substitute-placeholders probes .base-pack/;
-	// meta/ serves rebuild/migrate workflows; .claude-plugin/plugin.json is the
-	// version source commands report.
-	const FORGE_ROOT_DIRS: Array<[string, string]> = [
-		["init", "init"],
-		[".base-pack", ".base-pack"],
-		["meta", "meta"],
-		[".claude-plugin", ".claude-plugin"],
-	];
-	for (const [srcName, destName] of FORGE_ROOT_DIRS) {
-		const src = path.join(payloadRoot, srcName);
-		if (!fs.existsSync(src)) {
-			warnings.push(`${srcName}/ not found in payload — .forge/${destName}/ not vendored.`);
-			continue;
-		}
-		try {
-			copyDirRecursive(src, path.join(dir, ".forge", destName), created, skipped);
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			warnings.push(`vendor-forge-root (${srcName}) non-fatal: ${e.message ?? String(err)}`);
-		}
-	}
-
-	// ── Step 4d: Vendor Claude Code assets (agents, skills) into .claude/ ─────
-	const CLAUDE_ASSET_DIRS: Array<[string, string]> = [
-		["agents", "agents"],
-		["skills", "skills"],
-	];
-	for (const [srcName, destName] of CLAUDE_ASSET_DIRS) {
-		const src = path.join(payloadRoot, srcName);
-		if (!fs.existsSync(src)) {
-			warnings.push(`${srcName}/ not found in payload — .claude/${destName}/ not vendored.`);
-			continue;
-		}
-		try {
-			copyDirRecursive(src, path.join(dir, ".claude", destName), created, skipped);
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			warnings.push(`vendor-claude-assets (${srcName}) non-fatal: ${e.message ?? String(err)}`);
-		}
-	}
-
-	// ── Step 5: Install wfl-*.js drivers ──────────────────────────────────────
-	const wflSrc = path.join(payloadRoot, ".base-pack", "workflows-js");
-	const wflDest = path.join(dir, ".claude", "workflows");
-
-	if (fs.existsSync(wflSrc)) {
-		try {
-			const wflFiles = fs.readdirSync(wflSrc).filter((f) => f.startsWith("wfl-") && f.endsWith(".js"));
-			for (const f of wflFiles) {
-				const outcome = copyFile(path.join(wflSrc, f), path.join(wflDest, f));
-				const destPath = path.join(wflDest, f);
-				if (outcome === "created") created.push(destPath);
-				else skipped.push(destPath);
-			}
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			warnings.push(`install-workflows non-fatal: ${e.message ?? String(err)}`);
-		}
-	} else {
-		warnings.push(`wfl-*.js drivers not found at ${wflSrc} — .base-pack/workflows-js/ missing from payload.`);
+		warnings.push(`tools-version-marker non-fatal: ${e.message ?? String(err)}`);
 	}
 
 	// ── Step 6: Write bootstrap manifest ──────────────────────────────────────

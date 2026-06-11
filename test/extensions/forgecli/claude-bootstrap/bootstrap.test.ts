@@ -17,12 +17,14 @@
 //  10. Step 9 — result.preflight fields present (claudeAvailable is boolean, workflowToolChecked=false)
 //  11. Idempotent second run: settings.json hash unchanged
 
+import * as child_process from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootstrapClaudeProject } from "../../../../src/extensions/forgecli/claude-bootstrap/bootstrap.js";
+import { writeFixtureManifest } from "./fixture-manifest.js";
 
 // ── Test fixture: minimal forge-payload ───────────────────────────────────────
 
@@ -121,6 +123,9 @@ function makeMinimalPayload(dir: string): string {
 
 	// integrity.json for hash
 	fs.writeFileSync(path.join(payloadRoot, "integrity.json"), JSON.stringify({ hash: "abc123" }), "utf8");
+
+	// payload-manifest.json — single source of truth the vendor loop reads.
+	writeFixtureManifest(payloadRoot);
 
 	return payloadRoot;
 }
@@ -613,6 +618,66 @@ describe("bootstrapClaudeProject", () => {
 			expect(result2.ok).toBe(true);
 			const settingsPath = path.join(dir, ".claude", "settings.json");
 			expect(result2.skipped.some((p) => p === settingsPath)).toBe(true);
+		});
+	});
+
+	// ── AC4 frozen-install-set parity (PRIMARY GATE) — FORGE-S32-T03 ──────────
+	// The manifest-driven bootstrap, run against the REAL built payload, must
+	// vendor EXACTLY the historical `4ge init claude .` file set captured in
+	// expected-install-set.json. This is the CI guard that catches any manifest
+	// edit (T05/T06) or an over-broad-install regression (FORGE-BUG-044/045)
+	// that would change the vendored tree. A recorded `diff -r` alone is not the
+	// gate — this frozen-set assertion is.
+	describe("AC4 frozen-install-set parity (real payload)", () => {
+		const repoRoot = path.resolve(import.meta.dirname, "../../../..");
+		let realPayloadRoot: string;
+		let installSet: string[];
+
+		beforeAll(() => {
+			// Build the real payload (idempotent) so dist/forge-payload reflects the
+			// current manifest + build-payload.cjs.
+			const build = child_process.spawnSync("node", [path.join(repoRoot, "scripts", "build-payload.cjs")], {
+				cwd: repoRoot,
+				encoding: "utf8",
+			});
+			expect(build.status).toBe(0);
+			realPayloadRoot = path.join(repoRoot, "dist", "forge-payload");
+
+			const dir = fs.mkdtempSync(path.join(os.tmpdir(), "forge-frozen-set-"));
+			const result = bootstrapClaudeProject({ dir, payloadRoot: realPayloadRoot });
+			expect(result.ok).toBe(true);
+
+			const files: string[] = [];
+			const walk = (d: string): void => {
+				for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+					const abs = path.join(d, e.name);
+					if (e.isDirectory()) walk(abs);
+					else files.push(path.relative(dir, abs));
+				}
+			};
+			walk(dir);
+			installSet = files.sort();
+			fs.rmSync(dir, { recursive: true, force: true });
+		});
+
+		it("manifest-driven install set equals the frozen expected set", () => {
+			const expectedPath = path.join(import.meta.dirname, "expected-install-set.json");
+			const expected = JSON.parse(fs.readFileSync(expectedPath, "utf8")) as { files: string[] };
+			expect(installSet).toEqual([...expected.files].sort());
+		});
+
+		it("bundleOnly entries (transitions / migrations.json / integrity.json) are NOT installed", () => {
+			expect(installSet.some((f) => f.includes(path.join(".forge", "schemas", "transitions")))).toBe(false);
+			expect(installSet.includes(path.join(".forge", "schemas", "migrations.json"))).toBe(false);
+			expect(installSet.includes(path.join(".forge", "integrity.json"))).toBe(false);
+		});
+
+		it("the enum-catalog.json / structure-manifest.json file-entries land in .forge/schemas/", () => {
+			// Explicit coverage: these two non-schema JSON files are installed via
+			// their OWN file-entries (excluded from the schemas dir entry's
+			// .schema.json select) — a future select change must not silently drop them.
+			expect(installSet.includes(path.join(".forge", "schemas", "enum-catalog.json"))).toBe(true);
+			expect(installSet.includes(path.join(".forge", "schemas", "structure-manifest.json"))).toBe(true);
 		});
 	});
 

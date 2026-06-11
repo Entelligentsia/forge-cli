@@ -18,9 +18,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseUninstallArgs } from "../../../../src/bin/uninstall.js";
 import { bootstrapClaudeProject } from "../../../../src/extensions/forgecli/claude-bootstrap/bootstrap.js";
 import { uninstallClaudeProject } from "../../../../src/extensions/forgecli/claude-bootstrap/uninstall.js";
-import { parseUninstallArgs } from "../../../../src/bin/uninstall.js";
+import { writeFixtureManifest } from "./fixture-manifest.js";
 
 function makeMinimalPayload(dir: string): string {
 	const payloadRoot = path.join(dir, "forge-payload");
@@ -46,6 +47,7 @@ function makeMinimalPayload(dir: string): string {
 	w("skills/refresh-kb-links/SKILL.md", "# refresh-kb-links skill\n");
 	w(".claude-plugin/plugin.json", JSON.stringify({ version: "1.2.99" }));
 	w("integrity.json", JSON.stringify({ hash: "abc123" }));
+	writeFixtureManifest(payloadRoot);
 	return payloadRoot;
 }
 
@@ -159,6 +161,30 @@ describe("uninstallClaudeProject", () => {
 		// KB folder is never auto-removed, even on purge.
 		expect(fs.existsSync(path.join(projDir, "engineering", "MASTER_INDEX.md"))).toBe(true);
 		expect(r.kept).toEqual([]);
+	});
+
+	it("owner-grouped removal: forge-scaffold (.forge/tools,schemas,init,meta,.base-pack,.claude-plugin), claude-commands, workflows all gone", () => {
+		bootstrapClaudeProject({ dir: projDir, payloadRoot });
+		seedUserData();
+
+		uninstallClaudeProject({ dir: projDir, payloadRoot, purge: false });
+
+		// forge-scaffold owner destinations
+		for (const sub of ["tools", "schemas", "init", "meta", ".base-pack", ".claude-plugin"]) {
+			expect(fs.existsSync(path.join(projDir, ".forge", sub))).toBe(false);
+		}
+		// claude-commands owner destination + workflows owner destination
+		expect(fs.existsSync(path.join(projDir, ".claude", "commands", "forge"))).toBe(false);
+		expect(fs.existsSync(path.join(projDir, ".claude", "workflows"))).toBe(false);
+		// scaffold-only cache (not a payload entry) is also removed
+		expect(fs.existsSync(path.join(projDir, ".forge", "cache"))).toBe(false);
+		// claude-assets owner destinations (whole dirs empty → tidied)
+		expect(fs.existsSync(path.join(projDir, ".claude", "agents", "tomoshibi.md"))).toBe(false);
+		expect(fs.existsSync(path.join(projDir, ".claude", "skills", "refresh-kb-links"))).toBe(false);
+
+		// User data (not an install destination) preserved.
+		expect(fs.existsSync(path.join(projDir, ".forge", "config.json"))).toBe(true);
+		expect(fs.existsSync(path.join(projDir, ".forge", "store", "sprints", "ACME-S01.json"))).toBe(true);
 	});
 
 	it("preserves a user-authored agent that is not part of the payload", () => {

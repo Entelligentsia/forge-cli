@@ -19,6 +19,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { applySelect, groupByOwner, loadManifest } from "../lib/payload-manifest.js";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -79,17 +80,6 @@ function rmDirIfEmpty(dirPath: string, removed: string[]): void {
 		}
 	} catch {
 		// non-fatal — leave it
-	}
-}
-
-/** List immediate entry names in a payload subdir, or [] if absent. */
-function payloadEntryNames(payloadRoot: string, sub: string): string[] {
-	const src = path.join(payloadRoot, sub);
-	if (!fs.existsSync(src)) return [];
-	try {
-		return fs.readdirSync(src);
-	} catch {
-		return [];
 	}
 }
 
@@ -198,30 +188,60 @@ export function uninstallClaudeProject(opts: UninstallOptions): UninstallResult 
 	const forgeDir = path.join(dir, ".forge");
 	const claudeDir = path.join(dir, ".claude");
 
-	// ── Step 1: Remove Forge-owned .forge/ scaffold (preserve config + store) ──
-	for (const sub of ["tools", "schemas", "init", ".base-pack", "meta", ".claude-plugin", "cache"]) {
-		rmIfExists(path.join(forgeDir, sub), removed, warnings);
-	}
-	rmIfExists(manifestPath, removed, warnings);
+	// ── Steps 1–4: Manifest-owner-grouped removal (single source of truth) ─────
+	// What bootstrap vendored is declared in payload-manifest.json; uninstall
+	// removes exactly those install destinations, grouped by entry.owner
+	// (FORGE-S32-T03). Curated Claude asset subtrees (agents/skills, owner
+	// `claude-assets`) are removed by payload-declared NAME so user-authored
+	// siblings survive; the forge-exclusive scaffold / command / workflow
+	// destinations are removed wholesale. bundleOnly entries (transitions,
+	// migrations.json, integrity.json) were never installed and are absent from
+	// groupByOwner(). Config + store live under .forge/ but are NOT install
+	// destinations, so they are untouched here (Step 6 preserves them).
+	try {
+		const manifest = loadManifest(payloadRoot);
+		const ownerGroups = groupByOwner(manifest);
+		const removedDests = new Set<string>();
+		const parentDirs = new Set<string>();
 
-	// ── Step 2: Remove Forge command surface ──────────────────────────────────
-	rmIfExists(path.join(claudeDir, "commands", "forge"), removed, warnings);
-	rmDirIfEmpty(path.join(claudeDir, "commands"), removed);
-
-	// ── Step 3: Remove workflow drivers (.claude/workflows is forge-exclusive) ─
-	rmIfExists(path.join(claudeDir, "workflows"), removed, warnings);
-
-	// ── Step 4: Remove vendored agents/skills — only the ones bootstrap added ──
-	// Re-derive the exact entry names from the payload so user-authored agents
-	// or skills sharing the directory are preserved.
-	for (const asset of ["agents", "skills"]) {
-		const assetDir = path.join(claudeDir, asset);
-		if (!fs.existsSync(assetDir)) continue;
-		for (const name of payloadEntryNames(payloadRoot, asset)) {
-			rmIfExists(path.join(assetDir, name), removed, warnings);
+		for (const [owner, entries] of ownerGroups) {
+			if (owner === "claude-assets") {
+				// Bounded removal: only payload-declared names within the shared dir.
+				for (const entry of entries) {
+					const assetDir = path.join(dir, entry.install as string);
+					if (!fs.existsSync(assetDir)) continue;
+					const bundleDir = path.join(payloadRoot, entry.bundle);
+					const names = new Set(applySelect(bundleDir, entry.select).map((rel) => rel.split(path.sep)[0]));
+					for (const name of names) {
+						rmIfExists(path.join(assetDir, name), removed, warnings);
+					}
+					rmDirIfEmpty(assetDir, removed);
+				}
+				continue;
+			}
+			// Forge-exclusive destinations — remove wholesale (dedup nested installs).
+			for (const entry of entries) {
+				const installDir = path.join(dir, entry.install as string);
+				if (!removedDests.has(installDir)) {
+					removedDests.add(installDir);
+					rmIfExists(installDir, removed, warnings);
+				}
+				parentDirs.add(path.dirname(installDir));
+			}
 		}
-		rmDirIfEmpty(assetDir, removed);
+
+		// Tidy now-empty shared parents (e.g. .claude/commands/ after removing forge/).
+		for (const p of parentDirs) {
+			rmDirIfEmpty(p, removed);
+		}
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		warnings.push(`manifest-driven removal non-fatal: ${e.message ?? String(err)}`);
 	}
+
+	// ── Scaffold-only paths (not payload entries) + the bootstrap manifest ─────
+	rmIfExists(path.join(forgeDir, "cache"), removed, warnings);
+	rmIfExists(manifestPath, removed, warnings);
 
 	// ── Step 5: Un-merge settings hooks + un-append .gitignore (edit, not delete)
 	removeForgeHooks(path.join(claudeDir, "settings.json"), removed, warnings);
@@ -235,7 +255,9 @@ export function uninstallClaudeProject(opts: UninstallOptions): UninstallResult 
 		rmIfExists(configPath, removed, warnings);
 		// The KB folder (paths.engineering) is intentionally NOT auto-removed even
 		// under --purge: it is the user's generated documentation, not scaffold.
-		warnings.push("--purge removed .forge/store and .forge/config.json. The KB folder was left intact (remove it by hand if intended).");
+		warnings.push(
+			"--purge removed .forge/store and .forge/config.json. The KB folder was left intact (remove it by hand if intended).",
+		);
 	} else {
 		if (fs.existsSync(configPath)) kept.push(configPath);
 		if (fs.existsSync(storePath)) kept.push(storePath);
