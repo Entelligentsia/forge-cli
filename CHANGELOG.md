@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Command-tree unification (FORGE-S32-T06).** The former two-tree command
+  model is collapsed into a single unified `commands/` tree. `build-payload.cjs`
+  bundles one `commands/` directory (30 files) and `.base-pack/` no longer
+  carries a `commands/` subdir; `bootstrap.ts` copies one directory with no
+  union/collision precedence; `lib/payload-manifest.ts` drops the
+  loser/winner ordering note. `registerAllForgeCommands` (forge-commands.ts)
+  now enumerates `dist/forge-payload/commands/` instead of
+  `.base-pack/commands/`; `forge:reset` was added to
+  `EXPLICITLY_REGISTERED_NAMES` so the repoint introduces **no new auto-stub**
+  (the slash-command surface is unchanged). The frozen install-set fixture
+  (`expected-install-set.json`) drops the 17 vendored
+  `.forge/.base-pack/commands/*.md` entries; installed `.claude/commands/forge/`
+  byte-parity is preserved.
+
 - **Dead Pass-1 build output removed (FORGE-S32-T05).** `scripts/build-payload.cjs`
   no longer emits the pre-substituted `personas/`/`skills/`/`workflows/`/
   `templates/` bundle-root tree (the old `--include-full`-gated Pass 1) or its

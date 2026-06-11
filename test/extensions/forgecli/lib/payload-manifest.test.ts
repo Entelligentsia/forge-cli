@@ -147,15 +147,15 @@ describe("grouping helpers (real manifest)", () => {
 		expect(installed.some((e) => e.source === "integrity.json")).toBe(false);
 	});
 
-	it("groupByInstall keys are install destinations; commands union shares one dest", () => {
+	it("groupByInstall: a single unified `commands` entry maps to .claude/commands/forge/", () => {
+		// FORGE-S32-T06: the former two command trees (commands + init/base-pack/
+		// commands) were collapsed into one. Exactly one source maps to the install
+		// destination, and there is no init/base-pack/commands entry any more.
 		const groups = groupByInstall(m);
 		const cmds = groups.get(".claude/commands/forge/");
-		expect(cmds?.length).toBeGreaterThanOrEqual(2);
-		// loser `commands` precedes winner `.base-pack/commands` (overwrite wins).
-		const idxLoser = cmds?.findIndex((e) => e.source === "commands") ?? -1;
-		const idxWinner = cmds?.findIndex((e) => e.source === "init/base-pack/commands") ?? -1;
-		expect(idxLoser).toBeGreaterThanOrEqual(0);
-		expect(idxWinner).toBeGreaterThan(idxLoser);
+		expect(cmds?.length).toBe(1);
+		expect(cmds?.[0]?.source).toBe("commands");
+		expect(cmds?.some((e) => e.source === "init/base-pack/commands")).toBe(false);
 	});
 
 	it("groupByOwner buckets every install-bearing entry under a known owner", () => {

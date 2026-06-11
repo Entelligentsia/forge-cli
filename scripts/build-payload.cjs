@@ -263,6 +263,9 @@ if (fs.existsSync(generationSrcDir)) {
 }
 
 // 2d: .base-pack/ — forge/forge/init/base-pack/** (recursive)
+// FORGE-S32-T06: base-pack no longer carries a commands/ subdir (the two command
+// trees were unified into forge/forge/commands/, bundled by 2e2 below). This
+// recursive copy now vendors only personas/skills/workflows/templates/workflows-js.
 const basePackSrc = path.join(forgeRoot, "init", "base-pack");
 const basePackDest = path.join(outDir, ".base-pack");
 
@@ -448,10 +451,12 @@ if (fs.existsSync(transitionsSrc)) {
 	console.warn("build-payload: forge/forge/schemas/transitions/ not found — skipping");
 }
 
-// 2e2: commands/ — forge/forge/commands/*.md (plugin slash-command markdowns
-// like health.md, config.md, status.md). delegateMarkdownCommand reads them
-// from <forgeRoot>/commands/<name>.md at runtime. Distinct from
-// .base-pack/commands/ which holds per-project sprint workflow commands.
+// 2e2: commands/ — forge/forge/commands/*.md, the UNIFIED slash-command tree.
+// FORGE-S32-T06 collapsed the former second tree (base-pack/commands/) into this
+// one: it now holds all /forge:* commands (the plugin-utility set like health.md,
+// config.md, status.md PLUS the sprint-workflow commands and the three former
+// collision winners init/check-agent/enhance). delegateMarkdownCommand and
+// registerAllForgeCommands both read from <bundle>/commands/<name>.md.
 const pluginCommandsSrc = path.join(forgeRoot, "commands");
 const pluginCommandsDest = path.join(outDir, "commands");
 fs.mkdirSync(pluginCommandsDest, { recursive: true });

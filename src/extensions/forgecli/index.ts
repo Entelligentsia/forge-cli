@@ -574,9 +574,10 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerForgeCommands(pi, { forgeRoot, promptsRoot: PROMPTS_ROOT });
 
 	// ── Phase G: all bundled commands (FORGE-S17-T02) ─────────────────────────
-	// Enumerate every *.md under dist/forge-payload/.base-pack/commands/ and
-	// register each as a pi command. Real handlers (init/health/ask/config/
-	// status/refresh-kb-links) were registered above; stubs for the rest.
+	// Enumerate every *.md under dist/forge-payload/commands/ (the unified command
+	// tree; FORGE-S32-T06 collapsed the former .base-pack/commands/ second tree
+	// into it) and register each as a pi command. Real handlers (init/health/ask/
+	// config/status/refresh-kb-links) were registered above; stubs for the rest.
 	// Banner-suppression guard: outside-Forge banner is gated on forgeRoot
 	// being null — once /forge:init writes .forge/config.json, forgeRoot is
 	// non-null and the outside-Forge banner no longer fires (F3 AC#8).

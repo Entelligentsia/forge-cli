@@ -5,9 +5,9 @@
 // grouping) read payloadRoot/payload-manifest.json. The minimal test payloads
 // describe a representative subset of the real layout; this helper writes a
 // manifest whose selects reproduce exactly what the legacy hard-coded steps
-// vendored, so the existing idempotency / parity assertions hold. The entry
-// ORDER preserves the commands-union precedence: the loser `commands/` entry
-// precedes the winner `.base-pack/commands/`.
+// vendored, so the existing idempotency / parity assertions hold. FORGE-S32-T06
+// collapsed the former two command trees into a single unified `commands/`
+// entry, so there is no longer a commands-union precedence to preserve.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -78,14 +78,6 @@ export function writeFixtureManifest(payloadRoot: string): void {
 				install: ".forge/.base-pack/",
 				owner: "forge-scaffold",
 				select: { recursive: true },
-			},
-			{
-				source: "init/base-pack/commands",
-				kind: "dir",
-				bundle: ".base-pack/commands/",
-				install: ".claude/commands/forge/",
-				owner: "claude-commands",
-				select: { recursive: false, ext: [".md"] },
 			},
 			{
 				source: "init/base-pack/workflows-js",

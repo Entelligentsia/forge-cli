@@ -63,7 +63,7 @@ function makeBundleRoot(
 	fs.mkdirSync(path.join(bundleRoot, ".base-pack", "personas"), { recursive: true });
 	fs.mkdirSync(path.join(bundleRoot, ".base-pack", "skills"), { recursive: true });
 	fs.mkdirSync(path.join(bundleRoot, ".base-pack", "templates"), { recursive: true });
-	fs.mkdirSync(path.join(bundleRoot, ".base-pack", "commands"), { recursive: true });
+	// FORGE-S32-T06: base-pack no longer carries a commands/ subdir.
 	fs.mkdirSync(path.join(bundleRoot, "tools", "lib"), { recursive: true });
 
 	// Migrations JSON

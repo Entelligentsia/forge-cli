@@ -8,7 +8,8 @@
 //      returns { systemPrompt }; second invocation returns undefined.
 //   5. /forge:update stub — emits info notify, does not delegate.
 //   6. /forge:status ENOENT fallback — emits fallback notify when status.md absent.
-//   7. T28 (FORGE-S17-T02): registerAllForgeCommands count matches bundled command files.
+//   7. T28 (FORGE-S17-T02; FORGE-S32-T06): registerAllForgeCommands enumerates the
+//      unified commands/ tree and introduces no new auto-stub (no forge:reset).
 
 import * as fsSync from "node:fs";
 import { promises as fs } from "node:fs";
@@ -207,21 +208,28 @@ describe("/forge:status native handler (FORGE-S23-T10)", () => {
 
 // ── T28: registerAllForgeCommands (FORGE-S17-T02) ─────────────────────────
 
-describe("T28: registerAllForgeCommands — bundled command count matches .base-pack/commands/*.md", () => {
-	it("registers stub commands for each bundled *.md file (minus real-handler set)", () => {
+describe("T28: registerAllForgeCommands — unified commands/*.md, no-new-stub surface (FORGE-S32-T06)", () => {
+	it("repoints to the unified commands/ tree and registers no new auto-stub (notably no forge:reset)", () => {
 		// Resolve the bundle path relative to the package root
 		const extensionDir = path.dirname(fileURLToPath(import.meta.url));
 		const pkgRoot = path.resolve(extensionDir, "..", "..", "..");
-		const commandsDir = path.join(pkgRoot, "dist", "forge-payload", ".base-pack", "commands");
+		// FORGE-S32-T06: the former .base-pack/commands/ second tree was collapsed
+		// into the unified commands/ tree. registerAllForgeCommands now enumerates
+		// dist/forge-payload/commands/ (30 files).
+		const commandsDir = path.join(pkgRoot, "dist", "forge-payload", "commands");
 
-		// Count *.md files in the commands dir
+		// Count *.md files in the unified commands dir
 		let expectedFileCount = 0;
 		try {
 			expectedFileCount = fsSync.readdirSync(commandsDir).filter((f: string) => f.endsWith(".md")).length;
 		} catch {
-			// .base-pack not built yet — skip test
+			// payload not built yet — skip test
 			return;
 		}
+
+		// The unified tree holds the full /forge:* surface (was 16 plugin + 17
+		// base-pack − 3 collisions = 30 files).
+		expect(expectedFileCount).toBe(30);
 
 		const pi = makePi();
 		const registered = registerAllForgeCommands(pi as never, {
@@ -230,28 +238,25 @@ describe("T28: registerAllForgeCommands — bundled command count matches .base-
 		});
 
 		// registerAllForgeCommands returns the count of STUB commands registered.
-		// Real handlers in EXPLICITLY_REGISTERED_NAMES are excluded from stubs.
-		// After v1.0 (FORGE-S26-T10), ALL bundled .md command files map to EXPLICITLY_REGISTERED_NAMES.
-		// The v1.0 bundle contains 20 files; all 20 have real handlers, kickoff shims, or explicit
-		// deprecation stubs registered outside the auto-stub loop:
-		//   Real handlers: approve, collate, commit, fix-bug, implement, new-sprint, plan,
-		//     plan-sprint, retro, review-code, review-plan, run-sprint, run-task, validate
-		//   Deprecation stubs (registered in registerForgeCommands): enhance, quiz-agent,
-		//     retrospective, sprint-intake, sprint-plan
-		//   Backcompat alias (no bundle .md, was already EXPLICITLY_REGISTERED): check-agent
-		// As a result, the auto-stub loop registers 0 commands, and registerAllForgeCommands
-		// only contributes forge:refresh-kb-links (totalCalls = 1).
-		const REAL_HANDLER_CMD_FILES = 20; // v1.0: all bundle .md files are explicitly handled (FORGE-S26-T10)
-		const totalCalls = pi.registerCommand.mock.calls.length;
+		// Every name in the unified tree maps to EXPLICITLY_REGISTERED_NAMES EXCEPT
+		// forge:enhance (which gets an advisory stub). forge:reset was added to
+		// EXPLICITLY_REGISTERED_NAMES precisely so the repoint introduces NO new
+		// auto-stub — the stub surface is identical to the pre-unification
+		// base-pack era (forge:enhance only).
+		expect(registered).toBe(1); // only forge:enhance
 
-		// After v1.0: 0 auto-stubs + 1 forge:refresh-kb-links = 1 total call minimum.
-		// The ">= expectedFileCount - REAL_HANDLER_CMD_FILES" assertion still holds (>= 0),
-		// but add an explicit floor to document the post-v1.0 steady state.
-		expect(totalCalls).toBeGreaterThanOrEqual(expectedFileCount - REAL_HANDLER_CMD_FILES);
-		expect(totalCalls).toBeGreaterThanOrEqual(1); // at minimum forge:refresh-kb-links is always registered
+		const names = (pi.registerCommand.mock.calls as Array<[string, unknown]>).map((c) => c[0]);
+
+		// No-new-stub guarantee (rev #4): forge:reset must NOT be auto-stubbed.
+		expect(names).not.toContain("forge:reset");
+
+		// The lone auto-stub is forge:enhance; refresh-kb-links is the real handler
+		// registerAllForgeCommands always contributes. totalCalls = 2.
+		expect(names).toContain("forge:enhance");
+		expect(names).toContain("forge:refresh-kb-links");
+		expect(names.length).toBe(2);
 
 		// Verify no duplicate registrations (all names unique)
-		const names = (pi.registerCommand.mock.calls as Array<[string, unknown]>).map((c) => c[0]);
 		const uniqueNames = new Set(names);
 		expect(uniqueNames.size).toBe(names.length);
 	});

@@ -149,9 +149,9 @@ export function loadManifest(root: string): PayloadManifest {
 /**
  * Entries that are vendored into a bootstrapped project (bundleOnly entries are
  * excluded — they ship to the bundle for tool resolution only). Order is
- * preserved from the manifest, which encodes the commands-union precedence
- * (loser `commands/` before winner `.base-pack/commands/`; the later entry
- * overwrites on a name collision).
+ * preserved from the manifest. FORGE-S32-T06 collapsed the former two command
+ * trees into a single unified `commands/` entry, so there is no longer a
+ * commands-union precedence or name-collision ordering to honour.
  */
 export function installEntries(manifest: PayloadManifest): PayloadEntry[] {
 	return manifest.entries.filter(

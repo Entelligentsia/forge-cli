@@ -33,21 +33,13 @@ import { __test__ } from "../../../src/extensions/forgecli/forge-commands.js";
 // Commands that exist in CLI (EXPLICITLY_REGISTERED_NAMES) but intentionally
 // have no corresponding plugin command file. Each entry must have a comment.
 const CLI_ONLY_COMMANDS = new Set<string>([
-	// ── Pipeline phase handlers ──────────────────────────────────────────
-	// These are project-level workflow phases invoked by the orchestrator.
-	// They live in forge/forge/init/base-pack/commands/ (project-installed),
-	// NOT in forge/forge/commands/ (plugin slash commands).
-	"forge:plan", // pipeline plan phase (FORGE-S20-T05)
-	"forge:implement", // pipeline implement phase (FORGE-S20-T06)
-	"forge:run-task", // pipeline orchestrator (FORGE-S21-T02)
-	"forge:run-sprint", // sprint orchestrator (FORGE-S21-T03)
-	"forge:fix-bug", // bug-fix pipeline (FORGE-S21-T07)
-	"forge:review-plan", // pipeline review phase (FORGE-S21-T10)
-	"forge:review-code", // pipeline review phase (FORGE-S21-T10)
-	"forge:approve", // pipeline approve phase (FORGE-S21-T10)
-	"forge:commit", // pipeline commit phase (FORGE-S21-T10)
-	"forge:validate", // pipeline validate phase (FORGE-S21-T10)
-	"forge:collate", // internal orchestrator collation — not user-facing in v1.0
+	// ── Pipeline phase handlers — NOW IN PARITY (FORGE-S32-T06) ──────────
+	// The former two-tree split is gone: the sprint-workflow command files
+	// (plan, implement, run-task, run-sprint, fix-bug, review-plan, review-code,
+	// approve, commit, validate, collate, new-sprint, plan-sprint, retro) were
+	// materialized into the unified forge/forge/commands/ tree, so they now have
+	// plugin command files and are covered by invariant 1. They were REMOVED
+	// from this exception set (keeping them would trip the stale-exception gate).
 
 	// ── CLI-only overlays / widgets ───────────────────────────────────────
 	// forge:dashboard is a pi-tui overlay that visualizes the orchestrator
@@ -56,17 +48,10 @@ const CLI_ONLY_COMMANDS = new Set<string>([
 	// would be misleading, since the overlay is purely a CLI concern.
 	"forge:dashboard",
 
-	// ── v1.0 renamed commands ────────────────────────────────────────────
-	// New names registered in CLI; plugin still uses old names (quiz-agent.md,
-	// retrospective.md, regenerate.md, store-query.md, store-repair.md,
-	// sprint-intake.md, sprint-plan.md do not exist in forge/forge/commands/ but
-	// the new names are registered as primary CLI handlers). The old-name command
-	// files in the plugin (e.g. regenerate.md) map to deprecated redirect stubs
-	// in CLI — those old names ARE in the plugin command set and will be covered
-	// by invariant 1. The new names below have NO corresponding plugin file yet.
-	"forge:new-sprint", // renamed from forge:sprint-intake (FORGE-S26-T10)
-	"forge:plan-sprint", // renamed from forge:sprint-plan (FORGE-S26-T10)
-	"forge:retro", // renamed from forge:retrospective (FORGE-S26-T10)
+	// ── v1.0 renamed commands — NOW IN PARITY (FORGE-S32-T06) ────────────
+	// new-sprint / plan-sprint / retro now exist as files in the unified
+	// forge/forge/commands/ tree (materialized from base-pack), so they are
+	// covered by invariant 1 and were removed from this exception set.
 
 	// ── Deprecated CLI redirect stubs for removed plugin commands ─────────
 	// These old command names have no corresponding plugin command file (the
@@ -92,12 +77,12 @@ const CLI_ONLY_COMMANDS = new Set<string>([
 const INTERNAL_COMMANDS = new Set<string>([
 	"forge:read", // CLI-internal file reader, not a user-facing command
 	"forge:refresh-kb-links", // admin utility — registered by registerAllForgeCommands
-	// forge:enhance was REMOVED as a command in v1.0 (FORGE-S26-T10); the plugin
-	// ships commands/enhance.md only as a deprecation tombstone pointing users at
-	// /forge:rebuild --enrich (FORGE-S26-T03). It is intentionally absent from the
-	// CLI EXPLICITLY_REGISTERED_NAMES — never re-add it. registerAllForgeCommands
-	// emits an advisory stub for the bundled file; that is not a primary command
-	// surface and is excluded from parity here.
+	// forge:enhance: the unified forge/forge/commands/ tree carries the
+	// materialized base-pack enhance.md (live bytes, not a tombstone) since
+	// FORGE-S32-T06. It remains intentionally absent from the CLI
+	// EXPLICITLY_REGISTERED_NAMES — never re-add it as a primary handler.
+	// registerAllForgeCommands emits an advisory stub for the bundled file; that
+	// is not a primary command surface and is excluded from parity here.
 	"forge:enhance",
 ]);
 

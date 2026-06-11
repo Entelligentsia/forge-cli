@@ -606,12 +606,14 @@ if [[ -x "$FORGE_BIN" ]]; then
 		record FAIL "E2E-01: .init/discovery/ 5 files" "got $DISCOVERY_COUNT"
 	fi
 
-	# Verify .base-pack/commands/ has *.md command files
-	COMMANDS_COUNT=$(ls "$PAYLOAD_DIR/.base-pack/commands/"*.md 2>/dev/null | wc -l)
+	# Verify the unified commands/ tree has *.md command files.
+	# FORGE-S32-T06: the former .base-pack/commands/ second tree was collapsed
+	# into the single unified commands/ tree bundled at $PAYLOAD_DIR/commands/.
+	COMMANDS_COUNT=$(ls "$PAYLOAD_DIR/commands/"*.md 2>/dev/null | wc -l)
 	if [[ "$COMMANDS_COUNT" -gt 0 ]]; then
-		record PASS "E2E-01: .base-pack/commands/ has $COMMANDS_COUNT command files" ""
+		record PASS "E2E-01: commands/ has $COMMANDS_COUNT command files" ""
 	else
-		record FAIL "E2E-01: .base-pack/commands/ empty" "no *.md files found"
+		record FAIL "E2E-01: commands/ empty" "no *.md files found"
 	fi
 
 	# E2E-02: /forge:health command registration verified via --help

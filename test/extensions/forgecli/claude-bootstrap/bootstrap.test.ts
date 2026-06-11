@@ -68,19 +68,18 @@ function makeMinimalPayload(dir: string): string {
 	fs.writeFileSync(path.join(schemasDir, "task.schema.json"), '{"type":"object"}\n', "utf8");
 	fs.writeFileSync(path.join(schemasDir, "_defs", "common.json"), '{"$defs":{}}\n', "utf8");
 
-	// commands dir — plugin utility commands (init.md overlaps with .base-pack)
+	// commands dir — the UNIFIED /forge:* command tree (FORGE-S32-T06). It holds
+	// the materialized union: plugin-utility commands (status, health), the
+	// sprint-workflow shims (plan, run-task), and the former collision winners
+	// (init.md carries the BASE-PACK winner bytes). There is no second
+	// .base-pack/commands/ tree any more.
 	const commandsDir = path.join(payloadRoot, "commands");
 	fs.mkdirSync(commandsDir, { recursive: true });
-	fs.writeFileSync(path.join(commandsDir, "init.md"), "# /forge:init\nPlaceholder PLUGIN init command.\n", "utf8");
+	fs.writeFileSync(path.join(commandsDir, "init.md"), "# /forge:init\nProject-local BASE-PACK init.\n", "utf8");
 	fs.writeFileSync(path.join(commandsDir, "status.md"), "# /forge:status\nUtility status command.\n", "utf8");
 	fs.writeFileSync(path.join(commandsDir, "health.md"), "# /forge:health\nUtility health command.\n", "utf8");
-
-	// .base-pack/commands — sprint-workflow command shims (static /forge:* files)
-	const bpCommandsDir = path.join(payloadRoot, ".base-pack", "commands");
-	fs.mkdirSync(bpCommandsDir, { recursive: true });
-	fs.writeFileSync(path.join(bpCommandsDir, "plan.md"), "# /forge:plan\nWorkflow shim.\n", "utf8");
-	fs.writeFileSync(path.join(bpCommandsDir, "run-task.md"), "# /forge:run-task\nWorkflow shim.\n", "utf8");
-	fs.writeFileSync(path.join(bpCommandsDir, "init.md"), "# /forge:init\nProject-local BASE-PACK init.\n", "utf8");
+	fs.writeFileSync(path.join(commandsDir, "plan.md"), "# /forge:plan\nWorkflow shim.\n", "utf8");
+	fs.writeFileSync(path.join(commandsDir, "run-task.md"), "# /forge:run-task\nWorkflow shim.\n", "utf8");
 
 	// .base-pack/workflows-js with wfl-*.js drivers
 	const wflDir = path.join(payloadRoot, ".base-pack", "workflows-js");
@@ -271,22 +270,28 @@ describe("bootstrapClaudeProject", () => {
 			bootstrapClaudeProject({ dir, payloadRoot });
 
 			const cmdDir = path.join(dir, ".claude", "commands", "forge");
-			// workflow shims from .base-pack/commands/
+			// all commands come from the single unified commands/ tree
 			expect(fs.existsSync(path.join(cmdDir, "plan.md"))).toBe(true);
 			expect(fs.existsSync(path.join(cmdDir, "run-task.md"))).toBe(true);
-			// utility commands from commands/
 			expect(fs.existsSync(path.join(cmdDir, "status.md"))).toBe(true);
 			expect(fs.existsSync(path.join(cmdDir, "health.md"))).toBe(true);
 		});
 
-		it("on name collision the .base-pack/commands version wins (init.md)", () => {
+		// FORGE-S32-T06: the former "base-pack wins on collision" test is gone with
+		// the two-tree model. The unified commands/ tree is the single source: the
+		// installed init.md is byte-identical to the bundle's lone commands/init.md
+		// (which carries the materialized base-pack winner bytes), and no
+		// .base-pack/commands/ path is ever consulted.
+		it("installs init.md byte-identical from the single unified commands/ tree", () => {
 			const dir = makeFreshProjectDir();
 			bootstrapClaudeProject({ dir, payloadRoot });
 
 			const installed = fs.readFileSync(path.join(dir, ".claude", "commands", "forge", "init.md"), "utf8");
-			const basePackSrc = fs.readFileSync(path.join(payloadRoot, ".base-pack", "commands", "init.md"), "utf8");
-			expect(installed).toBe(basePackSrc);
+			const unifiedSrc = fs.readFileSync(path.join(payloadRoot, "commands", "init.md"), "utf8");
+			expect(installed).toBe(unifiedSrc);
 			expect(installed).toContain("BASE-PACK");
+			// no second command tree exists in the bundle
+			expect(fs.existsSync(path.join(payloadRoot, ".base-pack", "commands"))).toBe(false);
 		});
 
 		it("vendors init/, .base-pack/, meta/, .claude-plugin/ into .forge/ (Forge-root parity)", () => {
@@ -297,9 +302,14 @@ describe("bootstrapClaudeProject", () => {
 			// wfl:init phase rulebooks read from $forgeRoot/init/phases/
 			expect(fs.existsSync(path.join(forgeDir, "init", "phases", "phase-1-collect.md"))).toBe(true);
 			expect(fs.existsSync(path.join(forgeDir, "init", "phases", "phase-2-discover.md"))).toBe(true);
-			// substitute-placeholders probes $forgeRoot/.base-pack/ first
-			expect(fs.existsSync(path.join(forgeDir, ".base-pack", "commands", "plan.md"))).toBe(true);
+			// substitute-placeholders probes $forgeRoot/.base-pack/ first. FORGE-S32-T06:
+			// base-pack no longer carries a commands/ subdir (commands were unified into
+			// the commands/ tree, installed to .claude/commands/forge/), so probe a
+			// base-pack artifact that still exists.
 			expect(fs.existsSync(path.join(forgeDir, ".base-pack", "personas", "engineer.md"))).toBe(true);
+			expect(fs.existsSync(path.join(forgeDir, ".base-pack", "commands"))).toBe(false);
+			// the unified tree's plan.md installs to the claude command namespace
+			expect(fs.existsSync(path.join(dir, ".claude", "commands", "forge", "plan.md"))).toBe(true);
 			// meta/ incl. nested dirs
 			expect(fs.existsSync(path.join(forgeDir, "meta", "skill-recommendations.md"))).toBe(true);
 			expect(fs.existsSync(path.join(forgeDir, "meta", "workflows", "meta-migrate.md"))).toBe(true);

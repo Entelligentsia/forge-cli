@@ -266,10 +266,11 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 	// is the curated set, so there is NO second consumer-side allowlist or
 	// skip-list — a file that must NOT be vendored is marked bundleOnly in the
 	// manifest (FORGE-BUG-044/045: transitions, migrations.json, integrity.json),
-	// excluded here by installEntries(). The manifest entry ORDER encodes the
-	// commands-union precedence: the loser `commands/` entry precedes the winner
-	// `.base-pack/commands/`, and the later copy overwrites on a name collision,
-	// so the .base-pack variant wins exactly as the legacy Step 4a/4b ordering did.
+	// excluded here by installEntries(). FORGE-S32-T06 collapsed the former
+	// two-tree command model into a single unified `commands/` entry, so there is
+	// no longer a commands-union precedence or name-collision ordering to honour:
+	// the lone `commands/` entry installs the full /forge:* surface verbatim to
+	// .claude/commands/forge/.
 	try {
 		const manifest = loadManifest(payloadRoot);
 		for (const entry of installEntries(manifest)) {

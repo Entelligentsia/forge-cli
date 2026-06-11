@@ -39,7 +39,8 @@ function makeMinimalPayload(dir: string): string {
 	w("schemas/config.schema.json", '{"type":"object"}\n');
 	w("schemas/_defs/common.json", '{"$defs":{}}\n');
 	w("commands/status.md", "# /forge:status\n");
-	w(".base-pack/commands/plan.md", "# /forge:plan\n");
+	// FORGE-S32-T06: unified command tree (was .base-pack/commands/plan.md).
+	w("commands/plan.md", "# /forge:plan\n");
 	w(".base-pack/workflows-js/wfl-run-task.js");
 	w("init/phases/phase-1-collect.md", "# Phase 1\n");
 	w("meta/workflows/meta-migrate.md", "# Meta migrate\n");

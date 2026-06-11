@@ -15,7 +15,9 @@
 // /forge:init is registered in index.ts (unconditional, AC#4 from T02).
 //
 // Phase G (FORGE-S17-T02): registerAllForgeCommands enumerates every
-// *.md under dist/forge-payload/.base-pack/commands/ and registers each
+// *.md under dist/forge-payload/commands/ (the unified command tree;
+// FORGE-S32-T06 collapsed the former .base-pack/commands/ second tree into it)
+// and registers each
 // as a pi command. Real handlers for init/health/refresh-kb-links are
 // wired separately; all others emit advisory stubs.
 
@@ -192,7 +194,7 @@ export function registerForgeCommands(pi: ExtensionAPI, options: RegisterOptions
 }
 
 // ── Phase G: registerAllForgeCommands (FORGE-S17-T02) ─────────────────────
-// Enumerate every *.md under dist/forge-payload/.base-pack/commands/ at
+// Enumerate every *.md under dist/forge-payload/commands/ at
 // runtime, parse YAML frontmatter (name + description), and register each
 // via pi.registerCommand(). Real handlers for init/health/refresh-kb-links
 // are deferred to their dedicated modules (called before this function).
@@ -258,6 +260,10 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:remove", // FORGE-S23-T11: Kickoff shim registered in remove-command.ts
 	"forge:report-bug", // FORGE-S23-T11: Kickoff shim registered in report-bug.ts
 	"forge:dashboard", // Orchestrator tree overlay; registered in dashboard/register.ts
+	"forge:reset", // FORGE-S32-T06: served at the 4ge bin layer, never via pi.registerCommand.
+	// Added when registerAllForgeCommands repointed from .base-pack/commands/ to the
+	// unified commands/ tree (which now includes reset.md) so the repoint introduces
+	// NO new auto-stub. See forge-commands.test.ts T28 (no-new-stub assertion).
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.
@@ -265,7 +271,7 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 const REAL_HANDLERS = EXPLICITLY_REGISTERED_NAMES;
 
 export interface RegisterAllOptions {
-	/** Absolute path to dist/forge-payload/ (containing .base-pack/commands/). */
+	/** Absolute path to dist/forge-payload/ (containing the unified commands/ tree). */
 	bundlePayloadRoot: string;
 	/** Current working directory (for health check). */
 	cwd?: string;
@@ -274,18 +280,23 @@ export interface RegisterAllOptions {
 }
 
 /**
- * Register all forge commands from the bundled .base-pack/commands/ directory.
+ * Register all forge commands from the bundled unified commands/ directory.
  * Commands already registered (real handlers) are skipped.
  * Returns the number of commands registered.
+ *
+ * FORGE-S32-T06: repointed from .base-pack/commands/ to the unified commands/
+ * tree. The tree now also carries the 13 plugin-utility commands; all of their
+ * names are in EXPLICITLY_REGISTERED_NAMES (forge:reset added for this repoint),
+ * so the auto-stub surface is unchanged — no new stubs are registered.
  */
 export function registerAllForgeCommands(pi: ExtensionAPI, options: RegisterAllOptions): number {
-	const commandsDir = path.join(options.bundlePayloadRoot, ".base-pack", "commands");
+	const commandsDir = path.join(options.bundlePayloadRoot, "commands");
 
 	let commandFiles: string[];
 	try {
 		commandFiles = fsSync.readdirSync(commandsDir).filter((f) => f.endsWith(".md"));
 	} catch {
-		// .base-pack not yet built — skip gracefully
+		// commands/ not yet built — skip gracefully
 		return 0;
 	}
 
