@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // build-payload.cjs — builds dist/forge-payload/ from forge/forge/ source.
 //
-// Two-pass operation:
-//   Pass 1: invoke substitute-placeholders --target pi to produce:
-//     dist/forge-payload/{personas,skills,templates,workflows}/
+// Single-pass operation (the dead Pass-1 substitute-placeholders --target pi
+// output at the bundle root was removed in FORGE-S32-T05 — forge-init.ts
+// re-substitutes from .base-pack/ at runtime, so it was never consumed):
 //   Pass 2: selective recursive copy to produce expanded bundle layout:
 //     dist/forge-payload/tools/         ← selected .cjs tools + lib/
 //     dist/forge-payload/.init/          ← discovery/*.md + generation/generate-*.md
@@ -11,20 +11,18 @@
 //     dist/forge-payload/.schemas/       ← forge/forge/schemas/*.schema.json
 //     dist/forge-payload/.claude-plugin/ ← plugin.json
 //
-// Iron Law 6: spawnSync with argv array — NO shell-string interpolation.
 // Iron Law 1: reads from forge/forge/ (vendored reference) — never writes there.
 
 "use strict";
 
-const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
 const { loadManifest, applySelect } = require("./lib/payload-manifest.cjs");
 
 // ── Argv ──────────────────────────────────────────────────────────────────
-// `--include-full` restores the historical superset bundle (Pass 1 top-level
-// dirs, every `tools/lib/*`, every `.init/generation/*.md`, generic
-// `.schemas/*.json`). Default build emits the minimal payload — only files
+// `--include-full` restores the historical superset bundle (every
+// `tools/lib/*`, every `.init/generation/*.md`, generic `.schemas/*.json`).
+// Default build emits the minimal payload — only files
 // a live forge-cli runtime path actually reads (per
 // engineering/sprints/FORGE-S17/PAYLOAD_AUDIT.md).
 const argv = process.argv.slice(2);
@@ -37,12 +35,13 @@ if (argv.includes("--help") || argv.includes("-h")) {
 			"  node scripts/build-payload.cjs [--include-full]",
 			"",
 			"Flags:",
-			"  --include-full  Emit historical superset payload (pre-T04). Adds Pass 1",
-			"                  pre-substituted personas/skills/workflows/templates/ at",
-			"                  the bundle root, the full tools/lib/ tree (including",
-			"                  *.test.cjs and store-{nlp,query-exec,facade}.cjs),",
-			"                  every .init/generation/*.md, and generic .schemas/*.json.",
+			"  --include-full  Emit historical superset payload (pre-T04). Adds the",
+			"                  full tools/lib/ tree (including *.test.cjs and",
+			"                  store-{nlp,query-exec,facade}.cjs), every",
+			"                  .init/generation/*.md, and generic .schemas/*.json.",
 			"                  Use only for /forge:enhance precursor work (S18+).",
+			"                  (The dead Pass-1 personas/skills/workflows/templates/",
+			"                  bundle-root output was removed in FORGE-S32-T05.)",
 			"  --help, -h      Show this message and exit.",
 			"",
 			"Default mode is the minimal payload consumed by /forge:init and other",
@@ -77,7 +76,6 @@ if (!forgeRootRel || typeof forgeRootRel !== "string") {
 }
 
 const forgeRoot = path.resolve(repoRoot, forgeRootRel);
-const toolPath = path.join(forgeRoot, "tools", "substitute-placeholders.cjs");
 const outDir = path.resolve(repoRoot, "dist", "forge-payload");
 
 // ── Payload manifest (single source of truth, FORGE-S32-T03) ───────────────
@@ -106,51 +104,17 @@ function manifestSelect(source) {
 	return applySelect(path.join(forgeRoot, source), entry.select);
 }
 
-// ── Guard: tool must exist ─────────────────────────────────────────────────
-if (!fs.existsSync(toolPath)) {
-	console.error(
-		`build-payload: substitute-placeholders.cjs not found at:\n  ${toolPath}\n` +
-			"Run 'npm run sync-forge' or set forge.forgeRoot correctly in package.json.",
-	);
-	process.exit(1);
-}
-
 // ── Ensure output dir exists ───────────────────────────────────────────────
 fs.mkdirSync(outDir, { recursive: true });
 
-// ── Pass 1: invoke substitute-placeholders --target pi ────────────────────
-// Pass 1 emits pre-substituted personas/skills/workflows/templates at the
-// bundle root. forge-init.ts re-runs substitute-placeholders against the
-// user's actual config at runtime (Phase 3b, reading .base-pack/), so Pass 1
-// output is dead in the default flow. Skipped unless --include-full.
-if (includeFull) {
-	console.log("build-payload: pass 1 — substitute-placeholders --target pi");
-	console.log(`  forgeRoot: ${forgeRoot}`);
-	console.log(`  outDir:    ${outDir}`);
-
-	const pass1Result = spawnSync(
-		"node",
-		[toolPath, "--target", "pi", "--forge-root", forgeRoot, "--out", outDir],
-		{
-			stdio: "inherit",
-			encoding: "utf8",
-		},
-	);
-
-	if (pass1Result.error) {
-		console.error("build-payload: failed to spawn substitute-placeholders:", pass1Result.error.message);
-		process.exit(1);
-	}
-
-	if (pass1Result.status !== 0) {
-		console.error("build-payload: substitute-placeholders exited with status", pass1Result.status);
-		process.exit(pass1Result.status ?? 1);
-	}
-
-	console.log("build-payload: pass 1 complete");
-} else {
-	console.log("build-payload: pass 1 — skipped (default minimal payload; pass --include-full to restore)");
-}
+// ── Pass 1: REMOVED (FORGE-S32-T05) ───────────────────────────────────────
+// Pass 1 used to emit pre-substituted personas/skills/workflows/templates at
+// the bundle root. forge-init.ts re-runs substitute-placeholders against the
+// user's actual config at runtime (Phase 3b, reading .base-pack/), so that
+// output was dead in the default flow and was only ever produced behind
+// --include-full. The whole gated block + its restore branch are removed; the
+// runtime substitution path (.base-pack/) is unchanged. `--include-full` still
+// governs the full tools/lib/, generation, and generic .schemas/ supersets.
 
 // ── Helper functions ───────────────────────────────────────────────────────
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dead Pass-1 build output removed (FORGE-S32-T05).** `scripts/build-payload.cjs`
+  no longer emits the pre-substituted `personas/`/`skills/`/`workflows/`/
+  `templates/` bundle-root tree (the old `--include-full`-gated Pass 1) or its
+  restore branch. `forge-init.ts` re-runs `substitute-placeholders` against the
+  user's config from `.base-pack/` at runtime (Phase 3b), so that output was
+  never consumed in the default flow. `--include-full` still governs the full
+  `tools/lib/`, `.init/generation/`, and generic `.schemas/` supersets. The
+  non-dot `schemas/` mirror and `schemas/structure-manifest.json` are RETAINED
+  (load-bearing for `health.md`/`update.md` `$FORGE_ROOT/schemas/` reads and
+  `check-structure.cjs` via `/forge:health`). Frozen install-set parity fixture
+  (`expected-install-set.json`) updated to drop the four superseded
+  `init/generation` orchestrator placeholders trimmed on the plugin side.
+
 ### Added
 
 - **Payload require-walker CI gate (FORGE-S32-T04).** New build-side tool
