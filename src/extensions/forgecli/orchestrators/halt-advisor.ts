@@ -16,6 +16,7 @@
 import type { MergedConfig, PersonaModel } from "../config/config-layer.js";
 import { runForgeSubagent, loadForgePersona, getFinalOutput, type ForgePersona } from "../forge-subagent.js";
 import { resolveModelForPhase } from "../config/model-resolver.js";
+import { renderAdvisoryBlock } from "./advisory-render.js";
 
 // Minimal subset of the ExtensionCommandContext.ui interface needed here.
 export interface UiLike {
@@ -163,7 +164,13 @@ export async function runHaltAdvisor(opts: RunHaltAdvisorOptions): Promise<void>
 		// the advisory was generated (and billed) but never shown to the human.
 		const advice = getFinalOutput(result.messages ?? []).trim();
 		if (advice) {
-			ctx.ui.notify(`  ↳ advisor: ${advice}`, "info");
+			// FEAT-009 T02: render the advisor's markdown as a clean bordered block
+			// instead of piping raw `##`/`**`/backtick source through the plaintext
+			// notify sink (the grey-wall problem).
+			ctx.ui.notify(
+				renderAdvisoryBlock(`Halt-recovery advisory — ${taskId}`, advice).join("\n"),
+				"info",
+			);
 		} else {
 			ctx.ui.notify(
 				"  ↳ advisor produced no text output (see the subagent transcript).",
