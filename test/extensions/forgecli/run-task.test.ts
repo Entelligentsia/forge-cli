@@ -887,6 +887,43 @@ describe("Test 10: Verdict `revision` loops to predecessor; cap 3 → escalate",
 		);
 		expect(escalateOrErrorNotify).toBeDefined();
 	});
+
+	// FEAT-009: the revision-cap escalation must NOT be a bare notify. It is a
+	// halt like any other — it must hand off to the halt-recovery advisor (and,
+	// in interactive mode, the recovery menu) so the operator gets a themed
+	// advisory + actionable next step, not a lone grey error line. Live symptom:
+	// FORGE-S32-T07 review-code 3/3 escalated with no TUI advisory.
+	it("invokes runHaltAdvisor on revision-cap escalation instead of a bare notify", async () => {
+		const { proj, taskId } = scaffoldProject();
+
+		// review-plan ALWAYS returns revision → loop plan↔review-plan until the
+		// cap (3) escalates.
+		vi.mocked(spawnSync).mockImplementation((_cmd: string, args?: readonly string[]) => {
+			const argArr = args as string[] | undefined;
+			if (argArr && String(argArr[0]).includes("store-cli") && argArr?.[1] === "read") {
+				const summaries = { "review-plan": { verdict: "revision" } };
+				return {
+					status: 0,
+					stdout: Buffer.from(JSON.stringify({ taskId, summaries })),
+					stderr: Buffer.from(""),
+				};
+			}
+			return { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+		});
+
+		const pi = makePi();
+		registerRunTask(pi as never, { cwd: proj });
+		const ctx = makeCtx();
+
+		vi.mocked(runHaltAdvisor).mockClear();
+		await invokeRunTask(pi, ctx, taskId);
+
+		expect(runHaltAdvisor).toHaveBeenCalledTimes(1);
+		const opts = vi.mocked(runHaltAdvisor).mock.calls[0]![0];
+		expect(opts.gateFailure.phase).toBe("review-plan");
+		expect(opts.gateFailure.reasonCode).toBe("revision-cap-reached");
+		expect(opts.taskId).toBe(taskId);
+	});
 });
 
 describe("Dashboard node-per-dispatch: each leaf renders once per run, no leaked running nodes", () => {

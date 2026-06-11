@@ -167,6 +167,34 @@ export async function handleBugReviewVerdict(p: BugVerdictLoopParams): Promise<B
 				lastError: `revision cap reached for ${phase.role}`,
 				savedAt: new Date().toISOString(),
 			});
+			// FEAT-009: a revision-cap escalation is a halt like any other — route it
+			// through the halt-recovery advisor + recovery menu instead of leaving the
+			// bare error notify above as the only signal (matches the verdict-missing
+			// hand-off above and the run-task twin). Best-effort, non-fatal.
+			const gateFailure = {
+				phase: phase.role,
+				reasonCode: "revision-cap-reached",
+				detail:
+					`Phase '${phase.role}' returned 'revision' ${iterationCounts[phase.role]} time(s), ` +
+					`reaching its cap of ${phase.maxIterations}. The reviewer kept requesting changes ` +
+					"and the predecessor phase could not satisfy them within the allowed iterations, " +
+					"so the pipeline halted rather than loop indefinitely.",
+				remediation:
+					"Inspect the latest review feedback for this phase, address it manually, then " +
+					`reset the pipeline to the predecessor phase and resume — e.g. \`4ge reset ${bugId} ` +
+					`--to ${BUG_PHASES[findPredecessorIndex(BUG_PHASES, currentPhaseIndex)]?.role ?? phase.role}\` ` +
+					"— or re-run the bug once the underlying disagreement is resolved.",
+			};
+			const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
+			await runHaltAdvisor({
+				gateFailure,
+				advisorModel,
+				taskId: bugId,
+				cwd,
+				ctx: { ui: ctx.ui as any },
+				forgeRoot,
+			});
+			await offerRecoveryMenu({ ui: ctx.ui, kind: "bug", id: bugId, cwd, storeCli });
 			return {
 				kind: "return",
 				result: {
