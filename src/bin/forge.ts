@@ -21,6 +21,7 @@ import { runConfig } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { applyForgeOwnedEnvDefaults } from "./env-defaults.js";
 import { runInit } from "./init.js";
+import { runReset } from "./reset.js";
 import { runUninstall } from "./uninstall.js";
 import { runUpdate } from "./update-cli.js";
 
@@ -148,6 +149,11 @@ async function run(): Promise<void> {
 
 	if (parsed.forgeAction === "uninstall") {
 		const exitCode = await runUninstall(parsed.subcommandArgs ?? []);
+		process.exit(exitCode);
+	}
+
+	if (parsed.forgeAction === "reset") {
+		const exitCode = runReset(parsed.subcommandArgs ?? []);
 		process.exit(exitCode);
 	}
 

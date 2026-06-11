@@ -29,6 +29,7 @@ export type ForgeAction =
 	| "config"
 	| "init"
 	| "uninstall"
+	| "reset"
 	| "subcommand"
 	| null;
 
@@ -224,6 +225,19 @@ export function parseForgeArgv(argv: string[]): ParseResultOrError {
 		if (token === "uninstall" && piArgv.length === 0) {
 			return {
 				forgeAction: "uninstall",
+				piArgv: [],
+				env,
+				subcommandArgs: argv.slice(i + 1),
+			};
+		}
+
+		// ── `forge reset` — FEAT-009 pipeline-state reset (escape hatch) ────
+		// `reset <id> --to <phase> [--kind task|bug]` rewinds a halted run-task
+		// or fix-bug pipeline. Subcommand args forwarded to reset.ts. Only
+		// matches the first bare token, no flags collected yet.
+		if (token === "reset" && piArgv.length === 0) {
+			return {
+				forgeAction: "reset",
 				piArgv: [],
 				env,
 				subcommandArgs: argv.slice(i + 1),
