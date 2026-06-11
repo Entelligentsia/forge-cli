@@ -19,6 +19,7 @@ import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agen
 import { type LoadSkillsResult, loadSkillsFromDir, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { registerAddPipeline } from "./commands/add-pipeline.js";
 import { registerAddTask } from "./commands/add-task.js";
+import { registerReset } from "./commands/reset.js";
 import { registerApprove } from "./commands/approve.js";
 import { registerAskUserTool } from "./ask-user-tool.js";
 import { readProjectMeta } from "./tui/banner.js";
@@ -534,6 +535,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	registerStatusCommand(pi, { forgeRoot }); // FORGE-S23-T10: v0 sprint/task summary widget
 	registerTranscriptsCommand(pi); // Central transcript archive recall — works outside Forge projects
 	registerAddTask(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — add a task mid-sprint
+	registerReset(pi, { forgeRoot }); // FEAT-009 (component C): Kickoff shim — NLP guardrailed pipeline-state reset
 	registerAddPipeline(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — pipeline manager
 	registerQuizAgent(pi, { forgeRoot }); // FORGE-S26-T10: now registers forge:check-agent
 	registerRemoveCommand(pi, { forgeRoot }); // FORGE-S23-T11: Kickoff shim — remove Forge artifacts

@@ -260,10 +260,13 @@ const EXPLICITLY_REGISTERED_NAMES = new Set([
 	"forge:remove", // FORGE-S23-T11: Kickoff shim registered in remove-command.ts
 	"forge:report-bug", // FORGE-S23-T11: Kickoff shim registered in report-bug.ts
 	"forge:dashboard", // Orchestrator tree overlay; registered in dashboard/register.ts
-	"forge:reset", // FORGE-S32-T06: served at the 4ge bin layer, never via pi.registerCommand.
-	// Added when registerAllForgeCommands repointed from .base-pack/commands/ to the
-	// unified commands/ tree (which now includes reset.md) so the repoint introduces
-	// NO new auto-stub. See forge-commands.test.ts T28 (no-new-stub assertion).
+	"forge:reset", // FEAT-009 (component C): real kickoff-shim handler registered in
+	// commands/reset.ts via registerReset(pi) in index.ts (NLP guardrailed pipeline
+	// reset). Listed here so registerAllForgeCommands's auto-stub loop skips it — the
+	// real handler beats the auto-stub by registration order; membership is the backup.
+	// (Originally added by FORGE-S32-T06 for the unified-tree repoint as a no-new-stub
+	// slot, before the slash command itself was ported; see forge-commands.test.ts T28.)
+	// The deterministic single-entity counterpart remains the `4ge reset` bin command.
 ]);
 
 // Alias for backwards-compat with tests that reference REAL_HANDLERS directly.
