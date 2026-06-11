@@ -7,6 +7,7 @@ __pycache__/
 
 # Smoke gate output (FORGE-S16-T11)
 .smoke-out/
+.tmp-smoke-out/
 entelligentsia-forgecli-*.tgz
 
 # Spike build artifacts (tsconfig.spike.json sets noEmit, but stale outputs
