@@ -43,3 +43,27 @@ export const SUMMARY_KEY_BY_ROLE: Record<string, string | null> = {
 	validate: "validation",
 	approve: null,
 };
+
+// FEAT-009 (halt-recovery UX): the task status a record must hold for a given
+// phase to (re-)run — i.e. the status `resetPipelineState` sets when rewinding
+// the pipeline to that phase. Each value is within the documented step-0b
+// "Allowed states for this phase" set of the corresponding workflow
+// (.forge/workflows/<workflowFile>.md), so the phase's own guard accepts it:
+//   plan/review-plan → planned   implement → plan-approved
+//   review-code → implemented     validate/approve → review-approved
+//   writeback/commit → approved
+export const PHASE_PRE_STATUS: Record<string, string> = {
+	plan: "planned",
+	"review-plan": "planned",
+	implement: "plan-approved",
+	"review-code": "implemented",
+	validate: "review-approved",
+	approve: "review-approved",
+	writeback: "approved",
+	commit: "approved",
+};
+
+/** Index of a phase in the PHASES table by role, or -1 if unknown. */
+export function phaseIndexByRole(role: string): number {
+	return PHASES.findIndex((p) => p.role === role);
+}
