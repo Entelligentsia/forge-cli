@@ -18,6 +18,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { MergedConfig } from "../../config/config-layer.js";
 import type { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
 import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import { offerRecoveryMenu } from "../common/recovery-menu.js";
 import { recoverPhaseSummary } from "../common/summary-recovery.js";
 import { findPredecessorIndex, type PhaseDescriptor } from "../run-task.js";
 import { BUG_PHASES } from "./bug-phases.js";
@@ -134,6 +135,9 @@ export async function handleBugReviewVerdict(p: BugVerdictLoopParams): Promise<B
 			ctx: { ui: ctx.ui as any },
 			forgeRoot,
 		});
+		// FEAT-009: offer an interactive recovery menu (reset → resume). No-op in
+		// non-interactive mode; best-effort, never masks the halt.
+		await offerRecoveryMenu({ ui: ctx.ui, kind: "bug", id: bugId, cwd, storeCli });
 		return {
 			kind: "return",
 			result: {
