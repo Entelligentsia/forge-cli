@@ -77,6 +77,14 @@ jobs:
         # Vitest needs dist/forge-payload; full tsc emit comes along with it.
         run: npm run build
 
+      - name: Payload require gate
+        # FORGE-S32-T04: statically prove every require()/runtime-path target in
+        # the bundled payload's .cjs/.js tools+hooks resolves in-bundle. Runs
+        # right after the build (payload exists) and before vitest, so the
+        # MODULE_NOT_FOUND drift class (FORGE-BUG-030/036) is caught red here at
+        # ~no extra cost — tests.yml already builds the payload for vitest.
+        run: npm run lint:payload-requires
+
       - name: Vitest
         run: npm test
 

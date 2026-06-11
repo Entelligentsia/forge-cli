@@ -1,6 +1,6 @@
 {
   "name": "@entelligentsia/forgecli",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "description": "Forge SDLC ported onto @earendil-works/pi-coding-agent — production launcher with three bin aliases (forge/forgecli/4ge). Bundles a curated fork of pi-coding-agent vendored under earendil-works names.",
   "license": "MIT",
   "author": "Entelligentsia",
@@ -65,6 +65,7 @@
     "lint": "biome check src test",
     "lint:no-skip": "node tools/check-no-skipped-tests.cjs",
     "lint:layering": "node tools/check-import-layering.cjs",
+    "lint:payload-requires": "node tools/check-payload-requires.cjs dist/forge-payload",
     "sync-forge": "node scripts/sync-forge.cjs",
     "dead-code": "knip"
   },

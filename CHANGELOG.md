@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Payload require-walker CI gate (FORGE-S32-T04).** New build-side tool
+  `tools/check-payload-requires.cjs <payloadRoot>` statically proves that every
+  `require()` target and referenced runtime path in the bundled payload's
+  `.cjs`/`.js` tools and hooks resolves inside the bundle. Generalizes the two
+  narrow regression guards (`bug-025-payload-completeness`,
+  `bug-036-payload-lib-completeness`) into one walker over ALL `.cjs`/`.js`
+  under `dist/forge-payload/{tools,hooks}`. Three reference classes are
+  resolved — static string requires, the runtime-path literals behind dynamic
+  requires, and dynamic `require(<variable>)` sites gated against a structural
+  `DYNAMIC_SITES` allowlist (keyed by file + normalized expression, not line
+  number). Any un-enumerated dynamic require is itself a hard failure (Iron Law
+  5, no silent skips). Exit `0`/`1`/`2` contract. Wired into `tests.yml`
+  (`npm run lint:payload-requires`, post-build) so the MODULE_NOT_FOUND drift
+  class (FORGE-BUG-030 / FORGE-BUG-036) is caught red, build-side. CI-only: no
+  payload bytes change.
+
 ### Changed
 
 - **Payload consumers now read a single declarative manifest (FORGE-S32-T03).**
