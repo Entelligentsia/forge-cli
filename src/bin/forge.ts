@@ -162,25 +162,22 @@ async function run(): Promise<void> {
 
 	applyForgeOwnedEnvDefaults();
 
-	// Default prompt-cache retention to "long" for all Forge sessions.
+	// Default prompt-cache retention to "short" for all Forge sessions.
 	//
-	// Rationale: Forge subagent phases (plan, review_plan, implement, review_code,
-	// approve, commit) routinely run ~10 minutes per phase, and a sprint chains
-	// 4–8 such phases per task across the same persona/system-prompt prefix.
-	// Anthropic's default 5-minute cache TTL expires mid-phase; OpenAI's default
-	// in-memory cache evicts between phases. "long" gives Anthropic a 1h TTL and
-	// OpenAI 24h retention — comfortably covering a phase and the gap to the next.
+	// We previously defaulted to "long" (Anthropic 1h / OpenAI 24h) to keep the
+	// shared persona/system-prompt prefix warm across a sprint's 4–8 chained
+	// ~10-minute phases. But "long" is a process-wide global, and pi-ai emits the
+	// OpenAI `prompt_cache_retention: "24h"` field to *any* OpenAI-compatible
+	// backend it auto-detects as supporting it — including strict gateways like
+	// opencode/zen, which reject it with 400 "Extra inputs are not permitted".
+	// pi-ai has no per-model capability gate we can rely on here, so until this is
+	// resolved upstream we default to "short" so every provider is safe.
+	// Tracked: https://github.com/earendil-works/pi/issues/5702
 	//
-	// Cost: on Anthropic, 1h cache writes cost 25% more than 5m writes — but a
-	// single subsequent cache read (90% cheaper than fresh input) repays that
-	// premium ~3.6×, and every Forge phase reads the same prefix many times. On
-	// OpenAI, 24h retention is free. On proxies/compat backends, pi-ai ignores
-	// this env var, so this default is safe everywhere.
-	//
-	// Users who want the upstream pi-ai default keep an explicit value:
-	//   PI_CACHE_RETENTION=short forge ...
+	// Users on Anthropic / OpenAI-direct who want the warm-prefix cost win opt in:
+	//   PI_CACHE_RETENTION=long forge ...
 	if (!process.env.PI_CACHE_RETENTION) {
-		process.env.PI_CACHE_RETENTION = "long";
+		process.env.PI_CACHE_RETENTION = "short";
 	}
 
 	// Fast-path subcommand: spawn the bundled cjs tool directly. This skips
