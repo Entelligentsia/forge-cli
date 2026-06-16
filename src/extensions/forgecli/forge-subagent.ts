@@ -35,6 +35,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { FORGE_TOOL_DISCIPLINE } from "./forge-tools.js";
 import { buildProjectOrientation } from "./project-orientation.js";
+import { wrapStreamFnWithIdleTimeout } from "./stream-resilience.js";
 import { persistTailLog, type TailLogEntry } from "./viewport/events.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -376,6 +377,34 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// Test-only seam — see RunSubagentOptions.streamFn doc (forge-cli#17).
 	if (opts.streamFn) {
 		session.agent.streamFn = opts.streamFn;
+	}
+
+	// Stream resilience: ALWAYS guard each per-turn model call with an idle watchdog
+	// + bounded retry, so a silent stream (connection open, no tokens — observed on
+	// the uncached ollama-cloud rail, but a generic provider failure mode) doesn't
+	// hang the agent loop. For forge's agentic use case a call that is INACTIVE for
+	// >30s is treated as failed (vs pi's ~10-min SDK-default total-request timeout,
+	// which is far too long and never retries). The 30s is an IDLE gap — it resets on
+	// every stream event, so a healthy long generation is never cut; only genuine
+	// silence trips it. Retries only before the first token (never corrupts a partial
+	// stream); a stall after tokens flow, or exhausted retries, fails the turn cleanly.
+	// On by default; env vars override the thresholds, FORGE_STREAM_IDLE_MS=0 disables.
+	const idleEnv = process.env.FORGE_STREAM_IDLE_MS;
+	const streamIdleMs = idleEnv !== undefined && idleEnv !== "" ? Number(idleEnv) : 30_000;
+	if (session.agent && Number.isFinite(streamIdleMs) && streamIdleMs > 0) {
+		const r = Number(process.env.FORGE_STREAM_RETRIES ?? 3);
+		const streamLogPath = process.env.FORGE_STREAM_LOG ?? "/tmp/forge-stream.log";
+		session.agent.streamFn = wrapStreamFnWithIdleTimeout(session.agent.streamFn, {
+			idleMs: streamIdleMs,
+			maxRetries: Number.isFinite(r) ? r : 3,
+			log: (m) => {
+				try {
+					fs.appendFileSync(streamLogPath, `${new Date().toISOString()} [forge-stream] ${m}\n`, "utf8");
+				} catch {
+					process.stderr.write(`[forge-stream] ${m}\n`);
+				}
+			},
+		});
 	}
 
 	// ── Model routing (Plan 16 Slice 2) ──────────────────────────────────
