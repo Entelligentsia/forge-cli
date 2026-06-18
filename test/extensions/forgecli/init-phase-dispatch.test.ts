@@ -171,14 +171,15 @@ function makeParams(
 		phase: INIT_PHASES[phaseIndex],
 		phaseIndex,
 		cwd: proj,
-		ctx: ctxOverride ?? (makeCtx() as ReturnType<typeof makeCtx>),
+		ctx: (ctxOverride ?? makeCtx()) as unknown as InitPhaseDispatchParams["ctx"],
 		bundleRoot: path.join(tmpRoot, "bundle"),
 		kbFolder: "engineering",
 		isoTimestamp: "2026-06-18T00:00:00.000Z",
 		modelRoutingConfig: {
+			"persona-models": {},
 			pipelines: {},
-			personaModels: {},
-			features: {},
+			_global: null,
+			_project: null,
 		},
 	};
 }
@@ -235,6 +236,33 @@ describe("dispatchInitPhase — Phase 1 (collect)", () => {
 		const p = makeParams(0);
 		await dispatchInitPhase(p);
 		expect(withUISpy).toHaveBeenCalledTimes(6);
+	});
+
+	it("Phase 1 model resolution: config-writer resolves via the 'config' role key (regression — not the display label)", async () => {
+		mockSuccessfulSession(0);
+		const ctx = makeCtx();
+		const findSpy = ctx.modelRegistry.find;
+		const p = makeParams(0, ctx);
+		// A model configured under the "config" ROLE_TIER key must resolve for the
+		// config-writer dispatch. Before the fix the dispatcher passed the display
+		// label ("config-writer") as the phase key, so config never matched and every
+		// init agent silently inherited. The 5 discovery agents have no config entry,
+		// so they inherit (no find call); only config-writer resolves.
+		p.modelRoutingConfig = {
+			"persona-models": {},
+			pipelines: {
+				default: {
+					phases: {
+						config: { "model-override": { provider: "anthropic", model: "claude-haiku-4-5" } },
+					},
+				},
+			},
+			_global: null,
+			_project: null,
+		};
+		await dispatchInitPhase(p);
+		expect(findSpy).toHaveBeenCalledTimes(1);
+		expect(findSpy).toHaveBeenCalledWith("anthropic", "claude-haiku-4-5");
 	});
 
 	it("Phase 1 config-writer failure triggers retry (7 createAgentSession calls total)", async () => {

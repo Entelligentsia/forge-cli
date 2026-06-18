@@ -99,19 +99,23 @@ function readInitPhasePrompt(bundleRoot: string, phaseNum: 1 | 2): string {
 }
 
 /**
- * Resolve model for a sub-role within the init pipeline. Uses ROLE_TIER to
- * obtain the tier string, then passes it to resolveModelForPhase with the
- * provided personaNoun. Falls back to "inherit" (undefined model) if the role
- * is not in ROLE_TIER or config doesn't specify.
+ * Resolve model for a sub-role within the init pipeline. Reads the intended
+ * tier from ROLE_TIER[modelRole] ("sonnet" / "haiku") and resolves the concrete
+ * {provider, model} via resolveModelForPhase, using modelRole as the phase key
+ * and the given personaNoun (matching task-phase-dispatch, which passes the
+ * role — never a display label — as the phase key). The tier is returned
+ * alongside the resolution so callers can surface it via notify. Concrete model
+ * still comes from config; resolution is "inherit" (undefined model) when config
+ * specifies nothing for the role.
  */
 function resolveInitModel(
-	subRole: string,
+	modelRole: string,
 	personaNoun: string,
 	modelRoutingConfig: MergedConfig,
-): ReturnType<typeof resolveModelForPhase> {
-	// The tier for this sub-role (e.g. "sonnet" or "haiku").
-	// resolveModelForPhase uses the role string as the phase key.
-	return resolveModelForPhase("default", subRole, personaNoun, modelRoutingConfig);
+): ReturnType<typeof resolveModelForPhase> & { tier: "sonnet" | "haiku" | undefined } {
+	const tier = ROLE_TIER[modelRole];
+	const resolution = resolveModelForPhase("default", modelRole, personaNoun, modelRoutingConfig);
+	return { ...resolution, tier };
 }
 
 /**
@@ -126,6 +130,7 @@ function resolveInitModel(
 async function dispatchSingleAgent(
 	subLabel: string,
 	subRole: PhaseRole,
+	modelRole: string,
 	prompt: string,
 	_schema: object | undefined,
 	personaNoun: string,
@@ -134,12 +139,13 @@ async function dispatchSingleAgent(
 	const { cwd, ctx, opts, modelRoutingConfig } = p;
 
 	const persona = loadForgePersona(personaNoun, cwd);
-	const modelResolution = resolveInitModel(subLabel, personaNoun, modelRoutingConfig);
+	const modelResolution = resolveInitModel(modelRole, personaNoun, modelRoutingConfig);
 	const modelLabel = modelResolution.model
 		? `${modelResolution.model.provider}:${modelResolution.model.model}`
 		: "inherit";
 	ctx.ui.notify(
-		`  init dispatch: ${subLabel} · persona=${personaNoun} · model=${modelLabel} [${modelResolution.source}]`,
+		`  init dispatch: ${subLabel} · role=${modelRole} · tier=${modelResolution.tier ?? "—"} · ` +
+		`persona=${personaNoun} · model=${modelLabel} [${modelResolution.source}]`,
 		"info",
 	);
 
@@ -171,6 +177,7 @@ async function dispatchFanout(
 	items: readonly string[],
 	promptFn: (item: string, basePrompt: string) => string,
 	subRole: PhaseRole,
+	modelRole: string,
 	subLabel: (item: string) => string,
 	schema: object | undefined,
 	personaNoun: string,
@@ -188,7 +195,7 @@ async function dispatchFanout(
 	const results: SubagentResult[] = [];
 	for (const item of items) {
 		const prompt = promptFn(item, basePrompt);
-		const result = await dispatchSingleAgent(subLabel(item), subRole, prompt, schema, personaNoun, p);
+		const result = await dispatchSingleAgent(subLabel(item), subRole, modelRole, prompt, schema, personaNoun, p);
 		results.push(result);
 		if (result.exitCode !== 0) {
 			return { results, failedItem: item };
@@ -233,6 +240,7 @@ export async function dispatchInitPhase(
 			(domain, base) =>
 				`${base}\n\n<!-- AGENT PARAMS -->\ndomain: ${domain}\nisoTimestamp: ${isoTimestamp}\n`,
 			"plan" as PhaseRole,
+			"discovery",
 			(domain) => `discovery:${domain}`,
 			phase.schema,
 			phase.persona ?? "engineer",
@@ -258,6 +266,7 @@ export async function dispatchInitPhase(
 		let configResult = await dispatchSingleAgent(
 			"config-writer",
 			"plan" as PhaseRole,
+			"config",
 			configPrompt,
 			phase.schema,
 			phase.persona ?? "engineer",
@@ -273,6 +282,7 @@ export async function dispatchInitPhase(
 			configResult = await dispatchSingleAgent(
 				"config-writer:retry",
 				"plan" as PhaseRole,
+				"config",
 				retryPrompt,
 				phase.schema,
 				phase.persona ?? "engineer",
@@ -314,6 +324,7 @@ export async function dispatchInitPhase(
 		const gateResult = await dispatchSingleAgent(
 			"gate",
 			"implement" as PhaseRole,
+			"gate",
 			gatePrompt,
 			undefined,
 			phase.persona ?? "engineer",
@@ -343,6 +354,7 @@ export async function dispatchInitPhase(
 			let kbResult = await dispatchSingleAgent(
 				`kb-doc:${docId}`,
 				"plan" as PhaseRole,
+				"kb-doc",
 				kbPrompt,
 				phase.schema,
 				phase.persona ?? "engineer",
@@ -356,6 +368,7 @@ export async function dispatchInitPhase(
 				kbResult = await dispatchSingleAgent(
 					`kb-doc:${docId}:retry`,
 					"plan" as PhaseRole,
+					"kb-doc",
 					retryKbPrompt,
 					phase.schema,
 					phase.persona ?? "engineer",
@@ -381,6 +394,7 @@ export async function dispatchInitPhase(
 		const indexResult = await dispatchSingleAgent(
 			"index",
 			"plan" as PhaseRole,
+			"index",
 			indexPrompt,
 			undefined,
 			phase.persona ?? "engineer",
@@ -399,6 +413,7 @@ export async function dispatchInitPhase(
 		let contextResult = await dispatchSingleAgent(
 			"context",
 			"plan" as PhaseRole,
+			"context",
 			contextPrompt,
 			undefined,
 			phase.persona ?? "engineer",
@@ -411,6 +426,7 @@ export async function dispatchInitPhase(
 			contextResult = await dispatchSingleAgent(
 				"context:retry",
 				"plan" as PhaseRole,
+				"context",
 				retryContextPrompt,
 				undefined,
 				phase.persona ?? "engineer",
