@@ -166,13 +166,6 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// triggering sprint-level enhancement.
 	registerPostSprintHook(pi);
 
-	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
-	// Full 4-phase implementation — FORGE-S17-T02.
-	// Banner suppression: outside-Forge banner below only fires when
-	// .forge/config.json is absent. Once /forge:init writes config.json,
-	// the banner is suppressed automatically (no extra guard needed here).
-	registerForgeInit(pi);
-
 	// ── /forge:rebuild — re-materialize .forge/ from bundled payload ────────
 	// Renamed from /forge:regenerate in v1.0 (FORGE-S26-T10). Deterministic
 	// subset of plugin's /forge:rebuild: runs substitute-placeholders.cjs
@@ -452,6 +445,18 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		// from FORGE_PHASE_KEY env (set by the sprint runner before each phase).
 		registerUsageHook(pi);
 	}
+
+	// ── Unconditional /forge:init (AC#4) ─────────────────────────────────────
+	// Full 4-phase implementation — FORGE-S17-T02.
+	// Positioned AFTER the forgeToolDefs block so forgeToolDefs (if populated) is
+	// passed to the pipeline for getSubagentTools. When outside a Forge project,
+	// forgeToolDefs is undefined — acceptable since init is bootstrapping a new
+	// project and forge_ask_user is only meaningful inside an active Forge project.
+	// Banner suppression: outside-Forge banner fires when .forge/config.json is
+	// absent. Once /forge:init writes config.json, the banner is suppressed.
+	// FORGE-S33-T04: moved from before session_start to here; registerPostInitHook
+	// remains registered first to preserve emit-before-consumer order.
+	registerForgeInit(pi, forgeToolDefs);
 
 	// ── /forge:new-sprint native handler (FORGE-S19-T01, renamed FORGE-S26-T10) ──
 	// Registered before registerAllForgeCommands so the real handler takes

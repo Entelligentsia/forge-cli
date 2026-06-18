@@ -1,6 +1,12 @@
-// run-phases.test.ts — FORGE-S26-T17
-// Unit tests for forge-init/run-phases.ts: runPhase1, runPhase2, runPhase3.
-// Mocks all external I/O (execFileAsync, verifiers, fs reads).
+// run-phases.test.ts — FORGE-S26-T17 / FORGE-S33-T04
+//
+// Note (FORGE-S33-T04): runPhase1 and runPhase2 have been removed from run-phases.ts.
+// Their LLM dispatch logic lives in orchestrators/init/init-phase-dispatch.ts;
+// their post-verify hooks live in orchestrators/init/run-init-pipeline.ts.
+// Tests for runPhase1 and runPhase2 have been removed here — those dispatch paths
+// are tested via init-phase-dispatch.test.ts and run-init-pipeline.test.ts.
+//
+// This file now only tests runPhase3 (the deterministic materialize phase).
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -16,19 +22,7 @@ vi.mock("../../../../src/extensions/forgecli/lib/exec-helpers.js", () => ({
 
 // Mock verifiers module so we control pass/fail without filesystem
 vi.mock("../../../../src/extensions/forgecli/forge-init/verifiers.js", () => ({
-	verifyPhase1: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
-	verifyPhase1Foundation: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
-	verifyPhase2: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
 	verifyPhase3: vi.fn().mockResolvedValue({ ok: true, missing: [] }),
-}));
-
-// Mock init-context helpers
-vi.mock("../../../../src/extensions/forgecli/forge-init/init-context.js", () => ({
-	buildProjectContext: vi.fn().mockReturnValue({}),
-	validateProjectContext: vi.fn(),
-	writeProjectContext: vi.fn(),
-	computeCalibrationBaseline: vi.fn().mockReturnValue({}),
-	discoverProjectName: vi.fn().mockReturnValue("TestProject"),
 }));
 
 // Mock init-progress
@@ -38,12 +32,10 @@ vi.mock("../../../../src/extensions/forgecli/forge-init/init-progress.js", () =>
 	readInitProgress: vi.fn().mockReturnValue({ kind: "none" }),
 }));
 
-import { runPhase1, runPhase2, runPhase3 } from "../../../../src/extensions/forgecli/forge-init/run-phases.js";
-import { verifyPhase1, verifyPhase2, verifyPhase3 } from "../../../../src/extensions/forgecli/forge-init/verifiers.js";
+import { runPhase3 } from "../../../../src/extensions/forgecli/forge-init/run-phases.js";
+import { verifyPhase3 } from "../../../../src/extensions/forgecli/forge-init/verifiers.js";
 import { writeInitProgress } from "../../../../src/extensions/forgecli/forge-init/init-progress.js";
 
-const mockVerifyPhase1 = verifyPhase1 as ReturnType<typeof vi.fn>;
-const mockVerifyPhase2 = verifyPhase2 as ReturnType<typeof vi.fn>;
 const mockVerifyPhase3 = verifyPhase3 as ReturnType<typeof vi.fn>;
 const mockWriteInitProgress = writeInitProgress as ReturnType<typeof vi.fn>;
 
@@ -81,184 +73,6 @@ function makeCtx(
 		waitForIdle: vi.fn().mockResolvedValue(undefined),
 	};
 }
-
-// ── runPhase1 ────────────────────────────────────────────────────────────────
-
-describe("runPhase1", () => {
-	let tmpDir: string;
-	let sendToAgent: ReturnType<typeof vi.fn>;
-	let waitForIdle: ReturnType<typeof vi.fn>;
-
-	beforeEach(() => {
-		tmpDir = makeTmpDir();
-		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
-		// Create fake phase-1 prompt file so readPhasePrompt doesn't abort
-		const phasesDir = path.join(tmpDir, "init", "phases");
-		fs.mkdirSync(phasesDir, { recursive: true });
-		fs.writeFileSync(path.join(phasesDir, "phase-1-collect.md"), "# Phase 1 Test Prompt", "utf8");
-		sendToAgent = vi.fn().mockResolvedValue(undefined);
-		waitForIdle = vi.fn().mockResolvedValue(undefined);
-		vi.clearAllMocks();
-		// Reset mocks to defaults after clearAllMocks
-		mockVerifyPhase1.mockResolvedValue({ ok: true, missing: [] });
-		mockWriteInitProgress.mockReturnValue(undefined);
-		vi.stubEnv("FORGE_YES", "1"); // non-interactive for most tests
-	});
-
-	afterEach(() => {
-		rmTmpDir(tmpDir);
-		vi.unstubAllEnvs();
-	});
-
-	it("returns 'ok' when verify passes", async () => {
-		const ctx = makeCtx();
-		const result = await runPhase1(
-			tmpDir, tmpDir, tmpDir, {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(result).toBe("ok");
-	});
-
-	it("calls sendToAgent with the phase prompt", async () => {
-		// phase-1-collect.md already created in beforeEach
-		const ctx = makeCtx();
-		await runPhase1(
-			tmpDir, tmpDir, tmpDir, {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(sendToAgent).toHaveBeenCalledWith(expect.stringContaining("Phase 1"));
-	});
-
-	it("returns 'abort' when verify fails twice in non-interactive mode", async () => {
-		mockVerifyPhase1.mockResolvedValue({ ok: false, missing: ["version"] });
-		const ctx = makeCtx();
-		const result = await runPhase1(
-			tmpDir, tmpDir, tmpDir, {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(result).toBe("abort");
-	});
-
-	it("sends retry steer when first verify fails", async () => {
-		// phase-1-collect.md already created in beforeEach
-		let callCount = 0;
-		mockVerifyPhase1.mockImplementation(async () => {
-			callCount++;
-			return callCount <= 1 ? { ok: false, missing: ["version"] } : { ok: true, missing: [] };
-		});
-
-		const ctx = makeCtx();
-		const result = await runPhase1(
-			tmpDir, tmpDir, tmpDir, {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-
-		expect(result).toBe("ok");
-		// Initial prompt + retry steer
-		expect(sendToAgent).toHaveBeenCalledTimes(2);
-	});
-
-	it("calls writeInitProgress(cwd, 1) on success", async () => {
-		const ctx = makeCtx();
-		await runPhase1(
-			tmpDir, tmpDir, tmpDir, {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(mockWriteInitProgress).toHaveBeenCalledWith(tmpDir, 1);
-	});
-
-	it("returns 'abort' when phase prompt file is missing", async () => {
-		const ctx = makeCtx();
-		// Use a separate bundleRoot with no init/phases/ directory
-		const emptyBundleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rp-empty-"));
-		try {
-			const result = await runPhase1(
-				tmpDir, emptyBundleRoot, emptyBundleRoot, {}, ctx as never,
-				sendToAgent, waitForIdle, () => true,
-			);
-			expect(result).toBe("abort");
-		} finally {
-			fs.rmSync(emptyBundleRoot, { recursive: true, force: true });
-		}
-	});
-});
-
-// ── runPhase2 ────────────────────────────────────────────────────────────────
-
-describe("runPhase2", () => {
-	let tmpDir: string;
-	let sendToAgent: ReturnType<typeof vi.fn>;
-	let waitForIdle: ReturnType<typeof vi.fn>;
-
-	beforeEach(() => {
-		tmpDir = makeTmpDir();
-		fs.mkdirSync(path.join(tmpDir, ".forge"), { recursive: true });
-		// Create fake phase-2 prompt file so readPhasePrompt doesn't abort
-		const phasesDir = path.join(tmpDir, "init", "phases");
-		fs.mkdirSync(phasesDir, { recursive: true });
-		fs.writeFileSync(path.join(phasesDir, "phase-2-discover.md"), "# Phase 2 Test Prompt", "utf8");
-		sendToAgent = vi.fn().mockResolvedValue(undefined);
-		waitForIdle = vi.fn().mockResolvedValue(undefined);
-		vi.clearAllMocks();
-		// Reset mocks to defaults after clearAllMocks
-		mockVerifyPhase2.mockResolvedValue({ ok: true, missing: [] });
-		mockWriteInitProgress.mockReturnValue(undefined);
-		vi.stubEnv("FORGE_YES", "1");
-	});
-
-	afterEach(() => {
-		rmTmpDir(tmpDir);
-		vi.unstubAllEnvs();
-	});
-
-	it("returns 'ok' when verify passes", async () => {
-		const ctx = makeCtx();
-		const result = await runPhase2(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(result).toBe("ok");
-	});
-
-	it("returns 'abort' when verify fails twice in non-interactive mode", async () => {
-		mockVerifyPhase2.mockResolvedValue({ ok: false, missing: ["engineering/architecture/stack.md"] });
-		const ctx = makeCtx();
-		const result = await runPhase2(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(result).toBe("abort");
-	});
-
-	it("calls writeInitProgress(cwd, 2) on success", async () => {
-		const ctx = makeCtx();
-		await runPhase2(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(mockWriteInitProgress).toHaveBeenCalledWith(tmpDir, 2);
-	});
-
-	it("uses kbPath from configCache", async () => {
-		const ctx = makeCtx();
-		const configCache = { paths: { engineering: "my-kb" } };
-		await runPhase2(
-			tmpDir, tmpDir, tmpDir, "TestProject", configCache, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		// verifyPhase2 should be called with the resolved kbPath
-		expect(mockVerifyPhase2).toHaveBeenCalledWith(tmpDir, "my-kb");
-	});
-
-	it("defaults kbPath to 'engineering' when not in configCache", async () => {
-		const ctx = makeCtx();
-		await runPhase2(
-			tmpDir, tmpDir, tmpDir, "TestProject", {}, ctx as never,
-			sendToAgent, waitForIdle, () => true,
-		);
-		expect(mockVerifyPhase2).toHaveBeenCalledWith(tmpDir, "engineering");
-	});
-});
 
 // ── runPhase3 ────────────────────────────────────────────────────────────────
 

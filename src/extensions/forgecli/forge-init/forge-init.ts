@@ -70,15 +70,15 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { runPhase4 } from "./phase4-register.js";
-import { runPhase1, runPhase2, runPhase3 } from "./run-phases.js";
 import { verifyPhase1, verifyPhase3 } from "./verifiers.js";
 import { runHealthCheck } from "../health-check.js";
 import { emitSyntheticEvent } from "../hook-dispatcher.js";
 import { discoverProjectName } from "./init-context.js";
 import { deleteInitProgress, readInitProgress } from "./init-progress.js";
-import { execFileAsync } from "../lib/exec-helpers.js";
+import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { clearForgeConfigCache } from "../lib/forge-config.js";
+import type { ForgeToolDefs } from "../forge-tools.js";
+import { runInitPipeline } from "../orchestrators/init/run-init-pipeline.js";
 // FORGE-S26-T11: registerMigrate imported to power `forge:init --migrate`
 import { registerMigrate } from "../orchestrators/migrate.js";
 
@@ -215,7 +215,7 @@ function parseInitFlags(args: string): ParsedFlags {
 
 // ── Main command registration ──────────────────────────────────────────────
 
-export function registerForgeInit(pi: ExtensionAPI): void {
+export function registerForgeInit(pi: ExtensionAPI, forgeToolDefs?: ForgeToolDefs): void {
 	// Capture pi.sendUserMessage in closure — ExtensionCommandContext does not
 	// have sendUserMessage; it is on ExtensionAPI per pi types.ts:1187.
 	//
@@ -364,120 +364,93 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 				}
 			}
 
-			// ── Config cache (B-4, N-B-A) ─────────────────────────────────────
-			// Populated unconditionally before the loop so that resume paths
-			// (startPhase > 1) read the config.json that Phase 1 wrote in a prior
-			// session. Falls back to {} when config.json does not exist yet (first-run
-			// Phase 1 will create it). Refreshed after Phase 1 completes in the loop
-			// to pick up values the Phase-1 agent just wrote. See file-header comment
-			// §Config cache boundary for the full rationale.
-			let configCache: Record<string, unknown> = {};
-			try {
-				configCache = JSON.parse(fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8")) as Record<
-					string,
-					unknown
-				>;
-			} catch {
-				// File not yet present — Phase 1 will create it
+			// ── KB-folder prompt (G3) ─────────────────────────────────────────
+			// Relocated from runPhase1 in run-phases.ts so the resolved kbFolder
+			// can be passed to runInitPipeline before any phase begins.
+			// Only shown on fresh init (startPhase <= 1) to avoid re-prompting on resume.
+			let kbFolder = "engineering";
+			if (startPhase <= 1 && !isNonInteractive()) {
+				const kbDescription =
+					`Forge will create a folder for architecture docs, sprints, bugs, and features.\n\n` +
+					`Use "engineering" as the folder name?  (Pick No only if your project already has an "engineering/" folder you don't want Forge to touch.)`;
+				const useDefault = await ctx.ui.confirm("Engineering folder name?", kbDescription);
+				if (!useDefault) {
+					const customName = await ctx.ui.input(
+						"Engineering folder name? Enter preferred folder name",
+						"e.g. ai-docs, .forge-kb, docs/ai",
+					);
+					if (customName && customName.trim()) {
+						kbFolder = customName.trim();
+					}
+				}
 			}
 
-			// ── Phases 1–3: linear phase calls ──────────────────────────────────
-			// Each phase is a standalone async function in forge-init/run-phases.ts.
-			// (FORGE-S26-T17: replaced descriptor-driven loop with explicit calls.)
-
-			// Phase 1 — Collect
+			// ── Marketplace advisory (pi-only) ────────────────────────────────
+			// Relocated from runPhase1 post-verify hooks; runs before pipeline starts
+			// so manage-config state is consistent regardless of phase 1 LLM outcome.
 			if (startPhase <= 1) {
-				const phase1Result = await runPhase1(
-					cwd,
-					bundleRoot,
-					toolsRoot,
-					configCache,
-					ctx,
-					sendToAgent,
-					() => ctx.waitForIdle(),
-					isNonInteractive,
+				ctx.ui.notify(
+					"〇 Marketplace skills auto-recommendation is Claude-Code-only. " +
+						"Pi users install extensions manually. Writing installedSkills: []",
+					"info",
 				);
-				if (phase1Result === "abort") return;
-
-				// Inter-phase gate: let user review before Phase 2
-				if (!isNonInteractive()) {
-					const proceed = await ctx.ui.confirm(
-						"Phase 1 complete — proceed?",
-						"Phase 1 deliverables verified. Continue to Phase 2: Discover (KB generation)?",
+				const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
+				if (fs.existsSync(manageConfigTool)) {
+					await runToolAdvisory(
+						manageConfigTool,
+						["set", "installedSkills", "[]"],
+						cwd,
+						ctx,
+						"manage-config installedSkills",
 					);
-					if (!proceed) {
-						ctx.ui.notify("〇 /forge:init paused after Phase 1. Re-run /forge:init to resume.", "info");
-						return;
-					}
-				}
-
-				// Refresh configCache after Phase 1 writes .forge/config.json
-				try {
-					configCache = JSON.parse(
-						fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
-					) as Record<string, unknown>;
-				} catch {
-					// Fall back to existing cache — all downstream reads have their own defaults
+					await runToolAdvisory(manageConfigTool, ["set", "mode", "full"], cwd, ctx, "manage-config mode");
 				}
 			}
 
-			// Phase 2 — Discover
-			if (startPhase <= 2) {
-				const phase2Result = await runPhase2(
-					cwd,
-					bundleRoot,
-					toolsRoot,
-					projectName,
-					configCache,
-					ctx,
-					sendToAgent,
-					() => ctx.waitForIdle(),
-					isNonInteractive,
+			// ── Pipeline: runInitPipeline ──────────────────────────────────────
+			// Single call replaces the inline Phase 1/2/3/4 blocks.
+			// Option-A contract: registerForgeInit owns the interactive prologue and
+			// epilogue; the pipeline owns all phase dispatch and checkpointing.
+			const pipelineReport = await runInitPipeline({
+				forgeRoot: bundleRoot,
+				kbFolder,
+				startPhase,
+				isoTimestamp: new Date().toISOString(),
+				ctx,
+				cwd,
+				bundleRoot,
+				toolsRoot,
+				projectName,
+				storeCli: path.join(toolsRoot, "store-cli.cjs"),
+				forgeToolDefs,
+				isPiRuntime,
+				getBundledToolsRoot,
+			});
+
+			if (!pipelineReport.ok) {
+				ctx.ui.notify(
+					`× /forge:init aborted: ${pipelineReport.failure ?? "pipeline failed"}`,
+					"error",
 				);
-				if (phase2Result === "abort") return;
-
-				// Inter-phase gate: let user review before Phase 3
-				if (!isNonInteractive()) {
-					const proceed = await ctx.ui.confirm(
-						"Phase 2 complete — proceed?",
-						"Phase 2 deliverables verified. Continue to Phase 3: Materialize (workflow generation)?",
-					);
-					if (!proceed) {
-						ctx.ui.notify("〇 /forge:init paused after Phase 2. Re-run /forge:init to resume.", "info");
-						return;
-					}
-				}
+				return;
 			}
 
-			// Phase 3 — Materialize
-			if (startPhase <= 3) {
-				const phase3Result = await runPhase3(cwd, bundleRoot, toolsRoot, ctx);
-				if (phase3Result === "abort") return;
-			}
-
-			// ── Phase 4 — Register (runPhase4) ────────────────────────────────
-			if (startPhase <= 4) {
-				const phase4Result = await runPhase4({
-					cwd,
-					bundleRoot,
-					toolsRoot,
-					projectName,
-					configCache,
-					ctx,
-					isPiRuntime,
-					getBundledToolsRoot,
-				});
-
-				if (phase4Result === "abort") {
-					return;
-				}
-
-				// phase4Result.kbPathFinal is used in the post-init report below
-				kbPathFinal = phase4Result.kbPathFinal;
+			if (pipelineReport.kbPathFinal) {
+				kbPathFinal = pipelineReport.kbPathFinal;
 			}
 
 			// ── Invalidate forge-config cache so same-session commands find the new project
 			clearForgeConfigCache();
+
+			// Re-read configCache from the now-written config.json for the report section.
+			let configCache: Record<string, unknown> = {};
+			try {
+				configCache = JSON.parse(
+					fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
+				) as Record<string, unknown>;
+			} catch {
+				// config.json may not exist if pipeline aborted early — fall back to {}
+			}
 
 			// ── Post-Phase-4: health check ────────────────────────────────────
 			ctx.ui.setStatus?.("forge:init", "Post-init: health check");
@@ -495,13 +468,12 @@ export function registerForgeInit(pi: ExtensionAPI): void {
 			}
 
 			// ── Report ────────────────────────────────────────────────────────
-			// FIX BUG-020: use configCache here (populated from config.json after Phase 1
-			// or from pre-existing config.json for resumed inits starting at Phase 2+).
-			// kbPathFinal is updated inside the Phase-4 block; for Phase-1-3 resumes
-			// configCache captures the correct value that Phase 4 would have stamped.
+			// FIX BUG-020: kbPathFinal is set from pipelineReport.kbPathFinal (Phase 4 result)
+			// or from configCache.paths.engineering as fallback for partial-phase resumes.
 			{
 				const p = configCache.paths as Record<string, unknown> | undefined;
-				if (p && typeof p.engineering === "string" && p.engineering) {
+				if (p && typeof p.engineering === "string" && p.engineering && kbPathFinal === "engineering") {
+					// Only override if still at default — pipelineReport.kbPathFinal takes priority.
 					kbPathFinal = p.engineering;
 				}
 			}

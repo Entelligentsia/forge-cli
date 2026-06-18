@@ -68,20 +68,23 @@ vi.mock("../../../src/extensions/forgecli/refresh-kb-links.js", () => ({
 	),
 }));
 
-// Mock run-phases so phase execution doesn't require bundled payload files.
-// (FORGE-S26-T17: replaced descriptor-driven loop with linear run-phases.ts)
-// Each mock simulates the real function's completion notify so bug-018 tests pass.
-// writeInitProgress side-effect is NOT simulated here — bug-021 is updated below
-// to reflect that writeInitProgress(cwd, N) is called inside runPhase{N}() not forge-init.ts.
+// Mock run-init-pipeline so phase execution doesn't require bundled payload files.
+// (FORGE-S33-T04: handler swap — forge-init.ts now calls runInitPipeline instead of
+// runPhase1/runPhase2/runPhase3 directly. The pipeline mock simulates the completion
+// notifies that the real pipeline would emit so bug-018 tests pass.)
+vi.mock("../../../src/extensions/forgecli/orchestrators/init/run-init-pipeline.js", () => ({
+	runInitPipeline: vi.fn(async (opts: { ctx: { ui: { notify: (m: string, l: string) => void } } }) => {
+		opts.ctx.ui.notify("〇 Phase 1 complete.", "info");
+		opts.ctx.ui.notify("〇 Phase 2 complete.", "info");
+		opts.ctx.ui.notify("〇 Phase 3 complete.", "info");
+		opts.ctx.ui.notify("〇 Phase 4 complete.", "info");
+		return { ok: true, lastPhase: 4, kbPathFinal: "engineering" };
+	}),
+}));
+
+// Also mock run-phases for runPhase3 (used by run-init-pipeline internals but
+// not called directly by forge-init.ts after T04 swap — kept for legacy imports).
 vi.mock("../../../src/extensions/forgecli/forge-init/run-phases.js", () => ({
-	runPhase1: vi.fn(async (_cwd: string, _br: string, _tr: string, _cc: unknown, ctx: { ui: { notify: (m: string, l: string) => void } }) => {
-		ctx.ui.notify("〇 Phase 1 complete.", "info");
-		return "ok";
-	}),
-	runPhase2: vi.fn(async (_cwd: string, _br: string, _tr: string, _pn: string, _cc: unknown, ctx: { ui: { notify: (m: string, l: string) => void } }) => {
-		ctx.ui.notify("〇 Phase 2 complete.", "info");
-		return "ok";
-	}),
 	runPhase3: vi.fn(async (_cwd: string, _br: string, _tr: string, ctx: { ui: { notify: (m: string, l: string) => void } }) => {
 		ctx.ui.notify("〇 Phase 3 complete.", "info");
 		return "ok";
@@ -147,6 +150,7 @@ import {
 	readInitProgress,
 	writeInitProgress,
 } from "../../../src/extensions/forgecli/forge-init/init-progress.js";
+import { runInitPipeline } from "../../../src/extensions/forgecli/orchestrators/init/run-init-pipeline.js";
 
 const mockReadInitProgress = vi.mocked(readInitProgress);
 const mockDeleteInitProgress = vi.mocked(deleteInitProgress);
@@ -264,6 +268,8 @@ describe("registerForgeInit", () => {
 
 	// T09: --fast 3 → skip to Phase 3 (no flag ack, no pre-flight table)
 	it("T09: --fast 3 skips to phase 3", async () => {
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
+
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
 
@@ -275,12 +281,10 @@ describe("registerForgeInit", () => {
 
 		await def.handler("--fast 3", ctx);
 
-		// Phase 1 progress should NOT be written when starting at phase 3
-		// (startPhase = 3 so phase 1 block is skipped)
-		const phase1Calls = (mockWriteInitProgress as ReturnType<typeof vi.fn>).mock.calls.filter(
-			(c: unknown[]) => c[1] === 1,
+		// runInitPipeline should be called with startPhase: 3 (skipping phases 1 and 2)
+		expect(mockRunInitPipeline).toHaveBeenCalledWith(
+			expect.objectContaining({ startPhase: 3 }),
 		);
-		expect(phase1Calls.length).toBe(0);
 	});
 
 	// T10: --fast foo → invalid phase, falls through to pre-flight
@@ -661,12 +665,11 @@ describe("registerForgeInit", () => {
 	});
 
 	// BUG-021: build-overlay smoke exits cleanly on fresh init (task not found is expected)
-	// Note (FORGE-S26-T17): writeInitProgress(cwd, 3) is now called inside runPhase3() in
-	// run-phases.ts, not in forge-init.ts. Since runPhase3 is mocked here, we instead verify
-	// that Phase 3 ran without throwing (handler resolved) and runPhase3 mock was called.
+	// Note (FORGE-S33-T04): forge-init.ts now calls runInitPipeline which internally
+	// dispatches Phase 3. We verify that the pipeline completes without throwing
+	// and runInitPipeline was called (which internally runs Phase 3 via the pipeline FSM).
 	it("bug-021-smoke-seed: smoke gate advisory does not block Phase 3 completion", async () => {
-		const { runPhase3 } = await import("../../../src/extensions/forgecli/forge-init/run-phases.js");
-		const mockRunPhase3 = vi.mocked(runPhase3);
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
@@ -679,8 +682,8 @@ describe("registerForgeInit", () => {
 		// Should NOT throw even though INIT-SMOKE-TEST task is absent
 		await expect(def.handler("", ctx)).resolves.not.toThrow();
 
-		// Phase 3 ran (was called and returned "ok" — not blocked)
-		expect(mockRunPhase3).toHaveBeenCalled();
+		// Pipeline ran (was called and returned {ok: true} — not blocked)
+		expect(mockRunInitPipeline).toHaveBeenCalled();
 	});
 
 	// BUG-022: health gaps surfaced in Report; blocking exit only for critical ("error") gaps
@@ -743,12 +746,11 @@ describe("registerForgeInit", () => {
 	});
 
 	// BUG-023: KB folder prompt blocks until user answers (uses ctx.ui.confirm, not sendUserMessage)
-	// Note (FORGE-S26-T17): KB folder prompt behavior moved to runPhase1() in run-phases.ts.
-	// This test now validates the forge-init.ts orchestrator invokes runPhase1 which handles
-	// the KB folder confirm. The detailed G3 blocking contract is tested in run-phases.test.ts.
+	// Note (FORGE-S33-T04): KB folder prompt relocated from runPhase1 in run-phases.ts to
+	// forge-init.ts handler scope (so kbFolder can be passed to runInitPipeline). The prompt
+	// is now in the handler prologue; G3 blocking contract is in forge-init.ts itself.
 	it("bug-023-prompt-blocking: KB folder prompt uses ctx.ui.confirm, not fire-and-forget sendUserMessage", async () => {
-		const { runPhase1 } = await import("../../../src/extensions/forgecli/forge-init/run-phases.js");
-		const mockRunPhase1 = vi.mocked(runPhase1);
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
 
 		const pi = buildMockPi();
 		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
@@ -760,11 +762,110 @@ describe("registerForgeInit", () => {
 
 		await def.handler("", ctx);
 
-		// forge-init.ts delegates to runPhase1 which owns the KB folder confirm
-		expect(mockRunPhase1).toHaveBeenCalled();
-		// Phase 1 complete notify should appear (emitted by mock)
+		// forge-init.ts now owns the KB folder confirm in the handler prologue before pipeline
+		// The confirm labels include "Engineering folder name?" (G3 gate)
+		const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+		expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(true);
+		// Pipeline was called after the KB folder prompt resolved
+		expect(mockRunInitPipeline).toHaveBeenCalled();
+		// Phase 1 complete notify should appear (emitted by pipeline mock)
 		const notifyCalls = vi.mocked(ctx.ui.notify).mock.calls.map((c) => c[0] as string);
 		expect(notifyCalls.some((m) => m.includes("Phase 1 complete"))).toBe(true);
+	});
+
+	// ── FORGE-S33-T04: runInitPipeline call-site assertions ──────────────────
+
+	// Verify runInitPipeline is called with startPhase from --fast 3
+	it("S33-T04-startPhase: runInitPipeline receives startPhase from flag", async () => {
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
+		const ctx = buildMockCtx();
+
+		await def.handler("--fast 3", ctx);
+
+		expect(mockRunInitPipeline).toHaveBeenCalledWith(
+			expect.objectContaining({ startPhase: 3 }),
+		);
+	});
+
+	// Verify runInitPipeline receives the resolved kbFolder from KB-folder prompt
+	it("S33-T04-kbFolder: runInitPipeline receives resolved kbFolder from handler prompt", async () => {
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
+		// Pre-flight: proceed. KB folder: decline default, then input "my-kb"
+		const ctx = buildMockCtx({
+			ui: {
+				notify: vi.fn(),
+				confirm: vi.fn()
+					.mockResolvedValueOnce(true)   // Start /forge:init?
+					.mockResolvedValueOnce(false)  // Engineering folder name? → no (use custom)
+					.mockResolvedValue(true),
+				input: vi.fn(() => Promise.resolve("my-kb")),
+				setStatus: vi.fn(),
+			},
+		});
+
+		await def.handler("", ctx);
+
+		expect(mockRunInitPipeline).toHaveBeenCalledWith(
+			expect.objectContaining({ kbFolder: "my-kb" }),
+		);
+	});
+
+	// Verify handler error notification when runInitPipeline returns ok: false
+	it("S33-T04-failure: handler notifies error and returns early when pipeline fails", async () => {
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
+		mockRunInitPipeline.mockResolvedValueOnce({ ok: false, lastPhase: 1, failure: "phase 1 exploded" });
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0]);
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
+		const ctx = buildMockCtxProceed();
+
+		await def.handler("", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("phase 1 exploded"),
+			"error",
+		);
+		// Health check should NOT run after pipeline failure
+		const notifyCalls = vi.mocked(ctx.ui.notify).mock.calls.map((c) => c[0] as string);
+		expect(notifyCalls.some((m) => m.includes("forge:health"))).toBe(false);
+	});
+
+	// Verify forgeToolDefs is forwarded to runInitPipeline
+	it("S33-T04-forgeToolDefs: forgeToolDefs arg forwarded to runInitPipeline", async () => {
+		const mockRunInitPipeline = vi.mocked(runInitPipeline);
+		const fakeToolDefs = { forge_read_file: {}, forge_ask_user: {} } as unknown as Parameters<typeof registerForgeInit>[1];
+
+		const pi = buildMockPi();
+		registerForgeInit(pi as unknown as Parameters<typeof registerForgeInit>[0], fakeToolDefs);
+		const [, def] = pi.registerCommand.mock.calls[0] as [
+			string,
+			{ handler: (a: string, ctx: unknown) => Promise<void> },
+		];
+		const ctx = buildMockCtxProceed();
+
+		await def.handler("", ctx);
+
+		expect(mockRunInitPipeline).toHaveBeenCalledWith(
+			expect.objectContaining({ forgeToolDefs: fakeToolDefs }),
+		);
 	});
 });
 
@@ -954,14 +1055,10 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 	// ── G3: KB folder confirm + input ─────────────────────────────────────
 
 	describe("G3 — KB folder confirm", () => {
-		// Note (FORGE-S26-T17): G3 KB folder confirm is now handled inside runPhase1()
-		// in run-phases.ts. The forge-init.ts orchestrator delegates to runPhase1() which
-		// is mocked in these tests. Detailed G3 behavior is tested in run-phases.test.ts.
+		// Note (FORGE-S33-T04): G3 KB folder confirm is now in forge-init.ts handler scope
+		// (relocated from runPhase1 in run-phases.ts). The forge-init.ts handler shows the
+		// "Engineering folder name?" confirm directly before calling runInitPipeline.
 		it("(a) interactive-default: ctx.ui.confirm called for KB folder conflict check", async () => {
-			// With runPhase1 mocked, the KB folder confirm is not visible at the forge-init level.
-			// This test now verifies forge-init.ts passes the ctx to runPhase1 correctly.
-			const { runPhase1 } = await import("../../../src/extensions/forgecli/forge-init/run-phases.js");
-			const mockRunPhase1 = vi.mocked(runPhase1);
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			const { handler } = setupNonInteractiveInit();
 			const ctx = buildMockCtx({
@@ -973,12 +1070,9 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 				},
 			});
 			await handler("", ctx);
-			// forge-init.ts must pass the real ctx to runPhase1 (which owns the KB folder confirm)
-			expect(mockRunPhase1).toHaveBeenCalled();
-			// The ctx object passed to runPhase1 should be the same ctx
-			const ctxArg = mockRunPhase1.mock.calls[0]?.[4];
-			expect(ctxArg).toBeDefined();
-			expect(typeof ctxArg?.ui?.confirm).toBe("function");
+			// forge-init.ts now shows the KB folder confirm in the handler prologue
+			const confirmLabels = vi.mocked(ctx.ui.confirm).mock.calls.map((c) => c[0] as string);
+			expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(true);
 		});
 
 		it("(b) FORGE_NON_INTERACTIVE=1: ctx.ui.confirm NOT called for KB folder gate", async () => {
@@ -1015,21 +1109,35 @@ describe("non-interactive mode (FORGE-S18-T01)", () => {
 			expect(confirmLabels.some((l) => l.includes("Engineering folder name?"))).toBe(false);
 		});
 
-		// Note (FORGE-S26-T17): G3-custom-folder behavior (ctx.ui.input for KB folder name)
-		// has moved to runPhase1() in run-phases.ts. Tested in run-phases.test.ts.
-		// This test now verifies forge-init.ts passes a non-interactive flag to runPhase1.
-		it("G3-custom-folder: ctx.ui.input called when user declines default, manage-config set for custom name", async () => {
-			const { runPhase1 } = await import("../../../src/extensions/forgecli/forge-init/run-phases.js");
-			const mockRunPhase1 = vi.mocked(runPhase1);
+		// Note (FORGE-S33-T04): G3-custom-folder behavior (ctx.ui.input for KB folder name)
+		// is now in forge-init.ts handler scope. When the user declines the default, ctx.ui.input
+		// is called directly in the handler and the result is passed as kbFolder to runInitPipeline.
+		it("G3-custom-folder: ctx.ui.input called when user declines default, kbFolder passed to pipeline", async () => {
+			const mockRunInitPipeline = vi.mocked(runInitPipeline);
 			mockReadInitProgress.mockReturnValue({ kind: "none" });
 			mockFs.existsSync.mockImplementation(() => true);
 			const { handler } = setupNonInteractiveInit();
-			const ctx = buildMockCtxProceed();
+			// Pre-flight confirm: proceed (true). KB folder confirm: decline (false → use custom).
+			// Input: return "ai-docs" as custom name.
+			const ctx = buildMockCtx({
+				ui: {
+					notify: vi.fn(),
+					confirm: vi.fn()
+						.mockResolvedValueOnce(true)   // pre-flight confirm (Start /forge:init?)
+						.mockResolvedValueOnce(false)  // KB folder confirm (use default? → No)
+						.mockResolvedValue(true),       // any subsequent confirms
+					input: vi.fn(() => Promise.resolve("ai-docs")),
+					setStatus: vi.fn(),
+				},
+			});
 			await handler("", ctx);
-			// forge-init.ts must pass isNonInteractive() callback to runPhase1
-			expect(mockRunPhase1).toHaveBeenCalled();
-			const isNonInteractiveArg = mockRunPhase1.mock.calls[0]?.[7];
-			expect(typeof isNonInteractiveArg).toBe("function");
+			// ctx.ui.input must have been called for the custom KB folder name
+			const inputCalls = vi.mocked(ctx.ui.input).mock.calls.map((c) => c[0] as string);
+			expect(inputCalls.some((t) => t.includes("Engineering folder name?"))).toBe(true);
+			// runInitPipeline must receive kbFolder: "ai-docs"
+			expect(mockRunInitPipeline).toHaveBeenCalledWith(
+				expect.objectContaining({ kbFolder: "ai-docs" }),
+			);
 		});
 
 		it("G3-use-default: ctx.ui.input NOT called when user accepts the default", async () => {

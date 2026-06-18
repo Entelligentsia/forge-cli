@@ -51,6 +51,8 @@ export interface InitReport {
 	pendingActions?: string[];
 	/** Failure reason when ok=false. */
 	failure?: string;
+	/** Final KB folder path (from Phase 4 or configCache). Used by handler for the post-init report. */
+	kbPathFinal?: string;
 }
 
 // ── TypeBox schemas (ported verbatim from wfl-init.js) ───────────────────────

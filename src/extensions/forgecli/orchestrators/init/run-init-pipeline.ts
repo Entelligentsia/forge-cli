@@ -259,6 +259,8 @@ async function runInitPipelineInner(
 
 	// Resolve kbFolder from opts or configCache (default: "engineering").
 	const kbFolder = opts.kbFolder ?? "engineering";
+	// kbPathFinal is resolved by Phase 4 or from configCache after Phase 1.
+	let kbPathFinal: string | undefined;
 
 	// Build initial configCache from .forge/config.json (fallback: {}).
 	let configCache: Record<string, unknown> = {};
@@ -382,6 +384,8 @@ async function runInitPipelineInner(
 					});
 					return makeFailResult({ ok: false, lastPhase: phaseNum, failure });
 				}
+				// Capture kbPathFinal from Phase 4 result for InitReport.
+				kbPathFinal = phase4Result.kbPathFinal;
 				// Phase 4 internally calls deleteInitProgress — no checkpoint write needed.
 			}
 		} else {
@@ -518,11 +522,20 @@ async function runInitPipelineInner(
 		? (configCache.installedSkills as string[])
 		: undefined;
 
+	// If Phase 4 didn't run (resume at Phase 1–3), derive kbPathFinal from configCache.
+	if (!kbPathFinal) {
+		const p = configCache.paths as Record<string, unknown> | undefined;
+		if (p && typeof p.engineering === "string" && p.engineering) {
+			kbPathFinal = p.engineering;
+		}
+	}
+
 	const report: InitReport = {
 		ok: true,
 		lastPhase,
 		stack,
 		skillMatches,
+		kbPathFinal,
 	};
 
 	return {
