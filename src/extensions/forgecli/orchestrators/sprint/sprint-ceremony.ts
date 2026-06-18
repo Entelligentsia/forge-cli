@@ -9,6 +9,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { loadLayeredConfig } from "../../config/config-layer.js";
 import { lookupPersonaModel } from "../../config/model-resolver.js";
+import { AskBroker } from "../../ask-broker.js";
 import { loadForgePersona, runForgeSubagent } from "../../forge-subagent.js";
 import { type ForgeToolDefs, getSubagentTools } from "../../forge-tools.js";
 import { getOrchestratorTree } from "../../orchestrator-tree.js";
@@ -133,23 +134,29 @@ export async function dispatchSprintCeremony(params: {
 	const ceremonyModelLookup = lookupPersonaModel(personaName, "default", ceremonyModelConfig);
 
 	try {
-		const result = await runForgeSubagent({
-			persona,
-			task,
-			cwd,
-			exportTag: `${sprintId}__ceremony`,
-			tailLog: observer.state.tailLog,
-			forgeRoot,
-			streamFn: streamFnFactory?.({ kind: "ceremony", persona: personaName }),
-			// Sprint-scoped prompt-cache key — every subagent spawned across
-			// the sprint (ceremonies + per-task phases) shares this namespace
-			// so the system-prompt + persona prefix stays warm.
-			cacheSessionId: `forge:${sprintId}`,
-			onEvent: observer.onEvent,
-			requestedModel: ceremonyModelLookup.model,
-			modelRegistry: ctx.modelRegistry,
-			customTools: forgeToolDefs ? getSubagentTools(forgeToolDefs, persona.name) : undefined,
-		});
+		// Bind the orchestrator's TUI so a forge_ask_user call from the (headless)
+		// ceremony subagent is marshalled back here and rendered. Required:
+		// getSubagentTools injects forge_ask_user, so an unbound dispatch would make
+		// a subagent ask throw. Refcounted + serialised in AskBroker.
+		const result = await AskBroker.withUI(ctx.ui, () =>
+			runForgeSubagent({
+				persona,
+				task,
+				cwd,
+				exportTag: `${sprintId}__ceremony`,
+				tailLog: observer.state.tailLog,
+				forgeRoot,
+				streamFn: streamFnFactory?.({ kind: "ceremony", persona: personaName }),
+				// Sprint-scoped prompt-cache key — every subagent spawned across
+				// the sprint (ceremonies + per-task phases) shares this namespace
+				// so the system-prompt + persona prefix stays warm.
+				cacheSessionId: `forge:${sprintId}`,
+				onEvent: observer.onEvent,
+				requestedModel: ceremonyModelLookup.model,
+				modelRegistry: ctx.modelRegistry,
+				customTools: forgeToolDefs ? getSubagentTools(forgeToolDefs, persona.name) : undefined,
+			}),
+		);
 		model = result.model;
 		provider = result.provider;
 		if (result.exitCode !== 0) {

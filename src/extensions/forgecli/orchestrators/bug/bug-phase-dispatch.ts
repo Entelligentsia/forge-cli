@@ -16,6 +16,7 @@ import * as path from "node:path";
 
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
+import { AskBroker } from "../../ask-broker.js";
 import { CallerContextStore } from "../../audience-gate.js";
 import type { MergedConfig } from "../../config/config-layer.js";
 import { resolveModelForPhase } from "../../config/model-resolver.js";
@@ -266,26 +267,32 @@ export async function dispatchBugPhase(p: BugPhaseDispatchParams): Promise<BugPh
 		// for the bug pipeline; the audience-test wrap above is a
 		// short-lived test, not the canonical dispatch context.
 		result = await CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
-			runForgeSubagent({
-				persona,
-				task: bugBody,
-				cwd,
-				exportTag: `${bugId}__${phase.role}`,
-				tailLog: observer.state.tailLog,
-				// Sprint-scoped if the bug is attached to one, else bug-scoped.
-				// Keeps every phase of this bug-fix pipeline in a single cache
-				// namespace so the system-prompt + persona prefix stays warm
-				// across the ~10-minute phases.
-				cacheSessionId:
-					typeof bugRecordBefore?.sprintId === "string"
-						? `forge:${bugRecordBefore.sprintId}`
-						: `forge:bug:${bugId}`,
-				onEvent: onSubagentEvent,
-				requestedModel: modelResolution.model,
-				modelRegistry: ctx.modelRegistry,
-				signal: opts.signal,
-				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
-			}),
+			// Bind the orchestrator's TUI so a forge_ask_user call from the
+			// (headless) subagent is marshalled back here and rendered. Required:
+			// getSubagentTools injects forge_ask_user, so an unbound dispatch would
+			// make a subagent ask throw. Refcounted + serialised in AskBroker.
+			AskBroker.withUI(ctx.ui, () =>
+				runForgeSubagent({
+					persona,
+					task: bugBody,
+					cwd,
+					exportTag: `${bugId}__${phase.role}`,
+					tailLog: observer.state.tailLog,
+					// Sprint-scoped if the bug is attached to one, else bug-scoped.
+					// Keeps every phase of this bug-fix pipeline in a single cache
+					// namespace so the system-prompt + persona prefix stays warm
+					// across the ~10-minute phases.
+					cacheSessionId:
+						typeof bugRecordBefore?.sprintId === "string"
+							? `forge:${bugRecordBefore.sprintId}`
+							: `forge:bug:${bugId}`,
+					onEvent: onSubagentEvent,
+					requestedModel: modelResolution.model,
+					modelRegistry: ctx.modelRegistry,
+					signal: opts.signal,
+					customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
+				}),
+			),
 		);
 	} catch (err: unknown) {
 		const e = err as { message?: string };

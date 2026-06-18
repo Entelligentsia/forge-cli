@@ -15,6 +15,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
+import { AskBroker } from "../ask-broker.js";
+import { askUserToolDefinition } from "../ask-user-tool.js";
 import { type ForgePersona, getFinalOutput, loadForgePersona, runForgeSubagent } from "../forge-subagent.js";
 
 const STATUS_KEY = "test-orchestrate";
@@ -116,71 +118,80 @@ export function registerTestOrchestrate(pi: ExtensionAPI): void {
 			};
 
 			try {
-				const result = await runForgeSubagent({
-					persona: parsed.persona,
-					task: parsed.text,
-					cwd,
-					signal: ac.signal,
-					modelRegistry: ctx.modelRegistry,
-					onEvent: (event) => {
-						switch (event.type) {
-							case "agent_start":
-								push("◉ agent_start");
-								break;
-							case "message_start":
-								textBuffer = "";
-								push("▸ message_start");
-								break;
-							case "message_update": {
-								const ame = event.assistantMessageEvent;
-								if (ame?.type === "text_delta" && typeof ame.delta === "string") {
-									textBuffer += ame.delta;
-									refreshWidget();
-								} else if (ame?.type === "thinking_delta") {
-									push("💭 thinking…");
+				// Bind the orchestrator's TUI so a forge_ask_user call from inside the
+				// (headless) subagent is marshalled back here and rendered — the same
+				// broker path the real orchestrators use. Lets /test-orchestrate serve
+				// as the manual build-level probe for the ask-user broker.
+				const result = await AskBroker.withUI(ctx.ui, () =>
+					runForgeSubagent({
+						// Inject forge_ask_user so the subagent can reach the human via the
+						// broker (it is not inherited into createAgentSession subagents).
+						customTools: [askUserToolDefinition],
+						persona: parsed.persona,
+						task: parsed.text,
+						cwd,
+						signal: ac.signal,
+						modelRegistry: ctx.modelRegistry,
+						onEvent: (event) => {
+							switch (event.type) {
+								case "agent_start":
+									push("◉ agent_start");
+									break;
+								case "message_start":
+									textBuffer = "";
+									push("▸ message_start");
+									break;
+								case "message_update": {
+									const ame = event.assistantMessageEvent;
+									if (ame?.type === "text_delta" && typeof ame.delta === "string") {
+										textBuffer += ame.delta;
+										refreshWidget();
+									} else if (ame?.type === "thinking_delta") {
+										push("💭 thinking…");
+									}
+									break;
 								}
-								break;
+								case "tool_execution_start":
+									lastToolName = event.toolName;
+									push(`🔧 tool_call · ${lastToolName}`);
+									ctx.ui.setStatus?.(
+										STATUS_KEY,
+										`subagent: ${parsed.persona.name} · turn ${turn} · tool: ${lastToolName}`,
+									);
+									break;
+								case "tool_execution_update":
+									refreshWidget();
+									break;
+								case "tool_execution_end": {
+									const verdict = event.isError ? "✗" : "✓";
+									push(`${verdict} tool_end · ${lastToolName}`);
+									break;
+								}
+								case "message_end":
+									push("◼ message_end");
+									break;
+								case "turn_end": {
+									turn++;
+									const u = (
+										event.message as
+											| { usage?: { input?: number; output?: number; cost?: { total?: number } } }
+											| undefined
+									)?.usage;
+									const usageStr = u
+										? ` · ↑${u.input ?? 0} ↓${u.output ?? 0}` +
+											(u.cost?.total ? ` $${u.cost.total.toFixed(4)}` : "")
+										: "";
+									push(`── turn ${turn}${usageStr} ──`);
+									textBuffer = "";
+									break;
+								}
+								case "agent_end":
+									push("◉ agent_end");
+									break;
 							}
-							case "tool_execution_start":
-								lastToolName = event.toolName;
-								push(`🔧 tool_call · ${lastToolName}`);
-								ctx.ui.setStatus?.(
-									STATUS_KEY,
-									`subagent: ${parsed.persona.name} · turn ${turn} · tool: ${lastToolName}`,
-								);
-								break;
-							case "tool_execution_update":
-								refreshWidget();
-								break;
-							case "tool_execution_end": {
-								const verdict = event.isError ? "✗" : "✓";
-								push(`${verdict} tool_end · ${lastToolName}`);
-								break;
-							}
-							case "message_end":
-								push("◼ message_end");
-								break;
-							case "turn_end": {
-								turn++;
-								const u = (
-									event.message as
-										| { usage?: { input?: number; output?: number; cost?: { total?: number } } }
-										| undefined
-								)?.usage;
-								const usageStr = u
-									? ` · ↑${u.input ?? 0} ↓${u.output ?? 0}` +
-										(u.cost?.total ? ` $${u.cost.total.toFixed(4)}` : "")
-									: "";
-								push(`── turn ${turn}${usageStr} ──`);
-								textBuffer = "";
-								break;
-							}
-							case "agent_end":
-								push("◉ agent_end");
-								break;
-						}
-					},
-				});
+						},
+					}),
+				);
 
 				ctx.ui.setStatus?.(STATUS_KEY, undefined);
 				ctx.ui.setWidget?.(STATUS_KEY, undefined);

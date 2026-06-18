@@ -29,6 +29,8 @@
 
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AskBroker } from "../../../src/extensions/forgecli/ask-broker.js";
+import type { AskUI } from "../../../src/extensions/forgecli/ask-user-render.js";
 import { registerAskUserTool } from "../../../src/extensions/forgecli/ask-user-tool.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -93,11 +95,14 @@ describe("registerAskUserTool", () => {
 		// Ensure env flags are clean before each test.
 		delete process.env.FORGE_YES;
 		delete process.env.FORGE_NON_INTERACTIVE;
+		// Ensure no broker binding leaks across cases (it routes the hasUI=false path).
+		AskBroker._resetForTest();
 	});
 
 	afterEach(() => {
 		delete process.env.FORGE_YES;
 		delete process.env.FORGE_NON_INTERACTIVE;
+		AskBroker._resetForTest();
 	});
 
 	// ── Test 1: mount ─────────────────────────────────────────────────────────
@@ -257,6 +262,56 @@ describe("registerAskUserTool", () => {
 			expect(result.isError).toBeFalsy();
 			expect(result.content[0].text).toBe("Y");
 			expect(confirmFn).not.toHaveBeenCalled();
+		});
+	});
+
+	// ── Subagent path: ctx.hasUI=false BUT a broker is bound ──────────────────
+
+	describe("subagent path — ctx.hasUI=false with bound broker", () => {
+		beforeEach(() => {
+			registerAskUserTool(pi);
+		});
+
+		function makeOrchestratorUI(overrides?: Partial<AskUI>): AskUI {
+			return {
+				confirm: overrides?.confirm ?? vi.fn().mockResolvedValue(true),
+				select: overrides?.select ?? vi.fn().mockResolvedValue(undefined),
+				input: overrides?.input ?? vi.fn().mockResolvedValue(undefined),
+				notify: overrides?.notify ?? vi.fn(),
+			} as unknown as AskUI;
+		}
+
+		it("marshals the question to the bound orchestrator UI instead of defaulting (test 15)", async () => {
+			const orchConfirm = vi.fn().mockResolvedValue(true);
+			AskBroker.bind(makeOrchestratorUI({ confirm: orchConfirm }));
+
+			// Subagent context: its own ctx.ui must NOT be used.
+			const subagentConfirm = vi.fn();
+			const ctx = makeStubCtx({ hasUI: false, confirm: subagentConfirm });
+
+			const result = await callAskUser(tools, { question: "Proceed?", type: "confirm" }, ctx);
+
+			expect(result.isError).toBeFalsy();
+			expect(result.content[0].text).toBe("Y");
+			expect(orchConfirm).toHaveBeenCalledTimes(1); // routed to orchestrator UI
+			expect(subagentConfirm).not.toHaveBeenCalled(); // never the subagent no-op UI
+		});
+
+		it("surfaces orchestrator-side cancellation as isError (test 16)", async () => {
+			AskBroker.bind(makeOrchestratorUI({ confirm: vi.fn().mockResolvedValue(undefined) }));
+			const ctx = makeStubCtx({ hasUI: false });
+			const result = await callAskUser(tools, { question: "Proceed?", type: "confirm" }, ctx);
+			expect(result.isError).toBe(true);
+		});
+
+		it("FORGE_YES still wins over the broker (test 17)", async () => {
+			process.env.FORGE_YES = "1";
+			const orchConfirm = vi.fn();
+			AskBroker.bind(makeOrchestratorUI({ confirm: orchConfirm }));
+			const ctx = makeStubCtx({ hasUI: false });
+			const result = await callAskUser(tools, { question: "Proceed?", type: "confirm", default: "N" }, ctx);
+			expect(result.content[0].text).toBe("N");
+			expect(orchConfirm).not.toHaveBeenCalled();
 		});
 	});
 });

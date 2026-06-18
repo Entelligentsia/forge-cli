@@ -15,6 +15,7 @@ import * as path from "node:path";
 
 import type { ExtensionCommandContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { AskBroker } from "../../ask-broker.js";
 import { CallerContextStore } from "../../audience-gate.js";
 import type { PhaseRole } from "../../subagent/caller-context.js";
 import type { MergedConfig } from "../../config/config-layer.js";
@@ -269,26 +270,32 @@ export async function dispatchPhase(p: PhaseDispatchParams): Promise<PhaseDispat
 		// guard can verify tool calls from the subagent. Single setter
 		// of phase context for the task pipeline.
 		result = await CallerContextStore.asSubagent(phase.role as PhaseRole, () =>
-			runForgeSubagent({
-				persona,
-				task: taskBody,
-				cwd,
-				exportTag: `${taskId}__${phase.role}`,
-				tailLog: observer.state.tailLog,
-				cacheSessionId,
-				streamFn: opts.streamFnFactory?.({
-					kind: "task-phase",
-					persona: persona.name,
-					phase: phase.role,
-					taskId,
+			// Bind the orchestrator's live TUI so a forge_ask_user call from inside
+			// the (headless) subagent session is marshalled back to this UI and
+			// rendered for the human, instead of silently defaulting. Refcounted +
+			// serialised in AskBroker, so it is safe even under parallel dispatch.
+			AskBroker.withUI(ctx.ui, () =>
+				runForgeSubagent({
+					persona,
+					task: taskBody,
+					cwd,
+					exportTag: `${taskId}__${phase.role}`,
+					tailLog: observer.state.tailLog,
+					cacheSessionId,
+					streamFn: opts.streamFnFactory?.({
+						kind: "task-phase",
+						persona: persona.name,
+						phase: phase.role,
+						taskId,
+					}),
+					onEvent: wrappedOnEvent,
+					requestedModel: modelResolution.model,
+					modelRegistry: ctx.modelRegistry,
+					signal: opts.signal,
+					customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
+					extensionFactories: phaseExtensionFactories.length > 0 ? phaseExtensionFactories : undefined,
 				}),
-				onEvent: wrappedOnEvent,
-				requestedModel: modelResolution.model,
-				modelRegistry: ctx.modelRegistry,
-				signal: opts.signal,
-				customTools: opts.forgeToolDefs ? getSubagentTools(opts.forgeToolDefs, persona.name) : undefined,
-				extensionFactories: phaseExtensionFactories.length > 0 ? phaseExtensionFactories : undefined,
-			}),
+			),
 		);
 	} catch (err: unknown) {
 		const e = err as { message?: string };

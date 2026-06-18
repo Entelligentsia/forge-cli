@@ -19,10 +19,11 @@
 //
 // Iron Law 6 compliance: no shell-string interpolation. No subprocess spawning.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { getInputRouter } from "./tui/input-router.js";
+import { AskBroker } from "./ask-broker.js";
+import { renderAskPrompt } from "./ask-user-render.js";
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -109,95 +110,64 @@ function computeFallback(params: {
  *
  * @param pi  The pi ExtensionAPI instance.
  */
+export const askUserToolDefinition: ToolDefinition = {
+	name: "forge_ask_user",
+	label: "Forge Ask User",
+	description:
+		"forge:ask_user — Present an interactive prompt to the user and return their answer. " +
+		"Accepts three input types: 'confirm' (Y/N), 'choice' (select from a list), or 'text' " +
+		"(free-form single-line input). Blocks the model loop until the user responds. " +
+		"In non-interactive mode (FORGE_YES=1 or --non-interactive), returns the default immediately.",
+	promptSnippet:
+		"Use forge_ask_user when a Forge workflow needs synchronous user input — confirm (Y/N), choice from a list, or free-form text.",
+	parameters: AskUserParams,
+	async execute(
+		_toolCallId: string,
+		params: { type: "confirm" | "choice" | "text"; question: string; options?: string[]; default?: string },
+		signal: AbortSignal | undefined,
+		_onUpdate: unknown,
+		ctx: ExtensionContext,
+	) {
+		// Non-interactive bypass: env flag forces the default everywhere
+		// (CI, `forge --non-interactive`), even when a broker is bound.
+		if (isNonInteractive()) {
+			const fallback = computeFallback(params);
+			// Emit a one-line audit entry to stderr (not a file) so CI logs capture it.
+			process.stderr.write(
+				`[forge:ask_user] non-interactive fallback — type=${params.type} question="${params.question}" default="${fallback}"\n`,
+			);
+			return okResult(fallback);
+		}
+
+		// Path 1 — this session owns the TUI (orchestrator / interactive mode,
+		// ctx.hasUI === true): render directly on ctx.ui.
+		if (ctx.hasUI) {
+			const r = await renderAskPrompt(ctx.ui, params, signal);
+			return r.ok ? okResult(r.value) : errResult(r.message);
+		}
+
+		// Path 2 — subagent session (ctx.hasUI === false, ctx.ui is a no-op)
+		// running under an orchestrator that bound its UI via AskBroker.withUI:
+		// marshal the request to the orchestrator's real TUI and wait. Serialised
+		// against other in-flight asks so concurrent fan-out agents queue.
+		if (AskBroker.isBound()) {
+			const r = await AskBroker.ask(params, signal);
+			return r.ok ? okResult(r.value) : errResult(r.message);
+		}
+
+		// Path 3 — truly headless (RPC / print mode, no broker bound): there is
+		// no human to ask. Fall back to the default (preserves prior behaviour).
+		const fallback = computeFallback(params);
+		process.stderr.write(
+			`[forge:ask_user] headless fallback (no UI, no broker) — type=${params.type} question="${params.question}" default="${fallback}"\n`,
+		);
+		return okResult(fallback);
+	},
+};
+
+/**
+ * Register the forge_ask_user tool on the pi ExtensionAPI (host session).
+ */
 export function registerAskUserTool(pi: ExtensionAPI): void {
-	pi.registerTool({
-		name: "forge_ask_user",
-		label: "Forge Ask User",
-		description:
-			"forge:ask_user — Present an interactive prompt to the user and return their answer. " +
-			"Accepts three input types: 'confirm' (Y/N), 'choice' (select from a list), or 'text' " +
-			"(free-form single-line input). Blocks the model loop until the user responds. " +
-			"In non-interactive mode (FORGE_YES=1 or --non-interactive), returns the default immediately.",
-		promptSnippet:
-			"Use forge_ask_user when a Forge workflow needs synchronous user input — confirm (Y/N), choice from a list, or free-form text.",
-		parameters: AskUserParams,
-		async execute(
-			_toolCallId: string,
-			params: { type: "confirm" | "choice" | "text"; question: string; options?: string[]; default?: string },
-			signal: AbortSignal | undefined,
-			_onUpdate: unknown,
-			ctx: ExtensionContext,
-		) {
-			// Non-interactive bypass: applies when env flag is set OR when running
-			// headless (ctx.hasUI=false, e.g. RPC mode / print mode).
-			if (isNonInteractive() || !ctx.hasUI) {
-				const fallback = computeFallback(params);
-				// Emit a one-line audit entry to stderr (not a file) so CI logs capture it.
-				process.stderr.write(
-					`[forge:ask_user] non-interactive fallback — type=${params.type} question="${params.question}" default="${fallback}"\n`,
-				);
-				return okResult(fallback);
-			}
-
-			const opts = signal !== undefined ? { signal } : {};
-
-			// Render the question as the dialog TITLE for every type. pi's UI
-			// signatures (per `ExtensionUIContext`):
-			//   select(title, options, opts)    — title shown above options
-			//   confirm(title, message, opts)   — title + message body
-			//   input(title, placeholder, opts) — title + ghost placeholder
-			// Passing a constant tag ("forge:ask_user") as title hid the question
-			// for input (where it landed in the placeholder slot — ghost text that
-			// vanished on first keystroke) and for select (which has no question
-			// slot at all). Always use `params.question` as title; the source-tag
-			// notification is emitted separately so users see provenance without
-			// losing the question text.
-			ctx.ui.notify(`forge:ask_user — ${params.question}`, "info");
-
-			// Mark overlay active so the input router suppresses arrow-key
-			// listeners (thread-switcher's ←→ navigation, ↓ activator) while
-			// pi's built-in dialog owns keyboard focus. Matches the pattern in
-			// config-command.ts — see input-router.ts skipWhenOverlayActive.
-			const router = getInputRouter();
-			router.pushOverlay();
-			try {
-				if (params.type === "confirm") {
-					// ctx.ui.confirm returns true/false or undefined (cancel).
-					const answer = await ctx.ui.confirm(params.question, "", opts);
-					if (answer === undefined) {
-						return errResult(
-							`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`,
-						);
-					}
-					return okResult(answer ? "Y" : "N");
-				}
-
-				if (params.type === "choice") {
-					if (!params.options || params.options.length === 0) {
-						return errResult("forge:ask_user error — type 'choice' requires a non-empty 'options' array.");
-					}
-					// ctx.ui.select returns the selected string or undefined (cancel).
-					const answer = await ctx.ui.select(params.question, params.options, opts);
-					if (answer === undefined) {
-						return errResult(
-							`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`,
-						);
-					}
-					return okResult(answer);
-				}
-
-				// type === "text"
-				// ctx.ui.input returns the entered string or undefined (cancel/ESC).
-				// Pass `default` (if any) as the placeholder ghost text so the user
-				// sees a hint of the model's suggested answer.
-				const answer = await ctx.ui.input(params.question, params.default ?? "", opts);
-				if (answer === undefined) {
-					return errResult(`forge:ask_user cancelled — user dismissed the prompt. question: "${params.question}"`);
-				}
-				return okResult(answer);
-			} finally {
-				router.popOverlay();
-			}
-		},
-	});
+	pi.registerTool(askUserToolDefinition);
 }

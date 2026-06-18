@@ -18,6 +18,8 @@ import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+
+import { askUserToolDefinition } from "./ask-user-tool.js";
 import {
 	compressStoreQuery,
 	compressEntity,
@@ -98,7 +100,11 @@ export interface ForgeToolDefs {
  * never picked the wrong tool, and withholding tools forced bash workarounds.
  */
 export function getSubagentTools(defs: ForgeToolDefs, _personaName?: string): ToolDefinition[] {
-	return Object.values(defs);
+	// forge_ask_user is appended so a subagent can reach the human via the
+	// ask-broker (forge_ask_user is registered on the host session only; it is
+	// NOT inherited into createAgentSession subagents, so it must be injected as
+	// a customTool here for every orchestrator dispatch).
+	return [...Object.values(defs), askUserToolDefinition];
 }
 
 /**
@@ -493,7 +499,11 @@ function buildForgeValidateStore(toolDir: string, projectRoot: string): ToolDefi
 				// which must still be treated as hard failures.
 				if (typeof e.code === "number" && e.code === 1) {
 					const output = [e.stdout, e.stderr].filter(Boolean).join("\n");
-					const { text, stats } = compressWithTelemetry(output || "Validation errors found.", "validate", compressValidateStore);
+					const { text, stats } = compressWithTelemetry(
+						output || "Validation errors found.",
+						"validate",
+						compressValidateStore,
+					);
 					return okResult(text, stats);
 				}
 				// Real failure: ENOENT, timeout, SIGKILL, etc.
@@ -731,7 +741,8 @@ function buildForgePreflight(toolDir: string, projectRoot: string): ToolDefiniti
 			"Do NOT resolve $FORGE_ROOT manually — this tool handles it.",
 		parameters: Type.Object({
 			phase: Type.String({
-				description: "Phase name: plan, review-plan, implement, review-code, validate, approve, commit, writeback, triage.",
+				description:
+					"Phase name: plan, review-plan, implement, review-code, validate, approve, commit, writeback, triage.",
 			}),
 			task: Type.Optional(
 				Type.String({
