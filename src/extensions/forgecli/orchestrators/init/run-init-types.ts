@@ -30,6 +30,8 @@ export interface RunInitOptions {
 	isoTimestamp: string;
 	/** Raw CLI arguments string (passed through to subagents for context). */
 	rawArguments?: string;
+	/** Sprint ID for IL10 phase event emission (FORGE-S33-T03). Optional; emit skipped if absent. */
+	sprintId?: string;
 }
 
 /** Structured result returned by the /forge:init pipeline. */
