@@ -62,7 +62,6 @@ export async function runPhase3(
 
 	const buildInitContextTool = path.join(toolsRoot, "build-init-context.cjs");
 	const substituteTool = path.join(toolsRoot, "substitute-placeholders.cjs");
-	const buildOverlayTool = path.join(toolsRoot, "build-overlay.cjs");
 	const basePackDir = path.join(bundleRoot, ".base-pack");
 
 	// Resolve KB path from config (Phase 1 wrote it)
