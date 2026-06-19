@@ -1,11 +1,13 @@
-// mcp/server.ts — stdio MCP server core for Forge (FORGE-S34-T03).
+// mcp/server.ts — stdio MCP server core for Forge (FORGE-S34-T03, T04).
 //
-// Registers the 12 cjs-wrapper tools from TOOL_CONTRACTS and routes each
-// CallToolRequest to the corresponding handler in cjs-handlers.ts.
+// Registers all 14 forge_* tools from TOOL_CONTRACTS:
+//   12 cjs-wrapper tools from cjs-handlers.ts
+//   2 native tools: markdown (in-process remark AST) and ask_user (elicitation)
 //
 // ADR Decisions applied:
 //   Decision 3: MCP names drop the forge_ prefix (collate, store, commit, …)
 //   Decision 4: serverInstructions describe the Forge tool surface
+//   Decision 5: forge_ask_user uses server.elicitInput() (form mode)
 //   Decision 6: projectRoot resolved from CLAUDE_PROJECT_DIR with cwd fallback
 //
 // This module exports createForgeServer() for unit-test injection so the test
@@ -20,6 +22,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { TOOL_CONTRACTS } from "../tool-contracts.js";
 import { CJS_HANDLERS, type McpToolResult } from "./cjs-handlers.js";
+import { createMarkdownHandler } from "./markdown-handler.js";
+import { createAskUserHandler } from "./ask-user-handler.js";
 import { resolveProjectRoot } from "./project-root.js";
 import { resolveForgeToolDir } from "./tool-dir.js";
 
@@ -40,12 +44,22 @@ export const CJS_TOOL_NAMES: string[] = [
 	"banner",
 ];
 
+// ── NATIVE_TOOL_NAMES — the 2 native (in-process) tool mcpNames
+// Exported for parity tests.
+export const NATIVE_TOOL_NAMES: string[] = ["markdown", "ask_user"];
+
 // ── Server instructions (ADR Decision 4) ──────────────────────────────────────
 
 const SERVER_INSTRUCTIONS = `
 Forge MCP Server — Forge engineering workflow tools for Claude Code projects.
 
-Available tools (12 cjs-wrapper tools):
+Available tools (14 total):
+
+Native tools (in-process, no subprocess):
+- markdown — structural access to a Markdown file via remark/mdast AST (outline/section/tables/frontmatter/ast)
+- ask_user — present an interactive prompt to the user (confirm/choice/text); uses MCP elicitation form mode with non-interactive fallback
+
+CJS-wrapper tools (12, invoke .forge/tools/*.cjs via node subprocess):
 - store / store_query / store_describe / store_template — Forge JSON store CRUD, search, schema, templates
 - validate_store — store integrity check (exit-1 is informational, not an error)
 - config — read/write .forge/config.json
@@ -56,7 +70,7 @@ Available tools (12 cjs-wrapper tools):
 - artifact — read/write/list phase artifacts (PLAN.md, PROGRESS.md, *-SUMMARY.json)
 - banner — display decorative phase banners
 
-All tools invoke vendored .forge/tools/*.cjs via node subprocess (no shell interpolation).
+CJS tools invoke vendored .forge/tools/*.cjs via node subprocess (no shell interpolation).
 `.trim();
 
 // ── createForgeServer — testable factory ──────────────────────────────────────
@@ -83,12 +97,16 @@ export function createForgeServer(
 		},
 	);
 
-	// Filter to the 12 cjs-wrapper contracts
-	const cjsContracts = TOOL_CONTRACTS.filter((c) => CJS_TOOL_NAMES.includes(c.mcpName));
+	// All 14 contracts from SSOT (TOOL_CONTRACTS)
+	const allContracts = TOOL_CONTRACTS;
+
+	// Native handlers (in-process, no subprocess)
+	const markdownHandler = createMarkdownHandler(projectRoot);
+	const askUserHandler = createAskUserHandler(server);
 
 	function listTools() {
 		return {
-			tools: cjsContracts.map((c) => ({
+			tools: allContracts.map((c) => ({
 				name: c.mcpName,
 				description: c.description,
 				inputSchema: c.inputSchema,
@@ -97,6 +115,15 @@ export function createForgeServer(
 	}
 
 	async function callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+		// Native tool dispatch (in-process)
+		if (name === "markdown") {
+			return markdownHandler(args);
+		}
+		if (name === "ask_user") {
+			return askUserHandler(args);
+		}
+
+		// CJS-wrapper tool dispatch
 		const handler = CJS_HANDLERS[name];
 		if (!handler) {
 			return {

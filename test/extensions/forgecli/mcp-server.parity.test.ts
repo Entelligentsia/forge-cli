@@ -141,12 +141,19 @@ describe("tool registration parity", () => {
 // ── ListTools ─────────────────────────────────────────────────────────────────
 
 describe("ListTools handler", () => {
-	it("returns exactly 12 tools matching CJS_TOOL_NAMES", async () => {
+	it("returns all 14 tools (12 cjs-wrapper + 2 native added by T04)", async () => {
 		const { listTools } = createForgeServer(FAKE_PROJECT_ROOT, FAKE_TOOL_DIR);
 		const result = listTools();
-		expect(result.tools).toHaveLength(12);
-		const names = result.tools.map((t: { name: string }) => t.name).sort();
-		expect(names).toEqual(CJS_WRAPPER_MCPNAMES.sort());
+		// T04 adds markdown and ask_user — total is now 14
+		expect(result.tools).toHaveLength(14);
+		const names = result.tools.map((t: { name: string }) => t.name);
+		// All 12 CJS_TOOL_NAMES must be present
+		for (const name of CJS_WRAPPER_MCPNAMES) {
+			expect(names).toContain(name);
+		}
+		// Native tools (T04) also present
+		expect(names).toContain("markdown");
+		expect(names).toContain("ask_user");
 	});
 
 	it("each listed tool has name, description, inputSchema", async () => {

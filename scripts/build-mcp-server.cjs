@@ -3,9 +3,8 @@
  * FORGE-S34-T03.
  *
  * Produces dist/mcp/server.cjs — a self-contained node-only bundle with the
- * MCP SDK bundled in. Node built-ins remain external (always available via
- * Node.js). The 12 cjs-wrapper tools are pure subprocess dispatchers so no
- * remark/unified is needed in this bundle (deferred to T04 for forge_markdown).
+ * MCP SDK and remark/unified/js-yaml bundled in. Node built-ins remain external
+ * (always available via Node.js). remark is bundled for forge_markdown (T04).
  *
  * Usage: node scripts/build-mcp-server.cjs
  * Or via npm: npm run build:mcp
@@ -59,8 +58,9 @@ build({
 	format: "cjs",
 	outfile: path.join(distDir, "server.cjs"),
 	external: NODE_BUILTINS,
-	// @modelcontextprotocol/sdk and tool-contracts.ts are bundled in.
-	// remark/unified are NOT bundled (forge_markdown is T04).
+	// @modelcontextprotocol/sdk, tool-contracts.ts, remark/unified/js-yaml are bundled in.
+	// remark-parse, remark-gfm, remark-frontmatter, mdast-util-to-string, js-yaml
+	// are intentionally bundled for forge_markdown native tool (T04).
 	minify: false,
 	sourcemap: false,
 	logLevel: "info",
