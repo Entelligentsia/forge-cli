@@ -19,6 +19,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { compressMarkdown, countTokens } from "@entelligentsia/forge-compress";
 import { runCjs as defaultRunCjs, type CompressionStats } from "./lib/run-cjs.js";
+import { extractMarkdownSection, listMarkdownHeadings, outlineMarkdown } from "./markdown-ast-tool.js";
 
 type RunCjsFn = (
 	toolPath: string,
@@ -100,14 +101,20 @@ export function buildForgeArtifact(
 			"for a task, bug, or sprint. Resolves paths automatically from entity ID — never " +
 			"construct artifact paths manually.\n\n" +
 			`Known artifacts: ${ARTIFACT_NAME_LIST}.\n\n` +
+			"Reading: a whole-file `read` returns a COMPRESSED, lossy map (may omit body lines) — cheap for a " +
+			"gist. For exact text, read by SECTION: command 'outline' returns the heading map, then 'read' with " +
+			"`section` set to a heading returns that section's EXACT, uncompressed source. Prefer outline→section " +
+			"over a whole `read` when you need precise or partial content (and to avoid re-reading the same artifact). " +
+			"(Section/outline apply to markdown artifacts only, not JSON *-summary.)\n\n" +
 			"JSON summary artifacts are validated on write (objective, key_changes, verdict, written_at required). " +
 			"Use 'list' to see which artifacts already exist for an entity.",
 		promptSnippet:
 			"Use forge_artifact to read/write phase outputs (PLAN.md, PROGRESS.md, *-SUMMARY.json). " +
-			"Never construct artifact paths manually — the tool resolves them from entity IDs.",
+			"For a long markdown artifact, command 'outline' maps its headings, then command 'read' with `section` " +
+			"pulls one section. Never construct artifact paths manually — the tool resolves them from entity IDs.",
 		parameters: Type.Object({
-			command: Type.Union([Type.Literal("read"), Type.Literal("write"), Type.Literal("list"), Type.Literal("exists"), Type.Literal("url"), Type.Literal("delete")], {
-				description: "read: fetch content. write: create/overwrite with validation. list: show existing artifacts. exists: true/false. url: backend URL (file:// for fs). delete: remove the artifact.",
+			command: Type.Union([Type.Literal("read"), Type.Literal("write"), Type.Literal("list"), Type.Literal("exists"), Type.Literal("url"), Type.Literal("delete"), Type.Literal("outline")], {
+				description: "read: fetch content — whole=compressed/lossy, or set `section` for exact text. outline: exact heading map of a markdown artifact. write: create/overwrite with validation. list: show existing artifacts. exists: true/false. url: backend URL (file:// for fs). delete: remove the artifact.",
 			}),
 			entity: Type.Union([Type.Literal("task"), Type.Literal("bug"), Type.Literal("sprint")], {
 				description: "Entity type.",
@@ -125,21 +132,41 @@ export function buildForgeArtifact(
 					description: "Content to write (required for write command).",
 				}),
 			),
+			section: Type.Optional(
+				Type.String({
+					description:
+						"Heading text of the section to read (read command, markdown artifacts only; case-insensitive). " +
+						"Returns just that section's source. Use command 'outline' first to discover headings.",
+				}),
+			),
 		}),
 		async execute(_toolCallId, _params, signal) {
 			const params = _params as {
-				command: "read" | "write" | "list" | "exists" | "url" | "delete";
+				command: "read" | "write" | "list" | "exists" | "url" | "delete" | "outline";
 				entity: "task" | "bug" | "sprint";
 				entityId: string;
 				artifact?: string;
 				content?: string;
+				section?: string;
 			};
+
+			// `outline` is a forge-cli-side view over the artifact's markdown content;
+			// the plugin tool only knows read/write/list/etc., so fetch via `read`.
+			const cjsCommand = params.command === "outline" ? "read" : params.command;
+			const isSummary = params.artifact ? params.artifact.endsWith("-summary") : false;
+
+			if ((params.command === "outline" || (params.command === "read" && params.section)) && isSummary) {
+				return errResult(
+					`${params.command === "outline" ? "outline" : "section read"} applies to markdown artifacts only, ` +
+						`not JSON summaries (${params.artifact}).`,
+				);
+			}
 
 			let tmpFile: string | null = null;
 			try {
-				const argv: string[] = [params.command, params.entity, params.entityId];
+				const argv: string[] = [cjsCommand, params.entity, params.entityId];
 
-				if (params.command !== "list") {
+				if (cjsCommand !== "list") {
 					if (!params.artifact) {
 						return errResult(`"artifact" is required for ${params.command}. Known: ${ARTIFACT_NAME_LIST}`);
 					}
@@ -167,6 +194,24 @@ export function buildForgeArtifact(
 					return errResult(stderr.trim());
 				}
 				const output = stdout.trim() || "OK";
+
+				// outline: return the heading map of the (markdown) artifact.
+				if (params.command === "outline") {
+					return okResult(outlineMarkdown(output, `${params.entityId}/${params.artifact}`));
+				}
+
+				// section read: return just the named section's exact source.
+				if (params.command === "read" && params.section) {
+					const section = extractMarkdownSection(output, params.section);
+					if (section === null) {
+						const headings = listMarkdownHeadings(output);
+						return errResult(
+							`section not found: "${params.section}". Available headings: ${headings.join(" | ") || "(none)"}`,
+						);
+					}
+					return okResult(section);
+				}
+
 				if (params.command === "read" && params.artifact && !params.artifact.endsWith("-summary")) {
 					const before = countTokens(output);
 					const compressed = compressMarkdown(output, { mode: "map" });

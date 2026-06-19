@@ -24,6 +24,7 @@ import { Type } from "typebox";
 
 import { AskBroker } from "./ask-broker.js";
 import { renderAskPrompt } from "./ask-user-render.js";
+import { FORGE_ASK_USER_DESCRIPTION } from "./tool-contracts.js";
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -113,11 +114,7 @@ function computeFallback(params: {
 export const askUserToolDefinition: ToolDefinition = {
 	name: "forge_ask_user",
 	label: "Forge Ask User",
-	description:
-		"forge:ask_user — Present an interactive prompt to the user and return their answer. " +
-		"Accepts three input types: 'confirm' (Y/N), 'choice' (select from a list), or 'text' " +
-		"(free-form single-line input). Blocks the model loop until the user responds. " +
-		"In non-interactive mode (FORGE_YES=1 or --non-interactive), returns the default immediately.",
+	description: FORGE_ASK_USER_DESCRIPTION,
 	promptSnippet:
 		"Use forge_ask_user when a Forge workflow needs synchronous user input — confirm (Y/N), choice from a list, or free-form text.",
 	parameters: AskUserParams,

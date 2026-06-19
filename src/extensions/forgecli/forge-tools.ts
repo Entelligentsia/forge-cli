@@ -21,6 +21,20 @@ import { Type } from "typebox";
 
 import { askUserToolDefinition } from "./ask-user-tool.js";
 import {
+	FORGE_COLLATE_DESCRIPTION,
+	FORGE_STORE_DESCRIPTION,
+	FORGE_COMMIT_DESCRIPTION,
+	FORGE_VALIDATE_STORE_DESCRIPTION,
+	FORGE_CONFIG_DESCRIPTION,
+	FORGE_STORE_DESCRIBE_DESCRIPTION,
+	FORGE_STORE_TEMPLATE_DESCRIPTION,
+	FORGE_STORE_QUERY_DESCRIPTION,
+	FORGE_VERIFY_APPLY_DESCRIPTION,
+	FORGE_PREFLIGHT_DESCRIPTION,
+	FORGE_BANNER_DESCRIPTION,
+	FORGE_MARKDOWN_DESCRIPTION,
+} from "./tool-contracts.js";
+import {
 	compressStoreQuery,
 	compressEntity,
 	compressEntityList,
@@ -28,6 +42,7 @@ import {
 	countTokens,
 } from "@entelligentsia/forge-compress";
 import { buildForgeArtifact } from "./forge-artifact-tool.js";
+import { buildForgeMarkdown } from "./markdown-ast-tool.js";
 import { runCjs, type CompressionStats } from "./lib/run-cjs.js";
 import {
 	assertBugStatusOwnership,
@@ -90,6 +105,7 @@ export interface ForgeToolDefs {
 	artifact: ToolDefinition;
 	preflight: ToolDefinition;
 	banner: ToolDefinition;
+	markdown: ToolDefinition;
 }
 
 /**
@@ -133,6 +149,10 @@ no agent loop. Prefer them over shelling out.
   If \`unchanged\` is non-empty, re-apply those edits.
 - Use \`forge_preflight\` for pre-flight gate checks — do NOT shell out to preflight-gate.cjs.
 - Use \`forge_banner\` for phase banners — do NOT shell out to banners.cjs.
+- Use \`forge_markdown\` to read Markdown STRUCTURE instead of whole files: \`operation:"outline"\`
+  maps a long KB doc / brief cheaply (then \`operation:"section"\` pulls one heading's text),
+  \`"tables"\`/\`"frontmatter"\` return structured data, \`"ast"\` a compact tree. Prefer it over
+  reading or regex-parsing flat markdown.
 - \`$FORGE_ROOT\` is already set in your environment. If you must use bash, reference
   \`$FORGE_ROOT\` directly — do NOT resolve it via \`node -e "console.log(require(...)...)"\`.
 - Never \`bash node "$FORGE_ROOT/tools/store-cli.cjs" ...\` — use the named MCP tool instead.
@@ -172,6 +192,7 @@ export function registerForgeTools(pi: ExtensionAPI, forgeRoot: string, projectR
 		artifact: buildForgeArtifact(projectRoot, engineeringPath, toolDir),
 		preflight: buildForgePreflight(toolDir, projectRoot),
 		banner: buildForgeBanner(toolDir, projectRoot),
+		markdown: buildForgeMarkdown(projectRoot),
 	};
 	for (const def of Object.values(defs)) {
 		pi.registerTool(def);
@@ -223,7 +244,7 @@ function buildForgeCollate(toolDir: string, projectRoot: string): ToolDefinition
 	return {
 		name: "forge_collate",
 		label: "Forge Collate",
-		description: "Regenerate Forge KB markdown documents from the JSON store. Wraps forge/tools/collate.cjs.",
+		description: FORGE_COLLATE_DESCRIPTION,
 		promptSnippet: "Use forge_collate to refresh the engineering knowledge base.",
 		parameters: Type.Object({
 			sprintId: Type.Optional(
@@ -267,17 +288,7 @@ function buildForgeCommit(toolDir: string, projectRoot: string): ToolDefinition 
 	return {
 		name: "forge_commit",
 		label: "Forge Commit",
-		description:
-			"Direct exec of forge/tools/commit-task.cjs — the deterministic commit choreography " +
-			"(forge-engineering#40). ONE call owns: preflight gate, status precondition " +
-			"(task 'approved' / bug 'in-progress'), staging-set derivation (record artifact dir + " +
-			"summaries.implementation.files_changed provenance + 'also' extras; gitignored paths " +
-			"warn-skipped), commit-boundary guard (aborts on a pre-staged index), git commit, and the " +
-			"terminal status transition (task→committed / bug→fixed).\n\n" +
-			"Success JSON: {ok:true, committed:true, sha, staged[]} — or the no-op success " +
-			"{ok:true, committed:false, reason:'nothing-to-commit'} when the staging set is already " +
-			"clean (e.g. the fix was at HEAD): the record is STILL sealed; do not improvise staging.\n\n" +
-			"Never run git add / git commit / git reset yourself in the commit phase.",
+		description: FORGE_COMMIT_DESCRIPTION,
 		promptSnippet:
 			"Commit phase: inspect once (git diff --stat), craft the message, then call forge_commit " +
 			"ONCE. Typed args — never pass the commit message through a bash string. " +
@@ -355,24 +366,7 @@ function buildForgeStore(toolDir: string, projectRoot: string): ToolDefinition {
 	return {
 		name: "forge_store",
 		label: "Forge Store",
-		description:
-			"Direct exec of forge/tools/store-cli.cjs. Deterministic CLI, no LLM, no agent loop. " +
-			"store-cli enforces schema validation, status transitions, and path-traversal guards.\n\n" +
-			"Canonical arg shapes (entity ∈ {sprint, task, bug, feature, event}):\n" +
-			"  write <entity> '<json>'                          — 2 args. ID lives inside json. Do NOT pass id as a separate arg.\n" +
-			"  read <entity> <id> [--json]                       — 2-3 args.\n" +
-			"  list <entity> [key=value ...]                     — variadic filters.\n" +
-			"  delete <entity> <id>                              — 2 args.\n" +
-			"  update-status <entity> <id> <field> <value> [--force]\n" +
-			"  emit <sprintId> '<json>' [--sidecar]              — 2-3 args. event json embeds eventId, taskId, sprintId.\n" +
-			"  validate <entity> '<json>'                        — schema check, no write.\n" +
-			"  set-summary <taskId> <phase> [<jsonFile>]         — phase ∈ {plan, review_plan, implementation, code_review, validation, triage, approve}. Omit jsonFile: sidecar auto-resolved from record.path.\n" +
-			"  set-bug-summary <bugId> <phase> [<jsonFile>]      — omit jsonFile: sidecar auto-resolved from record.path.\n" +
-			"  progress <sprintOrBugId> <agentName> <bannerKey> <status> [detail]\n" +
-			"  progress-clear <sprintOrBugId>\n" +
-			"  describe <entity>                                 — print JSON Schema.\n" +
-			"  template <entity>                                 — print canonical sample (call this BEFORE write to get the shape).\n\n" +
-			"Common mistake: 'write sprint <id> <json>' (3-arg) FAILS — id is parsed as JSON. Use 'write sprint <json>' (2-arg).",
+		description: FORGE_STORE_DESCRIPTION,
 		promptSnippet:
 			"Use forge_store for store CRUD. Direct cjs exec — no shell, no bash. " +
 			"Canonical write form is 2-positional: {command:'write', args:['<entity>','<json>']}. " +
@@ -451,10 +445,7 @@ function buildForgeValidateStore(toolDir: string, projectRoot: string): ToolDefi
 	return {
 		name: "forge_validate_store",
 		label: "Forge Validate Store",
-		description:
-			"Validate Forge store integrity — wraps forge/tools/validate-store.cjs. " +
-			"Exit code 1 means validation errors were found (returned as informational content, not isError). " +
-			"Only hard failures (ENOENT, timeout) return isError: true.",
+		description: FORGE_VALIDATE_STORE_DESCRIPTION,
 		promptSnippet: "Use forge_validate_store to check the Forge store for integrity issues.",
 		parameters: Type.Object({
 			fix: Type.Optional(
@@ -522,9 +513,7 @@ function buildForgeConfig(toolDir: string, projectRoot: string): ToolDefinition 
 	return {
 		name: "forge_config",
 		label: "Forge Config",
-		description:
-			"Read/write .forge/config.json — wraps forge/tools/manage-config.cjs. " +
-			"Supported subcommands: get, set, list-pipelines, pipeline, resolve-forge-root.",
+		description: FORGE_CONFIG_DESCRIPTION,
 		promptSnippet: "Use forge_config to read or update Forge project configuration.",
 		parameters: Type.Object({
 			subcommand: Type.Union(
@@ -569,9 +558,7 @@ function buildForgeStoreDescribe(toolDir: string, projectRoot: string): ToolDefi
 	return {
 		name: "forge_store_describe",
 		label: "Forge Store Describe",
-		description:
-			"Return the raw JSON Schema for a Forge store entity. Wraps `store-cli.cjs describe <entity>`. " +
-			"Call this BEFORE writing a record so you know the exact required fields, types, enums, and constraints.",
+		description: FORGE_STORE_DESCRIBE_DESCRIPTION,
 		promptSnippet:
 			"Use forge_store_describe to fetch the JSON Schema for sprint/task/bug/event/feature before constructing a record.",
 		parameters: Type.Object({
@@ -597,10 +584,7 @@ function buildForgeStoreTemplate(toolDir: string, projectRoot: string): ToolDefi
 	return {
 		name: "forge_store_template",
 		label: "Forge Store Template",
-		description:
-			"Return a canonical sample record for a Forge store entity, with all required fields populated " +
-			"with placeholder values that match the schema (enum first-value, ISO date-time, ID placeholders, etc.). " +
-			"Wraps `store-cli.cjs template <entity>`. Use this BEFORE writing a record to avoid validation failures.",
+		description: FORGE_STORE_TEMPLATE_DESCRIPTION,
 		promptSnippet:
 			"Use forge_store_template to get a canonical sample for sprint/task/bug/event/feature — copy the shape, replace placeholders.",
 		parameters: Type.Object({
@@ -626,12 +610,7 @@ function buildForgeStoreQuery(toolDir: string, projectRoot: string): ToolDefinit
 	return {
 		name: "forge_store_query",
 		label: "Forge Store Query",
-		description:
-			"Search / find / query the Forge store. Wraps `store-cli.cjs` query/nlp/schema dispatch (which delegates to store-query.cjs). " +
-			"Use `nlp` for natural-language intent (e.g. 'open bugs in S12', 'blocked tasks'); " +
-			"`query` with flag args for structured filters (--sprint, --task, --bug, --feature, --status, --keyword, " +
-			"--with-blockers, --with-blocked-tasks, --with-sprint, --with-feature, --no-excerpts, --list-sprints, --mode auto|strict|off); " +
-			"`schema` for the project schema and grammar reference (entity ID patterns, status enums, FKs, synonyms).",
+		description: FORGE_STORE_QUERY_DESCRIPTION,
 		promptSnippet:
 			'Use forge_store_query to search the store. nlp "<intent>" finds tasks/bugs/sprints/features by natural language; ' +
 			"schema returns entity/status/FK reference; query with flags for structured filters.",
@@ -691,13 +670,7 @@ function buildForgeVerifyApply(toolDir: string, projectRoot: string): ToolDefini
 	return {
 		name: "forge_verify_apply",
 		label: "Forge Verify Apply",
-		description:
-			"Verify file modifications actually landed on disk. Call AFTER applying enhancement edits, " +
-			"BEFORE invoking manage-versions add-snapshot. Detects hallucinated Edit-tool calls (e.g. when " +
-			"old_string didn't match exactly and the Edit silently no-op'd). Returns structured results: " +
-			"`modified` (verified — change is on disk), `unchanged` (agent claim was wrong — re-apply needed), " +
-			"`untracked` (no manifest entry — ambiguous, treat as potentially modified), `missing` (file gone). " +
-			"If `unchanged.length > 0`, RE-APPLY those edits via Edit/Write and call this tool again until empty.",
+		description: FORGE_VERIFY_APPLY_DESCRIPTION,
 		promptSnippet:
 			"After Phase 2 apply, call forge_verify_apply with the list of claimed file paths. " +
 			"If `unchanged` is non-empty, re-apply those edits before snapshot.",
@@ -733,9 +706,7 @@ function buildForgePreflight(toolDir: string, projectRoot: string): ToolDefiniti
 	return {
 		name: "forge_preflight",
 		label: "Forge Preflight Gate",
-		description:
-			"Run the pre-flight gate check for a phase. Wraps forge/tools/preflight-gate.cjs. " +
-			"Returns exit 0 if the phase is safe to proceed, exit 1 with a reason if blocked.",
+		description: FORGE_PREFLIGHT_DESCRIPTION,
 		promptSnippet:
 			"Use forge_preflight instead of shelling out to preflight-gate.cjs. " +
 			"Do NOT resolve $FORGE_ROOT manually — this tool handles it.",
@@ -790,9 +761,7 @@ function buildForgeBanner(toolDir: string, projectRoot: string): ToolDefinition 
 	return {
 		name: "forge_banner",
 		label: "Forge Banner",
-		description:
-			"Display a decorative phase banner. Wraps forge/tools/banners.cjs. " +
-			"Available banners: ember, tide, oracle, rift, bloom, north, lumen, forge, drift, void, entelligentsia.",
+		description: FORGE_BANNER_DESCRIPTION,
 		promptSnippet: "Use forge_banner instead of shelling out to banners.cjs.",
 		parameters: Type.Object({
 			name: Type.String({
