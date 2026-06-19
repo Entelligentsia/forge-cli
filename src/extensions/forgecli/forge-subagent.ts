@@ -210,7 +210,19 @@ export interface RunSubagentOptions {
  * is used as the system prompt.
  */
 export function loadForgePersona(name: string, cwd: string): ForgePersona {
-	const filePath = path.join(cwd, ".forge", "personas", `${name}.md`);
+	return loadForgePersonaFromDir(name, path.join(cwd, ".forge", "personas"));
+}
+
+/**
+ * Load a Forge persona from an explicit personas directory (`<dir>/<name>.md`).
+ *
+ * Same parsing contract as {@link loadForgePersona}, but the caller supplies the
+ * directory. Used by `/forge:init`, whose orchestration personas ship in the
+ * bundle's `.base-pack/personas/` and must load *before* Phase 3 materializes
+ * `.forge/personas/` (which may be absent entirely on a fresh or reset project).
+ */
+export function loadForgePersonaFromDir(name: string, personasDir: string): ForgePersona {
+	const filePath = path.join(personasDir, `${name}.md`);
 	const raw = fs.readFileSync(filePath, "utf-8");
 	const { frontmatter, body } = parseFrontmatter<Record<string, string>>(raw);
 

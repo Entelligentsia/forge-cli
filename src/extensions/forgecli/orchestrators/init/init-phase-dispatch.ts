@@ -20,7 +20,7 @@ import { AskBroker } from "../../ask-broker.js";
 import { CallerContextStore } from "../../audience-gate.js";
 import type { PhaseRole } from "../../subagent/caller-context.js";
 import type { MergedConfig } from "../../config/config-layer.js";
-import { loadForgePersona, runForgeSubagent, type SubagentResult } from "../../forge-subagent.js";
+import { loadForgePersonaFromDir, runForgeSubagent, type SubagentResult } from "../../forge-subagent.js";
 import { getSubagentTools } from "../../forge-tools.js";
 import { resolveModelForPhase } from "../../config/model-resolver.js";
 
@@ -136,9 +136,14 @@ async function dispatchSingleAgent(
 	personaNoun: string,
 	p: InitPhaseDispatchParams,
 ): Promise<SubagentResult> {
-	const { cwd, ctx, opts, modelRoutingConfig } = p;
+	const { cwd, ctx, opts, modelRoutingConfig, bundleRoot } = p;
 
-	const persona = loadForgePersona(personaNoun, cwd);
+	// Init's orchestration personas ship in the bundle's base-pack. `.forge/personas/`
+	// is not materialized until Phase 3 — and may be absent entirely on a fresh or
+	// reset project (FORGE-BUG: ENOENT on .forge/personas/engineer.md) — so init MUST
+	// load its dispatch persona from the bundle, never from cwd/.forge. This mirrors
+	// how init already reads its phase prompts from bundleRoot/init/phases/.
+	const persona = loadForgePersonaFromDir(personaNoun, path.join(bundleRoot, ".base-pack", "personas"));
 	const modelResolution = resolveInitModel(modelRole, personaNoun, modelRoutingConfig);
 	const modelLabel = modelResolution.model
 		? `${modelResolution.model.provider}:${modelResolution.model.model}`

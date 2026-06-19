@@ -105,13 +105,19 @@ beforeEach(() => {
 	tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgecli-init-dispatch-"));
 	proj = path.join(tmpRoot, "project");
 
-	// Create minimum project structure for loadForgePersona.
-	fs.mkdirSync(path.join(proj, ".forge", "personas"), { recursive: true });
+	// NOTE: intentionally do NOT create proj/.forge/personas. Real /forge:init runs
+	// Phase 1 dispatch *before* Phase 3 materializes .forge/, and on a fresh or reset
+	// project .forge/ does not exist at all. Init must load its dispatch persona from
+	// the bundle's .base-pack/personas/, never from cwd/.forge (FORGE-BUG: ENOENT on
+	// .forge/personas/engineer.md). The bundle persona is written below.
 	fs.mkdirSync(path.join(proj, ".forge", "cache"), { recursive: true });
 
-	// Write a minimal engineer persona file.
+	// Write a minimal engineer persona file into the BUNDLE base-pack — the only
+	// source init reads dispatch personas from.
+	const bundlePersonasDir = path.join(tmpRoot, "bundle", ".base-pack", "personas");
+	fs.mkdirSync(bundlePersonasDir, { recursive: true });
 	fs.writeFileSync(
-		path.join(proj, ".forge", "personas", "engineer.md"),
+		path.join(bundlePersonasDir, "engineer.md"),
 		[
 			"---",
 			"name: engineer",
@@ -220,6 +226,19 @@ describe("dispatchInitPhase — Phase 1 (collect)", () => {
 		const p = makeParams(0);
 		const outcome = await dispatchInitPhase(p);
 		expect(outcome.kind).toBe("ok");
+	});
+
+	it("Phase 1 loads its dispatch persona from the bundle, not cwd/.forge (regression: ENOENT on .forge/personas/engineer.md when .forge absent)", async () => {
+		mockSuccessfulSession(0);
+		// Hard-guarantee the project has NO .forge/personas — the fresh-init / deleted-.forge
+		// scenario. Before the fix, dispatch called loadForgePersona(cwd) and threw
+		// ENOENT here; now it reads from bundleRoot/.base-pack/personas/.
+		const p = makeParams(0);
+		expect(fs.existsSync(path.join(proj, ".forge", "personas"))).toBe(false);
+		const outcome = await dispatchInitPhase(p);
+		expect(outcome.kind).toBe("ok");
+		// 5 domains + 1 config-writer dispatched without any persona-read failure.
+		expect(vi.mocked(createAgentSession)).toHaveBeenCalledTimes(6);
 	});
 
 	it("Phase 1 dispatches 5 domain agents + 1 config-writer = 6 total createAgentSession calls", async () => {

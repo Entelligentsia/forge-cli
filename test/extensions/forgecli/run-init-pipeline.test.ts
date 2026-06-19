@@ -187,15 +187,19 @@ beforeEach(() => {
 	tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "forgecli-init-pipeline-"));
 	proj = path.join(tmpRoot, "project");
 
-	// Create minimum project structure.
-	fs.mkdirSync(path.join(proj, ".forge", "personas"), { recursive: true });
+	// Create minimum project structure. NOTE: no .forge/personas — init loads its
+	// dispatch persona from the bundle (Phase 1 runs before Phase 3 materializes
+	// .forge/personas, and .forge may be absent entirely on a fresh project).
 	fs.mkdirSync(path.join(proj, ".forge", "cache"), { recursive: true });
 	fs.mkdirSync(path.join(proj, ".forge", "store"), { recursive: true });
 	fs.mkdirSync(path.join(proj, ".forge", "workflows"), { recursive: true });
 
-	// Write a minimal engineer persona file.
+	// Write a minimal engineer persona file into the BUNDLE base-pack — the source
+	// init reads dispatch personas from.
+	const bundlePersonasDir = path.join(tmpRoot, "bundle", ".base-pack", "personas");
+	fs.mkdirSync(bundlePersonasDir, { recursive: true });
 	fs.writeFileSync(
-		path.join(proj, ".forge", "personas", "engineer.md"),
+		path.join(bundlePersonasDir, "engineer.md"),
 		[
 			"---",
 			"name: engineer",
