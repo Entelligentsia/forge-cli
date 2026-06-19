@@ -53,7 +53,8 @@
     "forgeRoot": "../forge/forge"
   },
   "scripts": {
-    "build": "node scripts/build-payload.cjs && tsc",
+    "build": "node scripts/build-payload.cjs && tsc && node scripts/build-mcp-server.cjs",
+    "build:mcp": "node scripts/build-mcp-server.cjs",
     "prepack": "node scripts/prepack-fix-bundled.cjs",
     "postpack": "node scripts/prepack-fix-bundled.cjs --restore",
     "build:tsc-only": "tsc",
@@ -83,6 +84,7 @@
     "@earendil-works/pi-coding-agent": "file:./vendor-pi/earendil-works-pi-coding-agent-0.79.3-forge.1.tgz",
     "@earendil-works/pi-tui": "file:./vendor-pi/earendil-works-pi-tui-0.79.3.tgz",
     "@entelligentsia/forge-compress": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "^8.20.0",
     "js-yaml": "^4.1.0",
     "lunr": "2.3.9",

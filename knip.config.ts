@@ -35,6 +35,10 @@ const config: KnipConfig = {
 		// lifecycle calls keys.ts and state/index.ts without static imports).
 		"src/extensions/forgecli/config-tui/keys.ts",
 		"src/extensions/forgecli/config-tui/state/index.ts",
+		// MCP server bundle entry point — consumed by esbuild (build-mcp-server.cjs),
+		// not via static TypeScript imports. index.ts is the bundle entrypoint;
+		// server.ts exports `main` which is the process entry, called only from index.ts.
+		"src/extensions/forgecli/mcp/index.ts",
 	],
 	project: [
 		"src/**/*.ts",
