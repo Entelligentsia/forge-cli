@@ -641,5 +641,34 @@ if (fs.existsSync(manifestSrc)) {
 	console.warn("build-payload: forge/forge/payload-manifest.json not found — bootstrap/uninstall cannot read the manifest");
 }
 
+// 2k: mcp/ — MCP server bundle + template (FORGE-S34-T05).
+// forge/forge/mcp/server.cjs: the self-contained node-only MCP stdio server.
+// Installed to .forge/mcp/server.cjs by bootstrap (T06).
+// forge/forge/init/mcp/.mcp.json: template consumed by the bootstrap .mcp.json writer.
+// bundleOnly in the manifest (no direct install; bootstrap merges it).
+const mcpEntry = payloadManifest.entries.find((e) => e.source === 'mcp/server.cjs');
+if (mcpEntry) {
+	const mcpSrc = path.join(forgeRoot, 'mcp', 'server.cjs');
+	const mcpDest = path.join(outDir, 'mcp', 'server.cjs');
+	if (fs.existsSync(mcpSrc)) {
+		copyFile(mcpSrc, mcpDest);
+		console.log('build-payload: mcp/server.cjs bundled');
+	} else {
+		console.warn('build-payload: forge/forge/mcp/server.cjs not found — skipping');
+	}
+}
+
+const mcpTemplateEntry = payloadManifest.entries.find((e) => e.source === 'init/mcp/.mcp.json');
+if (mcpTemplateEntry) {
+	const mcpTemplateSrc = path.join(forgeRoot, 'init', 'mcp', '.mcp.json');
+	const mcpTemplateDest = path.join(outDir, 'init', 'mcp', '.mcp.json');
+	if (fs.existsSync(mcpTemplateSrc)) {
+		copyFile(mcpTemplateSrc, mcpTemplateDest);
+		console.log('build-payload: init/mcp/.mcp.json template bundled');
+	} else {
+		console.warn('build-payload: forge/forge/init/mcp/.mcp.json not found — skipping');
+	}
+}
+
 console.log("build-payload: forge-payload written to", outDir);
 console.log("build-payload: expanded bundle layout complete");
