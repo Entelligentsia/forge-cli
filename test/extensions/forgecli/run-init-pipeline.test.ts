@@ -179,6 +179,7 @@ import {
 import { INIT_PHASES, INIT_SESSION_ID } from "../../../src/extensions/forgecli/orchestrators/init/init-phases.js";
 import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
 import { getOrchestratorTree } from "../../../src/extensions/forgecli/orchestrator-tree.js";
+import { runToolAdvisory } from "../../../src/extensions/forgecli/lib/exec-helpers.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,13 @@ beforeEach(() => {
 		"# Phase 2: Discover\nWrite KB docs.",
 		"utf8",
 	);
+
+	// Stub manage-config.cjs so the deterministic paths.engineering write
+	// (orchestrator-owned KB-folder decision) is exercised; runToolAdvisory is
+	// mocked, so the stub only needs to exist for the fs.existsSync guard.
+	const toolsDir = path.join(tmpRoot, "bundle", "tools");
+	fs.mkdirSync(toolsDir, { recursive: true });
+	fs.writeFileSync(path.join(toolsDir, "manage-config.cjs"), "// stub", "utf8");
 
 	// Stub config layer for preflight (layered-config.json not required by loadLayeredConfig).
 	// Reset all mocks.
@@ -361,6 +369,24 @@ describe("runInitPipeline — full 4-phase run", () => {
 		expect(vi.mocked(createAgentSession).mock.calls.length).toBeGreaterThanOrEqual(2);
 
 		expect(report.ok).toBe(true);
+	});
+});
+
+describe("runInitPipeline — deterministic KB-folder decision", () => {
+	it("orchestrator writes paths.engineering itself after Phase 1 (not an LLM-routed decision)", async () => {
+		mockSuccessfulAgentSession(0);
+
+		const opts = makeOpts({ startPhase: 1, kbFolder: "ai-docs" });
+		await runInitPipeline(opts);
+
+		// The orchestrator must set paths.engineering deterministically via
+		// manage-config — the LLM config-writer does not own this field.
+		const calls = vi.mocked(runToolAdvisory).mock.calls;
+		const setPathCall = calls.find(
+			(c) => Array.isArray(c[1]) && c[1][0] === "set" && c[1][1] === "paths.engineering",
+		);
+		expect(setPathCall).toBeDefined();
+		expect(setPathCall?.[1]).toEqual(["set", "paths.engineering", "ai-docs"]);
 	});
 });
 

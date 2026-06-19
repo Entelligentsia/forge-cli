@@ -417,8 +417,26 @@ async function runInitPipelineInner(
 			// outcome.kind === "ok" — LLM phase succeeded.
 			const result: SubagentResult = outcome.result;
 
-			// Phase 1 post-success: re-read configCache.
+			// Phase 1 post-success: deterministically own the KB-folder decision,
+			// then re-read configCache.
 			if (phase.name === "collect") {
+				// The KB folder is NOT an LLM-routed decision. forge-cli resolves
+				// kbFolder deterministically in the forge-init.ts handler prologue
+				// (user prompt or the "engineering" default). Enforce it onto
+				// paths.engineering here — after the config-writer agent ran — so
+				// the orchestrator-owned value is authoritative regardless of what
+				// the agent wrote. This is what lets the subagents skip the prompt
+				// entirely (they have no say in the outcome).
+				const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
+				if (fs.existsSync(manageConfigTool)) {
+					await runToolAdvisory(
+						manageConfigTool,
+						["set", "paths.engineering", kbFolder],
+						cwd,
+						ctx,
+						"manage-config paths.engineering",
+					);
+				}
 				try {
 					configCache = JSON.parse(
 						fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
