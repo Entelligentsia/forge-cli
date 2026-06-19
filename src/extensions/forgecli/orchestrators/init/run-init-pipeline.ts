@@ -31,6 +31,7 @@ import type { OrchestratorResult } from "../../lib/orchestrator-types.js";
 import {
 	buildProjectContext,
 	computeCalibrationBaseline,
+	deriveProjectPrefix,
 	validateProjectContext,
 	writeProjectContext,
 } from "../../forge-init/init-context.js";
@@ -435,6 +436,18 @@ async function runInitPipelineInner(
 						cwd,
 						ctx,
 						"manage-config paths.engineering",
+					);
+					// project.prefix is likewise deterministic — handler-resolved
+					// (deriveProjectPrefix + confirm/override), or derived here from
+					// projectName when a non-handler caller omitted it. The LLM
+					// config-writer never owns it.
+					const projectPrefix = opts.projectPrefix ?? deriveProjectPrefix(projectName);
+					await runToolAdvisory(
+						manageConfigTool,
+						["set", "project.prefix", projectPrefix],
+						cwd,
+						ctx,
+						"manage-config project.prefix",
 					);
 				}
 				try {

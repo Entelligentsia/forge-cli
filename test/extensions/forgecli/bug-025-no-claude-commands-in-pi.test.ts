@@ -54,6 +54,8 @@ vi.mock("../../../src/extensions/forgecli/forge-init/init-progress.js", () => ({
 
 vi.mock("../../../src/extensions/forgecli/forge-init/init-context.js", () => ({
 	discoverProjectName: vi.fn(() => "test-project"),
+	deriveProjectPrefix: vi.fn(() => "TEST"),
+	MAX_PROJECT_PREFIX_LEN: 6,
 	buildProjectContext: vi.fn(() => ({
 		project: { name: "test-project", prefix: "TP" },
 		knowledgeBase: { path: "engineering" },

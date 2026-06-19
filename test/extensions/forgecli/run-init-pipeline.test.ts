@@ -388,6 +388,36 @@ describe("runInitPipeline — deterministic KB-folder decision", () => {
 		expect(setPathCall).toBeDefined();
 		expect(setPathCall?.[1]).toEqual(["set", "paths.engineering", "ai-docs"]);
 	});
+
+	it("orchestrator writes project.prefix itself after Phase 1 (handler-resolved value wins)", async () => {
+		mockSuccessfulAgentSession(0);
+
+		const opts = makeOpts({ startPhase: 1, projectPrefix: "ACME" });
+		await runInitPipeline(opts);
+
+		const calls = vi.mocked(runToolAdvisory).mock.calls;
+		const setPrefixCall = calls.find(
+			(c) => Array.isArray(c[1]) && c[1][0] === "set" && c[1][1] === "project.prefix",
+		);
+		expect(setPrefixCall).toBeDefined();
+		expect(setPrefixCall?.[1]).toEqual(["set", "project.prefix", "ACME"]);
+	});
+
+	it("derives project.prefix from projectName when caller omits it (never LLM-routed)", async () => {
+		mockSuccessfulAgentSession(0);
+
+		// makeOpts sets projectName "test-project"; with no projectPrefix supplied
+		// the pipeline must derive deterministically → "TEST".
+		const opts = makeOpts({ startPhase: 1 });
+		delete (opts as { projectPrefix?: string }).projectPrefix;
+		await runInitPipeline(opts);
+
+		const calls = vi.mocked(runToolAdvisory).mock.calls;
+		const setPrefixCall = calls.find(
+			(c) => Array.isArray(c[1]) && c[1][0] === "set" && c[1][1] === "project.prefix",
+		);
+		expect(setPrefixCall?.[1]).toEqual(["set", "project.prefix", "TEST"]);
+	});
 });
 
 describe("runInitPipeline — orchestrator TUI wiring (chip strip + dashboard)", () => {

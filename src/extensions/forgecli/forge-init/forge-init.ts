@@ -73,7 +73,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { verifyPhase1, verifyPhase3 } from "./verifiers.js";
 import { runHealthCheck } from "../health-check.js";
 import { emitSyntheticEvent } from "../hook-dispatcher.js";
-import { discoverProjectName } from "./init-context.js";
+import { discoverProjectName, deriveProjectPrefix, MAX_PROJECT_PREFIX_LEN } from "./init-context.js";
 import { deleteInitProgress, readInitProgress } from "./init-progress.js";
 import { execFileAsync, runToolAdvisory } from "../lib/exec-helpers.js";
 import { clearForgeConfigCache } from "../lib/forge-config.js";
@@ -385,6 +385,31 @@ export function registerForgeInit(pi: ExtensionAPI, forgeToolDefs?: ForgeToolDef
 				}
 			}
 
+			// ── Project-prefix prompt (G4) ─────────────────────────────────────
+			// The prefix is stamped into every sprint/task/bug id, so it's a
+			// structural decision — derived deterministically from the project
+			// name, never invented by an LLM. Surface the derived default for
+			// confirm/override here (same interactive gate as kbFolder); the
+			// orchestrator writes the chosen value into project.prefix after
+			// Phase 1. Only on fresh init (startPhase <= 1).
+			let projectPrefix = deriveProjectPrefix(projectName);
+			if (startPhase <= 1 && !isNonInteractive()) {
+				const useDefault = await ctx.ui.confirm(
+					"Project prefix?",
+					`Forge stamps a short prefix into every sprint/task/bug id (e.g. ${projectPrefix}-S1-T1).\n\n` +
+						`Use "${projectPrefix}"?`,
+				);
+				if (!useDefault) {
+					const custom = await ctx.ui.input(
+						"Project prefix? Enter a short uppercase prefix",
+						projectPrefix,
+					);
+					if (custom && custom.trim()) {
+						projectPrefix = custom.trim().toUpperCase().slice(0, MAX_PROJECT_PREFIX_LEN);
+					}
+				}
+			}
+
 			// ── Marketplace advisory (pi-only) ────────────────────────────────
 			// Relocated from runPhase1 post-verify hooks; runs before pipeline starts
 			// so manage-config state is consistent regardless of phase 1 LLM outcome.
@@ -414,6 +439,7 @@ export function registerForgeInit(pi: ExtensionAPI, forgeToolDefs?: ForgeToolDef
 			const pipelineReport = await runInitPipeline({
 				forgeRoot: bundleRoot,
 				kbFolder,
+				projectPrefix,
 				startPhase,
 				isoTimestamp: new Date().toISOString(),
 				ctx,

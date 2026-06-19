@@ -36,6 +36,30 @@ export function discoverProjectName(cwd: string): string {
 	return path.basename(cwd);
 }
 
+/**
+ * Max length of an algorithmically derived project prefix. The prefix is stamped
+ * into every entity id (e.g. `FORGE-S33-T01`), so it stays short.
+ */
+export const MAX_PROJECT_PREFIX_LEN = 6;
+
+/**
+ * Derive a deterministic project prefix from the project name. The prefix is a
+ * structural decision, not an LLM-routed one: take the first alphanumeric token,
+ * uppercase it, and cap the length.
+ *
+ *   "forge-engineering" → "FORGE"   "my-cool-app" → "MY"   "myapp" → "MYAPP"
+ *
+ * Returns "PROJ" only as a last-resort fallback when the name yields nothing
+ * usable. The result is a *default*: the /forge:init handler surfaces it via the
+ * interactive confirm/override gate (parity with kbFolder), then the orchestrator
+ * writes the chosen value into `project.prefix` deterministically.
+ */
+export function deriveProjectPrefix(projectName: string, maxLen = MAX_PROJECT_PREFIX_LEN): string {
+	const firstToken = projectName.split(/[^A-Za-z0-9]+/).find((t) => t.length > 0) ?? "";
+	if (!firstToken) return "PROJ";
+	return firstToken.toUpperCase().slice(0, maxLen);
+}
+
 // ── ProjectContext types ───────────────────────────────────────────────────
 
 export interface ProjectContextProject {

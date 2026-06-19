@@ -22,6 +22,12 @@ export interface RunInitOptions {
 	forgeRoot: string;
 	/** KB folder name (default: "engineering"). */
 	kbFolder?: string;
+	/**
+	 * Project prefix stamped into entity ids (e.g. "FORGE"). Resolved
+	 * deterministically by the handler (deriveProjectPrefix + confirm/override).
+	 * When absent the pipeline derives it from projectName — never LLM-routed.
+	 */
+	projectPrefix?: string;
 	/** Phase to start from (1–4; default: 1). */
 	startPhase?: number;
 	/** Whether to create CLAUDE.md at the project root. */

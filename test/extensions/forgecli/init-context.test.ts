@@ -12,9 +12,38 @@ const mockFs = vi.mocked(fs);
 import {
 	buildProjectContext,
 	computeCalibrationBaseline,
+	deriveProjectPrefix,
 	discoverProjectName,
+	MAX_PROJECT_PREFIX_LEN,
 	validateProjectContext,
 } from "../../../src/extensions/forgecli/forge-init/init-context.js";
+
+describe("deriveProjectPrefix", () => {
+	it("takes the first hyphen-token, uppercased", () => {
+		expect(deriveProjectPrefix("forge-engineering")).toBe("FORGE");
+		expect(deriveProjectPrefix("my-cool-app")).toBe("MY");
+	});
+
+	it("uses a single-token name verbatim (uppercased, capped)", () => {
+		expect(deriveProjectPrefix("myapp")).toBe("MYAPP");
+	});
+
+	it("caps the length at MAX_PROJECT_PREFIX_LEN", () => {
+		const out = deriveProjectPrefix("supercalifragilistic");
+		expect(out.length).toBe(MAX_PROJECT_PREFIX_LEN);
+		expect(out).toBe("SUPERC");
+	});
+
+	it("honors an explicit maxLen", () => {
+		expect(deriveProjectPrefix("forge-engineering", 3)).toBe("FOR");
+	});
+
+	it("strips scope/punctuation and falls back to PROJ on empty input", () => {
+		expect(deriveProjectPrefix("@acme/widgets")).toBe("ACME");
+		expect(deriveProjectPrefix("")).toBe("PROJ");
+		expect(deriveProjectPrefix("---")).toBe("PROJ");
+	});
+});
 
 describe("discoverProjectName", () => {
 	beforeEach(() => {
