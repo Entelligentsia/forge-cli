@@ -290,10 +290,15 @@ export async function dispatchInitPhase(
 		}
 
 		// Domain discovery fan-out (5 sequential agents).
+		// kbFolder is passed so each agent honors the phase-1-collect.md
+		// "orchestrator already supplied kbFolder → skip this prompt" contract.
+		// The interactive KB-folder prompt is owned solely by the forge-init.ts
+		// handler prologue; without this param the subagents re-ask it (and that
+		// mid-fan-out ask cannot reliably surface as an actionable modal).
 		const { results: domainResults, failedItem: failedDomain } = await dispatchFanout(
 			DOMAINS,
 			(domain, base) =>
-				`${base}\n\n<!-- AGENT PARAMS -->\ndomain: ${domain}\nisoTimestamp: ${isoTimestamp}\n`,
+				`${base}\n\n<!-- AGENT PARAMS -->\ndomain: ${domain}\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`,
 			"plan" as PhaseRole,
 			"discovery",
 			(domain) => `discovery:${domain}`,
@@ -315,9 +320,10 @@ export async function dispatchInitPhase(
 			};
 		}
 
-		// Config-writer agent.
+		// Config-writer agent. kbFolder supplied so it writes paths.engineering
+		// from the orchestrator-resolved value and skips the interactive prompt.
 		const configPrompt =
-			`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: config-writer\nisoTimestamp: ${isoTimestamp}\n`;
+			`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: config-writer\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
 		let configResult = await dispatchSingleAgent(
 			"config-writer",
 			"plan" as PhaseRole,

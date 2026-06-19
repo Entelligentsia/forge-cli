@@ -250,6 +250,20 @@ describe("dispatchInitPhase — Phase 1 (collect)", () => {
 		expect(vi.mocked(createAgentSession)).toHaveBeenCalledTimes(6);
 	});
 
+	it("Phase 1 threads kbFolder into every subagent prompt so they skip the KB-folder ask (regression: handler owns the prompt, subagents must not re-ask)", async () => {
+		mockSuccessfulSession(0);
+		const p = makeParams(0); // kbFolder defaults to "engineering" in makeParams
+		await dispatchInitPhase(p);
+		// Every dispatched prompt (5 discovery + config-writer) must carry the
+		// orchestrator-resolved kbFolder so phase-1-collect.md's "skip this prompt
+		// when kbFolder supplied" contract is satisfied.
+		const prompts = mockSession.prompt.mock.calls.map((c) => String((c as unknown[])[0]));
+		expect(prompts.length).toBe(6);
+		for (const prompt of prompts) {
+			expect(prompt).toContain("kbFolder: engineering");
+		}
+	});
+
 	it("Phase 1: AskBroker.withUI called once per dispatched agent (6 calls)", async () => {
 		mockSuccessfulSession(0);
 		const withUISpy = vi.spyOn(AskBroker, "withUI");
