@@ -54,11 +54,13 @@ interface InitPipelineInternalResult extends OrchestratorResult {
 	initReport: InitReport;
 }
 
-import { INIT_PHASES } from "./init-phases.js";
+import { INIT_PHASES, INIT_SESSION_ID } from "./init-phases.js";
 import {
 	dispatchInitPhase,
 } from "./init-phase-dispatch.js";
 import type { RunInitOptions, InitReport } from "./run-init-types.js";
+import { getSessionRegistry } from "../../session-registry.js";
+import { getOrchestratorTree } from "../../orchestrator-tree.js";
 
 // ── Status / message keys ─────────────────────────────────────────────────────
 
@@ -227,12 +229,34 @@ export async function runInitPipeline(opts: RunInitPipelineOptions): Promise<Ini
 	const modelRoutingConfig = opts.modelRoutingConfig ?? pre.modelRoutingConfig;
 
 	// Use a synthetic entityId since /forge:init is not a store task.
-	const initEntityId = "forge-init";
+	const initEntityId = INIT_SESSION_ID;
 
-	const internal = await withOrchestratorTranscript(
-		{ cwd: opts.cwd, entityKind: "task", entityId: initEntityId, ctx: opts.ctx },
-		(session) => runInitPipelineInner(opts, modelRoutingConfig, session),
-	);
+	// Open the orchestrator session + root tree node so the always-mounted chip
+	// strip and /forge:dashboard render /forge:init's live progress exactly like
+	// run-task/run-sprint/fix-bug. Per-phase leaf nodes + telemetry are attached
+	// inside dispatchSingleAgent (init-phase-dispatch.ts). try/finally guarantees
+	// the session never leaks in a "running" state on a thrown failure path —
+	// otherwise the chip strip would show a stuck spinner forever.
+	const registry = getSessionRegistry();
+	const tree = getOrchestratorTree();
+	registry.startSession(initEntityId);
+	tree.startNode(initEntityId, { label: "forge:init", kind: "orchestrator" });
+
+	let internal: InitPipelineInternalResult;
+	try {
+		internal = await withOrchestratorTranscript(
+			{ cwd: opts.cwd, entityKind: "task", entityId: initEntityId, ctx: opts.ctx },
+			(session) => runInitPipelineInner(opts, modelRoutingConfig, session),
+		);
+	} catch (err) {
+		registry.completeSession(initEntityId, "failed");
+		tree.completeNode(initEntityId, "failed");
+		throw err;
+	}
+
+	const finalStatus = internal.initReport.ok ? "completed" : "failed";
+	registry.completeSession(initEntityId, finalStatus);
+	tree.completeNode(initEntityId, finalStatus);
 	return internal.initReport;
 }
 
@@ -316,6 +340,7 @@ async function runInitPipelineInner(
 			isoTimestamp: opts.isoTimestamp,
 			modelRoutingConfig,
 			forgeToolDefs: opts.forgeToolDefs,
+			dispatchCounts: {},
 		});
 
 		if (outcome.kind === "return") {

@@ -176,7 +176,9 @@ import {
 	runInitPipeline,
 	type RunInitPipelineOptions,
 } from "../../../src/extensions/forgecli/orchestrators/init/run-init-pipeline.js";
-import { INIT_PHASES } from "../../../src/extensions/forgecli/orchestrators/init/init-phases.js";
+import { INIT_PHASES, INIT_SESSION_ID } from "../../../src/extensions/forgecli/orchestrators/init/init-phases.js";
+import { getSessionRegistry } from "../../../src/extensions/forgecli/session-registry.js";
+import { getOrchestratorTree } from "../../../src/extensions/forgecli/orchestrator-tree.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -359,6 +361,44 @@ describe("runInitPipeline — full 4-phase run", () => {
 		expect(vi.mocked(createAgentSession).mock.calls.length).toBeGreaterThanOrEqual(2);
 
 		expect(report.ok).toBe(true);
+	});
+});
+
+describe("runInitPipeline — orchestrator TUI wiring (chip strip + dashboard)", () => {
+	it("opens a 'forge-init' orchestrator session + tree node and completes it on success", async () => {
+		mockSuccessfulAgentSession(0);
+
+		const opts = makeOpts({ startPhase: 1 });
+		await runInitPipeline(opts);
+
+		// Root orchestrator node exists and is completed (chip strip would have
+		// shown a live 'forge:init' session; the dashboard renders this tree).
+		const root = getOrchestratorTree().getNode(INIT_SESSION_ID);
+		expect(root).toBeDefined();
+		expect(root?.kind).toBe("orchestrator");
+		expect(root?.status).toBe("completed");
+		// Per-dispatch leaf nodes were attached under the root (one per subagent).
+		expect(root && root.children.length).toBeGreaterThan(0);
+
+		// SessionRegistry session is completed, not left 'running' (no stuck spinner).
+		const session = getSessionRegistry().listSessions().find((s) => s.taskId === INIT_SESSION_ID);
+		expect(session).toBeDefined();
+		expect(session?.status).toBe("completed");
+		expect(session && session.phases.length).toBeGreaterThan(0);
+	});
+
+	it("completes the session as 'failed' when a phase fails (no leaked running session)", async () => {
+		// First dispatched agent fails → Phase 1 returns failure.
+		mockSuccessfulAgentSession(1);
+
+		const opts = makeOpts({ startPhase: 1 });
+		const report = await runInitPipeline(opts);
+		expect(report.ok).toBe(false);
+
+		const root = getOrchestratorTree().getNode(INIT_SESSION_ID);
+		expect(root?.status).toBe("failed");
+		const session = getSessionRegistry().listSessions().find((s) => s.taskId === INIT_SESSION_ID);
+		expect(session?.status).toBe("failed");
 	});
 });
 

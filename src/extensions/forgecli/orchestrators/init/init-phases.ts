@@ -19,6 +19,14 @@ import {
 // everything they need without extra imports.
 export { DOMAINS, KB_DOC_IDS, ROLE_TIER };
 
+/**
+ * Synthetic session/orchestrator id for the /forge:init run. `/forge:init` is
+ * not a store entity, so it has no taskId/bugId — this stable id is the key in
+ * SessionRegistry + OrchestratorTree that the always-mounted chip strip and the
+ * /forge:dashboard overlay render from (parity with run-task using its taskId).
+ */
+export const INIT_SESSION_ID = "forge-init";
+
 // ── Phase kinds ──────────────────────────────────────────────────────────────
 
 /**

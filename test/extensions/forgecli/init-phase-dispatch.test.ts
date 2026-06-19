@@ -187,6 +187,7 @@ function makeParams(
 			_global: null,
 			_project: null,
 		},
+		dispatchCounts: {},
 	};
 }
 

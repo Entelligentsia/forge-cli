@@ -23,9 +23,12 @@ import type { MergedConfig } from "../../config/config-layer.js";
 import { loadForgePersonaFromDir, runForgeSubagent, type SubagentResult } from "../../forge-subagent.js";
 import { getSubagentTools } from "../../forge-tools.js";
 import { resolveModelForPhase } from "../../config/model-resolver.js";
+import { getSessionRegistry } from "../../session-registry.js";
+import { getOrchestratorTree } from "../../orchestrator-tree.js";
+import { attachViewportObserver } from "../../viewport/events.js";
 
 import type { InitPhaseDescriptor } from "./init-phases.js";
-import { DOMAINS, KB_DOC_IDS, ROLE_TIER } from "./init-phases.js";
+import { DOMAINS, INIT_SESSION_ID, KB_DOC_IDS, ROLE_TIER } from "./init-phases.js";
 import type { RunInitOptions } from "./run-init-types.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -57,6 +60,13 @@ export interface InitPhaseDispatchParams {
 	modelRoutingConfig: MergedConfig;
 	/** Raw forge tool definitions (optional — carries forge_ask_user). */
 	forgeToolDefs?: Parameters<typeof getSubagentTools>[0];
+	/**
+	 * Per-dispatch attempt counter keyed by sub-role label, for OrchestratorTree
+	 * node identity (`<INIT_SESSION_ID>:<role>:<attempt>`). Mutated by
+	 * dispatchSingleAgent. The orchestrator passes a fresh `{}` per phase; within
+	 * a phase it keeps re-dispatches (e.g. config-writer retry) on distinct nodes.
+	 */
+	dispatchCounts: Record<string, number>;
 }
 
 /**
@@ -154,22 +164,62 @@ async function dispatchSingleAgent(
 		"info",
 	);
 
-	return CallerContextStore.asSubagent(subRole, () =>
-		AskBroker.withUI(ctx.ui, () =>
-			runForgeSubagent({
-				persona,
-				task: prompt,
-				cwd,
-				exportTag: `forge-init__${subLabel}`,
-				requestedModel: modelResolution.model,
-				modelRegistry: ctx.modelRegistry,
-				signal: (opts as unknown as { signal?: AbortSignal }).signal,
-				customTools: p.forgeToolDefs
-					? getSubagentTools(p.forgeToolDefs, persona.name)
-					: undefined,
-			}),
-		),
-	);
+	// ── Live TUI wiring (parity with task-phase-dispatch.ts) ──────────────────
+	// Register this dispatch as a phase in SessionRegistry and a leaf node in
+	// OrchestratorTree, then attach a viewport observer so subagent turns/tools/
+	// tail stream into the always-mounted chip strip and the /forge:dashboard
+	// overlay — the same surfaces run-task/run-sprint/fix-bug light up. Without
+	// this, init subagents run headless (no orchestrator subagent TUI).
+	const registry = getSessionRegistry();
+	const tree = getOrchestratorTree();
+	const iteration = (p.dispatchCounts[subLabel] = (p.dispatchCounts[subLabel] ?? 0) + 1);
+	const nodeId = `${INIT_SESSION_ID}:${subLabel}:${iteration}`;
+	registry.startPhase(INIT_SESSION_ID, subLabel, p.phaseIndex);
+	tree.startNode(nodeId, {
+		parentId: INIT_SESSION_ID,
+		label: subLabel,
+		kind: "leaf",
+		promptPreview: prompt,
+	});
+	const observer = attachViewportObserver({
+		registry,
+		sessionId: INIT_SESSION_ID,
+		phaseRole: subLabel,
+		nodeId,
+		beginHeader: `─── init ${subLabel} begin · ${INIT_SESSION_ID} ───`,
+		notify: (msg, level) => ctx.ui.notify(msg, level),
+	});
+
+	let result: SubagentResult;
+	try {
+		result = await CallerContextStore.asSubagent(subRole, () =>
+			AskBroker.withUI(ctx.ui, () =>
+				runForgeSubagent({
+					persona,
+					task: prompt,
+					cwd,
+					exportTag: `forge-init__${subLabel}`,
+					tailLog: observer.state.tailLog,
+					onEvent: (event) => observer.onEvent(event),
+					requestedModel: modelResolution.model,
+					modelRegistry: ctx.modelRegistry,
+					signal: (opts as unknown as { signal?: AbortSignal }).signal,
+					customTools: p.forgeToolDefs
+						? getSubagentTools(p.forgeToolDefs, persona.name)
+						: undefined,
+				}),
+			),
+		);
+	} catch (err) {
+		registry.completePhase(INIT_SESSION_ID, subLabel, "failed");
+		tree.completeNode(nodeId, "failed");
+		throw err;
+	}
+
+	const nodeStatus = result.exitCode === 0 ? "completed" : "failed";
+	registry.completePhase(INIT_SESSION_ID, subLabel, nodeStatus);
+	tree.completeNode(nodeId, nodeStatus);
+	return result;
 }
 
 /**
