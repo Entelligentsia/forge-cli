@@ -199,6 +199,13 @@ async function dispatchSingleAgent(
 					task: prompt,
 					cwd,
 					exportTag: `forge-init__${subLabel}`,
+					// Shared, stable cache namespace for every init subagent (parity
+					// with the task pipeline's `forge:${sprintId}`). On cache-capable
+					// providers (Anthropic / OpenAI) this lets each agent's stable
+					// system+persona prefix be reused across its many turns instead of
+					// re-billed in full — the dominant cost in long discovery/KB-doc
+					// loops. No effect on providers without prompt caching (ollama-cloud).
+					cacheSessionId: `forge:${INIT_SESSION_ID}`,
 					tailLog: observer.state.tailLog,
 					onEvent: (event) => observer.onEvent(event),
 					requestedModel: modelResolution.model,

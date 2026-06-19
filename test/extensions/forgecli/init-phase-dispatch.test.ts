@@ -264,6 +264,15 @@ describe("dispatchInitPhase — Phase 1 (collect)", () => {
 		}
 	});
 
+	it("Phase 1 sets a stable cacheSessionId so each subagent's prefix can be cached across turns (cost regression)", async () => {
+		mockSuccessfulSession(0);
+		const p = makeParams(0);
+		await dispatchInitPhase(p);
+		// runForgeSubagent assigns cacheSessionId → session.agent.sessionId. All init
+		// subagents share the "forge:forge-init" namespace (parity with task pipeline).
+		expect(mockSession.agent.sessionId).toBe("forge:forge-init");
+	});
+
 	it("Phase 1: AskBroker.withUI called once per dispatched agent (6 calls)", async () => {
 		mockSuccessfulSession(0);
 		const withUISpy = vi.spyOn(AskBroker, "withUI");
