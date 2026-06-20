@@ -1,8 +1,9 @@
 {
   "_doc": "Frozen baseline install set for FORGE-S32-T03 AC4 byte-parity. The sorted relative-path list of files a clean `4ge init claude .` vendors into a fresh project. The manifest-driven bootstrap (bootstrap.ts) must reproduce this set exactly; any drift (a manifest edit in T05/T06, or an over-broad install regression like FORGE-BUG-044/045) fails the frozen-install-set parity test in bootstrap.test.ts.",
   "_provenance": "Captured by bootstrapping dist/forge-payload (built via `node scripts/build-payload.cjs`) into a scratch dir and listing `find . -type f | sort`. See PROGRESS.md for the exact capture command.",
-  "_count": 299,
+  "_count": 301,
   "files": [
+    ".mcp.json",
     ".claude/agents/store-query-validator.md",
     ".claude/agents/tomoshibi.md",
     ".claude/commands/forge/add-pipeline.md",
@@ -212,6 +213,7 @@
     ".forge/schemas/structure-manifest.json",
     ".forge/schemas/structure-versions.schema.json",
     ".forge/schemas/task.schema.json",
+    ".forge/mcp/server.cjs",
     ".forge/store/bugs/.gitkeep",
     ".forge/store/events/.gitkeep",
     ".forge/store/sprints/.gitkeep",

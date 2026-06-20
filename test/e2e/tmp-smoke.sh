@@ -257,6 +257,48 @@ else
 		record FAIL "BOOTSTRAP-9: dead vendored references found" "see vendored-refs.out"
 	fi
 
+	# 10. .mcp.json at project root exists and mcpServers.forge is present (FORGE-S34-T06)
+	MCP_JSON_FILE="$TMP_PROJECT_DIR/.mcp.json"
+	if [[ -f "$MCP_JSON_FILE" ]]; then
+		MCP_FORGE_PRESENT=$(node -e "
+		  const m=require('$MCP_JSON_FILE');
+		  const s=m.mcpServers||{};
+		  console.log(s.forge ? 'yes' : 'no');
+		" 2>/dev/null || echo "no")
+		if [[ "$MCP_FORGE_PRESENT" == "yes" ]]; then
+			record PASS "BOOTSTRAP-10: .mcp.json forge entry present" ""
+		else
+			record FAIL "BOOTSTRAP-10: .mcp.json missing mcpServers.forge" "see bootstrap.out"
+		fi
+	else
+		record FAIL "BOOTSTRAP-10: .mcp.json missing at project root" ""
+	fi
+
+	# 11. .forge/mcp/server.cjs vendored by manifest-driven loop (FORGE-S34-T06)
+	if [[ -f "$TMP_PROJECT_DIR/.forge/mcp/server.cjs" ]]; then
+		record PASS "BOOTSTRAP-11: .forge/mcp/server.cjs vendored" ""
+	else
+		record FAIL "BOOTSTRAP-11: .forge/mcp/server.cjs missing" ""
+	fi
+
+	# 12. node .forge/mcp/server.cjs node-only boot check (FORGE-S34-T06)
+	# WARN (not FAIL) for ambiguous exit — OS timing varies; full parity test is T08.
+	MCP_SERVER_BOOT_OUT="$TMP_SMOKE_OUT_DIR/mcp-server-boot.out"
+	if [[ -f "$TMP_PROJECT_DIR/.forge/mcp/server.cjs" ]]; then
+		# Feed /dev/null as stdin so the server gets EOF immediately and can exit cleanly.
+		node "$TMP_PROJECT_DIR/.forge/mcp/server.cjs" < /dev/null >"$MCP_SERVER_BOOT_OUT" 2>&1
+		MCP_BOOT_RC=$?
+		if [[ "$MCP_BOOT_RC" -eq 0 ]]; then
+			record PASS "BOOTSTRAP-12: node .forge/mcp/server.cjs node-only boot" "rc=0"
+		else
+			# Non-zero exit on stdin-EOF is ambiguous (expected for MCP stdio servers);
+			# use WARN not FAIL to avoid OS-timing flakiness. Full parity test is T08.
+			record WARN "BOOTSTRAP-12: node .forge/mcp/server.cjs rc=$MCP_BOOT_RC" "stdin-EOF exit; see mcp-server-boot.out — T08 is authoritative"
+		fi
+	else
+		record WARN "BOOTSTRAP-12: node-only boot skipped" "skip:server.cjs missing (BOOTSTRAP-11 failed)"
+	fi
+
 	# Pin tool paths for downstream sections (health gate).
 	# Tools are vendored directly into .forge/tools/ by the bootstrap.
 	STORE_CLI="$TMP_PROJECT_DIR/.forge/tools/store-cli.cjs"

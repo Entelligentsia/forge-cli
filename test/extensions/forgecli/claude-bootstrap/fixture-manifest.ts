@@ -133,6 +133,20 @@ export function writeFixtureManifest(payloadRoot: string): void {
 				bundleOnly: true,
 				owner: "forge-scaffold",
 			},
+			{
+				source: "mcp/server.cjs",
+				kind: "file",
+				bundle: "mcp/server.cjs",
+				install: ".forge/mcp/",
+				owner: "forge-scaffold",
+			},
+			{
+				source: "init/mcp/.mcp.json",
+				kind: "file",
+				bundle: "init/mcp/.mcp.json",
+				bundleOnly: true,
+				owner: "forge-scaffold",
+			},
 		],
 	};
 	fs.writeFileSync(path.join(payloadRoot, "payload-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");

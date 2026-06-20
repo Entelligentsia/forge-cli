@@ -19,6 +19,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { applySelect, installEntries, loadManifest } from "../lib/payload-manifest.js";
+import { mergeMcpJson } from "./mcp-json-merge.js";
 import { mergeForgeHooks } from "./settings-merge.js";
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -370,6 +371,7 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 				"vendor-forge-root",
 				"vendor-claude-assets",
 				"install-workflows",
+				"write-mcp-json",
 			],
 		};
 		const manifestOutcome = writeJsonFile(manifestPath, manifest);
@@ -420,6 +422,27 @@ export function bootstrapClaudeProject(opts: BootstrapOptions): BootstrapResult 
 	// Propagate preflight warnings to top-level warnings (non-fatal)
 	for (const w of preflightResult.warnings) {
 		warnings.push(w);
+	}
+
+	// ── Step 10: .mcp.json writer (FORGE-S34-T06) ────────────────────────────
+	// Writes/merges a project-scoped .mcp.json declaring the forge stdio MCP
+	// server. Idempotent: preserves unrelated servers, no dup on re-init.
+	// The server bundle (.forge/mcp/server.cjs) is delivered by Step 3 via
+	// the T05 payload-manifest entry — no special-case copy here.
+	const mcpJsonPath = path.join(dir, ".mcp.json");
+	const mcpTemplatePath = path.join(payloadRoot, "init", "mcp", ".mcp.json");
+	try {
+		const mcpResult = mergeMcpJson(mcpJsonPath, mcpTemplatePath);
+		if (mcpResult.outcome === "created" || mcpResult.outcome === "merged") {
+			created.push(mcpJsonPath);
+		} else if (mcpResult.outcome === "already-present") {
+			skipped.push(mcpJsonPath);
+		} else if (mcpResult.outcome === "error") {
+			warnings.push(`mcp-json-merge non-fatal: ${mcpResult.warning ?? "unknown error"}`);
+		}
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		warnings.push(`mcp-json-merge non-fatal: ${e.message ?? String(err)}`);
 	}
 
 	return { ok: true, created, skipped, warnings, preflight };

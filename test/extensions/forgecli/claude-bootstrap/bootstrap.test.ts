@@ -123,6 +123,34 @@ function makeMinimalPayload(dir: string): string {
 	// integrity.json for hash
 	fs.writeFileSync(path.join(payloadRoot, "integrity.json"), JSON.stringify({ hash: "abc123" }), "utf8");
 
+	// mcp/server.cjs — stub MCP server (T06: manifest-driven vendor to .forge/mcp/server.cjs)
+	const mcpDir = path.join(payloadRoot, "mcp");
+	fs.mkdirSync(mcpDir, { recursive: true });
+	fs.writeFileSync(path.join(mcpDir, "server.cjs"), "// stub mcp server\n", "utf8");
+
+	// init/mcp/.mcp.json — template consumed by mcp-json-merge.ts (T06)
+	const mcpTemplateDir = path.join(payloadRoot, "init", "mcp");
+	fs.mkdirSync(mcpTemplateDir, { recursive: true });
+	fs.writeFileSync(
+		path.join(mcpTemplateDir, ".mcp.json"),
+		JSON.stringify(
+			{
+				mcpServers: {
+					forge: {
+						command: "node",
+						args: [".forge/mcp/server.cjs"],
+						env: {
+							CLAUDE_PROJECT_DIR: "${projectRoot}",
+						},
+					},
+				},
+			},
+			null,
+			2,
+		) + "\n",
+		"utf8",
+	);
+
 	// payload-manifest.json — single source of truth the vendor loop reads.
 	writeFixtureManifest(payloadRoot);
 
@@ -688,6 +716,91 @@ describe("bootstrapClaudeProject", () => {
 			// .schema.json select) — a future select change must not silently drop them.
 			expect(installSet.includes(path.join(".forge", "schemas", "enum-catalog.json"))).toBe(true);
 			expect(installSet.includes(path.join(".forge", "schemas", "structure-manifest.json"))).toBe(true);
+		});
+	});
+
+	describe("Step 10 — .mcp.json writer (FORGE-S34-T06)", () => {
+		it("Test 1 — MCP server vendored to .forge/mcp/server.cjs via manifest-driven loop", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result.ok).toBe(true);
+			expect(fs.existsSync(path.join(dir, ".forge", "mcp", "server.cjs"))).toBe(true);
+		});
+
+		it("Test 2 — .mcp.json created on fresh bootstrap with mcpServers.forge entry", () => {
+			const dir = makeFreshProjectDir();
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result.ok).toBe(true);
+			const mcpJsonPath = path.join(dir, ".mcp.json");
+			expect(fs.existsSync(mcpJsonPath)).toBe(true);
+
+			const parsed = JSON.parse(fs.readFileSync(mcpJsonPath, "utf8")) as {
+				mcpServers: { forge: { command: string; args: string[] } };
+			};
+			expect(parsed.mcpServers).toBeDefined();
+			expect(parsed.mcpServers.forge).toBeDefined();
+			expect(parsed.mcpServers.forge.command).toBe("node");
+			expect(parsed.mcpServers.forge.args[0]).toBe(".forge/mcp/server.cjs");
+		});
+
+		it("Test 3 — .mcp.json merge-not-clobber: unrelated server preserved after bootstrap", () => {
+			const dir = makeFreshProjectDir();
+			// Pre-create .mcp.json with an unrelated server
+			const existing = {
+				mcpServers: {
+					"other-tool": {
+						command: "node",
+						args: ["./other/server.js"],
+					},
+				},
+			};
+			fs.writeFileSync(path.join(dir, ".mcp.json"), JSON.stringify(existing, null, 2) + "\n", "utf8");
+
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			expect(result.ok).toBe(true);
+			const mcpJsonPath = path.join(dir, ".mcp.json");
+			const parsed = JSON.parse(fs.readFileSync(mcpJsonPath, "utf8")) as {
+				mcpServers: {
+					"other-tool": { command: string };
+					forge: { command: string; args: string[] };
+				};
+			};
+			// Both servers present
+			expect(parsed.mcpServers["other-tool"]).toBeDefined();
+			expect(parsed.mcpServers.forge).toBeDefined();
+			expect(parsed.mcpServers.forge.args[0]).toBe(".forge/mcp/server.cjs");
+		});
+
+		it("Test 4 — .mcp.json idempotent: file hash unchanged after second bootstrap run", () => {
+			const dir = makeFreshProjectDir();
+			bootstrapClaudeProject({ dir, payloadRoot });
+			const mcpJsonPath = path.join(dir, ".mcp.json");
+			const hashAfterFirst = crypto.createHash("sha256").update(fs.readFileSync(mcpJsonPath)).digest("hex");
+
+			bootstrapClaudeProject({ dir, payloadRoot });
+			const hashAfterSecond = crypto.createHash("sha256").update(fs.readFileSync(mcpJsonPath)).digest("hex");
+
+			expect(hashAfterSecond).toBe(hashAfterFirst);
+		});
+
+		it("Test 5 — .mcp.json corrupted JSON does not crash bootstrap (non-fatal, result.ok=true)", () => {
+			const dir = makeFreshProjectDir();
+			// Pre-create malformed .mcp.json
+			fs.writeFileSync(path.join(dir, ".mcp.json"), "{ not valid json", "utf8");
+			const hashBefore = crypto.createHash("sha256").update(fs.readFileSync(path.join(dir, ".mcp.json"))).digest("hex");
+
+			const result = bootstrapClaudeProject({ dir, payloadRoot });
+
+			// Bootstrap must not crash
+			expect(result.ok).toBe(true);
+			// Warning should mention .mcp.json
+			expect(result.warnings.some((w) => w.includes("mcp"))).toBe(true);
+			// Malformed file must not be overwritten
+			const hashAfter = crypto.createHash("sha256").update(fs.readFileSync(path.join(dir, ".mcp.json"))).digest("hex");
+			expect(hashAfter).toBe(hashBefore);
 		});
 	});
 
