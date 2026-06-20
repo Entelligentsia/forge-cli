@@ -90,7 +90,7 @@ export function createForgeServer(
 	listTools: () => { tools: Array<{ name: string; description: string; inputSchema: unknown }> };
 } {
 	const server = new Server(
-		{ name: "forge", version: "1.0.41" },
+		{ name: "forge", version: "1.0.42" },
 		{
 			capabilities: { tools: {} },
 			instructions: SERVER_INSTRUCTIONS,

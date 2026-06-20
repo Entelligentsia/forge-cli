@@ -1,4 +1,9 @@
 import * as fs from "node:fs";
+// FORGE-BUG-048: AJV is listed in bundledDependencies so it is shipped inside
+// the npm tarball and resolves correctly in packed global installs. Without
+// bundling, npm deduplication can leave an empty node_modules/ajv directory
+// (the bare specifier resolves via a higher-scope ajv copy at runtime, but
+// explicit subpath imports fail). Bare specifier is correct here.
 import AjvModule from "ajv";
 import schema from "../forge-cli-schema.json" with { type: "json" };
 import { getGlobalConfigPath, getProjectConfigPath } from "../paths/paths.js";
