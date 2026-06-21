@@ -11,6 +11,16 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+// Spawn the *same* node binary that is running this MCP server, by absolute
+// path, rather than the bare string "node". Claude Code launches the stdio
+// server with an environment whose PATH may not contain a `node` (common with
+// NVM/fnm/volta/asdf, or any restricted launch env) — `execFile("node", …)`
+// then fails with `spawn node ENOENT`, killing all 12 cjs-wrapper tools while
+// the 2 native in-process tools still work. Even where a `node` is on PATH it
+// may be the wrong version. `process.execPath` is the absolute path of the
+// running interpreter and is always correct and version-matched.
+const NODE_BIN = process.execPath;
+
 /**
  * Run a Forge .cjs tool as a subprocess.
  *
@@ -25,7 +35,7 @@ export async function runCjsMcp(
 	cwd: string,
 	timeoutMs: number,
 ): Promise<{ stdout: string; stderr: string }> {
-	const result = await execFileAsync("node", [toolPath, ...argv], {
+	const result = await execFileAsync(NODE_BIN, [toolPath, ...argv], {
 		cwd,
 		encoding: "utf8" as BufferEncoding,
 		timeout: timeoutMs,

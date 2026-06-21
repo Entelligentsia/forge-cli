@@ -190,8 +190,13 @@ describe("collate dispatch", () => {
 		const result = (await callTool("collate", {})) as { content: Array<{ text: string }>; isError?: boolean };
 		expect(result.content[0].text).toBe("collate done");
 		expect(result.isError).toBeFalsy();
-		// collate.cjs must be invoked via "node"
-		expect(cmd[0]).toBe("node");
+		// collate.cjs must be invoked via the absolute path of the running node
+		// (process.execPath), NOT the bare string "node". Claude Code launches the
+		// stdio server with a PATH that may not contain `node` (NVM/fnm/volta/asdf,
+		// or any restricted env) → bare "node" fails with `spawn node ENOENT` and
+		// every cjs-wrapper tool dies. See run-cjs-mcp.ts.
+		expect(cmd[0]).toBe(process.execPath);
+		expect(cmd[0]).not.toBe("node");
 		expect(args[0]).toMatch(/collate\.cjs$/);
 	});
 
