@@ -126,6 +126,31 @@ describe("DashboardComponent activity-log clamp + ctrl+o expansion", () => {
 		controller.dispose();
 	});
 
+	it("aligns multi-line entry continuations under the head content (box gutter)", () => {
+		const tree = new OrchestratorTree();
+		tree.startNode("AL", { label: "al", kind: "orchestrator" });
+		tree.startNode("AL:plan:1", { parentId: "AL", label: "plan:1", kind: "leaf" });
+		// One entry whose narration spans two display lines: a connector head
+		// line plus a continuation that, pre-fix, rendered flush at column 0
+		// under the ╭ connector. The fix gives continuations a 2-col gutter so
+		// they align under the head's content (╭ + space = 2 cols).
+		tree.appendTail("AL:plan:1", "╭ HEADTOKEN\nCONTTOKEN");
+
+		const controller = new DashboardController(tree, "AL:plan:1");
+		const mockTui = { requestRender: vi.fn(), terminal: { rows: 40 } } as any;
+		const component = new DashboardComponent(controller, mockTui, mockTheme, vi.fn());
+
+		const rows = component.render(120);
+		const headRow = rows.find((r) => r.includes("HEADTOKEN"));
+		const contRow = rows.find((r) => r.includes("CONTTOKEN"));
+		expect(headRow).toBeDefined();
+		expect(contRow).toBeDefined();
+		// Continuation token sits at the same column as the head token — aligned
+		// inside the box gutter, not flush under the connector at column 0.
+		expect(contRow!.indexOf("CONTTOKEN")).toBe(headRow!.indexOf("HEADTOKEN"));
+		controller.dispose();
+	});
+
 	it("prompt section: ⏎ shows 20-line clamp, ctrl+o reveals the full body", () => {
 		const tree = new OrchestratorTree();
 		tree.startNode("BUG-3", { label: "fix-bug BUG-3", kind: "orchestrator" });

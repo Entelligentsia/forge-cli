@@ -935,10 +935,22 @@ export class DashboardComponent implements Component, Focusable {
 			lines.push(
 				...wrapLine(dim(`Activity · ${total} log entr${total === 1 ? "y" : "ies"} · ${modeHint}`, this.theme), width),
 			);
+			// A 2-column hanging indent keeps every continuation row inside the box
+			// gutter, aligned under the ╭/│ connector instead of sliding to column
+			// 0. A "continuation" is any row after the entry's head — whether it
+			// came from a newline split (toDisplayLines, e.g. a multi-line
+			// narration) or a width wrap (wrapLine). Only the head row carries the
+			// connector; wrap to `width - gutter` so indented rows still fit.
+			const TAIL_GUTTER = "  ";
+			const wrapWidth = Math.max(0, width - TAIL_GUTTER.length);
 			for (const tline of node.tailBuffer) {
 				const rows: string[] = [];
+				let entryHeadSeen = false;
 				for (const displayLine of toDisplayLines(tline)) {
-					rows.push(...wrapLine(paintTailLine(displayLine, this.theme), width));
+					for (const w of wrapLine(paintTailLine(displayLine, this.theme), wrapWidth)) {
+						rows.push(entryHeadSeen ? TAIL_GUTTER + w : w);
+						entryHeadSeen = true;
+					}
 				}
 				if (expanded || rows.length <= LOG_CLAMP_ROWS) {
 					lines.push(...rows);
