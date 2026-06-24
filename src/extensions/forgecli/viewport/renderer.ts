@@ -170,6 +170,28 @@ export function extractThinkingOneLiner(message: AgentMessage | undefined): stri
 	return undefined;
 }
 
+/**
+ * Full thinking text from an assistant message — every `thinking` block
+ * joined, VERBATIM (no length cap, newlines preserved). Companion to
+ * {@link extractThinkingOneLiner}: the one-liner feeds compact single-line
+ * surfaces (the registry breadcrumb), this feeds the activity log so the
+ * saved tail keeps the complete reasoning. The dashboard view clamps it to a
+ * couple of rows and ctrl+o expands — no data is lost. Returns "" if absent.
+ */
+export function extractThinkingText(message: AgentMessage | undefined): string {
+	if (!message || (message as { role?: string }).role !== "assistant") return "";
+	const content = (message as { content?: unknown }).content;
+	if (!Array.isArray(content)) return "";
+	const parts: string[] = [];
+	for (const block of content) {
+		const b = block as { type?: string; thinking?: unknown };
+		if (b?.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim()) {
+			parts.push(b.thinking.trim());
+		}
+	}
+	return parts.join("\n\n");
+}
+
 export interface UsageDelta {
 	input: number;
 	output: number;
@@ -206,6 +228,32 @@ export function extractTurnPreview(message: unknown): string {
 		}
 	}
 	return "";
+}
+
+/**
+ * Full assistant-authored text from a message — every `text` block joined,
+ * VERBATIM (no length cap, newlines preserved). Companion to
+ * {@link extractTurnPreview}: the preview feeds compact single-line surfaces
+ * (registry/tree node label, status line), this feeds the activity-log
+ * narration line so the saved tail keeps the complete message. The dashboard
+ * view clamps it and ctrl+o expands — no data is lost. Returns "" if the
+ * message has no text content (e.g. an all-tool-call turn).
+ */
+export function extractAssistantText(message: unknown): string {
+	if (!message || typeof message !== "object") return "";
+	const msg = message as { role?: string; content?: unknown };
+	if (msg.role !== "assistant") return "";
+	const content = msg.content;
+	if (!Array.isArray(content)) return "";
+	const parts: string[] = [];
+	for (const c of content) {
+		if (!c || typeof c !== "object") continue;
+		const part = c as { type?: string; text?: unknown };
+		if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+			parts.push(part.text.trim());
+		}
+	}
+	return parts.join("\n\n");
 }
 
 export function fmtTokenMeter(u: UsageDelta): string {

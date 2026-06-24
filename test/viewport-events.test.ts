@@ -66,9 +66,19 @@ describe("attachViewportObserver", () => {
 		expect(phase?.usage).toEqual({ input: 3000, output: 150, cacheRead: 500 });
 	});
 
-	it("renders a turn block with ╭ / │ / ╰ connectors", () => {
+	it("renders a turn block with ╭ / │ / ╰ connectors in chronological order", () => {
 		const { registry, observer } = bootstrap();
+		const message = makeAssistantMessage({
+			input: 1000,
+			output: 50,
+			thinking: "First reconnaissance",
+			text: "Now I'll start the plan.",
+		});
 		observer.onEvent({ type: "turn_start" });
+		// The assistant message (thinking → narration → tool_use) lands at
+		// message_end, BEFORE the tools execute — so reasoning + narration OPEN
+		// the turn, above the tools they motivate.
+		observer.onEvent({ type: "message_end", message });
 		observer.onEvent({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { command: "ls" } });
 		observer.onEvent({ type: "tool_execution_start", toolCallId: "c2", toolName: "bash", args: { command: "pwd" } });
 		observer.onEvent({
@@ -85,29 +95,22 @@ describe("attachViewportObserver", () => {
 			isError: false,
 			result: { stdout: "/" },
 		});
-		observer.onEvent({
-			type: "turn_end",
-			message: makeAssistantMessage({
-				input: 1000,
-				output: 50,
-				thinking: "First reconnaissance",
-				text: "Now I'll start the plan.",
-			}),
-		});
+		observer.onEvent({ type: "turn_end", message });
 
 		const lines = registry.getTailLines("T1", "plan");
-		// 1 header + 4 tool lines + 3 closing lines (thinking, preview, batch)
+		// 1 header + 2 message_end lines (thinking, narration) + 4 tool lines + 1 batch closer
 		expect(lines.length).toBe(8);
 		const turnLines = lines.slice(1); // drop header
-		// Bracket-led flush-left layout: compact [T<turn>:HH:MM:SS] stamp on the
-		// first line only; continuation lines carry NO left margin so the full
-		// pane width holds log content.
-		expect(turnLines[0]).toMatch(/^╭ \[T1:\d{2}:\d{2}:\d{2}\] \$ bash/);
-		expect(turnLines[1]).toMatch(/^│ \$ bash/);
-		expect(turnLines[2]).toMatch(/^│ ← bash ok/);
-		expect(turnLines[3]).toMatch(/^│ ← bash ok/);
-		expect(turnLines[4]).toMatch(/^│ ✱ First reconnaissance/);
-		expect(turnLines[5]).toMatch(/^│ » "Now I'll start the plan\."/);
+		// Chronological layout: the compact [T<turn>:HH:MM:SS] stamp rides the
+		// first line (now the reasoning line); continuation lines carry NO left
+		// margin so the full pane width holds log content. Reasoning + narration
+		// open the turn ABOVE the tools; the batch marker closes it.
+		expect(turnLines[0]).toMatch(/^╭ \[T1:\d{2}:\d{2}:\d{2}\] ✱ First reconnaissance/);
+		expect(turnLines[1]).toMatch(/^│ » Now I'll start the plan\./);
+		expect(turnLines[2]).toMatch(/^│ \$ bash/);
+		expect(turnLines[3]).toMatch(/^│ \$ bash/);
+		expect(turnLines[4]).toMatch(/^│ ← bash ok/);
+		expect(turnLines[5]).toMatch(/^│ ← bash ok/);
 		expect(turnLines[6]).toMatch(/^╰ ⇉ batched 2 tool calls/);
 	});
 

@@ -15,7 +15,9 @@ import { describe, expect, it } from "vitest";
 import {
 	argContent,
 	argHint,
+	extractAssistantText,
 	extractThinkingOneLiner,
+	extractThinkingText,
 	toDisplayLines,
 	fmtPhaseSummary,
 	fmtTokenFooter,
@@ -231,6 +233,60 @@ describe("extractThinkingOneLiner", () => {
 			content: [{ type: "text", text: "no thinking here" }],
 		};
 		expect(extractThinkingOneLiner(msg as never)).toBeUndefined();
+	});
+});
+
+describe("extractThinkingText (full, no truncation)", () => {
+	it("returns the full thinking verbatim — no length cap, newlines preserved", () => {
+		const long = `${"a".repeat(200)}\nsecond line of reasoning`;
+		const msg = { role: "assistant" as const, content: [{ type: "thinking", thinking: long }] };
+		expect(extractThinkingText(msg as never)).toBe(long);
+	});
+
+	it("joins multiple thinking blocks with a blank line", () => {
+		const msg = {
+			role: "assistant" as const,
+			content: [
+				{ type: "thinking", thinking: "first" },
+				{ type: "text", text: "ignored" },
+				{ type: "thinking", thinking: "second" },
+			],
+		};
+		expect(extractThinkingText(msg as never)).toBe("first\n\nsecond");
+	});
+
+	it("returns '' for non-assistant or no thinking", () => {
+		expect(extractThinkingText({ role: "user", content: "x" } as never)).toBe("");
+		expect(extractThinkingText({ role: "assistant", content: [{ type: "text", text: "t" }] } as never)).toBe("");
+		expect(extractThinkingText(undefined)).toBe("");
+	});
+});
+
+describe("extractAssistantText (full, no truncation)", () => {
+	it("returns the full text verbatim — no 120-char cap, newlines preserved", () => {
+		const long = `${"x".repeat(300)}\nNow let me check the test files.`;
+		const msg = { role: "assistant" as const, content: [{ type: "text", text: long }] };
+		expect(extractAssistantText(msg)).toBe(long);
+	});
+
+	it("joins multiple text blocks with a blank line", () => {
+		const msg = {
+			role: "assistant" as const,
+			content: [
+				{ type: "text", text: "para one" },
+				{ type: "thinking", thinking: "ignored" },
+				{ type: "text", text: "para two" },
+			],
+		};
+		expect(extractAssistantText(msg)).toBe("para one\n\npara two");
+	});
+
+	it("returns '' for non-assistant, non-array, or all-tool-call turns", () => {
+		expect(extractAssistantText({ role: "user", content: [{ type: "text", text: "hi" }] })).toBe("");
+		expect(extractAssistantText({ role: "assistant", content: "string" })).toBe("");
+		expect(extractAssistantText({ role: "assistant", content: [{ type: "tool_use", id: "1" }] })).toBe("");
+		expect(extractAssistantText(null)).toBe("");
+		expect(extractAssistantText(undefined)).toBe("");
 	});
 });
 

@@ -18,7 +18,9 @@ import type { SessionRegistry } from "../session-registry.js";
 import { getOrchestratorTree } from "../orchestrator-tree.js";
 import {
 	argContent as fmtArgContent,
+	extractAssistantText,
 	extractThinkingOneLiner,
+	extractThinkingText,
 	extractTurnPreview,
 	argHint as fmtArgHint,
 	RISKY_TAG,
@@ -33,6 +35,7 @@ import {
  * time for callers that only consume the factory. */
 type SubagentEvent =
 	| { type: "turn_start" }
+	| { type: "message_end"; message: unknown }
 	| { type: "turn_end"; message: unknown }
 	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: unknown }
 	| { type: "tool_execution_end"; toolCallId: string; toolName: string; result: unknown; isError: boolean }
@@ -259,6 +262,23 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				tree.bumpNodeTurn(resolveNodeId());
 				break;
 			}
+			case "message_end": {
+				// The assistant message (thinking → text → tool_use blocks)
+				// lands here, BEFORE tool_execution_start fires. Emitting the
+				// reasoning + narration now — as the turn's OPENING lines —
+				// keeps the tail in true chronological order: the model's
+				// "let me check X" sits ABOVE the tool it motivates instead of
+				// trailing the tool result as a footer (the intra-turn reversal
+				// users hit). Both are stored VERBATIM (no length cap, newlines
+				// preserved); the dashboard clamps to LOG_CLAMP_ROWS and ctrl+o
+				// expands, so nothing is lost from the saved transcript.
+				const e = event as { message: unknown };
+				const thinking = extractThinkingText(e.message as never);
+				if (thinking) emitTurnLine(`✱ ${thinking}`);
+				const narration = extractAssistantText(e.message);
+				if (narration) emitTurnLine(`» ${narration}`);
+				break;
+			}
 			case "turn_end": {
 				const e = event as { message: unknown };
 				const delta = readUsage(e.message as never);
@@ -281,10 +301,11 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					tree.setNodeModel(nodeId, msg.model ?? "", msg.provider ?? "");
 				}
 
-				const closingBodies: string[] = [];
-				const thinking = extractThinkingOneLiner(e.message as never);
-				if (thinking) closingBodies.push(`✱ ${thinking}`);
-
+				// The full narration/thinking already streamed to the tail at
+				// message_end. Here we only set the COMPACT single-line label
+				// that the registry/tree node and the consolidated turn event
+				// surface (status line, dashboard node label) — these are
+				// fixed-width breadcrumbs, not transcript content.
 				const preview = extractTurnPreview(e.message);
 				if (preview) {
 					registry.setTurnPreview(sessionId, preview);
@@ -292,14 +313,10 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					if (setStatusVerbose && verboseKeys?.messageKey) {
 						setStatusVerbose(verboseKeys.messageKey, `  "${preview}"`);
 					}
-					closingBodies.push(`» "${preview}"`);
 				}
+				const thinkingPreview = extractThinkingOneLiner(e.message as never);
 				if (toolsThisTurn > 1) {
-					closingBodies.push(`⇉ batched ${toolsThisTurn} tool calls in turn ${state.turn}`);
-				}
-				for (let i = 0; i < closingBodies.length; i++) {
-					const isLast = i === closingBodies.length - 1;
-					emitTurnLine(closingBodies[i], { closing: isLast });
+					emitTurnLine(`⇉ batched ${toolsThisTurn} tool calls in turn ${state.turn}`, { closing: true });
 				}
 
 				// Bubble one consolidated event up to the registry so the
@@ -311,7 +328,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 					displayRole: role,
 					turn: state.turn,
 					preview: preview ?? "",
-					thinking: thinking ?? "",
+					thinking: thinkingPreview ?? "",
 					deltaUsage: { ...delta },
 					cumUsage: { ...state.cumUsage },
 					timestamp: Date.now(),
