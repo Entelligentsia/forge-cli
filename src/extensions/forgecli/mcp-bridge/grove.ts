@@ -25,11 +25,33 @@ import { attachMcpServer, type McpAttachment } from "./mcp-bridge.js";
 // `grove` CLI fallback that the skill assumes when MCP tools are absent.
 export const GROVE_TOOL_PREFIX = "mcp__grove__";
 
-/** Steering appended to the system prompt while grove tools are active. */
-export const GROVE_PROMPT_GUIDELINES: string[] = [
-	"For code navigation (where is X / what does it define / who calls it), prefer the mcp__grove__* tools over grep or whole-file reads — they return one symbol's bytes with a stable id.",
-	"Typical chain: mcp__grove__outline a file, or mcp__grove__symbols to locate a name, then mcp__grove__source by id; mcp__grove__callers / mcp__grove__definition for call sites and go-to-def; mcp__grove__check after an edit.",
-];
+/**
+ * The grove code-navigation steering block — injected ONCE into the system
+ * prompt (via project-orientation, which reaches both the main thread and
+ * subagents) when grove is attached. This is the "fragment" that replaces
+ * grove's CLAUDE.md INVARIANT: the steering lives in the host's system prompt,
+ * so the user's project files (CLAUDE.md) stay untouched. Per-tool
+ * `promptGuidelines` are deliberately NOT used — pi concatenates them across
+ * every active tool with no cross-tool dedup, so a shared block would repeat
+ * once per grove tool.
+ */
+export function buildGroveSteering(toolNames: string[]): string {
+	const available = toolNames.length > 0 ? toolNames.join(", ") : "mcp__grove__*";
+	return [
+		"## Code navigation — use grove",
+		"",
+		`This project has grove tree-sitter code-navigation tools available: ${available}.`,
+		"For any where-is / what-defines / who-calls question, reach for them FIRST —",
+		"they return one symbol's exact bytes with a stable id, far cheaper than grep",
+		"or whole-file reads. `grep` / `rg` / reading whole files are fallbacks, used",
+		"only after grove has been tried and returned insufficient content.",
+		"",
+		"Procedure: `mcp__grove__outline <file>` for a file's definition skeleton, or",
+		"`mcp__grove__symbols` to locate a name by exact match → `mcp__grove__source`",
+		"by the returned id for the body; `mcp__grove__callers` / `mcp__grove__definition`",
+		"for call sites and go-to-def; `mcp__grove__check` after an edit.",
+	].join("\n");
+}
 
 /**
  * Resolve a usable grove binary, or null if none works.
@@ -91,10 +113,13 @@ export function ensureGroveReady(opts: EnsureGroveOptions): GroveReadiness {
 	let ranInit = false;
 
 	if (!initialized && opts.runInit) {
-		// `--as skill` provisions grammars + grove.lock + a CLAUDE.md steering
-		// block (NOT .mcp.json — that MCP-server wiring is the Claude-Code surface,
-		// irrelevant to 4ge, which gets grove via the in-process bridge instead).
-		const res = spawnSync(bin, ["init", "--as", "skill"], {
+		// `--as grammars` (grove >= 0.1.8) provisions grammars + grove.lock and
+		// writes NO project files beyond the lock — no .mcp.json, no CLAUDE.md.
+		// 4ge supplies its own steering via the system prompt (buildGroveSteering),
+		// so the user's CLAUDE.md is never touched. On an older grove this exits
+		// non-zero (unknown value); ensureGroveReady reports not-provisioned and the
+		// bridge still works for already-cached grammars — never a CLAUDE.md write.
+		const res = spawnSync(bin, ["init", "--as", "grammars"], {
 			cwd: opts.cwd,
 			encoding: "utf8",
 			timeout: opts.initTimeoutMs ?? 60000,
@@ -136,12 +161,13 @@ export async function attachGrove(opts: AttachGroveOptions): Promise<McpAttachme
 	if (!readiness.bin) return null;
 
 	try {
+		// No per-tool promptGuidelines — steering is injected once via
+		// buildGroveSteering → project-orientation (reaches main + subagents).
 		return await attachMcpServer({
 			command: readiness.bin,
 			args: ["serve"],
 			cwd: opts.cwd,
 			namePrefix: opts.namePrefix ?? GROVE_TOOL_PREFIX,
-			promptGuidelines: GROVE_PROMPT_GUIDELINES,
 			requestTimeoutMs: opts.requestTimeoutMs,
 		});
 	} catch {

@@ -4,9 +4,12 @@
 // state facts about where the project lives, NOT prohibitions. See
 // forge-cli#6 and forge#83.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { buildProjectOrientation } from "../../../src/extensions/forgecli/project-orientation.js";
+import {
+	buildProjectOrientation,
+	setGroveSteering,
+} from "../../../src/extensions/forgecli/project-orientation.js";
 
 describe("buildProjectOrientation", () => {
 	const cwd = "/home/boni/src/forge-testbench/hello";
@@ -66,5 +69,23 @@ describe("buildProjectOrientation", () => {
 		const out = buildProjectOrientation(cwd);
 		expect(out).toMatch(/Prefer named MCP tools/);
 		expect(out).toMatch(/forge_store/);
+	});
+});
+
+describe("grove steering injection (FORGE-S34)", () => {
+	const cwd = "/home/boni/src/forge-testbench/hello";
+
+	afterEach(() => setGroveSteering(null)); // never leak mutated module state
+
+	it("omits grove steering when none is set", () => {
+		setGroveSteering(null);
+		expect(buildProjectOrientation(cwd)).not.toMatch(/Code navigation — use grove/);
+	});
+
+	it("includes the grove steering block once set (reaches main + subagents)", () => {
+		setGroveSteering("## Code navigation — use grove\n\nuse mcp__grove__outline.");
+		const out = buildProjectOrientation(cwd);
+		expect(out).toMatch(/Code navigation — use grove/);
+		expect(out).toContain("mcp__grove__outline");
 	});
 });

@@ -19,6 +19,7 @@ import { type ForgeToolDefs, getSubagentTools, setExtraSubagentTools } from "../
 import type { McpAttachment } from "../../../../src/extensions/forgecli/mcp-bridge/mcp-bridge.js";
 import {
 	attachGrove,
+	buildGroveSteering,
 	ensureGroveReady,
 	resolveGroveBin,
 } from "../../../../src/extensions/forgecli/mcp-bridge/grove.js";
@@ -211,13 +212,18 @@ describe("grove real integration (live `grove serve`)", () => {
 		console.error(`[grove itest] check → ${textOf(check) || "(clean)"}`);
 	}, 15000);
 
-	it("synthesized tools carry grove steering + verbatim JSON-Schema params", () => {
+	it("steers via the system-prompt block (not per-tool) + passes JSON-Schema verbatim", () => {
 		if (!attachment) {
 			expect(groveBin).toBeNull();
 			return;
 		}
 		const outline = attachment.tools.find((t) => t.name === "mcp__grove__outline")!;
-		expect(outline.promptGuidelines?.length).toBeGreaterThan(0);
+		// Steering is injected ONCE via buildGroveSteering, not per-tool (pi would
+		// otherwise repeat it once per active grove tool).
+		expect(outline.promptGuidelines ?? []).toHaveLength(0);
+		const steering = buildGroveSteering(attachment.toolNames);
+		expect(steering).toContain("mcp__grove__outline");
+		expect(steering).toMatch(/use grove|reach for them FIRST/i);
 		// The parameters are grove's own JSON Schema (object with a `file` prop).
 		const schema = outline.parameters as { type?: string; properties?: Record<string, unknown> };
 		expect(schema.type).toBe("object");
@@ -248,7 +254,7 @@ describe("grove implicit init path (live)", () => {
 		rmSync(workdir, { recursive: true, force: true });
 	});
 
-	it("provisions a fresh project (grove.lock) when runInit is requested", () => {
+	it("provisions grove.lock WITHOUT touching CLAUDE.md (--as grammars)", () => {
 		if (!groveBin) {
 			expect(groveBin).toBeNull();
 			return;
@@ -262,6 +268,9 @@ describe("grove implicit init path (live)", () => {
 		expect(r.ranInit).toBe(true);
 		expect(r.initialized).toBe(true);
 		expect(existsSync(path.join(workdir, "grove.lock"))).toBe(true);
-		console.error(`[grove itest] implicit init provisioned grove.lock in ${workdir}`);
+		// The whole point of --as grammars: the project's own files stay untouched.
+		expect(existsSync(path.join(workdir, "CLAUDE.md"))).toBe(false);
+		expect(existsSync(path.join(workdir, ".mcp.json"))).toBe(false);
+		console.error(`[grove itest] implicit init provisioned grove.lock, no CLAUDE.md, in ${workdir}`);
 	}, 90000);
 });

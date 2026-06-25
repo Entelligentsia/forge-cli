@@ -24,6 +24,19 @@ function findUpConfigJson(cwd: string): string | undefined {
 	return undefined;
 }
 
+// Optional code-navigation steering, set once at extension init when the grove
+// bridge attaches (see mcp-bridge/grove.ts → buildGroveSteering). Appended to the
+// orientation so it reaches BOTH the main thread and every runForgeSubagent
+// dispatch — the in-process pi sessions all call buildProjectOrientation. This
+// is how grove's steering reaches the model without writing into the project's
+// own CLAUDE.md. Null when grove is not attached.
+let groveSteering: string | null = null;
+
+/** Set (or clear) the grove code-navigation steering block. */
+export function setGroveSteering(block: string | null): void {
+	groveSteering = block;
+}
+
 export function buildProjectOrientation(cwdAbs: string): string {
 	// Resolve FORGE_ROOT from .forge/config.json so subagent bash sessions
 	// can use the transition-fallback $FORGE_ROOT path for un-migrated projects.
@@ -83,5 +96,7 @@ export function buildProjectOrientation(cwdAbs: string): string {
 		"- `forge_config` — read/write `.forge/config.json` keys",
 		"- `forge_store`  — read / write / list / emit  (id INSIDE json)",
 		"",
+		// Grove code-nav steering, only when the bridge attached this session.
+		...(groveSteering ? ["", groveSteering, ""] : []),
 	].join("\n");
 }

@@ -22,18 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     code change. MCP `inputSchema` (plain JSON Schema) passes through verbatim as
     a pi tool's `parameters` (pi-ai accepts non-TypeBox schemas via
     `coerceWithJsonSchema`).
-  - **Tool naming** — tools are registered as `mcp__grove__*`, matching the
-    naming the grove skill and the "code navigation goes through grove" CLAUDE.md
-    INVARIANT already reference, so existing steering drives the model straight
-    onto the bridge.
+  - **Tool naming** — tools are registered as `mcp__grove__*` (the standard MCP
+    tool-naming convention), so any steering that already references
+    `mcp__grove__*` drives the model straight onto the bridge.
+  - **Steering** — injected once into the **system prompt** (via
+    `buildProjectOrientation`, which reaches both the main thread and every
+    subagent dispatch) — **not** into the project's `CLAUDE.md`. An automatic
+    system action never edits a user-owned file. (Per-tool `promptGuidelines`
+    are deliberately avoided — pi concatenates them across active tools with no
+    dedup, so a shared block would repeat once per grove tool.)
   - **Subagent reach** — bridged tools ride `getSubagentTools`, so every
     orchestrator subagent (`/forge:run-task`, `/forge:run-sprint`, …) gets them,
     not just the main thread.
   - **Provisioning** — on by default: a grove-capable project without a
-    `grove.lock` is provisioned on first session (`grove init` fetches grammars
-    and writes `grove.lock` + a CLAUDE.md steering block). Idempotent thereafter;
-    set `FORGE_GROVE_NO_AUTOINIT=1` to opt out. Graceful no-op when grove is
-    absent. `FORGE_DEBUG_GROVE=1` logs the attach.
+    `grove.lock` is provisioned on first session via `grove init --as grammars`
+    (grove ≥ 0.1.8), which fetches grammars into the global cache and writes
+    **only `grove.lock`** — no `.mcp.json`, no `CLAUDE.md`. Idempotent
+    thereafter; set `FORGE_GROVE_NO_AUTOINIT=1` to opt out. On an older grove the
+    `--as grammars` call is a no-op (the bridge still serves already-cached
+    grammars); the project's files are never written. Graceful no-op when grove
+    is absent. `FORGE_DEBUG_GROVE=1` logs the attach.
 
 ## [1.0.43] — 2026-06-23
 

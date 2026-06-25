@@ -33,7 +33,7 @@ import { registerAllForgeCommands, registerForgeCommands } from "./forge-command
 import { createForgeHeader, type ForgeHeader } from "./tui/forge-header.js";
 import { registerForgeInit } from "./forge-init/forge-init.js";
 import { type ForgeToolDefs, registerForgeTools, setExtraSubagentTools } from "./forge-tools.js";
-import { attachGrove } from "./mcp-bridge/grove.js";
+import { attachGrove, buildGroveSteering } from "./mcp-bridge/grove.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
@@ -60,7 +60,7 @@ import { readPkgVersionsSync } from "./lib/versions.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./config/model-registry.js";
 import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
 import { registerPlan } from "./commands/plan.js";
-import { buildProjectOrientation } from "./project-orientation.js";
+import { buildProjectOrientation, setGroveSteering } from "./project-orientation.js";
 import { registerQuizAgent } from "./commands/quiz-agent.js";
 import { registerReadCommand } from "./commands/read-command.js";
 import { registerRegenerate } from "./commands/regenerate.js";
@@ -404,6 +404,10 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			if (grove) {
 				for (const tool of grove.tools) pi.registerTool(tool);
 				setExtraSubagentTools(grove.tools);
+				// Steering lives in the system prompt (not the project's CLAUDE.md):
+				// buildProjectOrientation appends it for both the main thread and
+				// every subagent dispatch.
+				setGroveSteering(buildGroveSteering(grove.toolNames));
 				process.once("exit", () => {
 					void grove.dispose();
 				});
