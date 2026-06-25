@@ -5,6 +5,47 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.44] — 2026-06-25
+
+### Added
+
+- **Grove code-navigation bridge (FORGE-S34).** 4ge sessions now get
+  AST-level, byte-precise code navigation by default when the
+  [grove](https://github.com/Entelligentsia/grove) binary is on `PATH`. Because
+  the pi runtime has no MCP client, external MCP tools cannot reach a session on
+  their own — so a generic MCP-stdio→pi bridge
+  (`src/extensions/forgecli/mcp-bridge/`) spawns `grove serve`, discovers its
+  tools dynamically via `tools/list`, and synthesizes a native pi
+  `ToolDefinition` per advertised tool whose `execute()` proxies `tools/call`.
+  - **Dynamic discovery** — whatever the server advertises that run is what gets
+    registered (6 tools on grove 0.1.5, 7 on 0.1.7 which adds `map`), with no
+    code change. MCP `inputSchema` (plain JSON Schema) passes through verbatim as
+    a pi tool's `parameters` (pi-ai accepts non-TypeBox schemas via
+    `coerceWithJsonSchema`).
+  - **Tool naming** — tools are registered as `mcp__grove__*`, matching the
+    naming the grove skill and the "code navigation goes through grove" CLAUDE.md
+    INVARIANT already reference, so existing steering drives the model straight
+    onto the bridge.
+  - **Subagent reach** — bridged tools ride `getSubagentTools`, so every
+    orchestrator subagent (`/forge:run-task`, `/forge:run-sprint`, …) gets them,
+    not just the main thread.
+  - **Provisioning** — on by default: a grove-capable project without a
+    `grove.lock` is provisioned on first session (`grove init` fetches grammars
+    and writes `grove.lock` + a CLAUDE.md steering block). Idempotent thereafter;
+    set `FORGE_GROVE_NO_AUTOINIT=1` to opt out. Graceful no-op when grove is
+    absent. `FORGE_DEBUG_GROVE=1` logs the attach.
+
+## [1.0.43] — 2026-06-23
+
+### Fixed
+
+- **MCP server spawn + project-root reliability.** Hardening for the bundled
+  Forge MCP server spawn path and project-root resolution (Claude-Code surface).
+- **Dashboard gutter.** Wrapped/multi-line tail rows are kept inside the box
+  gutter.
+- **Viewport ordering.** Turn narration is emitted in chronological order and
+  stored verbatim.
+
 ## [1.0.42] — 2026-06-20
 
 ### Fixed
