@@ -392,11 +392,14 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		// by default, discovered dynamically from `grove serve` (whatever it
 		// advertises this run is registered). Graceful no-op when grove is absent;
 		// the tools also ride getSubagentTools so every orchestrator subagent gets
-		// them. Provisioning (grove init) stays opt-in via FORGE_GROVE_AUTOINIT.
+		// them. Provisioning (grove init — fetches grammars, writes grove.lock + a
+		// CLAUDE.md steering block on first run) is on by default; set
+		// FORGE_GROVE_NO_AUTOINIT=1 to opt out (e.g. projects that shouldn't be
+		// written to). Idempotent once grove.lock exists.
 		try {
 			const grove = await attachGrove({
 				cwd: projectRoot,
-				autoInit: process.env.FORGE_GROVE_AUTOINIT === "1",
+				autoInit: process.env.FORGE_GROVE_NO_AUTOINIT !== "1",
 			});
 			if (grove) {
 				for (const tool of grove.tools) pi.registerTool(tool);
