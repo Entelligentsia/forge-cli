@@ -32,7 +32,8 @@ import { registerFixBug } from "./orchestrators/fix-bug.js";
 import { registerAllForgeCommands, registerForgeCommands } from "./forge-commands.js";
 import { createForgeHeader, type ForgeHeader } from "./tui/forge-header.js";
 import { registerForgeInit } from "./forge-init/forge-init.js";
-import { type ForgeToolDefs, registerForgeTools } from "./forge-tools.js";
+import { type ForgeToolDefs, registerForgeTools, setExtraSubagentTools } from "./forge-tools.js";
+import { attachGrove } from "./mcp-bridge/grove.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
@@ -385,6 +386,31 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		// guarantee: forgeRoot captured at init; projectRoot passed as cwd to execFile.
 		const projectRoot = path.dirname(path.dirname(forgeConfig!.configPath));
 		forgeToolDefs = registerForgeTools(pi, forgeRoot, projectRoot);
+
+		// FORGE-S34: grove code-nav bridge. 4ge is a coding harness, so when the
+		// grove binary is available we give the session AST-level navigation tools
+		// by default, discovered dynamically from `grove serve` (whatever it
+		// advertises this run is registered). Graceful no-op when grove is absent;
+		// the tools also ride getSubagentTools so every orchestrator subagent gets
+		// them. Provisioning (grove init) stays opt-in via FORGE_GROVE_AUTOINIT.
+		try {
+			const grove = await attachGrove({
+				cwd: projectRoot,
+				autoInit: process.env.FORGE_GROVE_AUTOINIT === "1",
+			});
+			if (grove) {
+				for (const tool of grove.tools) pi.registerTool(tool);
+				setExtraSubagentTools(grove.tools);
+				process.once("exit", () => {
+					void grove.dispose();
+				});
+				if (process.env.FORGE_DEBUG_GROVE === "1") {
+					console.error(`[forge-cli grove] attached ${grove.toolNames.length} tools: ${grove.toolNames.join(", ")}`);
+				}
+			}
+		} catch (err) {
+			console.warn("[forge-cli] grove bridge attach failed (continuing without code-nav tools):", err);
+		}
 
 		// T04: Load bundled skills from dist/forge-payload/skills/ and validate.
 		// In dev mode (vitest), the payload isn't built yet, so the directory

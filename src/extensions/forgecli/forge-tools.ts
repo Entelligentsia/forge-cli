@@ -108,6 +108,23 @@ export interface ForgeToolDefs {
 	markdown: ToolDefinition;
 }
 
+// Extra tools injected into every subagent dispatch alongside the forge tool
+// surface. Populated once at extension init (e.g. dynamically-discovered grove
+// code-nav tools via the MCP bridge). Like forge_ask_user, these are registered
+// on the host session but are NOT inherited into createAgentSession subagents,
+// so they must be injected as customTools for orchestrator dispatch to reach
+// them. Empty by default — set via setExtraSubagentTools.
+let extraSubagentTools: ToolDefinition[] = [];
+
+/**
+ * Register tools that every subagent dispatch should receive in addition to the
+ * forge tool surface. Called once at extension init after the host session
+ * registers them. Idempotent — last call wins.
+ */
+export function setExtraSubagentTools(tools: ToolDefinition[]): void {
+	extraSubagentTools = tools;
+}
+
 /**
  * Return all forge tool definitions for subagent injection.
  *
@@ -119,8 +136,9 @@ export function getSubagentTools(defs: ForgeToolDefs, _personaName?: string): To
 	// forge_ask_user is appended so a subagent can reach the human via the
 	// ask-broker (forge_ask_user is registered on the host session only; it is
 	// NOT inherited into createAgentSession subagents, so it must be injected as
-	// a customTool here for every orchestrator dispatch).
-	return [...Object.values(defs), askUserToolDefinition];
+	// a customTool here for every orchestrator dispatch). extraSubagentTools
+	// (e.g. grove code-nav) ride the same channel for the same reason.
+	return [...Object.values(defs), askUserToolDefinition, ...extraSubagentTools];
 }
 
 /**
