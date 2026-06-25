@@ -121,12 +121,12 @@ describe("grove real integration (live `grove serve`)", () => {
 		// (grove 0.1.7 added `map` over 0.1.4; the bridge picks it up for free.)
 		expect(attachment.toolNames).toEqual(
 			expect.arrayContaining([
-				"grove_outline",
-				"grove_symbols",
-				"grove_source",
-				"grove_callers",
-				"grove_definition",
-				"grove_check",
+				"mcp__grove__outline",
+				"mcp__grove__symbols",
+				"mcp__grove__source",
+				"mcp__grove__callers",
+				"mcp__grove__definition",
+				"mcp__grove__check",
 			]),
 		);
 		console.error(`[grove itest] grove ${attachment.serverInfo?.version} discovered ${attachment.toolNames.length} tools: ${attachment.toolNames.join(", ")}`);
@@ -138,13 +138,13 @@ describe("grove real integration (live `grove serve`)", () => {
 			return;
 		}
 		// 1. outline the bridge's grove.ts
-		const outline = await call(attachment, "grove_outline", { file: `${BRIDGE_DIR}/grove.ts` });
+		const outline = await call(attachment, "mcp__grove__outline", { file: `${BRIDGE_DIR}/grove.ts` });
 		expect(outline.isError).toBe(false);
 		expect(textOf(outline)).toContain("grove.ts#");
 
 		// 2. locate a real exported symbol by exact name across the bridge dir.
 		//    (grove's TS tags index interfaces/types — use one this file declares.)
-		const symbols = await call(attachment, "grove_symbols", {
+		const symbols = await call(attachment, "mcp__grove__symbols", {
 			dir: BRIDGE_DIR,
 			name: "GroveReadiness",
 		});
@@ -156,7 +156,7 @@ describe("grove real integration (live `grove serve`)", () => {
 
 		// 3. read exactly that symbol's body by id — the dynamic-discovery payoff:
 		//    the id from step 2 round-trips straight into a different tool.
-		const source = await call(attachment, "grove_source", { id: target!.id });
+		const source = await call(attachment, "mcp__grove__source", { id: target!.id });
 		expect(source.isError).toBe(false);
 		const body = textOf(source);
 		expect(body).toContain("interface GroveReadiness");
@@ -168,7 +168,7 @@ describe("grove real integration (live `grove serve`)", () => {
 			expect(groveBin).toBeNull();
 			return;
 		}
-		const callers = await call(attachment, "grove_callers", {
+		const callers = await call(attachment, "mcp__grove__callers", {
 			name: "resolveGroveBin",
 			dir: BRIDGE_DIR,
 		});
@@ -183,7 +183,7 @@ describe("grove real integration (live `grove serve`)", () => {
 			expect(groveBin).toBeNull();
 			return;
 		}
-		const def = await call(attachment, "grove_definition", {
+		const def = await call(attachment, "mcp__grove__definition", {
 			name: "GroveReadiness",
 			dir: BRIDGE_DIR,
 		});
@@ -193,8 +193,8 @@ describe("grove real integration (live `grove serve`)", () => {
 
 		// `map` is only present on grove >= 0.1.7 — exercise it when advertised,
 		// proving the dynamically-discovered tool works end to end.
-		if (attachment.toolNames.includes("grove_map")) {
-			const map = await call(attachment, "grove_map", { dir: BRIDGE_DIR });
+		if (attachment.toolNames.includes("mcp__grove__map")) {
+			const map = await call(attachment, "mcp__grove__map", { dir: BRIDGE_DIR });
 			expect(map.isError).toBe(false);
 			expect(textOf(map)).toContain("grove.ts");
 			console.error(`[grove itest] map bytes: ${textOf(map).length}`);
@@ -206,7 +206,7 @@ describe("grove real integration (live `grove serve`)", () => {
 			expect(groveBin).toBeNull();
 			return;
 		}
-		const check = await call(attachment, "grove_check", { file: `${BRIDGE_DIR}/mcp-bridge.ts` });
+		const check = await call(attachment, "mcp__grove__check", { file: `${BRIDGE_DIR}/mcp-bridge.ts` });
 		expect(check.isError).toBe(false);
 		console.error(`[grove itest] check → ${textOf(check) || "(clean)"}`);
 	}, 15000);
@@ -216,7 +216,7 @@ describe("grove real integration (live `grove serve`)", () => {
 			expect(groveBin).toBeNull();
 			return;
 		}
-		const outline = attachment.tools.find((t) => t.name === "grove_outline")!;
+		const outline = attachment.tools.find((t) => t.name === "mcp__grove__outline")!;
 		expect(outline.promptGuidelines?.length).toBeGreaterThan(0);
 		// The parameters are grove's own JSON Schema (object with a `file` prop).
 		const schema = outline.parameters as { type?: string; properties?: Record<string, unknown> };
@@ -232,8 +232,8 @@ describe("grove real integration (live `grove serve`)", () => {
 		// This is the seam orchestrators use to build a subagent's customTools.
 		setExtraSubagentTools(attachment.tools);
 		const roster = getSubagentTools({} as ForgeToolDefs).map((t) => t.name);
-		expect(roster).toEqual(expect.arrayContaining(["grove_outline", "grove_source"]));
-		console.error(`[grove itest] subagent roster includes grove: ${roster.filter((n) => n.startsWith("grove_")).join(", ")}`);
+		expect(roster).toEqual(expect.arrayContaining(["mcp__grove__outline", "mcp__grove__source"]));
+		console.error(`[grove itest] subagent roster includes grove: ${roster.filter((n) => n.startsWith("mcp__grove__")).join(", ")}`);
 	});
 });
 

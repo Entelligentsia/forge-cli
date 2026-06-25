@@ -17,13 +17,18 @@ import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { attachMcpServer, type McpAttachment } from "./mcp-bridge.js";
 
-/** Default name prefix for grove tools: grove_outline, grove_symbols, … */
-export const GROVE_TOOL_PREFIX = "grove_";
+// Default name prefix for grove tools: mcp__grove__outline, mcp__grove__symbols, …
+// This is the standard MCP tool-naming convention (mcp__<server>__<tool>) that
+// grove's own skill and the CLAUDE.md "code navigation goes through grove"
+// INVARIANT already reference — naming the bridged tools this way means that
+// existing steering drives the model straight onto the bridge, rather than to a
+// `grove` CLI fallback that the skill assumes when MCP tools are absent.
+export const GROVE_TOOL_PREFIX = "mcp__grove__";
 
 /** Steering appended to the system prompt while grove tools are active. */
 export const GROVE_PROMPT_GUIDELINES: string[] = [
-	"For code navigation (where is X / what does it define / who calls it), prefer the grove_* tools over grep or whole-file reads — they return one symbol's bytes with a stable id.",
-	"Typical chain: grove_outline a file, or grove_symbols to locate a name, then grove_source by id; grove_callers / grove_definition for call sites and go-to-def; grove_check after an edit.",
+	"For code navigation (where is X / what does it define / who calls it), prefer the mcp__grove__* tools over grep or whole-file reads — they return one symbol's bytes with a stable id.",
+	"Typical chain: mcp__grove__outline a file, or mcp__grove__symbols to locate a name, then mcp__grove__source by id; mcp__grove__callers / mcp__grove__definition for call sites and go-to-def; mcp__grove__check after an edit.",
 ];
 
 /**
@@ -106,7 +111,7 @@ export interface AttachGroveOptions {
 	cwd: string;
 	/** Explicit binary override. */
 	bin?: string;
-	/** Override the tool name prefix (default "grove_"). */
+	/** Override the tool name prefix (default "mcp__grove__"). */
 	namePrefix?: string;
 	/** Run the implicit init path if the project isn't provisioned yet. */
 	autoInit?: boolean;
