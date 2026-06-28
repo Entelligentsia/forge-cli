@@ -175,3 +175,44 @@ testbench/readiness.sh cartographer    # must print CLONE-READY
 The full procedure (and per-project onboarding) lives in
 `forge-testbench/testbench/README.md`. CI re-verifies via the testbench
 `readiness` workflow on push + weekly.
+
+<!-- grove:start -->
+## INVARIANT — code navigation goes through grove
+
+Every where-is / what's-in / who-calls action in this project goes through the
+**grove** MCP server (tree-sitter backed; languages: bash, cpp, html, javascript, json, python, typescript). This is not a
+preference. `grep`, `rg`, `read`, `cat`, and `sed` on a source file are
+FALLBACKS, allowed only after grove has been tried and returned insufficient
+content. Running `grep -rn '<symbol>'`, or reading a whole source file, as your
+first action on a code question is a steering violation.
+
+The grove tools are **deferred** MCP tools — the moment a code question arrives,
+load their schemas with ToolSearch (do not default to a search agent or grep):
+`mcp__grove__outline`, `mcp__grove__symbols`, `mcp__grove__source`, `mcp__grove__callers`, `mcp__grove__definition`, `mcp__grove__check`.
+
+**Trigger — check before every tool call.** If the prompt contains any of — a
+file path, a function / type / struct / macro name, or the words "where is",
+"what does X define", "who calls", "show me", "find", "list",
+"outline" — your FIRST tool call MUST be a grove tool. Otherwise grove is optional.
+
+**Procedure.**
+1. File but no symbol → `mcp__grove__outline` (pass `detail:0` on files > 500 lines).
+2. Symbol but no file → `mcp__grove__symbols` with `name`.
+3. Take the `symbol-id` (`<lang>:<relpath>#<name>@<row>`) from the result.
+4. `mcp__grove__source` with that **id** → exactly that symbol's body.
+5. "who calls" → `mcp__grove__callers`; "where defined" → `mcp__grove__definition`.
+6. After an edit → `mcp__grove__check`.
+
+**Cross-file.** `mcp__grove__symbols` over the root (definitions tree-wide) → `mcp__grove__callers`
+(use sites) → `mcp__grove__source` per definition. Do NOT `grep -rn '<type>' .` instead —
+grep returns string matches, grove returns semantic definitions.
+
+**Recovery (partial/truncated output).** Re-run `mcp__grove__source` with the `symbol-id`
+form to force body extraction; still partial → `read` with `offset`/`limit` from
+the outline, never the whole file. A single grove miss does NOT justify switching
+to grep for later questions — re-run with the id form and continue.
+
+`read` on a 1700-line file floods context with ~50 KB you don't need; `grep`
+misses struct/function boundaries. `mcp__grove__callers`/`mcp__grove__definition` are name-based
+(not receiver-type resolved).
+<!-- grove:end -->
