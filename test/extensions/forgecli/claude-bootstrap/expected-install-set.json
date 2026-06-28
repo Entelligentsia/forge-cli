@@ -233,6 +233,7 @@
     ".forge/tools/compression-gate.cjs",
     ".forge/tools/delete-candidate-detector.cjs",
     ".forge/tools/forge-preflight.cjs",
+    ".forge/tools/forge-usage-report.cjs",
     ".forge/tools/friction-emit.cjs",
     ".forge/tools/generation-manifest.cjs",
     ".forge/tools/hooks/check-update.cjs",

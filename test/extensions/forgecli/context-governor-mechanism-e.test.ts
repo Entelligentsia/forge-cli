@@ -131,12 +131,22 @@ function makeCtxWithUsage(
 /** Build a scripted streamFn that drives N turns without a real LLM. */
 function buildSimpleStreamFn(turns = 2): StreamFn {
 	let turnCount = 0;
+	// Upstream pi 0.80.2 changed compact() to refuse sessions with no eligible
+	// messages ("Nothing to compact (session too small)", upstream #4811) instead
+	// of producing an empty summary. prepareCompaction returns undefined when
+	// messagesToSummarize is empty, which happens when the session is smaller
+	// than keepRecentTokens (default 20000). To exercise the real extension-
+	// compaction path (session_before_compact -> session_compact with
+	// fromExtension=true), each response pads to ~60000 chars (~15000 tokens at
+	// 4 chars/token) so two turns (~30000 tokens) exceed keepRecentTokens and
+	// leave ~10000 tokens to summarize.
+	const compactionEligiblePadding = "x".repeat(60_000);
 	return (_model, _context, _options) => {
 		turnCount++;
 		const stream = createAssistantMessageEventStream();
 		const finalMsg: AssistantMessage = {
 			role: "assistant",
-			content: [{ type: "text", text: `Turn ${turnCount} response.` }],
+			content: [{ type: "text", text: `Turn ${turnCount} response. ${compactionEligiblePadding}` }],
 			api: "anthropic" as Api,
 			provider: "test-provider" as Provider,
 			model: "test-model",
