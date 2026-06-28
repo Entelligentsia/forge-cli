@@ -5,6 +5,18 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-06-28
+
+### Changed
+
+- **Vendored pi runtime upgraded 0.79.3 → 0.80.2** (weekly upstream sync; 234 commits over ~13 days). The bundled `@earendil-works/pi-coding-agent` moves `0.79.3-forge.1` → `0.80.2-forge.1`; siblings `pi-tui` / `pi-ai` / `pi-agent-core` move `0.79.3` → `0.80.2`. Consumers get the upstream 0.80.x feature set: external-editor setting, installer lock generation, reasoning-token counts in `Usage`, the experimental `pi-orchestrator` package, and many provider/model fixes (OpenAI default model, MiniMax/Anthropic compat, BMP image handling, session-file validation, RPC state machine, etc.).
+- **Version policy:** only `pi-coding-agent` (the sole vendored package with forge-specific code — `setOutputSource` etc.) carries the `-forge.N` marker; siblings stay at the plain upstream version so they satisfy coding-agent's `^0.80.2` ranges and npm dedupes (avoids nested-copy `TUI` type-identity conflicts). pi-mono's install-lock validator was relaxed to compare base version (ignoring prerelease tags).
+
+### Fixed
+
+- `context-governor-mechanism-e.test.ts`: pad `buildSimpleStreamFn` responses so the 2-turn session exceeds `keepRecentTokens` (20000) and is compaction-eligible — upstream 0.80.2 (#4811) changed `compact()` to refuse sessions with no eligible messages ("Nothing to compact") instead of producing an empty summary.
+- `expected-install-set.json`: add `.forge/tools/forge-usage-report.cjs` to the frozen install-set snapshot — companion to Forge plugin 1.6.4 ([Entelligentsia/forge@78f33002](https://github.com/Entelligentsia/forge/commit/78f33002)), which added the tool to `payload-manifest.json`'s tools selection (it was referenced by workflows but missing from the default payload — dead vendored reference / `MODULE_NOT_FOUND` risk, FORGE-BUG-030/036 class).
+
 ## [1.0.44] — 2026-06-25
 
 ### Added
