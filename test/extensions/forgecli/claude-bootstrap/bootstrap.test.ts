@@ -209,7 +209,7 @@ describe("bootstrapClaudeProject", () => {
 			const result = bootstrapClaudeProject({ dir, payloadRoot });
 
 			expect(result.ok).toBe(true);
-			expect(result.warnings).toHaveLength(0);
+			expect(result.warnings, `bootstrap warnings: ${JSON.stringify(result.warnings)}`).toHaveLength(0);
 
 			// .forge skeleton dirs
 			expect(fs.existsSync(path.join(dir, ".forge"))).toBe(true);

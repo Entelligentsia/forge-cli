@@ -24,16 +24,18 @@
 //     Test 15: factory registered via extensionFactories fires on session_before_compact
 
 import type { ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import {
+	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
+	ModelRegistry,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Provider } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { registerFauxProvider, type FauxProviderRegistration } from "@earendil-works/pi-ai/compat";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	buildForgeCompactionFactory,
@@ -478,6 +480,9 @@ describe("extensionFactories integration: factory fires on session_before_compac
 	let handlerFireCount = 0;
 	let capturedSummary: string | null = null;
 	let fromExtension: boolean | null = null;
+	// pi 0.80.2+ faux provider — gives the session a no-auth model so the
+	// scripted streamFn runs on a clean-env CI runner (no ~/.pi default).
+	let fauxRef: FauxProviderRegistration | undefined;
 
 	beforeAll(async () => {
 		const evidence = { fired: false };
@@ -516,12 +521,42 @@ describe("extensionFactories integration: factory fires on session_before_compac
 		});
 		await resourceLoader.reload();
 
+		// pi 0.80.2+'s agent loop requires a runnable model before it dispatches to
+		// the scripted streamFn; a clean-env CI runner has no ~/.pi default. Register
+		// pi's faux provider (no real credentials) so the session has a model.
+		const faux = registerFauxProvider({});
+		faux.setResponses([]);
+		const fauxModel = faux.getModel();
+		const authStorage = AuthStorage.inMemory();
+		authStorage.setRuntimeApiKey(fauxModel.provider, "faux-key");
+		const modelRegistry = ModelRegistry.inMemory(authStorage);
+		modelRegistry.registerProvider(fauxModel.provider, {
+			apiKey: "faux-key",
+			baseUrl: fauxModel.baseUrl ?? "https://faux.local",
+			api: faux.api,
+			models: faux.models.map((m) => ({
+				id: m.id,
+				name: m.name,
+				api: m.api,
+				reasoning: m.reasoning,
+				input: m.input,
+				cost: m.cost,
+				contextWindow: m.contextWindow,
+				maxTokens: m.maxTokens,
+				baseUrl: m.baseUrl ?? "https://faux.local",
+			})),
+		});
+		fauxRef = faux;
+
 		const created = await createAgentSession({
 			tools: [],
 			noTools: "builtin",
 			sessionManager: SessionManager.inMemory(),
 			cwd: process.cwd(),
 			resourceLoader,
+			authStorage,
+			modelRegistry,
+			model: fauxModel,
 		});
 
 		sessionInstance = created.session;
@@ -541,6 +576,7 @@ describe("extensionFactories integration: factory fires on session_before_compac
 			await sessionInstance.dispose();
 			sessionInstance = null;
 		}
+		fauxRef?.unregister();
 	});
 
 	it("Test 15: factory registered via extensionFactories fires — fromExtension=true on session_compact", () => {
