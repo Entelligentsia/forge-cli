@@ -64,6 +64,11 @@ const config: KnipConfig = {
 	// documented in .claude/skills/forge-cli-engineer/skill-pack/04-handler-patterns.md.
 	ignoreExportsUsedInFile: true,
 	ignoreDependencies: [],
+	// Binaries referenced in npm scripts that aren't installed npm deps:
+	//   forge — this package's own bin (used in install:global's `forge --version`
+	//           after `npm install -g`; knip can't see the global install).
+	//   tail  — system command (install:global's `npm pack --silent | tail -n 1`).
+	ignoreBinaries: ["forge", "tail"],
 	// Suppress known external-API or test-utility exports that knip cannot trace via
 	// static imports. Each exclusion is justified below.
 	//
