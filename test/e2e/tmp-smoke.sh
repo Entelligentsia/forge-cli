@@ -237,7 +237,12 @@ else
 	IDEMPOTENT_OUT="$TMP_SMOKE_OUT_DIR/bootstrap-idempotent.out"
 	if "$FORGE_BIN" init claude "$TMP_PROJECT_DIR" \
 			>"$IDEMPOTENT_OUT" 2>&1; then
-		CREATED_COUNT=$(grep -c "^  + " "$IDEMPOTENT_OUT" 2>/dev/null || echo "0")
+		CREATED_COUNT=$(grep -c "^  + " "$IDEMPOTENT_OUT" 2>/dev/null || true)
+		# `grep -c` always prints the count (0 for no matches) and exits 1 when
+		# the count is 0; the old `|| echo "0"` appended a SECOND "0", producing
+		# "0\n0" and a bash arithmetic syntax error in the `-eq` test. `|| true`
+		# adds no output; guard the empty case for a total grep failure.
+		[[ -z "$CREATED_COUNT" ]] && CREATED_COUNT=0
 		if [[ "$CREATED_COUNT" -eq 0 ]]; then
 			record PASS "BOOTSTRAP-8: idempotent second run (no new files)" ""
 		else
@@ -392,8 +397,14 @@ echo "▶ tmp-smoke — /forge:health auth-free subset"
 # Pattern (per PLAN §3.1 + PLAN_REVIEW blocker #1): run the command as a
 # top-level statement inside the if-branch so $? reflects the node exit code,
 # not the command-substitution wrapper. Tee stdout/stderr to the artefact log.
+# NOTE: the generation-manifest tool resolves its manifest from process.cwd()
+# (no --root flag), and validate-store resolves the store from cwd too. The
+# gate must run both against the FRESH tmp project (not PKG_DIR, which is the
+# forge-cli dogfooding instance with its own .forge/). Use a subshell `cd` so
+# the node process runs with cwd=TMP_PROJECT_DIR while `record` (which
+# updates global counters) stays in the main shell.
 if [[ -n "$VALIDATE_STORE" && -f "$VALIDATE_STORE" ]]; then
-	if node "$VALIDATE_STORE" --dry-run >"$TMP_SMOKE_OUT_DIR/validate.out" 2>&1; then
+	if (cd "$TMP_PROJECT_DIR" && node "$VALIDATE_STORE" --dry-run) >"$TMP_SMOKE_OUT_DIR/validate.out" 2>&1; then
 		record PASS "E2E-T03-HEALTH: validate-store --dry-run" ""
 	else
 		VALIDATE_RC=$?
@@ -404,11 +415,27 @@ else
 fi
 
 if [[ -n "$GENERATION_MANIFEST" && -f "$GENERATION_MANIFEST" ]]; then
-	if node "$GENERATION_MANIFEST" check >"$TMP_SMOKE_OUT_DIR/manifest.out" 2>&1; then
-		record PASS "E2E-T03-HEALTH: generation-manifest check" ""
+	# `list --modified` mirrors /forge:health's invocation (the `check`
+	# subcommand is per-file and requires a path argument; calling it with no
+	# path was a usage error). `list --modified` always exits 0, so parse the
+	# output: "All tracked files are pristine" => PASS; any modified/missing/
+	# untracked row => FAIL (the fresh init's generated .forge must match the
+	# bundled manifest).
+	if (cd "$TMP_PROJECT_DIR" && node "$GENERATION_MANIFEST" list --modified) >"$TMP_SMOKE_OUT_DIR/manifest.out" 2>&1; then
+		# `list --modified` always exits 0, so parse the output. "All tracked
+		# files are pristine" => no drift. "No files tracked" => the manifest is
+		# empty, which is the expected post-`/forge:init --fast` state (init does
+		# not `record` into the manifest; only `/forge:rebuild` does) — no drift
+		# to detect, so the gate is healthy. Any other output => modified/missing/
+		# untracked generated files => FAIL.
+		if grep -qE "All tracked files are pristine|No files tracked" "$TMP_SMOKE_OUT_DIR/manifest.out" 2>/dev/null; then
+			record PASS "E2E-T03-HEALTH: generation-manifest check" ""
+		else
+			record FAIL "E2E-T03-HEALTH: generation-manifest — modified/missing/untracked generated files" "see manifest.out"
+		fi
 	else
 		MANIFEST_RC=$?
-		record FAIL "E2E-T03-HEALTH: generation-manifest check rc=$MANIFEST_RC" "see manifest.out"
+		record FAIL "E2E-T03-HEALTH: generation-manifest list rc=$MANIFEST_RC" "see manifest.out"
 	fi
 else
 	record SKIP "E2E-T03-HEALTH: generation-manifest check" "SKIP_REASON=skip:generation-manifest unresolved"
