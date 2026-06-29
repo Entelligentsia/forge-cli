@@ -20,6 +20,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
+import { registerFauxProvider, type FauxProviderRegistration } from "@earendil-works/pi-ai/compat";
 import {
 	type AgentSessionEvent,
 	AuthStorage,
@@ -285,6 +286,13 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 
 	const cwdAbs = cwd ?? process.cwd();
 
+	// Test-only faux-provider handle — when opts.streamFn is set AND the
+	// session resolved no model (clean-env CI runner, no ~/.pi default), we
+	// register pi's faux provider as a fallback model so pi 0.80.2+'s agent
+	// loop can proceed to the scripted streamFn. Unregistered in the finally.
+	// Production never sets streamFn, so this stays undefined in real runs.
+	let fauxHandle: FauxProviderRegistration | undefined;
+
 	// ── Transcript export — normal path AND hard-exit path ───────────────
 	// Exporting only at phase end loses the in-flight transcript when the
 	// user /quit's pi (or the process dies): the post-dispatch code never
@@ -441,6 +449,55 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		}
 	}
 
+	// Test-only seam (forge-cli#17): when a scripted streamFn is set, force
+	// the session onto pi's faux provider so the agent loop has a runnable,
+	// no-auth model. pi 0.80.2+'s agent loop dispatches to streamFn only after
+	// a model is selected; a clean-env CI runner (no ~/.pi config) resolves a
+	// placeholder "unknown" model that can't run, so the loop fails before the
+	// scripted streamFn and the scripted model never lands in result.model
+	// (e.g. run-sprint.ceremony fell back to "orchestrator"). Registering faux
+	// AFTER the requestedModel path above means the persona's real model still
+	// gets a chance first (normal-env tests), but faux wins as the runnable
+	// model for the scripted streamFn. Only fires when the session resolved
+	// no runnable model (pi's "unknown" placeholder, or undefined) — normal-env
+	// runs that already resolved the persona's real model are untouched.
+	// Production never sets streamFn.
+	if (opts.streamFn && (!session.model || session.model.id === "unknown")) {
+		fauxHandle = registerFauxProvider({});
+		fauxHandle.setResponses([]);
+		const fauxModel = fauxHandle.getModel();
+		authStorage.setRuntimeApiKey(fauxModel.provider, "faux-key");
+		try {
+			modelRegistry.registerProvider(fauxModel.provider, {
+				apiKey: "faux-key",
+				baseUrl: fauxModel.baseUrl ?? "https://faux.local",
+				api: fauxHandle.api,
+				models: fauxHandle.models.map((m) => ({
+					id: m.id,
+					name: m.name,
+					api: m.api,
+					reasoning: m.reasoning,
+					input: m.input,
+					cost: m.cost,
+					contextWindow: m.contextWindow,
+					maxTokens: m.maxTokens,
+					baseUrl: m.baseUrl ?? "https://faux.local",
+				})),
+			});
+		} catch {
+			/* non-fatal: setModel below can still set the faux model directly */
+		}
+		try {
+			await session.setModel(fauxModel);
+			// setModel rebinds session.agent.streamFn to the new model's provider
+			// stream; re-apply the scripted streamFn so the test seam wins over
+			// faux's (empty) default responses.
+			session.agent.streamFn = opts.streamFn;
+		} catch {
+			/* non-fatal: scripted streamFn may still run via the current model */
+		}
+	}
+
 	// ── terminate channel ────────────────────────────────────────────────
 	const onAbort = () => {
 		void session.abort();
@@ -505,6 +562,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		unsubscribe();
 		if (signal) signal.removeEventListener("abort", onAbort);
 		session.dispose();
+		fauxHandle?.unregister();
 	}
 
 	if (result.stopReason === "error" || result.stopReason === "aborted") {
