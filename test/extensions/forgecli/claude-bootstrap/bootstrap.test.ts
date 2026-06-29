@@ -209,7 +209,11 @@ describe("bootstrapClaudeProject", () => {
 			const result = bootstrapClaudeProject({ dir, payloadRoot });
 
 			expect(result.ok).toBe(true);
-			expect(result.warnings, `bootstrap warnings: ${JSON.stringify(result.warnings)}`).toHaveLength(0);
+			// "Claude Code not found on PATH" is a non-fatal preflight warning that
+			// fires when the `claude` CLI isn't installed (e.g. a fresh CI runner).
+			// It's env-dependent, not a bootstrap defect — filter it before asserting.
+			const envIndependentWarnings = result.warnings.filter((w) => !w.includes("Claude Code not found on PATH"));
+			expect(envIndependentWarnings, `bootstrap warnings: ${JSON.stringify(result.warnings)}`).toHaveLength(0);
 
 			// .forge skeleton dirs
 			expect(fs.existsSync(path.join(dir, ".forge"))).toBe(true);
