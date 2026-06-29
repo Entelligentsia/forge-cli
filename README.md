@@ -321,6 +321,8 @@ before forge-cli's extension hook runs.
 
 ## Roadmap
 
+**Latest: Shipped (1.1.0)** — see [CHANGELOG.md](CHANGELOG.md) for the full history.
+
 | Next | Status |
 |------|--------|
 | `/forge:export` — portable workflow skills for Claude Code + Codex | Planned |
@@ -375,5 +377,7 @@ MIT © Entelligentsia
   0.20.0 · 0.20.1 · 0.20.2 · 0.20.3 · 0.21.0 ·
   1.0.0 · 1.0.3 · 1.0.11 · 1.0.14 · 1.0.15 · 1.0.16 · 1.0.17 ·
   1.0.18 · 1.0.19 · 1.0.20
+  1.0.21 · 1.0.22 · 1.0.23 · 1.0.24 · 1.0.25 · 1.0.26 · 1.0.27 · 1.0.28 · 1.0.29 · 1.0.30 ·
+  1.0.31 · 1.0.32 · 1.0.33 · 1.0.34 · 1.0.35 · 1.0.36 · 1.0.42 · 1.0.43 · 1.0.44 · 1.1.0
 -->
 
