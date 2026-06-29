@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   smoke:
-    name: smoke (linux, node 20)
+    name: smoke (linux, node 22)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -28,10 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -72,7 +72,7 @@ jobs:
     # FORGE-S25-T03, FORGE-S31-T07 — fresh-tmp-project working-product gate.
     # Runs after smoke so pack+install failures fail fast before the bootstrap.
     # Bootstrap is auth-free (no LLM round-trip); 10 min ceiling is conservative.
-    name: tmp-smoke (fresh tmp project, linux, node 20)
+    name: tmp-smoke (fresh tmp project, linux, node 22)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: smoke
@@ -81,10 +81,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
 
