@@ -5,6 +5,16 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-07-01
+
+### Changed
+
+- **Bundled Forge plugin re-vendored 1.6.5 → 1.6.9** (`forge.bundledVersion`). Picks up the reconciled `/forge:init` step-machine (FEAT-011): the frozen 10-doc KB contract (plugin 1.6.5), the per-step Phase-2 substance fragments (1.6.6), the confident *not-applicable* stub policy plus widened Phase-2 verify gate (1.6.7), and the `wfl-init.js` Phase-2 fragment convergence (1.6.8) — released together as plugin 1.6.9.
+
+### Fixed
+
+- **`payload-manifest.json`: `init/phases` select is now recursive** — the Slice-2 `init/phases/phase-2/` per-step substance fragments (`index.md`, `context.md`, and the 10 KB-doc fragments) now vendor into `.forge/init/phases/phase-2/` on a clean `4ge init claude .`. `wfl-init.js` references `phase-2/index.md` and `phase-2/context.md` literally, so without this the dead-vendored-reference gate failed once the 1.6.9 payload was vendored. `expected-install-set.json` frozen snapshot updated (+12 files, 283 → 295).
+
 ## [1.1.0] — 2026-06-28
 
 ### Changed

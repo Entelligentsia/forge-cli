@@ -1,9 +1,8 @@
 {
   "_doc": "Frozen baseline install set for FORGE-S32-T03 AC4 byte-parity. The sorted relative-path list of files a clean `4ge init claude .` vendors into a fresh project. The manifest-driven bootstrap (bootstrap.ts) must reproduce this set exactly; any drift (a manifest edit in T05/T06, or an over-broad install regression like FORGE-BUG-044/045) fails the frozen-install-set parity test in bootstrap.test.ts.",
   "_provenance": "Captured by bootstrapping dist/forge-payload (built via `node scripts/build-payload.cjs`) into a scratch dir and listing `find . -type f | sort`. See PROGRESS.md for the exact capture command.",
-  "_count": 301,
+  "_count": 295,
   "files": [
-    ".mcp.json",
     ".claude/agents/store-query-validator.md",
     ".claude/agents/tomoshibi.md",
     ".claude/commands/forge/add-pipeline.md",
@@ -121,9 +120,22 @@
     ".forge/init/generation/generate-workflows.md",
     ".forge/init/phases/phase-1-collect.md",
     ".forge/init/phases/phase-2-discover.md",
+    ".forge/init/phases/phase-2/context.md",
+    ".forge/init/phases/phase-2/database.md",
+    ".forge/init/phases/phase-2/deployment.md",
+    ".forge/init/phases/phase-2/domain-concepts.md",
+    ".forge/init/phases/phase-2/domain-model.md",
+    ".forge/init/phases/phase-2/entity-model.md",
+    ".forge/init/phases/phase-2/index.md",
+    ".forge/init/phases/phase-2/processes.md",
+    ".forge/init/phases/phase-2/routing.md",
+    ".forge/init/phases/phase-2/stack-checklist.md",
+    ".forge/init/phases/phase-2/stack.md",
+    ".forge/init/phases/phase-2/testing.md",
     ".forge/init/phases/phase-3-materialize.md",
     ".forge/init/phases/phase-4-register.md",
     ".forge/init/workflow-gen-plan.json",
+    ".forge/mcp/server.cjs",
     ".forge/meta/fragments/tool-discipline.md",
     ".forge/meta/personas/README.md",
     ".forge/meta/personas/meta-architect.md",
@@ -213,7 +225,6 @@
     ".forge/schemas/structure-manifest.json",
     ".forge/schemas/structure-versions.schema.json",
     ".forge/schemas/task.schema.json",
-    ".forge/mcp/server.cjs",
     ".forge/store/bugs/.gitkeep",
     ".forge/store/events/.gitkeep",
     ".forge/store/sprints/.gitkeep",
@@ -285,6 +296,7 @@
     ".forge/tools/validate-store.cjs",
     ".forge/tools/verify-apply.cjs",
     ".forge/tools/verify-integrity.cjs",
-    ".forge/tools/verify-phase.cjs"
+    ".forge/tools/verify-phase.cjs",
+    ".mcp.json"
   ]
 }
