@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "grove": {
+      "args": [
+        "serve"
+      ],
+      "command": "/home/boni/.nvm/versions/node/v24.3.0/lib/node_modules/@entelligentsia/grove/vendor/grove"
+    }
+  }
+}

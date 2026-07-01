@@ -1,0 +1,40 @@
+{
+  "grammars": [
+    {
+      "name": "bash",
+      "version": "0.25.1",
+      "wasm": "sha256:8292919c88a0f7d3fb31d0cd0253ca5a9531bc1ede82b0537f2c63dd8abe6a7a"
+    },
+    {
+      "name": "cpp",
+      "version": "0.23.4",
+      "wasm": "sha256:174eb0deb75b2ec7881bcacda9f995648d8e683956e5c2267e69ab6dc503fcbf"
+    },
+    {
+      "name": "html",
+      "version": "0.23.2",
+      "wasm": "sha256:c48fcd82c7ea8bf943180088ba7f28c48b2bb5287874179168bf9d31e394cf85"
+    },
+    {
+      "name": "javascript",
+      "version": "0.25.0",
+      "wasm": "sha256:5fb488d0cabb4775a594bab85682de5ad6ce83c0d6ac997a9f82dd084d571240"
+    },
+    {
+      "name": "json",
+      "version": "0.24.8",
+      "wasm": "sha256:d2119fb98d5912719b13f9458574f8608d2d29dfbe45f6be1f860ea1fe2a2405"
+    },
+    {
+      "name": "python",
+      "version": "0.25.0",
+      "wasm": "sha256:16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47"
+    },
+    {
+      "name": "typescript",
+      "version": "0.23.2",
+      "wasm": "sha256:778025db5a8be0e70f8ccc3671e486dfeddd048c25d9e8a70c26de2e1bf6f97d"
+    }
+  ],
+  "version": 1
+}
