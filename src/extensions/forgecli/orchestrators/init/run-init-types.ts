@@ -126,13 +126,22 @@ export const ROLE_TIER: Record<string, "sonnet" | "haiku"> = {
 /** Five codebase discovery domains for Phase 1 fan-out (wfl-init.js line ~159). */
 export const DOMAINS = ["stack", "routing", "processes", "database", "testing"] as const;
 
-/** Seven KB document IDs for Phase 2 fan-out (wfl-init.js lines ~236–244). */
+/**
+ * The canonical 10-doc KB contract for Phase 2 fan-out (FORGE-S35-T01).
+ * DRIFT-GUARD: keep byte-identical (same items, same order) to KB_DOC_IDS in
+ * forge/forge/init/base-pack/workflows-js/wfl-init.js (lines ~236–252) and to
+ * ARCH_DOCS in forge/forge/tools/verify-phase.cjs — asserted by the plugin test
+ * tools/__tests__/kb-doc-contract.test.cjs.
+ */
 export const KB_DOC_IDS = [
 	"architecture/stack",
 	"architecture/processes",
 	"architecture/routing",
 	"architecture/database",
 	"architecture/testing",
+	"architecture/deployment",
+	"architecture/entity-model",
+	"architecture/stack-checklist",
 	"business-domain/domain-model",
 	"business-domain/domain-concepts",
 ] as const;

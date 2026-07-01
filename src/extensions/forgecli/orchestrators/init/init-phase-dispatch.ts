@@ -2,7 +2,7 @@
 // orchestrator pipeline (FORGE-S33-T02). Handles model resolution,
 // CallerContextStore + AskBroker wrapping, runForgeSubagent dispatch,
 // verify-gate routing, and retry-once semantics. Sequential fan-out (Option A)
-// for collect (5 domains) and discover (7 KB-doc IDs).
+// for collect (5 domains) and discover (10 KB-doc IDs).
 //
 // IL10 — NEVER calls store-cli emit; the orchestrator (T03) composes and emits
 // phase events from result.{model,provider,usage} after dispatchInitPhase returns.
@@ -375,7 +375,7 @@ export async function dispatchInitPhase(
 		return { kind: "ok", result: configResult };
 	}
 
-	// ── Phase 2: discover (gate + 7 KB-doc fan-out + index + context) ────────
+	// ── Phase 2: discover (gate + 10 KB-doc fan-out + index + context) ────────
 	if (phase.name === "discover") {
 		let phasePrompt: string;
 		try {
@@ -407,7 +407,7 @@ export async function dispatchInitPhase(
 			};
 		}
 
-		// KB-doc fan-out (7 sequential agents), retry each failed doc once.
+		// KB-doc fan-out (10 sequential agents), retry each failed doc once.
 		const { ctx: _ctx } = p;
 		_ctx.ui.notify(
 			`  init dispatch: sequential ${KB_DOC_IDS.length}-agent fan-out for "discover:kb-docs" ` +
