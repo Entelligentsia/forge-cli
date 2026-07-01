@@ -87,6 +87,8 @@ import { AskBroker } from "../../../src/extensions/forgecli/ask-broker.js";
 import {
 	dispatchSingleAgent,
 	readInitPhasePrompt,
+	readInitSharedProcedure,
+	readInitPhase2Fragment,
 	resolveInitModel,
 	type InitDispatchParams,
 } from "../../../src/extensions/forgecli/orchestrators/init/init-phase-dispatch.js";
@@ -117,6 +119,24 @@ beforeEach(() => {
 	fs.mkdirSync(phasesDir, { recursive: true });
 	fs.writeFileSync(path.join(phasesDir, "phase-1-collect.md"), "# Phase 1: Collect\nDiscover the tech stack.", "utf8");
 	fs.writeFileSync(path.join(phasesDir, "phase-2-discover.md"), "# Phase 2: Discover\nWrite KB docs.", "utf8");
+
+	// Slice 2: shared procedure + per-step substance fragments.
+	const generationDir = path.join(tmpRoot, "bundle", "init", "generation");
+	fs.mkdirSync(generationDir, { recursive: true });
+	fs.writeFileSync(
+		path.join(generationDir, "generate-kb-doc.md"),
+		"# Knowledge Base Doc Generation\nShared procedure: write EXACTLY ONE file.",
+		"utf8",
+	);
+	const phase2Dir = path.join(phasesDir, "phase-2");
+	fs.mkdirSync(phase2Dir, { recursive: true });
+	for (const name of ["stack", "routing", "index", "context"]) {
+		fs.writeFileSync(
+			path.join(phase2Dir, `${name}.md`),
+			`<!-- kb-doc-fragment: ${name} -->\n# Substance — ${name}`,
+			"utf8",
+		);
+	}
 
 	vi.mocked(createAgentSession).mockClear();
 	mockSession.subscribe.mockClear();
@@ -283,5 +303,42 @@ describe("readInitPhasePrompt", () => {
 	it("throws when the phase prompt file is missing", () => {
 		fs.rmSync(path.join(tmpRoot, "bundle", "init", "phases", "phase-2-discover.md"));
 		expect(() => readInitPhasePrompt(path.join(tmpRoot, "bundle"), 2)).toThrow(/not found/);
+	});
+});
+
+// ── readInitSharedProcedure (Slice 2) ──────────────────────────────────────────
+
+describe("readInitSharedProcedure", () => {
+	it("reads the shared generate-kb-doc.md procedure from the bundle", () => {
+		const proc = readInitSharedProcedure(path.join(tmpRoot, "bundle"));
+		expect(proc).toContain("Shared procedure");
+		expect(proc).toContain("EXACTLY ONE file");
+	});
+
+	it("throws when the shared procedure file is missing", () => {
+		fs.rmSync(path.join(tmpRoot, "bundle", "init", "generation", "generate-kb-doc.md"));
+		expect(() => readInitSharedProcedure(path.join(tmpRoot, "bundle"))).toThrow(/generate-kb-doc/);
+	});
+});
+
+// ── readInitPhase2Fragment (Slice 2) ───────────────────────────────────────────
+
+describe("readInitPhase2Fragment", () => {
+	it("reads a per-step substance fragment standalone with its own marker", () => {
+		for (const name of ["stack", "routing", "index", "context"]) {
+			const frag = readInitPhase2Fragment(path.join(tmpRoot, "bundle"), name);
+			expect(frag).toContain(`<!-- kb-doc-fragment: ${name} -->`);
+		}
+	});
+
+	it("a fragment does not contain a sibling's substance", () => {
+		const stack = readInitPhase2Fragment(path.join(tmpRoot, "bundle"), "stack");
+		expect(stack).not.toContain("kb-doc-fragment: routing");
+	});
+
+	it("throws a descriptive error when the fragment is missing", () => {
+		expect(() => readInitPhase2Fragment(path.join(tmpRoot, "bundle"), "does-not-exist")).toThrow(
+			/does-not-exist/,
+		);
 	});
 });

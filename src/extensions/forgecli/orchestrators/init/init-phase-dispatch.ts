@@ -89,6 +89,46 @@ export function readInitPhasePrompt(bundleRoot: string, phaseNum: 1 | 2): string
 	return fs.readFileSync(path.join(phasesDir, filename), "utf8");
 }
 
+/**
+ * Read the shared Phase-2 KB-doc generation procedure (Slice 2 / FORGE-S35-T03).
+ * This is `init/generation/generate-kb-doc.md` — the write path, confidence
+ * header, verify-back, and not-applicable stub format shared by EVERY Phase-2
+ * subagent. It forms the base of every kb-doc / index / context prompt; the
+ * per-step substance fragment and the AGENT PARAMS block are appended by the
+ * pipeline. Throws on missing file — caller catches and returns failure (IL7).
+ */
+export function readInitSharedProcedure(bundleRoot: string): string {
+	const file = path.join(bundleRoot, "init", "generation", "generate-kb-doc.md");
+	try {
+		return fs.readFileSync(file, "utf8");
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		throw new Error(
+			`Cannot read shared procedure generate-kb-doc.md at ${file}: ${e.message ?? "unknown"}`,
+		);
+	}
+}
+
+/**
+ * Read one per-step substance fragment from `init/phases/phase-2/<name>.md`
+ * (Slice 2 / FORGE-S35-T03). `name` is a KB_DOC_ID basename (e.g. "stack",
+ * "domain-model") or one of "index" / "context". Each fragment carries only its
+ * own docId's topic focus, discovery input, required output, and not-applicable
+ * stub — so a subagent never sees a sibling's work. Throws a descriptive error
+ * on missing file (naming the fragment) — caller catches and returns failure.
+ */
+export function readInitPhase2Fragment(bundleRoot: string, name: string): string {
+	const file = path.join(bundleRoot, "init", "phases", "phase-2", `${name}.md`);
+	try {
+		return fs.readFileSync(file, "utf8");
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		throw new Error(
+			`Cannot read Phase-2 substance fragment '${name}' at ${file}: ${e.message ?? "unknown"}`,
+		);
+	}
+}
+
 // ── Model resolution ──────────────────────────────────────────────────────────
 
 /**

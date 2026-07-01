@@ -246,6 +246,40 @@ beforeEach(() => {
 	fs.writeFileSync(path.join(phasesDir, "phase-1-collect.md"), "# Phase 1: Collect\nDiscover the tech stack.", "utf8");
 	fs.writeFileSync(path.join(phasesDir, "phase-2-discover.md"), "# Phase 2: Discover\nWrite KB docs.", "utf8");
 
+	// Slice 2: shared procedure + per-step substance fragments. Phase-2 subagents
+	// compose their prompt as shared procedure + their own fragment + AGENT PARAMS;
+	// phase-2-discover.md is no longer injected into subagents.
+	const generationDir = path.join(tmpRoot, "bundle", "init", "generation");
+	fs.mkdirSync(generationDir, { recursive: true });
+	fs.writeFileSync(
+		path.join(generationDir, "generate-kb-doc.md"),
+		"# Knowledge Base Doc Generation\nSHARED-PROCEDURE: write EXACTLY ONE file.",
+		"utf8",
+	);
+	const phase2Dir = path.join(phasesDir, "phase-2");
+	fs.mkdirSync(phase2Dir, { recursive: true });
+	const FRAGMENT_NAMES = [
+		"stack",
+		"processes",
+		"routing",
+		"database",
+		"testing",
+		"deployment",
+		"entity-model",
+		"stack-checklist",
+		"domain-model",
+		"domain-concepts",
+		"index",
+		"context",
+	];
+	for (const name of FRAGMENT_NAMES) {
+		fs.writeFileSync(
+			path.join(phase2Dir, `${name}.md`),
+			`<!-- kb-doc-fragment: ${name} -->\n# Substance — ${name}\nSUBSTANCE-${name.toUpperCase()}`,
+			"utf8",
+		);
+	}
+
 	const toolsDir = path.join(tmpRoot, "bundle", "tools");
 	fs.mkdirSync(toolsDir, { recursive: true });
 	fs.writeFileSync(path.join(toolsDir, "manage-config.cjs"), "// stub", "utf8");
@@ -333,6 +367,74 @@ describe("runInitPipeline — startPhase routing", () => {
 		expect(createAgentSessionMock).not.toHaveBeenCalled();
 		expect(mockRunPhase3).toHaveBeenCalledTimes(1);
 		expect(report.ok).toBe(true);
+	});
+});
+
+// ── Phase-2 prompt composition (Slice 2) ──────────────────────────────────────
+// Each kb-doc/index/context subagent must see ONLY its own docId's substance:
+// shared procedure + its own fragment + AGENT PARAMS — never a sibling's
+// fragment and never the whole phase-2-discover.md rulebook.
+
+describe("runInitPipeline — Phase-2 prompt composition (per-step substance)", () => {
+	function capturePrompts(): string[] {
+		const prompts: string[] = [];
+		setExitDecider((task) => {
+			prompts.push(task);
+			return 0;
+		});
+		return prompts;
+	}
+
+	it("a kb-doc prompt carries the shared procedure + its own fragment + params", async () => {
+		const prompts = capturePrompts();
+		await runInitPipeline(makeOpts({ startPhase: 2 }));
+
+		const stackPrompt = prompts.find((p) => p.includes("docId: architecture/stack"));
+		expect(stackPrompt).toBeDefined();
+		// Shared procedure present.
+		expect(stackPrompt).toContain("SHARED-PROCEDURE");
+		// Its own substance fragment present.
+		expect(stackPrompt).toContain("<!-- kb-doc-fragment: stack -->");
+		expect(stackPrompt).toContain("SUBSTANCE-STACK");
+		// AGENT PARAMS block present.
+		expect(stackPrompt).toContain("role: kb-doc");
+	});
+
+	it("a kb-doc prompt contains ONLY its own docId substance — no sibling fragments", async () => {
+		const prompts = capturePrompts();
+		await runInitPipeline(makeOpts({ startPhase: 2 }));
+
+		const stackPrompt = prompts.find((p) => p.includes("docId: architecture/stack"));
+		expect(stackPrompt).toBeDefined();
+		// No sibling fragment markers or substance leak into this prompt.
+		for (const sibling of ["routing", "database", "domain-model", "testing"]) {
+			expect(stackPrompt).not.toContain(`<!-- kb-doc-fragment: ${sibling} -->`);
+			expect(stackPrompt).not.toContain(`SUBSTANCE-${sibling.toUpperCase()}`);
+		}
+	});
+
+	it("no Phase-2 subagent prompt injects the whole phase-2-discover.md rulebook", async () => {
+		const prompts = capturePrompts();
+		await runInitPipeline(makeOpts({ startPhase: 2 }));
+
+		// phase-2-discover.md stub content ("Write KB docs.") must not appear in any
+		// subagent prompt — the fat rulebook is no longer injected.
+		for (const p of prompts) {
+			expect(p).not.toContain("Write KB docs.");
+		}
+	});
+
+	it("the index and context steps each get their own fragment", async () => {
+		const prompts = capturePrompts();
+		await runInitPipeline(makeOpts({ startPhase: 2 }));
+
+		const indexPrompt = prompts.find((p) => p.includes("role: index"));
+		const contextPrompt = prompts.find((p) => p.includes("role: context"));
+		expect(indexPrompt).toContain("<!-- kb-doc-fragment: index -->");
+		expect(contextPrompt).toContain("<!-- kb-doc-fragment: context -->");
+		// The index prompt must not carry the context fragment and vice-versa.
+		expect(indexPrompt).not.toContain("<!-- kb-doc-fragment: context -->");
+		expect(contextPrompt).not.toContain("<!-- kb-doc-fragment: index -->");
 	});
 });
 

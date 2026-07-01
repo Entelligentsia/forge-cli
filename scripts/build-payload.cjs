@@ -310,11 +310,31 @@ for (const sub of INIT_RULEBOOK_DIRS) {
 	const subDest = path.join(outDir, "init", sub);
 	if (fs.existsSync(subSrc)) {
 		fs.mkdirSync(subDest, { recursive: true });
-		const subFiles = fs.readdirSync(subSrc).filter((f) => f.endsWith(".md"));
-		for (const file of subFiles) {
-			copyFile(path.join(subSrc, file), path.join(subDest, file));
+		const entries = fs.readdirSync(subSrc, { withFileTypes: true });
+		let fileCount = 0;
+		for (const entry of entries) {
+			if (entry.isFile() && entry.name.endsWith(".md")) {
+				copyFile(path.join(subSrc, entry.name), path.join(subDest, entry.name));
+				fileCount++;
+			}
 		}
-		console.log(`build-payload: init/${sub}/ — ${subFiles.length} files copied`);
+		// One-level recursion for nested rulebook fragment dirs (Slice 2 /
+		// FORGE-S35-T03: init/phases/phase-2/*.md per-step substance fragments).
+		// The original walk was single-level + .md-only and silently dropped a new
+		// subdir, leaving Phase-2 subagents with no fragments in the field.
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			const nestedSrc = path.join(subSrc, entry.name);
+			const nestedDest = path.join(subDest, entry.name);
+			fs.mkdirSync(nestedDest, { recursive: true });
+			const nestedFiles = fs.readdirSync(nestedSrc).filter((f) => f.endsWith(".md"));
+			for (const file of nestedFiles) {
+				copyFile(path.join(nestedSrc, file), path.join(nestedDest, file));
+			}
+			fileCount += nestedFiles.length;
+			console.log(`build-payload: init/${sub}/${entry.name}/ — ${nestedFiles.length} files copied`);
+		}
+		console.log(`build-payload: init/${sub}/ — ${fileCount} files copied`);
 	} else {
 		console.warn(`build-payload: forge/forge/init/${sub}/ not found — skipping`);
 	}

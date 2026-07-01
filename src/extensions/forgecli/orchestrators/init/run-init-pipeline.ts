@@ -62,6 +62,8 @@ import { INIT_SESSION_ID } from "./init-phases.js";
 import {
 	dispatchSingleAgent,
 	readInitPhasePrompt,
+	readInitSharedProcedure,
+	readInitPhase2Fragment,
 	type InitDispatchParams,
 } from "./init-phase-dispatch.js";
 import {
@@ -357,10 +359,27 @@ async function runInitPipelineInner(
 
 	// Pre-read the bundled phase prompts needed for the resume range. A prompt
 	// read failure is a graceful pipeline failure (IL7), not a thrown crash.
+	//
+	// Slice 2 (FORGE-S35-T03): the Phase-2 base prompt is NO LONGER the whole
+	// phase-2-discover.md rulebook. It is the shared procedure (generate-kb-doc.md);
+	// each Phase-2 step appends its OWN substance fragment + AGENT PARAMS in its
+	// buildPrompt, so a subagent sees only its own docId's work. Fragments are
+	// keyed by KB_DOC_ID basename plus "index" / "context".
 	const promptCache: Partial<Record<1 | 2, string>> = {};
+	const phase2Fragments: Record<string, string> = {};
 	try {
 		if (startWave <= 1) promptCache[1] = readInitPhasePrompt(bundleRoot, 1);
-		if (startWave <= 5) promptCache[2] = readInitPhasePrompt(bundleRoot, 2);
+		if (startWave <= 5) {
+			promptCache[2] = readInitSharedProcedure(bundleRoot);
+			const fragmentNames = [
+				...KB_DOC_IDS.map((id) => id.slice(id.lastIndexOf("/") + 1)),
+				"index",
+				"context",
+			];
+			for (const name of fragmentNames) {
+				phase2Fragments[name] = readInitPhase2Fragment(bundleRoot, name);
+			}
+		}
 	} catch (err: unknown) {
 		const e = err as { message?: string };
 		const failure = `phase prompt read failed: ${e.message ?? "unknown"}`;
@@ -517,8 +536,10 @@ async function runInitPipelineInner(
 					persona: "engineer",
 					phaseGroup: "discover",
 					schema: KB_DOC_SCHEMA,
-					buildPrompt: (b) =>
-						`${b}\n\n<!-- AGENT PARAMS -->\nrole: kb-doc\ndocId: ${docId}\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+					buildPrompt: (b) => {
+						const fragment = phase2Fragments[docId.slice(docId.lastIndexOf("/") + 1)] ?? "";
+						return `${b}\n\n${fragment}\n\n<!-- AGENT PARAMS -->\nrole: kb-doc\ndocId: ${docId}\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`;
+					},
 				},
 			});
 		}
@@ -538,7 +559,7 @@ async function runInitPipelineInner(
 				persona: "engineer",
 				phaseGroup: "discover",
 				buildPrompt: (b) =>
-					`${b}\n\n<!-- AGENT PARAMS -->\nrole: index\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+					`${b}\n\n${phase2Fragments["index"] ?? ""}\n\n<!-- AGENT PARAMS -->\nrole: index\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
 			},
 		});
 
@@ -557,7 +578,7 @@ async function runInitPipelineInner(
 				persona: "engineer",
 				phaseGroup: "discover",
 				buildPrompt: (b) =>
-					`${b}\n\n<!-- AGENT PARAMS -->\nrole: context\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+					`${b}\n\n${phase2Fragments["context"] ?? ""}\n\n<!-- AGENT PARAMS -->\nrole: context\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
 			},
 		});
 
