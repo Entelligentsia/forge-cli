@@ -105,10 +105,12 @@ export const OK_SCHEMA = Type.Object({
 	error: Type.Optional(Type.String({ description: "error message if ok=false" })),
 });
 
-// ── Model tiering (ported verbatim from wfl-init.js lines ~117–126) ─────────
+// ── Model tiering (ported from wfl-init.js lines ~117–126) ──────────────────
 //
-// generation/discovery → sonnet; deterministic gates and registration → haiku.
-// No opus (init has no review/approve gates).
+// generation/discovery → sonnet; deterministic registration → haiku.
+// No opus (init has no review/approve gates). The `gate` role was removed in
+// FORGE-S35-T02 (Slice 1): the Phase-2 gate subagent was deleted and its
+// readiness check became a deterministic step precondition.
 
 export const ROLE_TIER: Record<string, "sonnet" | "haiku"> = {
 	discovery: "sonnet",
@@ -116,7 +118,6 @@ export const ROLE_TIER: Record<string, "sonnet" | "haiku"> = {
 	"kb-doc": "sonnet",
 	index: "sonnet",
 	context: "sonnet",
-	gate: "haiku",
 	materialize: "haiku",
 	register: "haiku",
 };

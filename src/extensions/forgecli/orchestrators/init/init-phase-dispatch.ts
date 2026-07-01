@@ -1,11 +1,17 @@
-// init-phase-dispatch.ts — per-phase LLM dispatcher for the /forge:init
-// orchestrator pipeline (FORGE-S33-T02). Handles model resolution,
-// CallerContextStore + AskBroker wrapping, runForgeSubagent dispatch,
-// verify-gate routing, and retry-once semantics. Sequential fan-out (Option A)
-// for collect (5 domains) and discover (10 KB-doc IDs).
+// init-phase-dispatch.ts — the single-subagent runner for the /forge:init step
+// machine (FORGE-S33-T02, rewritten by FORGE-S35-T02 Slice 1).
 //
-// IL10 — NEVER calls store-cli emit; the orchestrator (T03) composes and emits
-// phase events from result.{model,provider,usage} after dispatchInitPhase returns.
+// Owns model resolution, CallerContextStore + AskBroker wrapping,
+// runForgeSubagent dispatch, and the live TUI wiring (SessionRegistry +
+// OrchestratorTree + viewport observer) for ONE subagent step. Intra-phase
+// routing (fan-out, gate, index/context ordering, retries) now lives in the
+// step table (init-steps.ts + run-init-pipeline.ts); this module is a leaf.
+//
+// The Phase-2 `gate` subagent was DELETED in Slice 1 — its readiness check
+// became a deterministic step precondition.
+//
+// IL10 — NEVER calls store-cli emit; the orchestrator composes and emits phase
+// events from result.{model,provider,usage} after each subagent step returns.
 //
 // Layering: may import from orchestrators/init/ siblings, ../../<peer> modules,
 // node:* builtins, @earendil-works/pi-coding-agent types.
@@ -27,35 +33,21 @@ import { getSessionRegistry } from "../../session-registry.js";
 import { getOrchestratorTree } from "../../orchestrator-tree.js";
 import { attachViewportObserver } from "../../viewport/events.js";
 
-import type { InitPhaseDescriptor } from "./init-phases.js";
-import { DOMAINS, INIT_SESSION_ID, KB_DOC_IDS, ROLE_TIER } from "./init-phases.js";
+import { INIT_SESSION_ID, ROLE_TIER } from "./init-phases.js";
 import type { RunInitOptions } from "./run-init-types.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-/** Structured result returned by the /forge:init pipeline on early-exit. */
-export interface InitPipelineResult {
-	status: "ok" | "failed" | "cancelled";
-	/** Last phase index that ran (0-based into INIT_PHASES). */
-	lastPhase: number;
-	/** Failure reason when status="failed". */
-	failure?: string;
-}
-
-/** Inputs required by dispatchInitPhase. */
-export interface InitPhaseDispatchParams {
+/**
+ * Inputs required by dispatchSingleAgent. Carries only what one subagent
+ * dispatch needs — no phase descriptor (the step table owns routing).
+ */
+export interface InitDispatchParams {
 	opts: RunInitOptions;
-	phase: InitPhaseDescriptor;
-	/** 0-based index of this phase in INIT_PHASES. */
-	phaseIndex: number;
 	cwd: string;
 	ctx: ExtensionCommandContext;
-	/** Absolute path to the vendored bundle root (contains init/phases/). */
+	/** Absolute path to the vendored bundle root (contains init/phases/ + base-pack). */
 	bundleRoot: string;
-	/** KB folder name (e.g. "engineering"). */
-	kbFolder: string;
-	/** ISO 8601 timestamp passed down to each subagent prompt. */
-	isoTimestamp: string;
 	/** Merged model-routing config from layered config. */
 	modelRoutingConfig: MergedConfig;
 	/** Raw forge tool definitions (optional — carries forge_ask_user). */
@@ -63,31 +55,20 @@ export interface InitPhaseDispatchParams {
 	/**
 	 * Per-dispatch attempt counter keyed by sub-role label, for OrchestratorTree
 	 * node identity (`<INIT_SESSION_ID>:<role>:<attempt>`). Mutated by
-	 * dispatchSingleAgent. The orchestrator passes a fresh `{}` per phase; within
-	 * a phase it keeps re-dispatches (e.g. config-writer retry) on distinct nodes.
+	 * dispatchSingleAgent so re-dispatches (retries) land on distinct nodes.
 	 */
 	dispatchCounts: Record<string, number>;
+	/** Ordering hint (wave index) for SessionRegistry.startPhase. */
+	orderHint: number;
 }
 
-/**
- * Discriminated return union from dispatchInitPhase.
- *
- *  kind="skip"   — deterministic phase; orchestrator handles it directly.
- *  kind="return" — early-exit (failure or cancellation); carry result up.
- *  kind="ok"     — LLM phase completed successfully; last SubagentResult attached.
- */
-export type InitPhaseDispatchOutcome =
-	| { kind: "skip" }
-	| { kind: "return"; result: InitPipelineResult }
-	| { kind: "ok"; result: SubagentResult };
-
-// ── Internal helpers ──────────────────────────────────────────────────────────
+// ── Phase-prompt reader ───────────────────────────────────────────────────────
 
 /**
  * Read the phase prompt from the bundled init/phases/ directory.
  * Throws on missing file — caller catches and returns failure.
  */
-function readInitPhasePrompt(bundleRoot: string, phaseNum: 1 | 2): string {
+export function readInitPhasePrompt(bundleRoot: string, phaseNum: 1 | 2): string {
 	const phasesDir = path.join(bundleRoot, "init", "phases");
 	const pattern = `phase-${phaseNum}-`;
 	let files: string[];
@@ -108,6 +89,8 @@ function readInitPhasePrompt(bundleRoot: string, phaseNum: 1 | 2): string {
 	return fs.readFileSync(path.join(phasesDir, filename), "utf8");
 }
 
+// ── Model resolution ──────────────────────────────────────────────────────────
+
 /**
  * Resolve model for a sub-role within the init pipeline. Reads the intended
  * tier from ROLE_TIER[modelRole] ("sonnet" / "haiku") and resolves the concrete
@@ -118,7 +101,7 @@ function readInitPhasePrompt(bundleRoot: string, phaseNum: 1 | 2): string {
  * still comes from config; resolution is "inherit" (undefined model) when config
  * specifies nothing for the role.
  */
-function resolveInitModel(
+export function resolveInitModel(
 	modelRole: string,
 	personaNoun: string,
 	modelRoutingConfig: MergedConfig,
@@ -128,23 +111,22 @@ function resolveInitModel(
 	return { ...resolution, tier };
 }
 
+// ── Single-agent dispatch ─────────────────────────────────────────────────────
+
 /**
  * Dispatch a single subagent for the init pipeline and return its SubagentResult.
  * All runForgeSubagent calls are wrapped in CallerContextStore.asSubagent +
- * AskBroker.withUI (IL10 / FORGE-BUG-040 parity).
- *
- * TOD03: If CallerContextStore proves overly strict about the PhaseRole values
- * used here ("plan" / "implement"), widen PhaseRole in T03 or T04 to include
- * init-specific roles. See plan D4 for the reasoning.
+ * AskBroker.withUI (IL10 / FORGE-BUG-040 parity). This is the sole subagent
+ * runner invoked by the step machine's subagent steps.
  */
-async function dispatchSingleAgent(
+export async function dispatchSingleAgent(
 	subLabel: string,
 	subRole: PhaseRole,
 	modelRole: string,
 	prompt: string,
 	_schema: object | undefined,
 	personaNoun: string,
-	p: InitPhaseDispatchParams,
+	p: InitDispatchParams,
 ): Promise<SubagentResult> {
 	const { cwd, ctx, opts, modelRoutingConfig, bundleRoot } = p;
 
@@ -174,7 +156,7 @@ async function dispatchSingleAgent(
 	const tree = getOrchestratorTree();
 	const iteration = (p.dispatchCounts[subLabel] = (p.dispatchCounts[subLabel] ?? 0) + 1);
 	const nodeId = `${INIT_SESSION_ID}:${subLabel}:${iteration}`;
-	registry.startPhase(INIT_SESSION_ID, subLabel, p.phaseIndex);
+	registry.startPhase(INIT_SESSION_ID, subLabel, p.orderHint);
 	tree.startNode(nodeId, {
 		parentId: INIT_SESSION_ID,
 		label: subLabel,
@@ -227,295 +209,4 @@ async function dispatchSingleAgent(
 	registry.completePhase(INIT_SESSION_ID, subLabel, nodeStatus);
 	tree.completeNode(nodeId, nodeStatus);
 	return result;
-}
-
-/**
- * Fan-out: dispatch one subagent per item in items, sequentially (Option A).
- * Surfaces the sequential cap via ctx.ui.notify before the first dispatch.
- * Returns an array of SubagentResult in order. On any failure, stops early
- * and returns partial results plus a non-null `failedItem`.
- */
-async function dispatchFanout(
-	items: readonly string[],
-	promptFn: (item: string, basePrompt: string) => string,
-	subRole: PhaseRole,
-	modelRole: string,
-	subLabel: (item: string) => string,
-	schema: object | undefined,
-	personaNoun: string,
-	phaseLabel: string,
-	basePrompt: string,
-	p: InitPhaseDispatchParams,
-): Promise<{ results: SubagentResult[]; failedItem: string | null }> {
-	const { ctx } = p;
-	ctx.ui.notify(
-		`  init dispatch: sequential ${items.length}-agent fan-out for "${phaseLabel}" ` +
-		`(meta uses parallel; this port is sequential — slower but simpler)`,
-		"info",
-	);
-
-	const results: SubagentResult[] = [];
-	for (const item of items) {
-		const prompt = promptFn(item, basePrompt);
-		const result = await dispatchSingleAgent(subLabel(item), subRole, modelRole, prompt, schema, personaNoun, p);
-		results.push(result);
-		if (result.exitCode !== 0) {
-			return { results, failedItem: item };
-		}
-	}
-	return { results, failedItem: null };
-}
-
-// ── Main export ───────────────────────────────────────────────────────────────
-
-/**
- * Dispatch a single /forge:init phase. Returns a discriminated outcome:
- *
- * - `{ kind: "skip" }` for deterministic phases (orchestrator handles them).
- * - `{ kind: "return", result }` for failures / early-exit.
- * - `{ kind: "ok", result }` carrying the last SubagentResult on success.
- */
-export async function dispatchInitPhase(
-	p: InitPhaseDispatchParams,
-): Promise<InitPhaseDispatchOutcome> {
-	const { phase, phaseIndex, ctx, bundleRoot, kbFolder, isoTimestamp } = p;
-
-	// Deterministic phases are handled by the orchestrator directly.
-	if (phase.kind === "deterministic") {
-		return { kind: "skip" };
-	}
-
-	// ── Phase 1: collect (5 domain fan-out + config-writer) ──────────────────
-	if (phase.name === "collect") {
-		let phasePrompt: string;
-		try {
-			phasePrompt = readInitPhasePrompt(bundleRoot, 1);
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			ctx.ui.notify(`× init dispatch: cannot read Phase 1 prompt: ${e.message ?? "unknown"}`, "error");
-			return { kind: "return", result: { status: "failed", lastPhase: phaseIndex, failure: `prompt read failed: ${e.message ?? "unknown"}` } };
-		}
-
-		// Domain discovery fan-out (5 sequential agents).
-		// kbFolder is passed so each agent honors the phase-1-collect.md
-		// "orchestrator already supplied kbFolder → skip this prompt" contract.
-		// The interactive KB-folder prompt is owned solely by the forge-init.ts
-		// handler prologue; without this param the subagents re-ask it (and that
-		// mid-fan-out ask cannot reliably surface as an actionable modal).
-		const { results: domainResults, failedItem: failedDomain } = await dispatchFanout(
-			DOMAINS,
-			(domain, base) =>
-				`${base}\n\n<!-- AGENT PARAMS -->\ndomain: ${domain}\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`,
-			"plan" as PhaseRole,
-			"discovery",
-			(domain) => `discovery:${domain}`,
-			phase.schema,
-			phase.persona ?? "engineer",
-			"collect:discovery",
-			phasePrompt,
-			p,
-		);
-
-		if (failedDomain !== null) {
-			return {
-				kind: "return",
-				result: {
-					status: "failed",
-					lastPhase: phaseIndex,
-					failure: `Phase 1 discovery agent failed for domain "${failedDomain}"`,
-				},
-			};
-		}
-
-		// Config-writer agent. kbFolder supplied so it writes paths.engineering
-		// from the orchestrator-resolved value and skips the interactive prompt.
-		const configPrompt =
-			`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: config-writer\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
-		let configResult = await dispatchSingleAgent(
-			"config-writer",
-			"plan" as PhaseRole,
-			"config",
-			configPrompt,
-			phase.schema,
-			phase.persona ?? "engineer",
-			p,
-		);
-
-		// Retry-once if config-writer returned non-zero exit or verifyExit != 0.
-		const configFailed = configResult.exitCode !== 0;
-		if (configFailed) {
-			ctx.ui.notify(`  init dispatch: config-writer failed (exit ${configResult.exitCode}), retrying…`, "info");
-			const retryPrompt =
-				`${phasePrompt}\n\n<!-- AGENT PARAMS: RETRY -->\nrole: config-writer\nisoTimestamp: ${isoTimestamp}\n`;
-			configResult = await dispatchSingleAgent(
-				"config-writer:retry",
-				"plan" as PhaseRole,
-				"config",
-				retryPrompt,
-				phase.schema,
-				phase.persona ?? "engineer",
-				p,
-			);
-			if (configResult.exitCode !== 0) {
-				return {
-					kind: "return",
-					result: {
-						status: "failed",
-						lastPhase: phaseIndex,
-						failure: "Phase 1 config-writer failed after retry",
-					},
-				};
-			}
-		}
-
-		// Use the last domain result as the "representative" result for the phase.
-		// The orchestrator (T03) composes the phase event from whichever result it
-		// tracks; returning configResult here is simplest and correct.
-		void domainResults; // consumed above; suppress unused-var
-		return { kind: "ok", result: configResult };
-	}
-
-	// ── Phase 2: discover (gate + 10 KB-doc fan-out + index + context) ────────
-	if (phase.name === "discover") {
-		let phasePrompt: string;
-		try {
-			phasePrompt = readInitPhasePrompt(bundleRoot, 2);
-		} catch (err: unknown) {
-			const e = err as { message?: string };
-			ctx.ui.notify(`× init dispatch: cannot read Phase 2 prompt: ${e.message ?? "unknown"}`, "error");
-			return { kind: "return", result: { status: "failed", lastPhase: phaseIndex, failure: `prompt read failed: ${e.message ?? "unknown"}` } };
-		}
-
-		// Gate agent (haiku-tier — just checks readiness).
-		const gatePrompt =
-			`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: gate\nisoTimestamp: ${isoTimestamp}\n`;
-		const gateResult = await dispatchSingleAgent(
-			"gate",
-			"implement" as PhaseRole,
-			"gate",
-			gatePrompt,
-			undefined,
-			phase.persona ?? "engineer",
-			p,
-		);
-
-		if (gateResult.exitCode !== 0) {
-			ctx.ui.notify(`× init dispatch: Phase 2 gate failed — halting.`, "error");
-			return {
-				kind: "return",
-				result: { status: "failed", lastPhase: phaseIndex, failure: "Phase 2 gate failed" },
-			};
-		}
-
-		// KB-doc fan-out (10 sequential agents), retry each failed doc once.
-		const { ctx: _ctx } = p;
-		_ctx.ui.notify(
-			`  init dispatch: sequential ${KB_DOC_IDS.length}-agent fan-out for "discover:kb-docs" ` +
-			`(meta uses parallel; this port is sequential — slower but simpler)`,
-			"info",
-		);
-
-		const kbResults: SubagentResult[] = [];
-		for (const docId of KB_DOC_IDS) {
-			const kbPrompt =
-				`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: kb-doc\ndocId: ${docId}\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
-			let kbResult = await dispatchSingleAgent(
-				`kb-doc:${docId}`,
-				"plan" as PhaseRole,
-				"kb-doc",
-				kbPrompt,
-				phase.schema,
-				phase.persona ?? "engineer",
-				p,
-			);
-			if (kbResult.exitCode !== 0) {
-				// Retry once.
-				ctx.ui.notify(`  init dispatch: kb-doc "${docId}" failed, retrying…`, "info");
-				const retryKbPrompt =
-					`${phasePrompt}\n\n<!-- AGENT PARAMS: RETRY -->\nrole: kb-doc\ndocId: ${docId}\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
-				kbResult = await dispatchSingleAgent(
-					`kb-doc:${docId}:retry`,
-					"plan" as PhaseRole,
-					"kb-doc",
-					retryKbPrompt,
-					phase.schema,
-					phase.persona ?? "engineer",
-					p,
-				);
-				if (kbResult.exitCode !== 0) {
-					return {
-						kind: "return",
-						result: {
-							status: "failed",
-							lastPhase: phaseIndex,
-							failure: `Phase 2 kb-doc "${docId}" failed after retry`,
-						},
-					};
-				}
-			}
-			kbResults.push(kbResult);
-		}
-
-		// Index agent.
-		const indexPrompt =
-			`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: index\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
-		const indexResult = await dispatchSingleAgent(
-			"index",
-			"plan" as PhaseRole,
-			"index",
-			indexPrompt,
-			undefined,
-			phase.persona ?? "engineer",
-			p,
-		);
-		if (indexResult.exitCode !== 0) {
-			return {
-				kind: "return",
-				result: { status: "failed", lastPhase: phaseIndex, failure: "Phase 2 index agent failed" },
-			};
-		}
-
-		// Context agent — retry-once on failure.
-		const contextPrompt =
-			`${phasePrompt}\n\n<!-- AGENT PARAMS -->\nrole: context\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
-		let contextResult = await dispatchSingleAgent(
-			"context",
-			"plan" as PhaseRole,
-			"context",
-			contextPrompt,
-			undefined,
-			phase.persona ?? "engineer",
-			p,
-		);
-		if (contextResult.exitCode !== 0) {
-			ctx.ui.notify(`  init dispatch: context agent failed, retrying…`, "info");
-			const retryContextPrompt =
-				`${phasePrompt}\n\n<!-- AGENT PARAMS: RETRY -->\nrole: context\nkbFolder: ${kbFolder}\nisoTimestamp: ${isoTimestamp}\n`;
-			contextResult = await dispatchSingleAgent(
-				"context:retry",
-				"plan" as PhaseRole,
-				"context",
-				retryContextPrompt,
-				undefined,
-				phase.persona ?? "engineer",
-				p,
-			);
-			if (contextResult.exitCode !== 0) {
-				return {
-					kind: "return",
-					result: { status: "failed", lastPhase: phaseIndex, failure: "Phase 2 context agent failed after retry" },
-				};
-			}
-		}
-
-		void kbResults; // consumed above; suppress unused-var
-		return { kind: "ok", result: contextResult };
-	}
-
-	// Unsupported LLM phase kind — should not happen with the current table.
-	ctx.ui.notify(`× init dispatch: unsupported phase "${phase.name}" (kind=${phase.kind}) — skipping`, "error");
-	return {
-		kind: "return",
-		result: { status: "failed", lastPhase: phaseIndex, failure: `unsupported phase "${phase.name}"` },
-	};
 }

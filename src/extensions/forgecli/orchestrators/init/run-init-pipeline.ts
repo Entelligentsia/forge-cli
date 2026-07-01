@@ -1,10 +1,13 @@
 // run-init-pipeline.ts — top-level FSM for the /forge:init orchestrated pipeline.
 // FORGE-S33-T03.
 //
-// Provides `runInitPipeline(opts)` which drives the four-phase loop:
-//   - startPhase routing (resume from any phase 1–4)
-//   - per-phase dispatch via dispatchInitPhase (T02) for LLM phases
-//   - deterministic Phase 3/4 execution via existing helpers
+// Provides `runInitPipeline(opts)` which drives the step machine (Slice 1):
+//   - builds the flat INIT_STEPS table, topo-sorts it into waves
+//   - startPhase routing (resume from any coarse phase 1–4 via PHASE_TO_WAVE)
+//   - runs each wave concurrently (runWave/Promise.all); per step:
+//     check precondition → run (deterministic thunk OR subagent) → check
+//     requiredOutput → advance / rerun (retryPolicy) / halt
+//   - deterministic Phase 3/4 execution via existing helpers (now steps)
 //   - checkpoint writes via writeInitProgress
 //   - orchestrator transcript + OrchestratorTree nodes
 //   - IL10-compliant phase event emission (orchestrator-only; subagents never emit)
@@ -13,7 +16,7 @@
 // Iron Laws:
 //   IL6  — no shell-string interpolation; all external calls via spawnSync argv arrays
 //   IL7  — every failure path emits ctx.ui.notify and returns; no silent continuation
-//   IL10 — ALL LLM dispatch goes through dispatchInitPhase → runForgeSubagent (NO sendKickoff)
+//   IL10 — ALL LLM dispatch goes through dispatchSingleAgent → runForgeSubagent (NO sendKickoff)
 //          Orchestrator is the sole emitter of phase events; subagents NEVER call store-cli emit.
 //
 // Layering: may import from orchestrators/init/ siblings, orchestrators/common/,
@@ -55,11 +58,22 @@ interface InitPipelineInternalResult extends OrchestratorResult {
 	initReport: InitReport;
 }
 
-import { INIT_PHASES, INIT_SESSION_ID } from "./init-phases.js";
+import { INIT_SESSION_ID } from "./init-phases.js";
 import {
-	dispatchInitPhase,
+	dispatchSingleAgent,
+	readInitPhasePrompt,
+	type InitDispatchParams,
 } from "./init-phase-dispatch.js";
+import {
+	runStep,
+	runWave,
+	topoSortWaves,
+	type Step,
+	type StepRuntimeCtx,
+	type SubagentRun,
+} from "./init-steps.js";
 import type { RunInitOptions, InitReport } from "./run-init-types.js";
+import { DISCOVERY_SCHEMA, DOMAINS, KB_DOC_IDS, KB_DOC_SCHEMA } from "./run-init-types.js";
 import { getSessionRegistry } from "../../session-registry.js";
 import { getOrchestratorTree } from "../../orchestrator-tree.js";
 
@@ -98,10 +112,17 @@ export interface RunInitPipelineOptions extends RunInitOptions {
 
 /**
  * Build an init-specific phase event object for IL10 emission.
- * The orchestrator calls this after each LLM phase completes.
+ * The orchestrator calls this after each successful subagent STEP completes.
+ *
+ * `stepId` is folded into `eventId` (and per-step start/end timestamps are used)
+ * so every step in a concurrent fan-out wave produces a DISTINCT event file.
+ * Deriving the id from phaseName + waveStartMs alone collided every step in a
+ * wave onto one <eventId>.json (store.writeEvent is a plain overwrite), silently
+ * discarding all but the last step's token accounting.
  */
 function buildInitPhaseEvent(
 	phaseName: string,
+	stepId: string,
 	sprintId: string,
 	startMs: number,
 	endMs: number,
@@ -112,8 +133,11 @@ function buildInitPhaseEvent(
 	const durationMs = Math.max(0, endMs - startMs);
 	const startIso = new Date(startMs).toISOString();
 	const compactTs = startIso.replace(/[-:.Z]/g, "");
+	// Sanitize the step id for use inside a filesystem-safe eventId (step ids
+	// carry ':' e.g. "discovery:routing", "kb-doc:stack").
+	const safeStepId = stepId.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 	return {
-		eventId: `forge-init_${phaseName}_${compactTs}`,
+		eventId: `forge-init_${phaseName}_${safeStepId}_${compactTs}`,
 		sprintId,
 		role: `init-${phaseName}`,
 		action: `forge:init:${phaseName}`,
@@ -284,9 +308,6 @@ async function runInitPipelineInner(
 
 	// Resolve kbFolder from opts or configCache (default: "engineering").
 	const kbFolder = opts.kbFolder ?? "engineering";
-	// kbPathFinal is resolved by Phase 4 or from configCache after Phase 1.
-	let kbPathFinal: string | undefined;
-
 	// Build initial configCache from .forge/config.json (fallback: {}).
 	let configCache: Record<string, unknown> = {};
 	try {
@@ -297,290 +318,479 @@ async function runInitPipelineInner(
 		// File not yet present — Phase 1 will create it
 	}
 
-	// Resolve start phase index (0-based).
-	const startPhaseIndex = Math.max(0, (opts.startPhase ?? 1) - 1);
-	let currentPhaseIndex = startPhaseIndex;
-	let lastPhase = startPhaseIndex;
+	// ── Coarse-phase ↔ wave bridge ────────────────────────────────────────────
+	// The step machine groups steps into topo waves, but the on-disk
+	// `.forge/cache/init-progress` checkpoint + resume tests speak the coarse
+	// phase number (1–4). These tables bridge the two with NO checkpoint-format
+	// change (PLAN design #8). Wave layout (from topoSortWaves on INIT_STEPS):
+	//   0 discovery×5 · 1 config-writer · 2 enforce-config      → phase 1 (collect)
+	//   3 kb-doc×10 · 4 index · 5 context · 6 verify-discover    → phase 2 (discover)
+	//   7 materialize                                            → phase 3
+	//   8 register                                               → phase 4
+	const WAVE_PHASE_NUM = [1, 1, 1, 2, 2, 2, 2, 3, 4] as const;
+	const WAVE_PHASE_NAME = [
+		"collect", "collect", "collect",
+		"discover", "discover", "discover", "discover",
+		"materialize", "register",
+	] as const;
+	// Resume: coarse startPhase (1–4) → first wave of that phase.
+	const PHASE_TO_WAVE: Record<number, number> = { 1: 0, 2: 3, 3: 7, 4: 8 };
+	const startWave = PHASE_TO_WAVE[opts.startPhase ?? 1] ?? 0;
 
-	while (currentPhaseIndex < INIT_PHASES.length) {
-		const phase = INIT_PHASES[currentPhaseIndex];
-		if (!phase) {
-			ctx.ui.notify(
-				`× forge:init — invalid phase index ${currentPhaseIndex}`,
-				"error",
-			);
-			return makeFailResult({ ok: false, lastPhase, failure: `invalid phase index ${currentPhaseIndex}` });
+	// ── Mutable pipeline state (threaded to steps as the runtime ctx) ─────────
+	// Only single-step waves mutate these fields, so reads/writes are race-free
+	// even though fan-out waves share this one object.
+	interface InitStepState extends StepRuntimeCtx {
+		configCache: Record<string, unknown>;
+		kbPathFinal?: string;
+		verifyOk: boolean;
+		verifyReason?: string;
+		phase3Ok: boolean;
+		phase4Ok: boolean;
+	}
+	const state: InitStepState = {
+		configCache,
+		verifyOk: true,
+		phase3Ok: true,
+		phase4Ok: true,
+	};
+
+	// Pre-read the bundled phase prompts needed for the resume range. A prompt
+	// read failure is a graceful pipeline failure (IL7), not a thrown crash.
+	const promptCache: Partial<Record<1 | 2, string>> = {};
+	try {
+		if (startWave <= 1) promptCache[1] = readInitPhasePrompt(bundleRoot, 1);
+		if (startWave <= 5) promptCache[2] = readInitPhasePrompt(bundleRoot, 2);
+	} catch (err: unknown) {
+		const e = err as { message?: string };
+		const failure = `phase prompt read failed: ${e.message ?? "unknown"}`;
+		ctx.ui.notify(`× forge:init — ${failure}`, "error");
+		return makeFailResult({ ok: false, lastPhase: WAVE_PHASE_NUM[startWave], failure });
+	}
+
+	// ── Subagent step runner (IL10: dispatch via dispatchSingleAgent) ─────────
+	const dispatchCounts: Record<string, number> = {};
+	let currentWaveIndex = startWave;
+	const dispatchSubagent = async (run: SubagentRun): Promise<SubagentResult> => {
+		const base = promptCache[run.promptPhase];
+		if (base === undefined) {
+			throw new Error(`init: phase-${run.promptPhase} prompt not loaded for step ${run.subLabel}`);
+		}
+		const prompt = run.buildPrompt(base, state);
+		const dispatchParams: InitDispatchParams = {
+			opts,
+			cwd,
+			ctx,
+			bundleRoot,
+			modelRoutingConfig,
+			forgeToolDefs: opts.forgeToolDefs,
+			dispatchCounts,
+			orderHint: currentWaveIndex,
+		};
+		return dispatchSingleAgent(
+			run.subLabel,
+			run.subRole,
+			run.modelRole,
+			prompt,
+			run.schema,
+			run.persona,
+			dispatchParams,
+		);
+	};
+
+	// ── INIT_STEPS: the flat step table that supersedes coarse INIT_PHASES ─────
+	function buildInitSteps(): Step[] {
+		const iso = opts.isoTimestamp;
+		// Deterministic postcondition for a subagent step: its own dispatch exited 0.
+		const exitOk = async (
+			_c: StepRuntimeCtx,
+			lastResult?: SubagentResult,
+		): Promise<{ ok: boolean; reason?: string }> => ({
+			ok: lastResult?.exitCode === 0,
+			reason: lastResult && lastResult.exitCode !== 0 ? `subagent exited ${lastResult.exitCode}` : undefined,
+		});
+		// Deterministic precondition replacing the DELETED Phase-2 gate subagent:
+		// verify phase-1 config is ready before kb-doc generation fans out.
+		const kbReady = async (c: StepRuntimeCtx): Promise<{ ok: boolean; reason?: string }> => {
+			const cc = (c as InitStepState).configCache;
+			const ok = !!cc && typeof cc === "object";
+			return { ok, reason: ok ? undefined : "phase-1 config not ready (gate)" };
+		};
+
+		const steps: Step[] = [];
+
+		// Wave 0 — 5 domain discovery agents (independent fan-out).
+		for (const domain of DOMAINS) {
+			steps.push({
+				id: `discovery:${domain}`,
+				dependsOn: [],
+				retryPolicy: { maxReruns: 0 },
+				requiredOutput: exitOk,
+				run: {
+					kind: "subagent",
+					promptPhase: 1,
+					subLabel: `discovery:${domain}`,
+					subRole: "plan" as const,
+					modelRole: "discovery",
+					persona: "engineer",
+					phaseGroup: "collect",
+					schema: DISCOVERY_SCHEMA,
+					buildPrompt: (b) =>
+						`${b}\n\n<!-- AGENT PARAMS -->\ndomain: ${domain}\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+				},
+			});
 		}
 
-		const phaseNum = currentPhaseIndex + 1;
-		ctx.ui.setStatus?.(STATUS_KEY, `forge:init: phase ${phaseNum}/${INIT_PHASES.length} (${phase.name})`);
-		ctx.ui.notify(`→ init: phase ${phase.name} (${phaseNum}/${INIT_PHASES.length})`, "info");
+		// Wave 1 — config-writer (depends on all domains; retries once).
+		steps.push({
+			id: "config-writer",
+			dependsOn: DOMAINS.map((d) => `discovery:${d}`),
+			retryPolicy: { maxReruns: 1 },
+			requiredOutput: exitOk,
+			run: {
+				kind: "subagent",
+				promptPhase: 1,
+				subLabel: "config-writer",
+				subRole: "plan" as const,
+				modelRole: "config",
+				persona: "engineer",
+				phaseGroup: "collect",
+				buildPrompt: (b) =>
+					`${b}\n\n<!-- AGENT PARAMS -->\nrole: config-writer\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+			},
+		});
+
+		// Wave 2 — deterministic: orchestrator-owned KB-folder + prefix enforcement,
+		// configCache refresh, coarse phase-1 checkpoint. (Migrated verbatim from the
+		// old inlined post-collect hook — the KB folder + prefix are NOT LLM-routed.)
+		steps.push({
+			id: "enforce-config",
+			dependsOn: ["config-writer"],
+			retryPolicy: { maxReruns: 0 },
+			run: {
+				kind: "deterministic",
+				thunk: async () => {
+					const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
+					if (fs.existsSync(manageConfigTool)) {
+						await runToolAdvisory(
+							manageConfigTool,
+							["set", "paths.engineering", kbFolder],
+							cwd,
+							ctx,
+							"manage-config paths.engineering",
+						);
+						const projectPrefix = opts.projectPrefix ?? deriveProjectPrefix(projectName);
+						await runToolAdvisory(
+							manageConfigTool,
+							["set", "project.prefix", projectPrefix],
+							cwd,
+							ctx,
+							"manage-config project.prefix",
+						);
+					}
+					try {
+						state.configCache = JSON.parse(
+							fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
+						) as Record<string, unknown>;
+					} catch {
+						// keep existing cache
+					}
+					writeInitProgress(cwd, 1);
+				},
+			},
+		});
+
+		// Wave 3 — 10 kb-doc agents (independent fan-out; gate is now a precondition).
+		for (const docId of KB_DOC_IDS) {
+			steps.push({
+				id: `kb-doc:${docId}`,
+				dependsOn: ["enforce-config"],
+				precondition: kbReady,
+				retryPolicy: { maxReruns: 1 },
+				requiredOutput: exitOk,
+				run: {
+					kind: "subagent",
+					promptPhase: 2,
+					subLabel: `kb-doc:${docId}`,
+					subRole: "plan" as const,
+					modelRole: "kb-doc",
+					persona: "engineer",
+					phaseGroup: "discover",
+					schema: KB_DOC_SCHEMA,
+					buildPrompt: (b) =>
+						`${b}\n\n<!-- AGENT PARAMS -->\nrole: kb-doc\ndocId: ${docId}\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+				},
+			});
+		}
+
+		// Wave 4 — index (depends on all kb-docs).
+		steps.push({
+			id: "index",
+			dependsOn: KB_DOC_IDS.map((d) => `kb-doc:${d}`),
+			retryPolicy: { maxReruns: 0 },
+			requiredOutput: exitOk,
+			run: {
+				kind: "subagent",
+				promptPhase: 2,
+				subLabel: "index",
+				subRole: "plan" as const,
+				modelRole: "index",
+				persona: "engineer",
+				phaseGroup: "discover",
+				buildPrompt: (b) =>
+					`${b}\n\n<!-- AGENT PARAMS -->\nrole: index\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+			},
+		});
+
+		// Wave 5 — context (depends on index; retries once).
+		steps.push({
+			id: "context",
+			dependsOn: ["index"],
+			retryPolicy: { maxReruns: 1 },
+			requiredOutput: exitOk,
+			run: {
+				kind: "subagent",
+				promptPhase: 2,
+				subLabel: "context",
+				subRole: "plan" as const,
+				modelRole: "context",
+				persona: "engineer",
+				phaseGroup: "discover",
+				buildPrompt: (b) =>
+					`${b}\n\n<!-- AGENT PARAMS -->\nrole: context\nkbFolder: ${kbFolder}\nisoTimestamp: ${iso}\n`,
+			},
+		});
+
+		// Wave 6 — deterministic: verifyPhase2 + post-verify hooks + coarse phase-2
+		// checkpoint. requiredOutput gates on the verify result.
+		steps.push({
+			id: "verify-discover",
+			dependsOn: ["context"],
+			retryPolicy: { maxReruns: 0 },
+			requiredOutput: async (c) => {
+				const s = c as InitStepState;
+				return { ok: s.verifyOk, reason: s.verifyReason };
+			},
+			run: {
+				kind: "deterministic",
+				thunk: async () => {
+					let kbPath = kbFolder;
+					try {
+						const cachePaths = state.configCache.paths as Record<string, unknown> | undefined;
+						if (cachePaths && typeof cachePaths.engineering === "string") {
+							kbPath = cachePaths.engineering;
+						}
+					} catch {
+						// use kbFolder default
+					}
+					const verifyResult = await verifyPhase2(cwd, kbPath);
+					if (!verifyResult.ok) {
+						state.verifyOk = false;
+						state.verifyReason = `Phase 2 verify failed: ${verifyResult.missing.join(", ")}`;
+						return;
+					}
+					state.verifyOk = true;
+					await runPhase2PostVerifyHooks(cwd, bundleRoot, toolsRoot, projectName, state.configCache, ctx);
+					writeInitProgress(cwd, 2);
+				},
+			},
+		});
+
+		// Wave 7 — deterministic: Phase 3 materialize (scaffold + verify) + checkpoint.
+		steps.push({
+			id: "materialize",
+			dependsOn: ["verify-discover"],
+			retryPolicy: { maxReruns: 0 },
+			requiredOutput: async (c) => {
+				const s = c as InitStepState;
+				return {
+					ok: s.phase3Ok,
+					reason: s.phase3Ok ? undefined : "Phase 3 abort (verify failed or tools missing)",
+				};
+			},
+			run: {
+				kind: "deterministic",
+				thunk: async () => {
+					const phase3Result = await runPhase3(cwd, bundleRoot, toolsRoot, ctx);
+					if (phase3Result === "abort") {
+						state.phase3Ok = false;
+						return;
+					}
+					state.phase3Ok = true;
+					writeInitProgress(cwd, 3);
+				},
+			},
+		});
+
+		// Wave 8 — deterministic: Phase 4 register (internally deletes init-progress).
+		steps.push({
+			id: "register",
+			dependsOn: ["materialize"],
+			retryPolicy: { maxReruns: 0 },
+			requiredOutput: async (c) => {
+				const s = c as InitStepState;
+				return { ok: s.phase4Ok, reason: s.phase4Ok ? undefined : "Phase 4 abort" };
+			},
+			run: {
+				kind: "deterministic",
+				thunk: async () => {
+					const isPiRuntime = opts.isPiRuntime ?? (() => false);
+					const getBundledToolsRoot = opts.getBundledToolsRoot ?? (() => toolsRoot);
+					const phase4Ctx: Phase4Context = {
+						cwd,
+						bundleRoot,
+						toolsRoot,
+						projectName,
+						configCache: state.configCache,
+						ctx,
+						isPiRuntime,
+						getBundledToolsRoot,
+					};
+					const phase4Result = await runPhase4(phase4Ctx);
+					if (phase4Result === "abort") {
+						state.phase4Ok = false;
+						return;
+					}
+					state.phase4Ok = true;
+					state.kbPathFinal = phase4Result.kbPathFinal;
+				},
+			},
+		});
+
+		return steps;
+	}
+
+	// ── Drive the waves ────────────────────────────────────────────────────────
+	const steps = buildInitSteps();
+	const waves = topoSortWaves(steps);
+	let lastPhase = startWave === 0 ? 0 : WAVE_PHASE_NUM[startWave - 1] ?? 0;
+
+	for (let w = startWave; w < waves.length; w++) {
+		currentWaveIndex = w;
+		const wave = waves[w];
+		const phaseName = WAVE_PHASE_NAME[w];
+		const phaseNum = WAVE_PHASE_NUM[w];
+
+		ctx.ui.setStatus?.(STATUS_KEY, `forge:init: wave ${w + 1}/${waves.length} (${phaseName})`);
+		ctx.ui.notify(
+			`→ init: ${phaseName} · wave ${w + 1}/${waves.length} [${wave.map((s) => s.id).join(", ")}]`,
+			"info",
+		);
 
 		orchTranscript.record({
 			kind: "phase-start",
 			ts: new Date().toISOString(),
-			phase: phase.name,
-			phaseIndex: currentPhaseIndex,
-			phaseCount: INIT_PHASES.length,
+			phase: phaseName,
+			phaseIndex: w,
+			phaseCount: waves.length,
 			attempt: 1,
-			workflowFile: `init-${phase.name}`,
-			persona: phase.persona ?? "engineer",
+			workflowFile: `init-${phaseName}`,
+			persona: "engineer",
 		});
 
-		const phaseStartMs = Date.now();
+		const waveStartMs = Date.now();
 
-		// Dispatch the phase.
-		const outcome = await dispatchInitPhase({
-			opts,
-			phase,
-			phaseIndex: currentPhaseIndex,
-			cwd,
-			ctx,
-			bundleRoot,
-			kbFolder,
-			isoTimestamp: opts.isoTimestamp,
-			modelRoutingConfig,
-			forgeToolDefs: opts.forgeToolDefs,
-			dispatchCounts: {},
-		});
+		const outcomes = await runWave(wave, (step) =>
+			runStep(step, { ctx: state, dispatchSubagent }),
+		);
 
-		if (outcome.kind === "return") {
-			// Early failure / cancel.
-			const failure = outcome.result.failure ?? `Phase ${phaseNum} (${phase.name}) failed`;
-			ctx.ui.notify(`× forge:init — phase ${phase.name} failed: ${failure}`, "error");
+		// IL10: orchestrator emits ONE phase event per successful subagent step,
+		// composed from captured result.{model,provider,usage} + the step's OWN
+		// start/end bracket (outcome.startMs/endMs) so each event is distinct and
+		// duration is attributed per step, not per wave. Deterministic steps emit
+		// nothing (no subagent telemetry to attribute). Subagents never emit.
+		const { sprintId } = opts;
+		for (let i = 0; i < wave.length; i++) {
+			const step = wave[i];
+			const outcome = outcomes[i];
+			if (step.run.kind !== "subagent" || !outcome.ok || !outcome.result) continue;
+			if (!sprintId) {
+				ctx.ui.notify(
+					`⚠ forge:init — sprintId not provided; skipping phase event emit for ${step.id}`,
+					"warning",
+				);
+				continue;
+			}
+			const r = outcome.result;
+			const phaseEvent = buildInitPhaseEvent(
+				step.run.phaseGroup,
+				step.id,
+				sprintId,
+				outcome.startMs,
+				outcome.endMs,
+				r.model ?? "unknown",
+				r.provider ?? "unknown",
+				{
+					input: r.usage.input,
+					output: r.usage.output,
+					cacheRead: r.usage.cacheRead,
+					cacheWrite: r.usage.cacheWrite,
+				},
+			);
+			const emitResult = emitEvent(storeCli, cwd, sprintId, phaseEvent);
+			if (!emitResult.ok) {
+				ctx.ui.notify(
+					`⚠ forge:init — phase event emit failed for ${step.id}: ${emitResult.stderr.trim()}`,
+					"warning",
+				);
+			}
+		}
+
+		// Halt on the first failed step in this wave (declaration order).
+		const failedIdx = outcomes.findIndex((o) => !o.ok);
+		if (failedIdx >= 0) {
+			const failedStep = wave[failedIdx];
+			const failure = outcomes[failedIdx].reason ?? `step "${failedStep.id}" failed`;
+			ctx.ui.notify(`× forge:init — ${phaseName} step "${failedStep.id}" failed: ${failure}`, "error");
 			orchTranscript.record({
 				kind: "phase-end",
 				ts: new Date().toISOString(),
-				phase: phase.name,
-				phaseIndex: currentPhaseIndex,
+				phase: phaseName,
+				phaseIndex: w,
 				attempt: 1,
 				verdict: "error",
-				elapsedMs: Date.now() - phaseStartMs,
+				elapsedMs: Date.now() - waveStartMs,
 			});
 			return makeFailResult({ ok: false, lastPhase: phaseNum, failure });
 		}
 
-		if (outcome.kind === "skip") {
-			// Deterministic phase — run Phase 3 or Phase 4 directly.
-			if (phase.name === "materialize") {
-				// Phase 3: runPhase3 internally calls verifyPhase3 and hard-halts on failure.
-				const phase3Result = await runPhase3(cwd, bundleRoot, toolsRoot, ctx);
-				if (phase3Result === "abort") {
-					const failure = "Phase 3 abort (verify failed or tools missing)";
-					ctx.ui.notify(`× forge:init — ${failure}`, "error");
-					orchTranscript.record({
-						kind: "phase-end",
-						ts: new Date().toISOString(),
-						phase: phase.name,
-						phaseIndex: currentPhaseIndex,
-						attempt: 1,
-						verdict: "error",
-						elapsedMs: Date.now() - phaseStartMs,
-					});
-					return makeFailResult({ ok: false, lastPhase: phaseNum, failure });
-				}
-				// Phase 3 succeeded — write checkpoint.
-				writeInitProgress(cwd, 3);
-			} else if (phase.name === "register") {
-				// Phase 4: runPhase4 is deterministic + internally deletes init-progress.
-				const isPiRuntime = opts.isPiRuntime ?? (() => false);
-				const getBundledToolsRoot = opts.getBundledToolsRoot ?? (() => toolsRoot);
-				const phase4Ctx: Phase4Context = {
-					cwd,
-					bundleRoot,
-					toolsRoot,
-					projectName,
-					configCache,
-					ctx,
-					isPiRuntime,
-					getBundledToolsRoot,
-				};
-				const phase4Result = await runPhase4(phase4Ctx);
-				if (phase4Result === "abort") {
-					const failure = "Phase 4 abort";
-					ctx.ui.notify(`× forge:init — ${failure}`, "error");
-					orchTranscript.record({
-						kind: "phase-end",
-						ts: new Date().toISOString(),
-						phase: phase.name,
-						phaseIndex: currentPhaseIndex,
-						attempt: 1,
-						verdict: "error",
-						elapsedMs: Date.now() - phaseStartMs,
-					});
-					return makeFailResult({ ok: false, lastPhase: phaseNum, failure });
-				}
-				// Capture kbPathFinal from Phase 4 result for InitReport.
-				kbPathFinal = phase4Result.kbPathFinal;
-				// Phase 4 internally calls deleteInitProgress — no checkpoint write needed.
-			}
-		} else {
-			// outcome.kind === "ok" — LLM phase succeeded.
-			const result: SubagentResult = outcome.result;
-
-			// Phase 1 post-success: deterministically own the KB-folder decision,
-			// then re-read configCache.
-			if (phase.name === "collect") {
-				// The KB folder is NOT an LLM-routed decision. forge-cli resolves
-				// kbFolder deterministically in the forge-init.ts handler prologue
-				// (user prompt or the "engineering" default). Enforce it onto
-				// paths.engineering here — after the config-writer agent ran — so
-				// the orchestrator-owned value is authoritative regardless of what
-				// the agent wrote. This is what lets the subagents skip the prompt
-				// entirely (they have no say in the outcome).
-				const manageConfigTool = path.join(toolsRoot, "manage-config.cjs");
-				if (fs.existsSync(manageConfigTool)) {
-					await runToolAdvisory(
-						manageConfigTool,
-						["set", "paths.engineering", kbFolder],
-						cwd,
-						ctx,
-						"manage-config paths.engineering",
-					);
-					// project.prefix is likewise deterministic — handler-resolved
-					// (deriveProjectPrefix + confirm/override), or derived here from
-					// projectName when a non-handler caller omitted it. The LLM
-					// config-writer never owns it.
-					const projectPrefix = opts.projectPrefix ?? deriveProjectPrefix(projectName);
-					await runToolAdvisory(
-						manageConfigTool,
-						["set", "project.prefix", projectPrefix],
-						cwd,
-						ctx,
-						"manage-config project.prefix",
-					);
-				}
-				try {
-					configCache = JSON.parse(
-						fs.readFileSync(path.join(cwd, ".forge", "config.json"), "utf8"),
-					) as Record<string, unknown>;
-				} catch {
-					// Fall back to existing cache
-				}
-			}
-
-			// Phase 2 post-success: run verifyPhase2 + post-verify hooks.
-			if (phase.name === "discover") {
-				// Resolve kbPath from configCache (matches run-phases.ts:runPhase2 logic).
-				let kbPath = kbFolder;
-				try {
-					const cachePaths = configCache.paths as Record<string, unknown> | undefined;
-					if (cachePaths && typeof cachePaths.engineering === "string") {
-						kbPath = cachePaths.engineering;
-					}
-				} catch {
-					// use kbFolder default
-				}
-
-				const verifyResult = await verifyPhase2(cwd, kbPath);
-				if (!verifyResult.ok) {
-					// T02 already did retry-once inside dispatchInitPhase; this is the
-					// orchestrator-side confirm. On failure, halt (non-interactive path).
-					const failure = `Phase 2 verify failed: ${verifyResult.missing.join(", ")}`;
-					ctx.ui.notify(`× forge:init — ${failure}`, "error");
-					orchTranscript.record({
-						kind: "phase-end",
-						ts: new Date().toISOString(),
-						phase: phase.name,
-						phaseIndex: currentPhaseIndex,
-						attempt: 1,
-						verdict: "error",
-						elapsedMs: Date.now() - phaseStartMs,
-					});
-					return makeFailResult({ ok: false, lastPhase: phaseNum, failure });
-				}
-
-				// Run post-verify hooks (project-context.json + calibration baseline).
-				await runPhase2PostVerifyHooks(
-					cwd,
-					bundleRoot,
-					toolsRoot,
-					projectName,
-					configCache,
-					ctx,
-				);
-			}
-
-			// IL10: orchestrator emits phase event from result.{model,provider,usage}.
-			// Subagents NEVER call store-cli emit for phase events.
-			const phaseEndMs = Date.now();
-			const { sprintId } = opts;
-			if (!sprintId) {
-				ctx.ui.notify(
-					`⚠ forge:init — sprintId not provided; skipping phase event emit for ${phase.name}`,
-					"warning",
-				);
-			} else {
-				const phaseEvent = buildInitPhaseEvent(
-					phase.name,
-					sprintId,
-					phaseStartMs,
-					phaseEndMs,
-					result.model ?? "unknown",
-					result.provider ?? "unknown",
-					{
-						input: result.usage.input,
-						output: result.usage.output,
-						cacheRead: result.usage.cacheRead,
-						cacheWrite: result.usage.cacheWrite,
-					},
-				);
-				const emitResult = emitEvent(storeCli, cwd, sprintId, phaseEvent);
-				if (!emitResult.ok) {
-					ctx.ui.notify(
-						`⚠ forge:init — phase event emit failed for ${phase.name}: ${emitResult.stderr.trim()}`,
-						"warning",
-					);
-				}
-			}
-
-			// Write checkpoint after LLM phase (phases 1 and 2).
-			if (phase.name === "collect") {
-				writeInitProgress(cwd, 1);
-			} else if (phase.name === "discover") {
-				writeInitProgress(cwd, 2);
-			}
-		}
-
-		// Record phase-end to orchestrator transcript.
 		orchTranscript.record({
 			kind: "phase-end",
 			ts: new Date().toISOString(),
-			phase: phase.name,
-			phaseIndex: currentPhaseIndex,
+			phase: phaseName,
+			phaseIndex: w,
 			attempt: 1,
 			verdict: "n/a",
-			elapsedMs: Date.now() - phaseStartMs,
+			elapsedMs: Date.now() - waveStartMs,
 		});
-
-		const elapsed = Math.floor((Date.now() - phaseStartMs) / 1000);
-		ctx.ui.notify(`✓ init: ${phase.name} complete (${elapsed}s)`, "info");
+		const elapsed = Math.floor((Date.now() - waveStartMs) / 1000);
+		ctx.ui.notify(`✓ init: ${phaseName} wave ${w + 1}/${waves.length} complete (${elapsed}s)`, "info");
 
 		lastPhase = phaseNum;
-		currentPhaseIndex++;
 	}
 
-	// ── All phases complete — assemble InitReport ──────────────────────────────
+	// ── All waves complete — assemble InitReport ───────────────────────────────
 
-	const pipelineEndMs = Date.now();
 	orchTranscript.record({
 		kind: "pipeline-end",
 		ts: new Date().toISOString(),
 		outcome: "complete",
-		elapsedMs: pipelineEndMs,
+		elapsedMs: Date.now(),
 	});
 
-	const stack = typeof (configCache.project as Record<string, unknown> | undefined)?.stack === "string"
-		? ((configCache.project as Record<string, unknown>).stack as string)
+	const finalCache = state.configCache;
+	const stack = typeof (finalCache.project as Record<string, unknown> | undefined)?.stack === "string"
+		? ((finalCache.project as Record<string, unknown>).stack as string)
 		: undefined;
 
-	const skillMatches = Array.isArray(configCache.installedSkills)
-		? (configCache.installedSkills as string[])
+	const skillMatches = Array.isArray(finalCache.installedSkills)
+		? (finalCache.installedSkills as string[])
 		: undefined;
 
-	// If Phase 4 didn't run (resume at Phase 1–3), derive kbPathFinal from configCache.
+	// If Phase 4 didn't run (resume at phase 1–3), derive kbPathFinal from configCache.
+	let kbPathFinal = state.kbPathFinal;
 	if (!kbPathFinal) {
-		const p = configCache.paths as Record<string, unknown> | undefined;
+		const p = finalCache.paths as Record<string, unknown> | undefined;
 		if (p && typeof p.engineering === "string" && p.engineering) {
 			kbPathFinal = p.engineering;
 		}

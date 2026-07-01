@@ -9,12 +9,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-	INIT_PHASES,
 	DOMAINS,
 	KB_DOC_IDS,
 	ROLE_TIER,
-	initPhaseByName,
-	initPhaseIndexByName,
 } from "../../../src/extensions/forgecli/orchestrators/init/init-phases.js";
 
 import {
@@ -23,106 +20,6 @@ import {
 	OK_SCHEMA,
 	PHASE_RESULT_SCHEMA,
 } from "../../../src/extensions/forgecli/orchestrators/init/run-init-types.js";
-
-// ── INIT_PHASES table ─────────────────────────────────────────────────────────
-
-describe("INIT_PHASES", () => {
-	it("has exactly 4 entries", () => {
-		expect(INIT_PHASES).toHaveLength(4);
-	});
-
-	it('phase[0] is "collect" with kind subagent_fanout', () => {
-		expect(INIT_PHASES[0].name).toBe("collect");
-		expect(INIT_PHASES[0].kind).toBe("subagent_fanout");
-	});
-
-	it('phase[1] is "discover" with kind subagent_fanout', () => {
-		expect(INIT_PHASES[1].name).toBe("discover");
-		expect(INIT_PHASES[1].kind).toBe("subagent_fanout");
-	});
-
-	it('phase[2] is "materialize" with kind deterministic', () => {
-		expect(INIT_PHASES[2].name).toBe("materialize");
-		expect(INIT_PHASES[2].kind).toBe("deterministic");
-	});
-
-	it('phase[3] is "register" with kind deterministic', () => {
-		expect(INIT_PHASES[3].name).toBe("register");
-		expect(INIT_PHASES[3].kind).toBe("deterministic");
-	});
-
-	it("collect phase has domains set and no docIds", () => {
-		const collect = INIT_PHASES[0];
-		expect(collect.domains).toBeDefined();
-		expect(collect.docIds).toBeUndefined();
-	});
-
-	it("discover phase has docIds set and no domains", () => {
-		const discover = INIT_PHASES[1];
-		expect(discover.docIds).toBeDefined();
-		expect(discover.domains).toBeUndefined();
-	});
-
-	it("collect and discover phases have retryCap 1", () => {
-		expect(INIT_PHASES[0].retryCap).toBe(1);
-		expect(INIT_PHASES[1].retryCap).toBe(1);
-	});
-
-	it("materialize and register phases have retryCap 0 (hard-halt)", () => {
-		expect(INIT_PHASES[2].retryCap).toBe(0);
-		expect(INIT_PHASES[3].retryCap).toBe(0);
-	});
-
-	it("collect phase references verifyPhase1", () => {
-		expect(INIT_PHASES[0].verifyFn).toBe("verifyPhase1");
-	});
-
-	it("discover phase references verifyPhase2", () => {
-		expect(INIT_PHASES[1].verifyFn).toBe("verifyPhase2");
-	});
-
-	it("materialize phase references verifyPhase3", () => {
-		expect(INIT_PHASES[2].verifyFn).toBe("verifyPhase3");
-	});
-
-	it("register phase has no verifyFn", () => {
-		expect(INIT_PHASES[3].verifyFn).toBeUndefined();
-	});
-
-	it("collect phase modelRole is 'discovery'", () => {
-		expect(INIT_PHASES[0].modelRole).toBe("discovery");
-	});
-
-	it("discover phase modelRole is 'kb-doc'", () => {
-		expect(INIT_PHASES[1].modelRole).toBe("kb-doc");
-	});
-});
-
-// ── initPhaseByName / initPhaseIndexByName helpers ────────────────────────────
-
-describe("initPhaseByName", () => {
-	it("finds 'collect'", () => {
-		expect(initPhaseByName("collect")?.name).toBe("collect");
-	});
-
-	it("returns undefined for unknown phase", () => {
-		expect(initPhaseByName("nonexistent")).toBeUndefined();
-	});
-});
-
-describe("initPhaseIndexByName", () => {
-	it("returns 0 for 'collect'", () => {
-		expect(initPhaseIndexByName("collect")).toBe(0);
-	});
-
-	it("returns 3 for 'register'", () => {
-		expect(initPhaseIndexByName("register")).toBe(3);
-	});
-
-	it("returns -1 for unknown phase", () => {
-		expect(initPhaseIndexByName("nonexistent")).toBe(-1);
-	});
-});
 
 // ── DOMAINS constant ──────────────────────────────────────────────────────────
 
@@ -145,17 +42,20 @@ describe("DOMAINS", () => {
 // ── KB_DOC_IDS constant ───────────────────────────────────────────────────────
 
 describe("KB_DOC_IDS", () => {
-	it("has exactly 7 entries", () => {
-		expect(KB_DOC_IDS).toHaveLength(7);
+	it("has exactly 10 entries (shared 10-doc contract, FORGE-S35-T01)", () => {
+		expect(KB_DOC_IDS).toHaveLength(10);
 	});
 
-	it("matches meta verbatim (wfl-init.js lines ~236–244)", () => {
+	it("matches the shared 10-doc contract verbatim (wfl-init.js + verify-phase.cjs)", () => {
 		expect(Array.from(KB_DOC_IDS)).toEqual([
 			"architecture/stack",
 			"architecture/processes",
 			"architecture/routing",
 			"architecture/database",
 			"architecture/testing",
+			"architecture/deployment",
+			"architecture/entity-model",
+			"architecture/stack-checklist",
 			"business-domain/domain-model",
 			"business-domain/domain-concepts",
 		]);
@@ -165,8 +65,12 @@ describe("KB_DOC_IDS", () => {
 // ── ROLE_TIER constant ────────────────────────────────────────────────────────
 
 describe("ROLE_TIER", () => {
-	it("has exactly 8 keys", () => {
-		expect(Object.keys(ROLE_TIER)).toHaveLength(8);
+	it("has exactly 7 keys (the Phase-2 'gate' role was deleted in Slice 1)", () => {
+		expect(Object.keys(ROLE_TIER)).toHaveLength(7);
+	});
+
+	it("has no 'gate' key (gate subagent deleted; readiness is now a step precondition)", () => {
+		expect(ROLE_TIER["gate"]).toBeUndefined();
 	});
 
 	it("LLM-generation roles map to 'sonnet'", () => {
@@ -178,7 +82,6 @@ describe("ROLE_TIER", () => {
 	});
 
 	it("deterministic roles map to 'haiku'", () => {
-		expect(ROLE_TIER["gate"]).toBe("haiku");
 		expect(ROLE_TIER["materialize"]).toBe("haiku");
 		expect(ROLE_TIER["register"]).toBe("haiku");
 	});
