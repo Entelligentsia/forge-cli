@@ -5,6 +5,16 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-07-02
+
+### Fixed
+
+- **`/forge:init` orchestrator `pipeline-end` `elapsedMs` corrected.** The final orchestrator-transcript event logged `elapsedMs` as `Date.now()` — an absolute epoch timestamp (~56,500 years) rather than a duration. The pipeline now captures `pipelineStartMs` before the wave loop and emits the delta, matching every per-phase `elapsedMs`.
+
+### Changed
+
+- **Bundled Forge plugin re-vendored 1.6.9 → 1.6.10** (`forge.bundledVersion`). Picks up the `seed-store` fix ([Entelligentsia/forge@1.6.10](https://github.com/Entelligentsia/forge)): a fresh `4ge /forge:init` on a project with no pre-existing sprints/tasks/bugs now leaves a consistent `.forge/store/` with a `COLLATION_STATE.json` baseline instead of no store at all.
+
 ## [1.1.1] — 2026-07-01
 
 ### Changed

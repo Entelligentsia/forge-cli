@@ -685,6 +685,7 @@ async function runInitPipelineInner(
 	const steps = buildInitSteps();
 	const waves = topoSortWaves(steps);
 	let lastPhase = startWave === 0 ? 0 : WAVE_PHASE_NUM[startWave - 1] ?? 0;
+	const pipelineStartMs = Date.now();
 
 	for (let w = startWave; w < waves.length; w++) {
 		currentWaveIndex = w;
@@ -796,7 +797,7 @@ async function runInitPipelineInner(
 		kind: "pipeline-end",
 		ts: new Date().toISOString(),
 		outcome: "complete",
-		elapsedMs: Date.now(),
+		elapsedMs: Date.now() - pipelineStartMs,
 	});
 
 	const finalCache = state.configCache;
