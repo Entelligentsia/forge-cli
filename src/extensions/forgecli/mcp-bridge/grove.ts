@@ -25,6 +25,51 @@ import { attachMcpServer, type McpAttachment } from "./mcp-bridge.js";
 // `grove` CLI fallback that the skill assumes when MCP tools are absent.
 export const GROVE_TOOL_PREFIX = "mcp__grove__";
 
+// The single delegating tool grove exposes in explore-mode (`grove serve
+// --explore`). When it appears in the discovered roster, the project is running
+// grove's local-LLM delegation surface and the outer model gets ONE locator tool
+// instead of the 7 structural tools.
+export const GROVE_EXPLORE_TOOL = `${GROVE_TOOL_PREFIX}explore`;
+
+// Idle (per-progress) timeout for explore-mode calls. The delegated local-LLM
+// loop runs multiple turns; grove emits `notifications/progress` per turn, which
+// the transport uses to reset this timer. So this bounds the gap BETWEEN progress
+// events (a single hung turn), not the whole call — generous enough for a slow
+// local model, still short enough to catch a genuinely dead provider.
+const GROVE_EXPLORE_IDLE_TIMEOUT_MS = 120_000;
+
+/**
+ * True when the project was provisioned for grove's delegated local-LLM mode
+ * (`grove init --as mcp-llm`). The signal is the same predicate grove itself
+ * keys on internally (`determine_surface` in grove's `cli/src/mcp.rs`): the
+ * presence of `.grove/explore.json`. forge-cli mirrors grove's own surface
+ * decision rather than inventing a parallel one — provisioning stays the user's
+ * job (grove's interactive `init --as mcp-llm` TUI), forge-cli only detects it.
+ */
+export function isGroveExploreProject(cwd: string): boolean {
+	return existsSync(path.join(cwd, ".grove", "explore.json"));
+}
+
+/**
+ * Decide whether to attach grove in explore-mode for this session.
+ *
+ * - An explicit `explore` override (from AttachGroveOptions) always wins.
+ * - `FORGE_GROVE_NO_EXPLORE=1` forces the standard structural surface even in a
+ *   provisioned explore project (escape hatch, mirrors FORGE_GROVE_NO_AUTOINIT).
+ * - Otherwise: explore-mode iff the project has `.grove/explore.json`.
+ *
+ * Note this only decides which surface to *ask* grove for. Grove's own health
+ * probe has the final say: `serve --explore` with a down local LLM transparently
+ * falls back to the 7 structural tools, and the bridge registers whatever grove
+ * actually advertised — so a stale/unavailable explore config still degrades
+ * cleanly with no extra logic here.
+ */
+export function shouldUseExplore(cwd: string, explicit?: boolean): boolean {
+	if (explicit !== undefined) return explicit;
+	if (process.env.FORGE_GROVE_NO_EXPLORE === "1") return false;
+	return isGroveExploreProject(cwd);
+}
+
 /**
  * The grove code-navigation steering block — injected ONCE into the system
  * prompt (via project-orientation, which reaches both the main thread and
@@ -34,8 +79,18 @@ export const GROVE_TOOL_PREFIX = "mcp__grove__";
  * `promptGuidelines` are deliberately NOT used — pi concatenates them across
  * every active tool with no cross-tool dedup, so a shared block would repeat
  * once per grove tool.
+ *
+ * The block branches on the ACTUAL discovered roster, not on the requested mode:
+ * if grove served its explore-mode surface (`mcp__grove__explore` present) the
+ * locator steering is emitted; otherwise the structural procedure. Because grove
+ * falls back to the 7 structural tools when the local LLM is down, keying off the
+ * real roster keeps the steering honest even when explore was requested but
+ * couldn't be served.
  */
 export function buildGroveSteering(toolNames: string[]): string {
+	if (toolNames.includes(GROVE_EXPLORE_TOOL)) {
+		return buildGroveExploreSteering();
+	}
 	const available = toolNames.length > 0 ? toolNames.join(", ") : "mcp__grove__*";
 	return [
 		"## Code navigation — use grove",
@@ -50,6 +105,31 @@ export function buildGroveSteering(toolNames: string[]): string {
 		"`mcp__grove__symbols` to locate a name by exact match → `mcp__grove__source`",
 		"by the returned id for the body; `mcp__grove__callers` / `mcp__grove__definition`",
 		"for call sites and go-to-def; `mcp__grove__check` after an edit.",
+	].join("\n");
+}
+
+/**
+ * Steering for grove's delegated explore-mode surface: a single `explore` tool
+ * backed by a local LLM. It is a code LOCATOR — ask ONE narrow where-is question,
+ * get `file:line` citations back — not a broad task runner. Framed to match
+ * grove's own locator instructions so the model engages it rather than bypassing
+ * it with a broad grep.
+ */
+function buildGroveExploreSteering(): string {
+	return [
+		"## Code navigation — use grove explore",
+		"",
+		`This project runs grove in explore-mode: a single \`${GROVE_EXPLORE_TOOL}\` tool,`,
+		"backed by a local LLM, is your code-navigation surface. It is a LOCATOR — it",
+		"finds WHERE code lives and returns `file:line` citations, not a whole answer.",
+		"",
+		"For any where-is / what-defines / who-calls question, reach for it FIRST.",
+		"Ask ONE narrow, single-focus question per call (e.g. \"where is the API-key",
+		"health check defined\"), not a broad multi-part task. Best flow: a few narrow",
+		`\`${GROVE_EXPLORE_TOOL}\` calls to locate the pieces → \`read\` those exact`,
+		"`file:line` spans → synthesize. `grep` / `rg` / reading whole files blind are",
+		"fallbacks, used only after explore has been tried and returned insufficient",
+		"content.",
 	].join("\n");
 }
 
@@ -142,6 +222,12 @@ export interface AttachGroveOptions {
 	autoInit?: boolean;
 	/** Per-call request timeout for grove tools (default 15s). */
 	requestTimeoutMs?: number;
+	/**
+	 * Force explore-mode (`grove serve --explore`) on/off. Undefined (default)
+	 * auto-detects via `shouldUseExplore`: explore-mode iff the project has
+	 * `.grove/explore.json` and FORGE_GROVE_NO_EXPLORE isn't set.
+	 */
+	explore?: boolean;
 }
 
 /**
@@ -160,15 +246,26 @@ export async function attachGrove(opts: AttachGroveOptions): Promise<McpAttachme
 	});
 	if (!readiness.bin) return null;
 
+	// A `--as mcp-llm` project asked for grove's delegated local-LLM surface;
+	// mirror grove's own decision and spawn `serve --explore`. Grove health-probes
+	// the local backend and falls back to the 7 structural tools if it's down, so
+	// this is safe even when the configured LLM isn't currently running.
+	const explore = shouldUseExplore(opts.cwd, opts.explore);
+	const args = explore ? ["serve", "--explore"] : ["serve"];
+	// Explore delegates to a local LLM over many turns; give it a wide idle window
+	// (reset per progress notification). Structural calls keep the default.
+	const requestTimeoutMs =
+		opts.requestTimeoutMs ?? (explore ? GROVE_EXPLORE_IDLE_TIMEOUT_MS : undefined);
+
 	try {
 		// No per-tool promptGuidelines — steering is injected once via
 		// buildGroveSteering → project-orientation (reaches main + subagents).
 		return await attachMcpServer({
 			command: readiness.bin,
-			args: ["serve"],
+			args,
 			cwd: opts.cwd,
 			namePrefix: opts.namePrefix ?? GROVE_TOOL_PREFIX,
-			requestTimeoutMs: opts.requestTimeoutMs,
+			requestTimeoutMs,
 		});
 	} catch {
 		// Handshake/discovery failed — degrade silently, session continues.

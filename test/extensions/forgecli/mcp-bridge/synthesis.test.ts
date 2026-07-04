@@ -80,9 +80,36 @@ describe("synthesizeTools", () => {
 		const session = fakeSession();
 		const tool = buildToolDefinition(session, DESCRIPTORS[0], { namePrefix: "grove_" });
 		const result = (await tool.execute("call-1", { file: "x.ts" }, undefined, undefined, CTX)) as ExecResult;
-		expect(session.callTool).toHaveBeenCalledWith("outline", { file: "x.ts" }, undefined);
+		// 4th arg is the progress forwarder — undefined here since no onUpdate was passed.
+		expect(session.callTool).toHaveBeenCalledWith("outline", { file: "x.ts" }, undefined, undefined);
 		expect(result.isError).toBe(false);
 		expect(result.content[0]).toMatchObject({ type: "text", text: "called outline with {\"file\":\"x.ts\"}" });
+	});
+
+	it("forwards server progress notifications to the onUpdate callback", async () => {
+		// A session whose call reports two progress ticks (grove-style messages)
+		// before resolving — exactly what `grove serve --explore` emits per turn.
+		const session = fakeSession({
+			callTool: vi.fn(
+				async (
+					name: string,
+					_args: Record<string, unknown>,
+					_signal?: AbortSignal,
+					onProgress?: (p: { progress?: number; total?: number; message?: string }) => void,
+				) => {
+					onProgress?.({ progress: 1, total: 7, message: "turn 1/7 · Grep" });
+					onProgress?.({ progress: 2, total: 7, message: "turn 2/7 · Read" });
+					return { content: [{ type: "text", text: `called ${name}` }], isError: false };
+				},
+			),
+		});
+		const tool = buildToolDefinition(session, DESCRIPTORS[0], { namePrefix: "grove_" });
+		const updates: string[] = [];
+		const onUpdate = (r: { content: Array<{ text?: string }> }) => {
+			updates.push(r.content[0]?.text ?? "");
+		};
+		await tool.execute("call-p", { file: "x.ts" }, undefined, onUpdate as never, CTX);
+		expect(updates).toEqual(["turn 1/7 · Grep", "turn 2/7 · Read"]);
 	});
 
 	it("maps an MCP isError result onto a pi isError result", async () => {

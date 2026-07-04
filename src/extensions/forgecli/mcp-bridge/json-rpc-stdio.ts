@@ -32,14 +32,37 @@ export interface JsonRpcStdioOptions {
 interface JsonRpcResponse {
 	jsonrpc?: string;
 	id?: number | string | null;
+	/** Present on server-initiated notifications (e.g. notifications/progress). */
+	method?: string;
+	/** Notification payload — for progress: `{ progressToken, progress, ... }`. */
+	params?: unknown;
 	result?: unknown;
 	error?: { code?: number; message?: string; data?: unknown };
+}
+
+/** Payload of an MCP `notifications/progress` message. */
+export interface ProgressNotification {
+	progressToken: number | string;
+	progress?: number;
+	total?: number;
+	message?: string;
 }
 
 interface Pending {
 	resolve: (value: unknown) => void;
 	reject: (error: Error) => void;
 	timer: ReturnType<typeof setTimeout>;
+	/** Method name, for the timeout diagnostic. */
+	method: string;
+	/** Invoked for each `notifications/progress` carrying this request's token. */
+	onProgress?: (p: ProgressNotification) => void;
+	/**
+	 * Restart the inactivity timer. Called when a `notifications/progress` for
+	 * this request arrives, so a long server-side operation that keeps reporting
+	 * liveness is never killed by the flat deadline (grove's delegated explore
+	 * runs a multi-turn local-LLM loop that far exceeds a single request window).
+	 */
+	reset: () => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -103,30 +126,73 @@ export class JsonRpcStdioClient {
 		});
 	}
 
-	/** Send a request and await its result. Rejects on error / timeout / exit. */
-	request(method: string, params?: unknown): Promise<unknown> {
+	/**
+	 * Send a request and await its result. Rejects on error / timeout / exit.
+	 * `onProgress`, if given, fires for each `notifications/progress` the server
+	 * emits for this request (and each one also resets the inactivity timer).
+	 */
+	request(
+		method: string,
+		params?: unknown,
+		onProgress?: (p: ProgressNotification) => void,
+	): Promise<unknown> {
 		if (!this.child) return Promise.reject(new Error("client not started"));
 		if (this.exited) {
 			return Promise.reject(this.exitError ?? new Error("client closed"));
 		}
 		const id = this.nextId++;
-		const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
+		// Opt into MCP progress: servers emit `notifications/progress` keyed off
+		// this token. We use the request id itself so a progress notification maps
+		// straight back to its pending entry. Without a token grove never emits
+		// progress and a long delegated call dies at the flat deadline.
+		const withMeta = this.withProgressToken(params, id);
+		const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params: withMeta }) + "\n";
 		return new Promise<unknown>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.pending.delete(id);
-				reject(new Error(`request "${method}" timed out after ${this.timeoutMs}ms`));
-			}, this.timeoutMs);
-			// Don't let a pending timer hold the process open.
-			(timer as { unref?: () => void }).unref?.();
-			this.pending.set(id, { resolve, reject, timer });
+			const pending: Pending = {
+				resolve,
+				reject,
+				method,
+				onProgress,
+				timer: undefined as unknown as ReturnType<typeof setTimeout>,
+				reset: () => {
+					clearTimeout(pending.timer);
+					pending.timer = setTimeout(() => {
+						this.pending.delete(id);
+						reject(
+							new Error(
+								`request "${method}" timed out after ${this.timeoutMs}ms without activity`,
+							),
+						);
+					}, this.timeoutMs);
+					// Don't let a pending timer hold the process open.
+					(pending.timer as { unref?: () => void }).unref?.();
+				},
+			};
+			pending.reset();
+			this.pending.set(id, pending);
 			this.child!.stdin.write(payload, (err) => {
 				if (err) {
 					this.pending.delete(id);
-					clearTimeout(timer);
+					clearTimeout(pending.timer);
 					reject(err);
 				}
 			});
 		});
+	}
+
+	/**
+	 * Return a shallow copy of `params` with `_meta.progressToken` set to `token`,
+	 * without mutating the caller's object. MCP reserves `params._meta` for this;
+	 * servers that don't emit progress simply ignore it.
+	 */
+	private withProgressToken(params: unknown, token: number): unknown {
+		const base =
+			params && typeof params === "object" ? (params as Record<string, unknown>) : {};
+		const meta =
+			base._meta && typeof base._meta === "object"
+				? (base._meta as Record<string, unknown>)
+				: {};
+		return { ...base, _meta: { ...meta, progressToken: token } };
 	}
 
 	/** Fire-and-forget notification (no id, no response expected). */
@@ -177,8 +243,12 @@ export class JsonRpcStdioClient {
 			// Non-JSON line (a server log to stdout); ignore.
 			return;
 		}
-		// Notifications / server-initiated messages carry no id we issued.
-		if (msg.id === undefined || msg.id === null) return;
+		// Notifications / server-initiated messages carry no id we issued — a
+		// progress notification refreshes its request's inactivity timer.
+		if (msg.id === undefined || msg.id === null) {
+			this.onNotification(msg);
+			return;
+		}
 		if (typeof msg.id !== "number") return;
 		const pending = this.pending.get(msg.id);
 		if (!pending) return;
@@ -193,6 +263,23 @@ export class JsonRpcStdioClient {
 			return;
 		}
 		pending.resolve(msg.result);
+	}
+
+	/**
+	 * Handle a server-initiated notification. Only `notifications/progress` is
+	 * actioned: it restarts the inactivity timer of the request whose
+	 * `progressToken` it carries (the request id we assigned), turning the flat
+	 * request deadline into an idle timeout that survives long, live operations.
+	 */
+	private onNotification(msg: JsonRpcResponse): void {
+		if (msg.method !== "notifications/progress") return;
+		const params = msg.params as ProgressNotification | undefined;
+		const token = params?.progressToken;
+		if (typeof token !== "number") return;
+		const pending = this.pending.get(token);
+		if (!pending) return;
+		pending.reset();
+		if (params) pending.onProgress?.(params);
 	}
 
 	private fail(err: Error): void {

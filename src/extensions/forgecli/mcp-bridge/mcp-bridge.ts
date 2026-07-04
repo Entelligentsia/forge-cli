@@ -58,12 +58,24 @@ export function buildToolDefinition(
 		// Pass the MCP JSON Schema straight through — see header note.
 		parameters: (descriptor.inputSchema ?? { type: "object", properties: {} }) as TSchema,
 		promptGuidelines: opts.promptGuidelines,
-		async execute(_toolCallId, params, signal) {
+		async execute(_toolCallId, params, signal, onUpdate) {
 			try {
+				// Surface the server's progress notifications as live tool updates so
+				// the user sees liveness during a long call (e.g. grove's delegated
+				// explore, which reports "turn 2/7 · …" per inner-loop turn) instead
+				// of a silent wait. Partial updates carry text only; the final result
+				// still comes from the resolved call below.
+				const onProgress = onUpdate
+					? (p: { progress?: number; total?: number; message?: string }) => {
+							const text = p.message ?? `working (${p.progress ?? "?"}/${p.total ?? "?"})`;
+							onUpdate({ content: [{ type: "text", text }], details: {} as unknown });
+						}
+					: undefined;
 				const result = await session.callTool(
 					descriptor.name,
 					(params ?? {}) as Record<string, unknown>,
 					signal,
+					onProgress,
 				);
 				return {
 					content: toToolContent(result.content, result.isError ? "tool error" : "OK"),

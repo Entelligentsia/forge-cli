@@ -46,6 +46,24 @@ function handle(msg) {
     else send({ jsonrpc: "2.0", id, error: { code: -32602, message: "unknown tool " + name } });
   } else if (method === "hang") {
     // intentionally never reply
+  } else if (method === "slowprogress") {
+    // Emit N progress notifications spaced by \`gap\` ms (each carrying the
+    // caller's progressToken), then reply. Total time > the request timeout, so
+    // this only succeeds if progress resets the inactivity timer.
+    const token = params && params._meta && params._meta.progressToken;
+    const n = (params && params.n) || 4;
+    const gap = (params && params.gap) || 120;
+    let i = 0;
+    const tick = () => {
+      if (i < n) {
+        i++;
+        send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: i, total: n } });
+        setTimeout(tick, gap);
+      } else {
+        send({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "done" }], isError: false } });
+      }
+    };
+    setTimeout(tick, gap);
   } else if (method === "crash") {
     process.exit(1);
   } else {
@@ -84,6 +102,58 @@ describe("JsonRpcStdioClient", () => {
 		});
 		client.start();
 		await expect(client.request("hang", {})).rejects.toThrow(/timed out/);
+		await client.close();
+	});
+
+	it("progress notifications reset the inactivity timer past the flat deadline", async () => {
+		const client = new JsonRpcStdioClient({
+			command: process.execPath,
+			args: [serverPath],
+			requestTimeoutMs: 200,
+		});
+		client.start();
+		// 4 progress ticks, 120ms apart → ~600ms total, well past the 200ms
+		// timeout. Each tick must reset the timer for this to resolve.
+		const result = (await client.request("slowprogress", { n: 4, gap: 120 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(result.content[0].text).toBe("done");
+		await client.close();
+	});
+
+	it("surfaces each progress notification to the onProgress callback", async () => {
+		const client = new JsonRpcStdioClient({
+			command: process.execPath,
+			args: [serverPath],
+			requestTimeoutMs: 500,
+		});
+		client.start();
+		const seen: Array<{ progress?: number; total?: number }> = [];
+		const result = (await client.request("slowprogress", { n: 3, gap: 60 }, (p) => {
+			seen.push({ progress: p.progress, total: p.total });
+		})) as { content: Array<{ text: string }> };
+		expect(result.content[0].text).toBe("done");
+		// All three ticks delivered, in order, carrying grove-style progress/total.
+		expect(seen).toEqual([
+			{ progress: 1, total: 3 },
+			{ progress: 2, total: 3 },
+			{ progress: 3, total: 3 },
+		]);
+		await client.close();
+	});
+
+	it("still times out when progress stops flowing", async () => {
+		const client = new JsonRpcStdioClient({
+			command: process.execPath,
+			args: [serverPath],
+			requestTimeoutMs: 200,
+		});
+		client.start();
+		// First progress tick isn't until 500ms, but the idle window is 200ms — no
+		// activity arrives to reset it, so the request times out as it should.
+		await expect(client.request("slowprogress", { n: 3, gap: 500 })).rejects.toThrow(
+			/timed out/,
+		);
 		await client.close();
 	});
 

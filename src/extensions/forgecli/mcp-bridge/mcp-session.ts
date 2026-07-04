@@ -6,7 +6,11 @@
 // nothing else. The `McpSession` interface is what synthesizeTools() depends on,
 // so tests can inject a fake without spawning a process.
 
-import { JsonRpcStdioClient, type JsonRpcStdioOptions } from "./json-rpc-stdio.js";
+import {
+	JsonRpcStdioClient,
+	type JsonRpcStdioOptions,
+	type ProgressNotification,
+} from "./json-rpc-stdio.js";
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
@@ -42,6 +46,7 @@ export interface McpSession {
 		name: string,
 		args: Record<string, unknown>,
 		signal?: AbortSignal,
+		onProgress?: (p: ProgressNotification) => void,
 	): Promise<McpCallResult>;
 	close(): Promise<void>;
 }
@@ -81,12 +86,14 @@ export class StdioMcpSession implements McpSession {
 		name: string,
 		args: Record<string, unknown>,
 		signal?: AbortSignal,
+		onProgress?: (p: ProgressNotification) => void,
 	): Promise<McpCallResult> {
 		if (signal?.aborted) throw new Error("aborted");
-		const result = (await this.client.request("tools/call", {
-			name,
-			arguments: args ?? {},
-		})) as McpCallResult;
+		const result = (await this.client.request(
+			"tools/call",
+			{ name, arguments: args ?? {} },
+			onProgress,
+		)) as McpCallResult;
 		return {
 			content: Array.isArray(result?.content) ? result.content : [],
 			isError: result?.isError === true,

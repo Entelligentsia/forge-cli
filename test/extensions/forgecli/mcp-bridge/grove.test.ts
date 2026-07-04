@@ -10,7 +10,7 @@
 //      path. When grove is genuinely absent each test asserts the graceful
 //      contract instead — a runtime branch, not a skipped test (CI no-skip safe).
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -21,7 +21,10 @@ import {
 	attachGrove,
 	buildGroveSteering,
 	ensureGroveReady,
+	GROVE_EXPLORE_TOOL,
+	isGroveExploreProject,
 	resolveGroveBin,
+	shouldUseExplore,
 } from "../../../../src/extensions/forgecli/mcp-bridge/grove.js";
 
 const CTX = {} as unknown as ExtensionContext;
@@ -240,6 +243,74 @@ describe("grove real integration (live `grove serve`)", () => {
 		const roster = getSubagentTools({} as ForgeToolDefs).map((t) => t.name);
 		expect(roster).toEqual(expect.arrayContaining(["mcp__grove__outline", "mcp__grove__source"]));
 		console.error(`[grove itest] subagent roster includes grove: ${roster.filter((n) => n.startsWith("mcp__grove__")).join(", ")}`);
+	});
+});
+
+describe("grove explore-mode detection + steering (deterministic)", () => {
+	let workdir: string;
+	let savedNoExplore: string | undefined;
+
+	beforeEach(() => {
+		workdir = mkdtempSync(path.join(tmpdir(), "grove-explore-"));
+		savedNoExplore = process.env.FORGE_GROVE_NO_EXPLORE;
+		delete process.env.FORGE_GROVE_NO_EXPLORE;
+	});
+	afterEach(() => {
+		if (savedNoExplore !== undefined) process.env.FORGE_GROVE_NO_EXPLORE = savedNoExplore;
+		else delete process.env.FORGE_GROVE_NO_EXPLORE;
+		rmSync(workdir, { recursive: true, force: true });
+	});
+
+	function provisionExplore(): void {
+		const groveDir = path.join(workdir, ".grove");
+		mkdirSync(groveDir, { recursive: true });
+		writeFileSync(
+			path.join(groveDir, "explore.json"),
+			JSON.stringify({ provider: "ollama", base_url: "http://localhost:11434/v1", model: "qwen", mode: "standard" }),
+			"utf8",
+		);
+	}
+
+	it("isGroveExploreProject keys off .grove/explore.json presence", () => {
+		expect(isGroveExploreProject(workdir)).toBe(false);
+		provisionExplore();
+		expect(isGroveExploreProject(workdir)).toBe(true);
+	});
+
+	it("shouldUseExplore: absent config → false, present → true", () => {
+		expect(shouldUseExplore(workdir)).toBe(false);
+		provisionExplore();
+		expect(shouldUseExplore(workdir)).toBe(true);
+	});
+
+	it("shouldUseExplore: explicit override always wins", () => {
+		provisionExplore();
+		expect(shouldUseExplore(workdir, false)).toBe(false); // config present but forced off
+		rmSync(path.join(workdir, ".grove"), { recursive: true, force: true });
+		expect(shouldUseExplore(workdir, true)).toBe(true); // no config but forced on
+	});
+
+	it("shouldUseExplore: FORGE_GROVE_NO_EXPLORE=1 forces standard even when provisioned", () => {
+		provisionExplore();
+		process.env.FORGE_GROVE_NO_EXPLORE = "1";
+		expect(shouldUseExplore(workdir)).toBe(false);
+		// explicit override still beats the env escape hatch
+		expect(shouldUseExplore(workdir, true)).toBe(true);
+	});
+
+	it("buildGroveSteering emits locator steering when explore tool is present", () => {
+		const steering = buildGroveSteering([GROVE_EXPLORE_TOOL]);
+		expect(steering).toContain(GROVE_EXPLORE_TOOL);
+		expect(steering).toMatch(/explore-mode|LOCATOR/);
+		expect(steering).toContain("ONE narrow");
+		// Must NOT emit the structural procedure when the surface is explore-only.
+		expect(steering).not.toContain("mcp__grove__outline");
+	});
+
+	it("buildGroveSteering emits structural steering for the 7-tool surface", () => {
+		const steering = buildGroveSteering(["mcp__grove__outline", "mcp__grove__source"]);
+		expect(steering).toContain("mcp__grove__outline");
+		expect(steering).not.toContain(GROVE_EXPLORE_TOOL);
 	});
 });
 
