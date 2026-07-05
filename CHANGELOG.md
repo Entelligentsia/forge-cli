@@ -5,7 +5,13 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.2] — 2026-07-02
+## [1.1.3] — 2026-07-05
+
+### Changed
+
+- **Vendored pi runtime upgraded 0.80.2 → 0.80.3** (weekly upstream sync; 54 commits since 2026-06-28). The bundled `@earendil-works/pi-coding-agent` moves `0.80.2-forge.1` → `0.80.3-forge.1`; siblings `pi-tui` / `pi-ai` / `pi-agent-core` move `0.80.2` → `0.80.3`. Pulls in upstream fixes: Cloudflare 524 retry + device-code polling backoff, stale Codex websocket session rotation, Bedrock prompt caching for Claude 5, DS4 context-overflow detection, bash-timeout validation (reject non-positive / oversized), split-turn compaction-summary serialization, configurable assistant output padding, session-entry renderers, and refreshed provider/model catalogs.
+
+
 
 ### Fixed
 
