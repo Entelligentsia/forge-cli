@@ -13,7 +13,7 @@
 // project (`grove init --as skill`).
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { attachMcpServer, type McpAttachment } from "./mcp-bridge.js";
 
@@ -39,14 +39,42 @@ export const GROVE_EXPLORE_TOOL = `${GROVE_TOOL_PREFIX}explore`;
 const GROVE_EXPLORE_IDLE_TIMEOUT_MS = 120_000;
 
 /**
- * True when the project was provisioned for grove's delegated local-LLM mode
- * (`grove init --as mcp-llm`). The signal is the same predicate grove itself
- * keys on internally (`determine_surface` in grove's `cli/src/mcp.rs`): the
- * presence of `.grove/explore.json`. forge-cli mirrors grove's own surface
- * decision rather than inventing a parallel one — provisioning stays the user's
- * job (grove's interactive `init --as mcp-llm` TUI), forge-cli only detects it.
+ * True when the project is configured for grove's delegated local-LLM mode
+ * (`mode: "mcp-llm"` in `.grove/config.json`). This mirrors grove's own surface
+ * decision (`active_mode` in grove's `core/src/config.rs`, reached by
+ * `determine_surface` in grove's `cli/src/mcp.rs`): the declared `mode` in
+ * `.grove/config.json` is the single source of truth.
+ *
+ * Resolution (matches grove's `ModeChoice::None` branch):
+ * 1. `.grove/config.json` present → explore iff `mode === "mcp-llm"`. A stale
+ *    legacy `.grove/explore.json` sitting alongside it is IGNORED — grove no
+ *    longer sniffs `explore.json` once `config.json` exists (GROVE-S03-T03), so
+ *    a project that declares `mode: "mcp"` but keeps an old `explore.json` is
+ *    served the standard structural surface, not explore-mode.
+ * 2. `.grove/config.json` absent but legacy `.grove/explore.json` present →
+ *    true. grove auto-migrates `explore.json` → `config.json` (mode=mcp-llm) on
+ *    first load, so this transient pre-migration state still means explore.
+ * 3. Neither file → false.
+ *
+ * A malformed/unreadable `config.json` degrades to false (structural surface),
+ * matching grove's own fallback. Provisioning stays the user's job (grove's
+ * interactive `init --as mcp-llm` TUI writes `config.json`); forge-cli only
+ * detects it.
  */
 export function isGroveExploreProject(cwd: string): boolean {
+	const configPath = path.join(cwd, ".grove", "config.json");
+	if (existsSync(configPath)) {
+		try {
+			const cfg = JSON.parse(readFileSync(configPath, "utf8")) as { mode?: unknown };
+			return cfg?.mode === "mcp-llm";
+		} catch {
+			// Malformed config.json — degrade to the standard structural surface,
+			// same as grove's active_mode fallback when load fails.
+			return false;
+		}
+	}
+	// Legacy fallback: a pre-config.json project with explore.json gets
+	// auto-migrated by grove to mode=mcp-llm on first load.
 	return existsSync(path.join(cwd, ".grove", "explore.json"));
 }
 
@@ -56,7 +84,9 @@ export function isGroveExploreProject(cwd: string): boolean {
  * - An explicit `explore` override (from AttachGroveOptions) always wins.
  * - `FORGE_GROVE_NO_EXPLORE=1` forces the standard structural surface even in a
  *   provisioned explore project (escape hatch, mirrors FORGE_GROVE_NO_AUTOINIT).
- * - Otherwise: explore-mode iff the project has `.grove/explore.json`.
+ * - Otherwise: explore-mode iff the project declares it (see
+ *   [`isGroveExploreProject`] — `mode: "mcp-llm"` in `.grove/config.json`, with
+ *   a legacy `.grove/explore.json` fallback).
  *
  * Note this only decides which surface to *ask* grove for. Grove's own health
  * probe has the final say: `serve --explore` with a down local LLM transparently

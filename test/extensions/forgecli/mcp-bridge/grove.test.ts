@@ -261,37 +261,72 @@ describe("grove explore-mode detection + steering (deterministic)", () => {
 		rmSync(workdir, { recursive: true, force: true });
 	});
 
-	function provisionExplore(): void {
-		const groveDir = path.join(workdir, ".grove");
-		mkdirSync(groveDir, { recursive: true });
+	function groveDir(): string {
+		const dir = path.join(workdir, ".grove");
+		mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	function writeConfig(json: Record<string, unknown>): void {
+		writeFileSync(path.join(groveDir(), "config.json"), JSON.stringify(json), "utf8");
+	}
+
+	function provisionLegacyExplore(): void {
 		writeFileSync(
-			path.join(groveDir, "explore.json"),
+			path.join(groveDir(), "explore.json"),
 			JSON.stringify({ provider: "ollama", base_url: "http://localhost:11434/v1", model: "qwen", mode: "standard" }),
 			"utf8",
 		);
 	}
 
-	it("isGroveExploreProject keys off .grove/explore.json presence", () => {
+	it("isGroveExploreProject: config.json mode=mcp-llm → true", () => {
 		expect(isGroveExploreProject(workdir)).toBe(false);
-		provisionExplore();
+		writeConfig({ version: 1, mode: "mcp-llm", harnesses: ["claude-code"] });
 		expect(isGroveExploreProject(workdir)).toBe(true);
 	});
 
-	it("shouldUseExplore: absent config → false, present → true", () => {
+	it("isGroveExploreProject: config.json mode=mcp → false", () => {
+		writeConfig({ version: 1, mode: "mcp", harnesses: ["claude-code"] });
+		expect(isGroveExploreProject(workdir)).toBe(false);
+	});
+
+	it("isGroveExploreProject: config.json mode=mcp IGNORES a stale legacy explore.json (walkinto.in scenario)", () => {
+		writeConfig({ version: 1, mode: "mcp", harnesses: ["claude-code"] });
+		// Drop a stale, parseable explore.json beside it — must not flip detection.
+		writeFileSync(
+			path.join(groveDir(), "explore.json"),
+			JSON.stringify({ provider: "ollama", base_url: "http://localhost:11434/v1", model: "qwen", mode: "aggressive" }),
+			"utf8",
+		);
+		expect(isGroveExploreProject(workdir)).toBe(false);
+	});
+
+	it("isGroveExploreProject: legacy explore.json (no config.json) → true (auto-migrate path)", () => {
+		expect(isGroveExploreProject(workdir)).toBe(false);
+		provisionLegacyExplore();
+		expect(isGroveExploreProject(workdir)).toBe(true);
+	});
+
+	it("isGroveExploreProject: malformed config.json → false (graceful fallback)", () => {
+		writeFileSync(path.join(groveDir(), "config.json"), "{ not valid json", "utf8");
+		expect(isGroveExploreProject(workdir)).toBe(false);
+	});
+
+	it("shouldUseExplore: absent config → false, declared mcp-llm → true", () => {
 		expect(shouldUseExplore(workdir)).toBe(false);
-		provisionExplore();
+		writeConfig({ version: 1, mode: "mcp-llm", harnesses: ["claude-code"] });
 		expect(shouldUseExplore(workdir)).toBe(true);
 	});
 
 	it("shouldUseExplore: explicit override always wins", () => {
-		provisionExplore();
+		writeConfig({ version: 1, mode: "mcp-llm", harnesses: ["claude-code"] });
 		expect(shouldUseExplore(workdir, false)).toBe(false); // config present but forced off
 		rmSync(path.join(workdir, ".grove"), { recursive: true, force: true });
 		expect(shouldUseExplore(workdir, true)).toBe(true); // no config but forced on
 	});
 
 	it("shouldUseExplore: FORGE_GROVE_NO_EXPLORE=1 forces standard even when provisioned", () => {
-		provisionExplore();
+		writeConfig({ version: 1, mode: "mcp-llm", harnesses: ["claude-code"] });
 		process.env.FORGE_GROVE_NO_EXPLORE = "1";
 		expect(shouldUseExplore(workdir)).toBe(false);
 		// explicit override still beats the env escape hatch
@@ -313,6 +348,7 @@ describe("grove explore-mode detection + steering (deterministic)", () => {
 		expect(steering).not.toContain(GROVE_EXPLORE_TOOL);
 	});
 });
+
 
 describe("grove implicit init path (live)", () => {
 	const groveBin = pickGrove();
