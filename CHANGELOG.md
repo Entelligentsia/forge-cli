@@ -5,6 +5,12 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] — 2026-07-12
+
+### Changed
+
+- **Vendored pi runtime upgraded 0.80.3 → 0.80.6** (weekly upstream sync; 83 commits since 2026-07-05). The bundled `@earendil-works/pi-coding-agent` moves `0.80.3-forge.1` → `0.80.6-forge.1`; siblings `pi-tui` / `pi-ai` / `pi-agent-core` move `0.80.3` → `0.80.6`. peerDependency `@earendil-works/pi-coding-agent` moves `0.80.3` → `0.80.6`. Pulls in upstream changes: message-anchored tool loading (#6474), CI issue-analysis import flow + share-as-gist, prompt-cache miss tracking (#6427), `before_provider_headers` extension hook (#6350), `InlineExtension` type for named inline extension factories (#6267), max thinking level + input-based pricing tiers, GPT-5.4/5.5 long-context pricing, message copy shortcut, text-clipboard-paste fallback, `~` expansion in `shellPath` (#6470), ambient Cloudflare/AWS/Bedrock auth fixes, native-clipboard Bun fix (#6418), OpenRouter top-provider context length, anthropic empty-thinking-block handling (#6457), custom metadata in jsonl session headers (#6417), `InMemorySessionStorage`/`JsonlSessionStorage` exports, and refreshed provider/model catalogs.
+
 ## [1.1.3] — 2026-07-05
 
 ### Changed
