@@ -15,34 +15,33 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { assertAudience, CallerContextStore } from "../../audience-gate.js";
-import type { PhaseRole } from "../../subagent/caller-context.js";
 import type { MergedConfig } from "../../config/config-layer.js";
-import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
 import { checkMaterialization } from "../../lib/manifest-checker.js";
+import { type AudienceValue, loadWorkflow } from "../../parsers/workflow-loader.js";
 import { runRefreshKbLinks } from "../../refresh-kb-links.js";
-import { createOrchestratorNotifier } from "../common/orchestrator-notify.js";
+import type { PhaseRole } from "../../subagent/caller-context.js";
+import { fmtPhaseSummary } from "../../viewport/renderer.js";
 import { runPipelinePreflight } from "../common/orchestrator-entry.js";
-import { recoverPhaseSummary } from "../common/summary-recovery.js";
+import { createOrchestratorNotifier } from "../common/orchestrator-notify.js";
 import {
 	type OrchestratorTranscriptSession,
 	withOrchestratorTranscript,
 } from "../common/orchestrator-transcript-session.js";
-import { type AudienceValue, loadWorkflow } from "../../parsers/workflow-loader.js";
-import { fmtPhaseSummary } from "../../viewport/renderer.js";
-
+import { recoverPhaseSummary } from "../common/summary-recovery.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import type { RunTaskPipelineOptions, RunTaskPipelineResult } from "./run-task-types.js";
 import {
 	buildPhaseEvent,
 	drainFrictionFile,
 	emitEvent,
-	type OrchestratorEmitContext,
 	judgementFromSummary,
+	type OrchestratorEmitContext,
 } from "./task-events.js";
 import { runPostflightGate, runPreflightGateWithData } from "./task-gates.js";
+import { dispatchPhase } from "./task-phase-dispatch.js";
 import { PHASES, SUMMARY_KEY_BY_ROLE } from "./task-phases.js";
 import { readTaskRecord } from "./task-record.js";
-import { writeState, deleteState } from "./task-state.js";
-import type { RunTaskPipelineOptions, RunTaskPipelineResult } from "./run-task-types.js";
-import { dispatchPhase } from "./task-phase-dispatch.js";
+import { deleteState, writeState } from "./task-state.js";
 import { handleReviewVerdict } from "./task-verdict-loop.js";
 
 const STATUS_KEY = "forge:run-task";
@@ -444,6 +443,7 @@ async function runTaskPipelineInner(
 				orchTranscript,
 				finishPhaseNode,
 				recoveredPhases,
+				phaseStartMs: phaseStart,
 			});
 			if (outcome.kind === "return") return outcome.result;
 			if (outcome.kind === "loopback") {

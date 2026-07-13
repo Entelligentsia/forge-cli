@@ -51,6 +51,51 @@ export function readVerdict(taskId: string, phaseRole: string, storeCli: string,
 	}
 }
 
+// ── Verdict + written_at read (stale-summary divergence guard, WI-S48-T01) ──
+
+/** Like readVerdict but also returns the stored summary's `written_at`. Used by
+ *  the verdict loop to detect a stale stored verdict whose written_at predates
+ *  the current phase dispatch (the subagent did not refresh the store this
+ *  round — e.g. wrote the summary sidecar to the wrong artifact kind and
+ *  `set-summary` re-ingested the prior round's sidecar). */
+export function readVerdictWithMeta(taskId: string, phaseRole: string, storeCli: string, cwd: string): VerdictMeta {
+	const result = spawnSync("node", [storeCli, "read", "task", taskId], { cwd, encoding: "utf8" });
+	if (result.status !== 0) return { verdict: "missing" };
+	try {
+		const raw: string = typeof result.stdout === "string" ? result.stdout : String(result.stdout);
+		const record = JSON.parse(raw) as {
+			status?: string;
+			summaries?: Record<string, { verdict?: string; written_at?: string }>;
+		};
+		const summaryKey = SUMMARY_KEY_BY_ROLE[phaseRole];
+		if (summaryKey === null) {
+			return { verdict: record.status === "approved" ? "approved" : "missing" };
+		}
+		const summaries = record.summaries ?? {};
+		const underscoreKey = phaseRole.replace(/-/g, "_");
+		const candidates = [summaryKey ?? "", underscoreKey, phaseRole].filter(Boolean);
+		let s: { verdict?: string; written_at?: string } | undefined;
+		for (const k of candidates) {
+			if (summaries[k]?.verdict) {
+				s = summaries[k];
+				break;
+			}
+		}
+		if (!s || !s.verdict) return { verdict: "missing" };
+		if (s.verdict === "approved") return { verdict: "approved", writtenAt: s.written_at };
+		if (s.verdict === "revision") return { verdict: "revision", writtenAt: s.written_at };
+		return { verdict: "missing" };
+	} catch {
+		return { verdict: "missing" };
+	}
+}
+
+export interface VerdictMeta {
+	verdict: Verdict;
+	/** ISO 8601 written_at of the stored summary, if present. */
+	writtenAt?: string;
+}
+
 // ── Task record + summary helpers (Plan 11 / Slice 2) ────────────────────
 
 export interface TaskRecord {

@@ -13,16 +13,16 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import type { MergedConfig } from "../../config/config-layer.js";
-import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import type { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
 import { offerRecoveryMenu } from "../common/recovery-menu.js";
 import { recoverPhaseSummary } from "../common/summary-recovery.js";
-import type { OrchestratorTranscriptWriter } from "../../subagent/orchestrator-transcript.js";
+import { resolveAdvisorModel, runHaltAdvisor } from "../halt-advisor.js";
+import type { RunTaskPipelineResult } from "./run-task-types.js";
 import { findPredecessorIndex } from "./task-body.js";
 import type { GateFailureData } from "./task-gates.js";
-import { type PhaseDescriptor, PHASES, SUMMARY_KEY_BY_ROLE } from "./task-phases.js";
-import { readVerdict } from "./task-record.js";
+import { PHASES, type PhaseDescriptor, SUMMARY_KEY_BY_ROLE } from "./task-phases.js";
+import { readVerdict, readVerdictWithMeta } from "./task-record.js";
 import { type RunTaskState, writeState } from "./task-state.js";
-import type { RunTaskPipelineResult } from "./run-task-types.js";
 
 export type VerdictLoopOutcome =
 	| { kind: "advance" }
@@ -45,6 +45,12 @@ export interface VerdictLoopParams {
 	/** Per-phase completion-recovery guard (forge-engineering#41) — roles that
 	 *  already consumed their one set-summary recovery attempt this run. */
 	recoveredPhases: Set<string>;
+	/** Wall-clock ms at which the current phase dispatch started (from the
+	 *  pipeline's `phaseStart`). When supplied, the verdict loop's stale-summary
+	 *  divergence guard (WI-S48-T01) refuses to trust a stored verdict whose
+	 *  `written_at` predates this moment — the subagent did not refresh the
+	 *  store this round. Omit for legacy callers (guard disabled). */
+	phaseStartMs?: number;
 }
 
 /**
@@ -53,7 +59,7 @@ export interface VerdictLoopParams {
  */
 export async function handleReviewVerdict(p: VerdictLoopParams): Promise<VerdictLoopOutcome> {
 	const { phase, taskId, storeCli, cwd, forgeRoot, iterationCounts, currentPhaseIndex, modelRoutingConfig, ctx } = p;
-	const { orchTranscript, finishPhaseNode, recoveredPhases } = p;
+	const { orchTranscript, finishPhaseNode, recoveredPhases, phaseStartMs } = p;
 
 	let verdict = readVerdict(taskId, phase.role, storeCli, cwd);
 
@@ -149,6 +155,80 @@ export async function handleReviewVerdict(p: VerdictLoopParams): Promise<Verdict
 	}
 
 	if (verdict === "revision") {
+		// ── Stale-summary divergence guard (WI-S48-T01) ─────────────────────
+		// A stored "revision" whose `written_at` predates this phase dispatch
+		// means the subagent did NOT refresh the store this round. The canonical
+		// cause (WI-S48-T01): the subagent wrote its summary sidecar to the wrong
+		// artifact kind (e.g. `review-impl-summary` instead of `review-code-summary`),
+		// so `set-summary <phaseKey>` auto-resolved the prior round's sidecar and
+		// re-ingested the stale "revision". Trusting it would burn a revision
+		// iteration on a bogus verdict and, at the cap, halt — deterministically,
+		// on every approving review after a prior revision round.
+		const summaryKey = SUMMARY_KEY_BY_ROLE[phase.role];
+		if (phaseStartMs && summaryKey) {
+			const meta = readVerdictWithMeta(taskId, phase.role, storeCli, cwd);
+			const writtenMs = meta.writtenAt ? Date.parse(meta.writtenAt) : NaN;
+			// 5s slack: a healthy run's written_at is during/after dispatch; a stale
+			// one is from a prior run (minutes/hours earlier).
+			const STALE_SLACK_MS = 5000;
+			const isStale = !Number.isNaN(writtenMs) && writtenMs + STALE_SLACK_MS < phaseStartMs;
+			if (isStale) {
+				// Register the subagent's already-authored sidecar ourselves (once per
+				// phase), then re-read — same primitive the "missing verdict" path
+				// uses (IL10: we register the subagent's own sidecar, never fabricate).
+				if (!recoveredPhases.has(phase.role)) {
+					recoveredPhases.add(phase.role);
+					recoverPhaseSummary({ storeCli, entityId: taskId, summaryKey, cwd });
+					const reMeta = readVerdictWithMeta(taskId, phase.role, storeCli, cwd);
+					const reWrittenMs = reMeta.writtenAt ? Date.parse(reMeta.writtenAt) : NaN;
+					const reFresh = !Number.isNaN(reWrittenMs) && reWrittenMs + STALE_SLACK_MS >= phaseStartMs;
+					if (reMeta.verdict === "approved") {
+						ctx.ui.notify(
+							`⟳ forge:run-task — ${phase.role}: stored verdict was stale; orchestrator re-registered the ` +
+								`'${summaryKey}' sidecar and the verdict is now approved.`,
+							"info",
+						);
+						finishPhaseNode("completed");
+						return { kind: "advance" };
+					}
+					if (reFresh) {
+						// Fresh now (still revision) — the reviewer genuinely requested
+						// changes this round. Fall through to normal revision handling.
+					} else {
+						return escalateStaleSummaryRevision({
+							phase,
+							taskId,
+							cwd,
+							currentPhaseIndex,
+							iterationCounts,
+							summaryKey,
+							modelRoutingConfig,
+							ctx,
+							finishPhaseNode,
+							storeCli,
+							forgeRoot,
+						});
+					}
+				} else {
+					// Recovery budget already consumed this phase; canonical sidecar is
+					// still stale. Surface a sharpened halt instead of burning the cap.
+					return escalateStaleSummaryRevision({
+						phase,
+						taskId,
+						cwd,
+						currentPhaseIndex,
+						iterationCounts,
+						summaryKey,
+						modelRoutingConfig,
+						ctx,
+						finishPhaseNode,
+						storeCli,
+						forgeRoot,
+					});
+				}
+			}
+		}
+
 		// Increment iteration count for this review phase
 		iterationCounts[phase.role] = (iterationCounts[phase.role] ?? 0) + 1;
 
@@ -241,4 +321,92 @@ export async function handleReviewVerdict(p: VerdictLoopParams): Promise<Verdict
 
 	// verdict === "approved": advance
 	return { kind: "advance" };
+}
+
+// ── Stale-summary escalation (WI-S48-T01) ───────────────────────────────────
+// The stored verdict is "revision" but its written_at predates the current
+// phase dispatch, and re-registering the canonical sidecar did not freshen it
+// (the subagent wrote the summary to the wrong artifact kind / skipped
+// set-summary). Do NOT burn a revision iteration on a verdict we know is
+// stale — halt with a diagnosis that names the divergence, mirroring the
+// revision-cap hand-off (halt-recovery advisor + recovery menu).
+interface StaleSummaryEscalationParams {
+	phase: PhaseDescriptor;
+	taskId: string;
+	cwd: string;
+	currentPhaseIndex: number;
+	iterationCounts: Record<string, number>;
+	summaryKey: string;
+	modelRoutingConfig: MergedConfig;
+	ctx: ExtensionCommandContext;
+	finishPhaseNode: (status: "completed" | "failed" | "escalated") => void;
+	storeCli: string;
+	forgeRoot: string;
+}
+
+async function escalateStaleSummaryRevision(p: StaleSummaryEscalationParams): Promise<VerdictLoopOutcome> {
+	const {
+		phase,
+		taskId,
+		cwd,
+		currentPhaseIndex,
+		iterationCounts,
+		summaryKey,
+		modelRoutingConfig,
+		ctx,
+		finishPhaseNode,
+		storeCli,
+		forgeRoot,
+	} = p;
+	ctx.ui.notify(
+		`× forge:run-task — ${phase.role}: stored verdict 'revision' is stale (written_at predates this phase run) ` +
+			`and re-registering the '${summaryKey}' sidecar did not refresh it. The subagent likely wrote the summary ` +
+			`to the wrong artifact kind or skipped set-summary. Halting instead of acting on a stale verdict.`,
+		"error",
+	);
+	finishPhaseNode("escalated");
+	writeState(cwd, {
+		taskId,
+		phaseIndex: currentPhaseIndex,
+		iterationCounts,
+		halted: true,
+		lastError: `stale summary for ${phase.role}`,
+		savedAt: new Date().toISOString(),
+	} satisfies RunTaskState);
+	const gateFailure: GateFailureData = {
+		phase: phase.role,
+		reasonCode: "stale-summary-revision-cap",
+		detail:
+			`Phase '${phase.role}' returned a stored verdict 'revision', but its summary written_at was not refreshed ` +
+			`this run (it predates the phase dispatch). Re-registering the canonical '${summaryKey}' sidecar via ` +
+			`set-summary did not update it, so the store still reflects a prior round. The subagent most likely wrote ` +
+			`its summary sidecar to the wrong artifact kind (so set-summary auto-resolved and re-ingested the stale ` +
+			`canonical file) or skipped the set-summary call entirely. The orchestrator will not act on a verdict known ` +
+			`to be stale.`,
+		remediation:
+			`Inspect the subagent's ${phase.role} transcript for its forge_artifact write + forge_store set-summary calls. ` +
+			`The summary sidecar artifact kind MUST match PHASE_TO_KIND['${summaryKey}'] (the canonical filename ` +
+			`set-summary auto-resolves). Manually register the correct sidecar (\`forge_store set-summary ${taskId} ${summaryKey}\`) ` +
+			`once the correct file is in place, then reset the pipeline to ${phase.role} and resume — e.g. ` +
+			`\`4ge reset ${taskId} --to ${phase.role}\`.`,
+	};
+	const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
+	await runHaltAdvisor({
+		gateFailure,
+		advisorModel,
+		taskId,
+		cwd,
+		ctx: { ui: ctx.ui as any },
+		forgeRoot,
+	});
+	await offerRecoveryMenu({ ui: ctx.ui, kind: "task", id: taskId, cwd, storeCli });
+	return {
+		kind: "return",
+		result: {
+			status: "escalated",
+			lastPhaseIndex: currentPhaseIndex,
+			iterationCounts,
+			lastError: `stale summary for ${phase.role}`,
+		},
+	};
 }
