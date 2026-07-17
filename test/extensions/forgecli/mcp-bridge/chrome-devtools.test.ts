@@ -55,15 +55,20 @@ function restoreEnv(s: Record<string, string | undefined>): void {
 }
 
 describe("isBrowserBridgeEnabled", () => {
-	it("is off by default and off for falsey/absent tokens", () => {
-		expect(isBrowserBridgeEnabled({})).toBe(false);
-		expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: "" })).toBe(false);
-		expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: "0" })).toBe(false);
-		expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: "false" })).toBe(false);
+	it("is ON by default (absent or empty var)", () => {
+		expect(isBrowserBridgeEnabled({})).toBe(true);
+		expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: "" })).toBe(true);
+		expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: "  " })).toBe(true);
 	});
 
-	it("is on for the accepted truthy tokens (case-insensitive)", () => {
-		for (const v of ["1", "true", "on", "yes", "TRUE", "On", " yes "]) {
+	it("is OFF only for explicit falsey tokens (case-insensitive)", () => {
+		for (const v of ["0", "false", "off", "no", "FALSE", "Off", " no "]) {
+			expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: v })).toBe(false);
+		}
+	});
+
+	it("stays ON for truthy or any other token", () => {
+		for (const v of ["1", "true", "on", "yes", "TRUE", "anything"]) {
 			expect(isBrowserBridgeEnabled({ FORGE_BROWSER_MCP: v })).toBe(true);
 		}
 	});

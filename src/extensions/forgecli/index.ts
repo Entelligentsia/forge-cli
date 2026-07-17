@@ -424,12 +424,13 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			console.warn("[forge-cli] grove bridge attach failed (continuing without code-nav tools):", err);
 		}
 
-		// Chrome DevTools browser bridge — opt-in (FORGE_BROWSER_MCP=1) because it
-		// spawns a Node MCP server that launches Chrome, unlike grove's cheap local
-		// binary. When enabled, it gives the session (and every subagent) browser
+		// Chrome DevTools browser bridge — default-on (opt out with
+		// FORGE_BROWSER_MCP=0). Gives the session (and every subagent) browser
 		// UI-verification tools — navigate/snapshot/screenshot/console/network —
-		// discovered dynamically from chrome-devtools-mcp. Graceful no-op when no
-		// launcher (npx / FORGE_BROWSER_MCP_BIN) is reachable or the handshake fails.
+		// discovered dynamically from chrome-devtools-mcp. It spawns a Node MCP
+		// server that launches Chrome, but attach is a graceful no-op when no
+		// launcher (npx / FORGE_BROWSER_MCP_BIN) is reachable or the handshake
+		// fails, so leaving it on is safe on boxes without a browser.
 		if (isBrowserBridgeEnabled()) {
 			try {
 				const browser = await attachBrowser({ cwd: projectRoot });

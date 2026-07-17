@@ -17,11 +17,12 @@
 // navigate to the running app, snapshot the DOM / screenshot the viewport, read
 // console + network, assert the element rendered.
 //
-// Cost-aware default: unlike grove (a fast local binary attached by default),
-// this bridge spawns a Node MCP server that launches Chrome, so it is OPT-IN via
-// FORGE_BROWSER_MCP=1. Detection is graceful everywhere — an unresolvable
-// launcher or a failed handshake returns null and the session proceeds exactly
-// as before, never a throw.
+// Default-on, like grove: a coding harness should be able to verify UI by
+// default. Opt OUT with FORGE_BROWSER_MCP=0 (or false/off/no) — e.g. on a
+// headless box with no Chrome, or to avoid the Node-server + Chrome spawn.
+// Detection is graceful everywhere — an unresolvable launcher or a failed
+// handshake returns null and the session proceeds exactly as before, never a
+// throw — so leaving it on is safe even where a browser can't launch.
 
 import { spawnSync } from "node:child_process";
 import { attachMcpServer, type McpAttachment } from "./mcp-bridge.js";
@@ -48,13 +49,17 @@ export const DEFAULT_BROWSER_MCP_PACKAGE = "chrome-devtools-mcp@latest";
 export const BROWSER_DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * Whether the browser bridge is enabled for this session. Opt-in — Chrome is
- * heavier than grove's local binary, so we do NOT attach by default. Enable with
- * FORGE_BROWSER_MCP set to a truthy token (1 / true / on / yes).
+ * Whether the browser bridge is enabled for this session. Default-ON: attach
+ * unless FORGE_BROWSER_MCP is explicitly set to a falsey token
+ * (0 / false / off / no). Absent or empty → enabled. Attach itself stays
+ * graceful, so default-on is safe where no browser can launch.
  */
 export function isBrowserBridgeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-	const v = (env.FORGE_BROWSER_MCP ?? "").trim().toLowerCase();
-	return v === "1" || v === "true" || v === "on" || v === "yes";
+	const raw = env.FORGE_BROWSER_MCP;
+	if (raw === undefined) return true;
+	const v = raw.trim().toLowerCase();
+	if (v === "") return true;
+	return !(v === "0" || v === "false" || v === "off" || v === "no");
 }
 
 /** A resolved launcher for the browser MCP server: how to spawn it. */
