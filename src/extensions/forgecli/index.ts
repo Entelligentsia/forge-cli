@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ModelRegistry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type LoadSkillsResult, loadSkillsFromDir, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { registerAddPipeline } from "./commands/add-pipeline.js";
 import { registerAddTask } from "./commands/add-task.js";
@@ -34,6 +34,7 @@ import { createForgeHeader, type ForgeHeader } from "./tui/forge-header.js";
 import { registerForgeInit } from "./forge-init/forge-init.js";
 import { type ForgeToolDefs, registerForgeTools, setExtraSubagentTools } from "./forge-tools.js";
 import { attachGrove, buildGroveSteering } from "./mcp-bridge/grove.js";
+import { attachBrowser, buildBrowserSteering, isBrowserBridgeEnabled } from "./mcp-bridge/chrome-devtools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
@@ -60,7 +61,7 @@ import { readPkgVersionsSync } from "./lib/versions.js";
 import { detectMissingCredentials, loadRegistry, seedEnabledModels } from "./config/model-registry.js";
 import { ensureForgeCliPathsReady, getPiAgentThemesDir } from "./paths/paths.js";
 import { registerPlan } from "./commands/plan.js";
-import { buildProjectOrientation, setGroveSteering } from "./project-orientation.js";
+import { buildProjectOrientation, setBrowserSteering, setGroveSteering } from "./project-orientation.js";
 import { registerQuizAgent } from "./commands/quiz-agent.js";
 import { registerReadCommand } from "./commands/read-command.js";
 import { registerRegenerate } from "./commands/regenerate.js";
@@ -396,6 +397,10 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		// CLAUDE.md steering block on first run) is on by default; set
 		// FORGE_GROVE_NO_AUTOINIT=1 to opt out (e.g. projects that shouldn't be
 		// written to). Idempotent once grove.lock exists.
+		// Both MCP bridges (grove, browser) feed the same subagent roster — collect
+		// their synthesized tools here and hand the union to setExtraSubagentTools
+		// once, so neither bridge clobbers the other's contribution.
+		const bridgedSubagentTools: ToolDefinition[] = [];
 		try {
 			const grove = await attachGrove({
 				cwd: projectRoot,
@@ -403,7 +408,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 			});
 			if (grove) {
 				for (const tool of grove.tools) pi.registerTool(tool);
-				setExtraSubagentTools(grove.tools);
+				bridgedSubagentTools.push(...grove.tools);
 				// Steering lives in the system prompt (not the project's CLAUDE.md):
 				// buildProjectOrientation appends it for both the main thread and
 				// every subagent dispatch.
@@ -418,6 +423,33 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 		} catch (err) {
 			console.warn("[forge-cli] grove bridge attach failed (continuing without code-nav tools):", err);
 		}
+
+		// Chrome DevTools browser bridge — opt-in (FORGE_BROWSER_MCP=1) because it
+		// spawns a Node MCP server that launches Chrome, unlike grove's cheap local
+		// binary. When enabled, it gives the session (and every subagent) browser
+		// UI-verification tools — navigate/snapshot/screenshot/console/network —
+		// discovered dynamically from chrome-devtools-mcp. Graceful no-op when no
+		// launcher (npx / FORGE_BROWSER_MCP_BIN) is reachable or the handshake fails.
+		if (isBrowserBridgeEnabled()) {
+			try {
+				const browser = await attachBrowser({ cwd: projectRoot });
+				if (browser) {
+					for (const tool of browser.tools) pi.registerTool(tool);
+					bridgedSubagentTools.push(...browser.tools);
+					setBrowserSteering(buildBrowserSteering(browser.toolNames));
+					process.once("exit", () => {
+						void browser.dispose();
+					});
+					if (process.env.FORGE_DEBUG_BROWSER === "1") {
+						console.error(`[forge-cli browser] attached ${browser.toolNames.length} tools: ${browser.toolNames.join(", ")}`);
+					}
+				}
+			} catch (err) {
+				console.warn("[forge-cli] browser bridge attach failed (continuing without UI-verification tools):", err);
+			}
+		}
+
+		setExtraSubagentTools(bridgedSubagentTools);
 
 		// T04: Load bundled skills from dist/forge-payload/skills/ and validate.
 		// In dev mode (vitest), the payload isn't built yet, so the directory

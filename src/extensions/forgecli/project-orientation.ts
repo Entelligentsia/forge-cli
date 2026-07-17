@@ -37,6 +37,18 @@ export function setGroveSteering(block: string | null): void {
 	groveSteering = block;
 }
 
+// Optional browser UI-verification steering, set once at extension init when the
+// chrome-devtools bridge attaches (see mcp-bridge/chrome-devtools.ts →
+// buildBrowserSteering). Same discipline as groveSteering: injected into the
+// orientation so it reaches BOTH the main thread and every runForgeSubagent
+// dispatch. Null when the browser bridge is not attached (the default).
+let browserSteering: string | null = null;
+
+/** Set (or clear) the browser UI-verification steering block. */
+export function setBrowserSteering(block: string | null): void {
+	browserSteering = block;
+}
+
 export function buildProjectOrientation(cwdAbs: string): string {
 	// Resolve FORGE_ROOT from .forge/config.json so subagent bash sessions
 	// can use the transition-fallback $FORGE_ROOT path for un-migrated projects.
@@ -98,5 +110,7 @@ export function buildProjectOrientation(cwdAbs: string): string {
 		"",
 		// Grove code-nav steering, only when the bridge attached this session.
 		...(groveSteering ? ["", groveSteering, ""] : []),
+		// Browser UI-verification steering, only when the bridge attached.
+		...(browserSteering ? ["", browserSteering, ""] : []),
 	].join("\n");
 }
