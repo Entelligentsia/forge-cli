@@ -81,6 +81,7 @@ import { registerStoreRepair } from "./commands/store-repair.js";
 import { registerTestOrchestrate } from "./commands/test-orchestrate.js";
 import { registerThreadSwitcher } from "./tui/thread-switcher.js";
 import { registerDashboardCommand } from "./dashboard/register.js";
+import { registerDemoAsk } from "./commands/demo-ask.js";
 import { triggerUpdateCheck } from "./update/update-check.js";
 // update-tools.ts — registerUpdateTools removed from index.ts in v1.0 (FORGE-S26-T10); deprecation stub in registerForgeCommands
 import { registerUsageHook } from "./usage-hook.js";
@@ -629,6 +630,9 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 	// Reads from OrchestratorTree; the chip strip reads from SessionRegistry.
 	// Both are written to by the same orchestrator call-sites.
 	registerDashboardCommand(pi);
+
+	// Dev-only live demo of the ask_user dashboard overlay (no-op unless FORGE_DEMO=1).
+	registerDemoAsk(pi);
 
 	// ── /forge:read native handler ───────────────────────────────────────────
 	registerReadCommand(pi, forgeRoot);
