@@ -34,6 +34,8 @@ import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/
 import type { Component, Focusable, TUI } from "@earendil-works/pi-tui";
 import type { OrchestratorTree } from "../orchestrator-tree.js";
 import { getSessionRegistry } from "../session-registry.js";
+import { AskBroker } from "../ask-broker.js";
+import type { AskRender, AskUserRequest } from "../ask-user-render.js";
 import type { NodeViewModel, TreeViewModel } from "./view-model.js";
 import { buildViewModel } from "./view-model.js";
 import { fmtModelAndTokenFooter, fmtTokenFooter, toDisplayLines } from "../viewport/renderer.js";
@@ -186,6 +188,19 @@ export interface DashboardState {
 	detailScroll: number;
 }
 
+/**
+ * A subagent `ask_user` marshalled to the dashboard overlay (Plan 16 Slice 3).
+ * The overlay renders the prompt in its own z-layer (pi's editor-slot dialogs
+ * render beneath it), captures input, and resolves `resolve` with the answer.
+ * `choiceIndex`/`textBuf` hold the transient interaction state for the panel.
+ */
+interface PendingAsk {
+	req: AskUserRequest;
+	resolve: (r: AskRender) => void;
+	choiceIndex: number;
+	textBuf: string;
+}
+
 /** Max rendered rows per log entry when the activity log is clamped. */
 const LOG_CLAMP_ROWS = 2;
 
@@ -203,6 +218,8 @@ export class DashboardController {
 	private disposed = false; // IL7: guards interval callbacks after dispose
 	private readonly readOnly: boolean;
 	private _handlers: Array<{ event: string; handler: (...args: any[]) => void }>;
+	/** A subagent ask_user marshalled to this overlay, or null (Plan 16 Slice 3). */
+	private pendingAsk: PendingAsk | null = null;
 
 	constructor(tree: OrchestratorTree, initialCursorId?: string, opts?: { readOnly?: boolean }) {
 		this.readOnly = opts?.readOnly ?? false;
@@ -374,6 +391,13 @@ export class DashboardController {
 	// ── Input handling ──────────────────────────────────────────────────────
 
 	handleInput(data: string): void {
+		// An active ask_user prompt takes top priority (HARD gate).
+		if (this.pendingAsk) {
+			this.handleAskInput(data);
+			if (!this.disposed) this.onInvalidate?.();
+			return;
+		}
+
 		// Cancel confirmation mode takes priority.
 		if (this.state.cancelTargetId) {
 			this.handleCancelConfirm(data);
@@ -430,6 +454,93 @@ export class DashboardController {
 		} else if (data === "x") {
 			this.startCancel();
 		}
+	}
+
+	// ── ask_user overlay (Plan 16 Slice 3) ──────────────────────────────────
+
+	/**
+	 * Present a subagent's ask_user in this overlay and resolve when the user
+	 * answers or dismisses. Registered with AskBroker by DashboardComponent so
+	 * broker asks route here while the dashboard is mounted, instead of pi's
+	 * editor-slot dialog (which renders beneath the overlay). Serialised upstream
+	 * by AskBroker; the extra guard here is defence in depth.
+	 */
+	presentAsk(req: AskUserRequest, signal?: AbortSignal): Promise<AskRender> {
+		if (this.disposed) return Promise.resolve({ ok: false, message: "forge:ask_user — dashboard closed" });
+		if (this.pendingAsk) return Promise.resolve({ ok: false, message: "forge:ask_user — a prompt is already active" });
+		return new Promise<AskRender>((resolve) => {
+			if (signal?.aborted) {
+				resolve({ ok: false, message: `forge:ask_user aborted before prompt — question: "${req.question}"` });
+				return;
+			}
+			const onAbort = () => this.resolveAsk({ ok: false, message: `forge:ask_user aborted — question: "${req.question}"` });
+			signal?.addEventListener("abort", onAbort, { once: true });
+			const initialChoice =
+				req.type === "choice" && req.default ? Math.max(0, (req.options ?? []).indexOf(req.default)) : 0;
+			this.pendingAsk = {
+				req,
+				resolve: (r) => {
+					signal?.removeEventListener("abort", onAbort);
+					resolve(r);
+				},
+				choiceIndex: initialChoice,
+				textBuf: req.type === "text" ? (req.default ?? "") : "",
+			};
+			if (!this.disposed) this.onInvalidate?.();
+		});
+	}
+
+	/** The active ask prompt (for the view), or null. */
+	getPendingAsk(): PendingAsk | null {
+		return this.pendingAsk;
+	}
+
+	/** Settle the active ask and clear it. */
+	private resolveAsk(r: AskRender): void {
+		const p = this.pendingAsk;
+		this.pendingAsk = null;
+		p?.resolve(r);
+		if (!this.disposed) this.onInvalidate?.();
+	}
+
+	/**
+	 * Input while an ask prompt is active. Enter/y/n resolve a confirm; ↑↓+Enter
+	 * a choice; typing + Enter a text answer. A dismissal never returns the
+	 * default — it resolves `{ ok: false }` so the tool reports isError, never a
+	 * fabricated answer (Iron Law 7; forge#114). ESC is NOT handled here — the
+	 * DashboardComponent intercepts ESC to close the whole overlay, which
+	 * disposes and cancels the ask (also a non-answer).
+	 */
+	private handleAskInput(data: string): void {
+		const p = this.pendingAsk;
+		if (!p) return;
+		const req = p.req;
+
+		if (req.type === "confirm") {
+			if (data === "y" || data === "Y" || matchesKey(data, Key.enter)) this.resolveAsk({ ok: true, value: "Y" });
+			else if (data === "n" || data === "N") this.resolveAsk({ ok: true, value: "N" });
+			return;
+		}
+
+		if (req.type === "choice") {
+			const opts = req.options ?? [];
+			if (matchesKey(data, Key.up)) p.choiceIndex = Math.max(0, p.choiceIndex - 1);
+			else if (matchesKey(data, Key.down)) p.choiceIndex = Math.min(Math.max(0, opts.length - 1), p.choiceIndex + 1);
+			else if (matchesKey(data, Key.enter)) {
+				const value = opts[p.choiceIndex];
+				this.resolveAsk(
+					value !== undefined
+						? { ok: true, value }
+						: { ok: false, message: `forge:ask_user — no option to select. question: "${req.question}"` },
+				);
+			}
+			return;
+		}
+
+		// text
+		if (matchesKey(data, Key.enter)) this.resolveAsk({ ok: true, value: p.textBuf });
+		else if (matchesKey(data, Key.backspace)) p.textBuf = p.textBuf.slice(0, -1);
+		else if (data.length === 1 && data >= " ") p.textBuf += data; // printable single char
 	}
 
 	private handleCancelConfirm(data: string): void {
@@ -632,6 +743,13 @@ export class DashboardController {
 			this.tree.off(event, handler);
 		}
 		this._handlers = [];
+		// A pending ask must not hang the waiting subagent when the overlay
+		// closes — resolve it as a non-answer (never the default).
+		if (this.pendingAsk) {
+			const p = this.pendingAsk;
+			this.pendingAsk = null;
+			p.resolve({ ok: false, message: "forge:ask_user cancelled — dashboard closed before an answer" });
+		}
 	}
 
 	getState(): DashboardState {
@@ -666,6 +784,13 @@ export class DashboardComponent implements Component, Focusable {
 		// V2 fix: subscriptions are now owned by the controller.
 		// The view only registers an invalidation callback for re-rendering.
 		this.controller.setOnInvalidate(() => this.tui.requestRender());
+
+		// Route subagent ask_user prompts to this overlay while it is mounted.
+		// pi renders editor-slot dialogs (ctx.ui.select/confirm/input) BENEATH a
+		// full-terminal overlay, so a subagent's ask would otherwise be invisible
+		// and unfocused (Plan 16 Slice 3 spike). Cleared on dispose so asks fall
+		// back to the editor slot once the dashboard closes.
+		AskBroker.setOverlayRenderer((req, signal) => this.controller.presentAsk(req, signal));
 	}
 
 	// ── Component interface ──────────────────────────────────────────────────
@@ -779,6 +904,12 @@ export class DashboardComponent implements Component, Focusable {
 		}
 		lines.push(dim(truncateToWidth(footerLine, width), this.theme));
 
+		// ── Overlay an active ask_user prompt on top of dashboard content ──
+		const pendingAsk = this.controller.getPendingAsk();
+		if (pendingAsk) {
+			return this.overlayAsk(lines, width, pendingAsk);
+		}
+
 		// ── Overlay cancel confirmation on top of dashboard content ────
 		if (state.cancelTargetId) {
 			return this.overlayCancelConfirm(lines, width, state.cancelTargetId);
@@ -804,6 +935,9 @@ export class DashboardComponent implements Component, Focusable {
 	}
 
 	dispose(): void {
+		// Stop routing asks here BEFORE the controller disposes (which resolves any
+		// in-flight ask as cancelled), so no ask can race onto a torn-down overlay.
+		AskBroker.setOverlayRenderer(null);
 		this.controller.dispose();
 	}
 
@@ -989,6 +1123,71 @@ export class DashboardComponent implements Component, Focusable {
 	 *  dismiss. The overlay stays until the user decides — Esc only
 	 *  dismisses the cancel prompt, not the dashboard.
 	 */
+	/**
+	 * Render an active ask_user prompt as a centered modal over the dashboard
+	 * (Plan 16 Slice 3). Mirrors overlayCancelConfirm's box + centering so the
+	 * frame and outer │ borders stay intact; body varies by input type. All
+	 * visible strings route through theme helpers (IL1); every row is clamped to
+	 * the dialog width (IL2/IL10 via truncateToWidth/visibleWidth).
+	 */
+	private overlayAsk(baseLines: string[], width: number, ask: PendingAsk): string[] {
+		const contentWidth = width - 2;
+		const dialogW = Math.min(contentWidth, 72);
+		const innerW = Math.max(1, dialogW - 4); // content area inside "│ " … " │"
+		const req = ask.req;
+
+		// ── Inner content lines (themed; each clamped to innerW visible cols) ──
+		const body: string[] = [];
+		body.push(warn("⚠ Forge needs your input", this.theme));
+		for (const q of wrapLine(req.question, innerW)) body.push(bold(q, this.theme));
+		body.push("");
+
+		if (req.type === "confirm") {
+			body.push(dim(truncateToWidth("y  yes     n  no", innerW), this.theme));
+			body.push("");
+			body.push(dim(truncateToWidth("y confirm · n dismiss · esc cancel", innerW), this.theme));
+		} else if (req.type === "choice") {
+			const opts = req.options ?? [];
+			opts.forEach((opt, i) => {
+				const selected = i === ask.choiceIndex;
+				const label = truncateToWidth(opt, innerW - 2);
+				body.push((selected ? accent("▸ ", this.theme) : "  ") + (selected ? accentBold(label, this.theme) : label));
+			});
+			body.push("");
+			body.push(dim(truncateToWidth("↑↓ move · ⏎ select · esc cancel", innerW), this.theme));
+		} else {
+			// text — single-line buffer with a cursor block
+			body.push(border("▏ ", this.theme) + truncateToWidth(`${ask.textBuf}▎`, innerW - 2));
+			body.push("");
+			body.push(dim(truncateToWidth("type · ⌫ delete · ⏎ submit · esc cancel", innerW), this.theme));
+		}
+
+		// ── Frame into a bordered box (each row padded to dialogW) ──
+		const diagLines: string[] = [];
+		const rule = border("─".repeat(dialogW - 2), this.theme);
+		const blank = border("│", this.theme) + " ".repeat(dialogW - 2) + border("│", this.theme);
+		diagLines.push(border("╭", this.theme) + rule + border("╮", this.theme));
+		diagLines.push(blank);
+		for (const row of body) {
+			const pad = Math.max(0, dialogW - 4 - visibleWidth(row));
+			diagLines.push(border("│", this.theme) + " " + row + " ".repeat(pad) + " " + border("│", this.theme));
+		}
+		diagLines.push(blank);
+		diagLines.push(border("╰", this.theme) + rule + border("╯", this.theme));
+
+		// ── Center within the content area, preserving outer │ borders ──
+		const startRow = Math.max(0, Math.floor((baseLines.length - diagLines.length) / 2));
+		const leftPad = Math.max(0, Math.floor((contentWidth - dialogW) / 2));
+		const result: string[] = [...baseLines];
+		for (let i = 0; i < diagLines.length && startRow + i < result.length; i++) {
+			const diagLine = diagLines[i]!;
+			const rightPad = Math.max(0, contentWidth - leftPad - visibleWidth(diagLine));
+			result[startRow + i] =
+				border("│", this.theme) + " ".repeat(leftPad) + diagLine + " ".repeat(rightPad) + border("│", this.theme);
+		}
+		return result;
+	}
+
 	private overlayCancelConfirm(baseLines: string[], width: number, targetId: string): string[] {
 		const node = this.controller.getNode(targetId);
 		const label = node?.label ?? targetId;

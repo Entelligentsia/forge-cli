@@ -157,4 +157,72 @@ describe("AskBroker", () => {
 			expect(order).toEqual(["q1-start", "q2-start"]);
 		});
 	});
+
+	// ── overlay renderer seam (Plan 16 Slice 3) ──────────────────────────────
+
+	describe("overlay renderer", () => {
+		it("hasOverlayRenderer flips with set/clear", () => {
+			expect(AskBroker.hasOverlayRenderer()).toBe(false);
+			AskBroker.setOverlayRenderer(async () => ({ ok: true, value: "Y" }));
+			expect(AskBroker.hasOverlayRenderer()).toBe(true);
+			AskBroker.setOverlayRenderer(null);
+			expect(AskBroker.hasOverlayRenderer()).toBe(false);
+		});
+
+		it("ask() routes to the overlay renderer instead of the bound UI when one is registered", async () => {
+			const uiConfirm = vi.fn().mockResolvedValue(true);
+			AskBroker.bind(makeUI({ confirm: uiConfirm }));
+			const overlay = vi.fn().mockResolvedValue({ ok: true, value: "overlay-answer" });
+			AskBroker.setOverlayRenderer(overlay);
+
+			const r = await AskBroker.ask({ question: "Ratify?", type: "choice", options: ["a", "b"] });
+
+			expect(r).toEqual({ ok: true, value: "overlay-answer" });
+			expect(overlay).toHaveBeenCalledTimes(1);
+			expect(uiConfirm).not.toHaveBeenCalled(); // editor-slot path bypassed
+		});
+
+		it("ask() works with ONLY an overlay renderer bound (no UI) — does not throw", async () => {
+			AskBroker.setOverlayRenderer(async () => ({ ok: true, value: "ok" }));
+			await expect(AskBroker.ask({ question: "q", type: "confirm" })).resolves.toEqual({ ok: true, value: "ok" });
+		});
+
+		it("renderer is chosen at run-time: registering after enqueue still routes the queued ask to the overlay", async () => {
+			// Hold the tail with a first ask on the bound UI, register the overlay
+			// while it is in flight, then confirm the SECOND ask uses the overlay.
+			let release1: (v: boolean) => void = () => {};
+			const uiConfirm = vi
+				.fn()
+				.mockImplementationOnce(() => new Promise<boolean>((res) => (release1 = res)))
+				.mockResolvedValue(true);
+			AskBroker.bind(makeUI({ confirm: uiConfirm }));
+
+			const p1 = AskBroker.ask({ question: "q1", type: "confirm" });
+			const overlay = vi.fn().mockResolvedValue({ ok: true, value: "via-overlay" });
+			const p2 = AskBroker.ask({ question: "q2", type: "confirm" });
+
+			// Let p1's render commit to the (held) editor-slot UI before the overlay
+			// registers — so only the still-queued p2 sees the overlay at run-time.
+			await flush();
+			AskBroker.setOverlayRenderer(overlay);
+
+			release1(true);
+			await p1;
+			const r2 = await p2;
+
+			expect(r2).toEqual({ ok: true, value: "via-overlay" });
+			expect(overlay).toHaveBeenCalledTimes(1);
+		});
+
+		it("clearing the renderer falls back to the editor-slot bound UI", async () => {
+			const uiConfirm = vi.fn().mockResolvedValue(true);
+			AskBroker.bind(makeUI({ confirm: uiConfirm }));
+			AskBroker.setOverlayRenderer(async () => ({ ok: true, value: "overlay" }));
+			AskBroker.setOverlayRenderer(null);
+
+			const r = await AskBroker.ask({ question: "q", type: "confirm" });
+			expect(r).toEqual({ ok: true, value: "Y" });
+			expect(uiConfirm).toHaveBeenCalledTimes(1);
+		});
+	});
 });

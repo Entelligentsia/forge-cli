@@ -46,10 +46,37 @@ let bindDepth = 0;
 // Serialisation chain: every ask() renders only after the previous one settles.
 let tail: Promise<unknown> = Promise.resolve();
 
+/**
+ * An overlay-owned renderer for a pending ask (Plan 16 Slice 3). While a
+ * full-terminal `ctx.ui.custom` overlay (the dashboard) is mounted, pi renders
+ * the editor-slot `ctx.ui.select/confirm/input` dialogs BENEATH the overlay —
+ * invisible and unfocused. So when such an overlay is active it registers a
+ * renderer here; ask() routes to it instead of `renderAskPrompt`, and the
+ * overlay paints the prompt in its own layer where the user can actually see
+ * and answer it. Cleared on overlay dispose → asks fall back to the editor slot.
+ */
+export type OverlayAskRenderer = (req: AskUserRequest, signal?: AbortSignal) => Promise<AskRender>;
+
+let overlayRenderer: OverlayAskRenderer | null = null;
+
 export const AskBroker = {
 	/** True when an orchestrator UI is currently bound. */
 	isBound(): boolean {
 		return boundUI !== null;
+	},
+
+	/**
+	 * Register (or clear, with null) the overlay-owned ask renderer. Called by a
+	 * full-terminal overlay on mount/dispose. Last registration wins; only one
+	 * overlay is ever mounted at a time in practice.
+	 */
+	setOverlayRenderer(renderer: OverlayAskRenderer | null): void {
+		overlayRenderer = renderer;
+	},
+
+	/** True when an overlay has registered itself to render pending asks. */
+	hasOverlayRenderer(): boolean {
+		return overlayRenderer !== null;
 	},
 
 	/**
@@ -87,16 +114,23 @@ export const AskBroker = {
 	 * no UI is bound.
 	 */
 	async ask(req: AskUserRequest, signal?: AbortSignal): Promise<AskRender> {
-		const ui = boundUI;
-		if (!ui) {
+		if (!boundUI && !overlayRenderer) {
 			throw new Error(
-				"AskBroker.ask called with no orchestrator UI bound — a subagent tried to reach the user " +
-					"but the orchestrator did not wrap its subagent dispatch in AskBroker.withUI(ctx.ui, ...).",
+				"AskBroker.ask called with no orchestrator UI bound and no overlay renderer — a subagent tried " +
+					"to reach the user but the orchestrator did not wrap its subagent dispatch in " +
+					"AskBroker.withUI(ctx.ui, ...) and no overlay registered a renderer.",
 			);
 		}
+		// Choose the renderer at run-time (inside the tail), not now: a dashboard
+		// overlay may mount/dispose between enqueue and execution, and the ask
+		// should render wherever the user actually is when its turn arrives. An
+		// active overlay wins (editor-slot dialogs render beneath it); otherwise
+		// the bound orchestrator UI renders in the editor slot.
+		const doRender = (): Promise<AskRender> =>
+			overlayRenderer ? overlayRenderer(req, signal) : renderAskPrompt(boundUI!, req, signal);
 		// Chain onto the tail so overlays never overlap. `.catch(() => {})` keeps
 		// the chain alive after a rejected/cancelled prior ask.
-		const run = tail.catch(() => {}).then(() => renderAskPrompt(ui, req, signal));
+		const run = tail.catch(() => {}).then(doRender);
 		tail = run.catch(() => {});
 		return run;
 	},
@@ -106,5 +140,6 @@ export const AskBroker = {
 		boundUI = null;
 		bindDepth = 0;
 		tail = Promise.resolve();
+		overlayRenderer = null;
 	},
 };
