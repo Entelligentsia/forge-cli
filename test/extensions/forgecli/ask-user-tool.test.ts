@@ -397,4 +397,48 @@ describe("registerAskUserTool", () => {
 			expect(result.details).toMatchObject({ source: "user", answered: true });
 		});
 	});
+
+	// ── Slice 5 (#114): provenance line in transcript-visible content ────────
+
+	describe("provenance line in result.content (reaches the LLM + transcript classifier)", () => {
+		beforeEach(() => registerAskUserTool(pi));
+
+		/** Concatenate every text content block. */
+		function allText(result: { content: Array<{ text?: string }> }): string {
+			return result.content.map((c) => c.text ?? "").join("\n");
+		}
+
+		it("genuine answer keeps the bare value in content[0] AND adds a 'human answered' line", async () => {
+			const ctx = makeStubCtx({ select: vi.fn().mockResolvedValue("optionA") });
+			const result = await callAskUser(tools, { question: "Pick:", type: "choice", options: ["optionA", "b"] }, ctx);
+			expect(result.content[0].text).toBe("optionA"); // backward-compatible bare value
+			expect(allText(result)).toMatch(/source=user/);
+			expect(allText(result)).toMatch(/human answered/i);
+		});
+
+		it("non-interactive fallback flags NO human answered — do not treat as consent", async () => {
+			process.env.FORGE_YES = "1";
+			const ctx = makeStubCtx({ confirm: vi.fn() });
+			const result = await callAskUser(tools, { question: "Ratify?", type: "choice", options: ["Ratify as-is"], default: "Ratify as-is" }, ctx);
+			expect(result.content[0].text).toBe("Ratify as-is");
+			expect(allText(result)).toMatch(/source=non-interactive/);
+			expect(allText(result)).toMatch(/NO human answered/i);
+			expect(allText(result)).toMatch(/consent|ratification|approval/i);
+		});
+
+		it("headless-no-broker fallback flags the automatic default", async () => {
+			const ctx = makeStubCtx({ hasUI: false, confirm: vi.fn() });
+			const result = await callAskUser(tools, { question: "Continue?", type: "confirm" }, ctx);
+			expect(allText(result)).toMatch(/source=default/);
+			expect(allText(result)).toMatch(/NO human answered/i);
+		});
+
+		it("cancellation flags 'declined', distinct from an automatic default", async () => {
+			const ctx = makeStubCtx({ confirm: vi.fn().mockResolvedValue(undefined) });
+			const result = await callAskUser(tools, { question: "Continue?", type: "confirm" }, ctx);
+			expect(result.isError).toBe(true);
+			expect(allText(result)).toMatch(/source=user/);
+			expect(allText(result)).toMatch(/dismissed|declined/i);
+		});
+	});
 });

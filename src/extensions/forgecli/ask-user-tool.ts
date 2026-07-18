@@ -95,16 +95,41 @@ function isNonInteractive(): boolean {
 
 // ── Result helpers ────────────────────────────────────────────────────────────
 
+/**
+ * A concise, transcript-visible provenance line appended to the tool result
+ * content (#114 Slice 5). This is the ONE channel both the calling subagent LLM
+ * and a transcript-scanning safety classifier actually read — `details` is not
+ * surfaced to either. It makes a default-echo self-evidently NOT consent, and
+ * gives a genuine answer explicit "a human answered" evidence in the transcript.
+ */
+function provenanceNote(p: AskUserProvenance): string {
+	if (p.source === "user") {
+		return p.answered
+			? "[forge:ask_user provenance] source=user answered=true — a human answered this prompt."
+			: "[forge:ask_user provenance] source=user answered=false — a human was shown this prompt but " +
+					"dismissed it without answering. Treat as declined; do NOT record as consent.";
+	}
+	return (
+		`[forge:ask_user provenance] source=${p.source} answered=false — NO human answered; this value is an ` +
+		"automatic default. Do NOT record it as user consent, approval, or ratification."
+	);
+}
+
 function okResult(text: string, provenance: AskUserProvenance) {
 	return {
-		content: [{ type: "text" as const, text: text || "" }],
+		content: [
+			{ type: "text" as const, text: text || "" },
+			{ type: "text" as const, text: provenanceNote(provenance) },
+		],
 		details: provenance as unknown,
 	};
 }
 
 function errResult(text: string, provenance?: AskUserProvenance) {
+	const content = [{ type: "text" as const, text }];
+	if (provenance) content.push({ type: "text" as const, text: provenanceNote(provenance) });
 	return {
-		content: [{ type: "text" as const, text }],
+		content,
 		details: (provenance ?? {}) as unknown,
 		isError: true as const,
 	};

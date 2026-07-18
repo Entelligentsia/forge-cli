@@ -158,8 +158,9 @@ export const FORGE_ASK_USER_DESCRIPTION =
 	"Accepts three input types: 'confirm' (Y/N), 'choice' (select from a list), or 'text' " +
 	"(free-form single-line input). Blocks the model loop until the user responds. " +
 	"In non-interactive mode (FORGE_YES=1 or --non-interactive), returns the default immediately. " +
-	"result.details carries provenance {source: 'user'|'non-interactive'|'default'|'unsupported', answered} — " +
-	"only source='user' is a genuine human decision; never treat a non-'user' answer as consent. " +
+	"The result appends a provenance line to its content — 'source=user answered=true' means a human " +
+	"genuinely answered; any other source (non-interactive/default) is an automatic default that NO human " +
+	"confirmed. Never record a non-'user' answer as consent, approval, or ratification. " +
 	"For a HARD gate that must have a real answer, pass required:true so the tool ERRORS instead of " +
 	"silently returning the default when no human is reachable.";
 
