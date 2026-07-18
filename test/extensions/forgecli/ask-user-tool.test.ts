@@ -73,6 +73,7 @@ async function callAskUser(
 		type: "confirm" | "choice" | "text";
 		options?: string[];
 		default?: string;
+		required?: boolean;
 	},
 	ctx: ExtensionContext,
 ) {
@@ -312,6 +313,88 @@ describe("registerAskUserTool", () => {
 			const result = await callAskUser(tools, { question: "Proceed?", type: "confirm", default: "N" }, ctx);
 			expect(result.content[0].text).toBe("N");
 			expect(orchConfirm).not.toHaveBeenCalled();
+		});
+	});
+
+	// ── Slice 2 (#114): provenance in details + required-gate ────────────────
+
+	describe("provenance metadata in result.details", () => {
+		beforeEach(() => registerAskUserTool(pi));
+
+		it("genuine interactive answer → source 'user', answered true", async () => {
+			const ctx = makeStubCtx({ select: vi.fn().mockResolvedValue("optionA") });
+			const result = await callAskUser(tools, { question: "Pick:", type: "choice", options: ["optionA", "b"] }, ctx);
+			expect(result.details).toMatchObject({ source: "user", answered: true, value: "optionA" });
+		});
+
+		it("genuine broker answer → source 'user', answered true", async () => {
+			const orchConfirm = vi.fn().mockResolvedValue(true);
+			AskBroker.bind({ confirm: orchConfirm, select: vi.fn(), input: vi.fn(), notify: vi.fn() } as unknown as AskUI);
+			const ctx = makeStubCtx({ hasUI: false });
+			const result = await callAskUser(tools, { question: "Proceed?", type: "confirm" }, ctx);
+			expect(result.details).toMatchObject({ source: "user", answered: true });
+		});
+
+		it("non-interactive fallback → source 'non-interactive', answered false", async () => {
+			process.env.FORGE_YES = "1";
+			const ctx = makeStubCtx({ confirm: vi.fn() });
+			const result = await callAskUser(tools, { question: "Continue?", type: "confirm", default: "Ratify as-is" }, ctx);
+			expect(result.content[0].text).toBe("Ratify as-is");
+			expect(result.details).toMatchObject({ source: "non-interactive", answered: false, value: "Ratify as-is" });
+		});
+
+		it("headless-no-broker fallback → source 'default', answered false", async () => {
+			const ctx = makeStubCtx({ hasUI: false, confirm: vi.fn() });
+			const result = await callAskUser(tools, { question: "Continue?", type: "confirm" }, ctx);
+			expect(result.details).toMatchObject({ source: "default", answered: false });
+		});
+
+		it("user cancellation → error carries source 'user', answered false (human declined)", async () => {
+			const ctx = makeStubCtx({ confirm: vi.fn().mockResolvedValue(undefined) });
+			const result = await callAskUser(tools, { question: "Continue?", type: "confirm" }, ctx);
+			expect(result.isError).toBe(true);
+			expect(result.details).toMatchObject({ source: "user", answered: false });
+		});
+	});
+
+	describe("required:true HARD-gate — errors instead of silently defaulting", () => {
+		beforeEach(() => registerAskUserTool(pi));
+
+		it("non-interactive + required → isError, never the default value", async () => {
+			process.env.FORGE_YES = "1";
+			const ctx = makeStubCtx({ confirm: vi.fn() });
+			const result = await callAskUser(
+				tools,
+				{ question: "Ratify?", type: "choice", options: ["Ratify as-is"], default: "Ratify as-is", required: true },
+				ctx,
+			);
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).not.toBe("Ratify as-is");
+			expect(result.content[0].text).toMatch(/required/i);
+			expect(result.details).toMatchObject({ source: "non-interactive", answered: false });
+		});
+
+		it("headless-no-broker + required → isError, no default echo", async () => {
+			const ctx = makeStubCtx({ hasUI: false, confirm: vi.fn() });
+			const result = await callAskUser(tools, { question: "Ratify?", type: "confirm", default: "Y", required: true }, ctx);
+			expect(result.isError).toBe(true);
+			expect(result.details).toMatchObject({ source: "default", answered: false });
+		});
+
+		it("required has no effect when a genuine UI is present (still answers)", async () => {
+			const ctx = makeStubCtx({ confirm: vi.fn().mockResolvedValue(true) });
+			const result = await callAskUser(tools, { question: "Ratify?", type: "confirm", required: true }, ctx);
+			expect(result.isError).toBeFalsy();
+			expect(result.content[0].text).toBe("Y");
+			expect(result.details).toMatchObject({ source: "user", answered: true });
+		});
+
+		it("required + bound broker → routes to the human, does not error", async () => {
+			AskBroker.bind({ confirm: vi.fn().mockResolvedValue(true), select: vi.fn(), input: vi.fn(), notify: vi.fn() } as unknown as AskUI);
+			const ctx = makeStubCtx({ hasUI: false });
+			const result = await callAskUser(tools, { question: "Ratify?", type: "confirm", required: true }, ctx);
+			expect(result.isError).toBeFalsy();
+			expect(result.details).toMatchObject({ source: "user", answered: true });
 		});
 	});
 });
