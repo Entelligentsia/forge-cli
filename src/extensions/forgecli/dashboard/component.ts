@@ -894,8 +894,8 @@ export class DashboardComponent implements Component, Focusable {
 		const hintsBase = state.cancelTargetId
 			? " y confirm · n dismiss · esc close"
 			: this.controller.isReadOnly()
-				? " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · d detail · esc close · replay (read-only)"
-				: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · d detail · x cancel · esc close";
+				? " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · d cache · esc close · replay (read-only)"
+				: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · d cache · x cancel · esc close";
 		lines.push(border("╰", this.theme) + border("─".repeat(contentWidth), this.theme) + border("╯", this.theme));
 
 		// Aggregate model + token footer (mirrors ViewportFooterComponent).
@@ -907,11 +907,20 @@ export class DashboardComponent implements Component, Focusable {
 			? `${activeModel.provider} ${activeModel.model}`
 			: (activeModel?.provider ?? activeModel?.model ?? "");
 
+		// Glyph legend so the token meter is self-documenting: ctx is the PEAK
+		// context-window size (non-cumulative); ⇪ (shown only in detail via `d`)
+		// is the cumulative per-turn cache-read that balloons to millions.
+		const tokenLegend = meter
+			? state.showTokenDetail
+				? "  ·  ctx=peak context · ⇪=cumulative cache-reads (press d to hide)"
+				: "  ·  ctx=peak context · press d for cache-reads"
+			: "";
+
 		let footerLine = "";
 		if (modelLabel && meter) {
-			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}  Σ ${meter}`;
+			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}  Σ ${meter}${tokenLegend}`;
 		} else if (meter) {
-			footerLine = `${hintsBase}   Σ ${meter}`;
+			footerLine = `${hintsBase}   Σ ${meter}${tokenLegend}`;
 		} else if (modelLabel) {
 			footerLine = `${hintsBase}   ${dim(modelLabel, this.theme)}`;
 		} else {
