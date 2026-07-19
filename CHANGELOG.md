@@ -5,6 +5,20 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] — 2026-07-19
+
+### Added
+
+- **`forge:ask_user` provenance + HARD-gate** (forge#114). The interactive prompt tool now appends a `source=user answered=true` provenance line to every answer, and supports `required:true` for HARD gates that error instead of silently defaulting in non-interactive mode. Transcript-visible and surfaced in the dashboard overlay.
+- **Chrome DevTools browser bridge** (default-on; opt out with `FORGE_BROWSER_MCP=0`). Enables UI verification via browser automation in forge workflows.
+- **Dev-only `/forge:demo-ask` live overlay demo** (`FORGE_DEMO=1`).
+
+### Changed
+
+- **Vendored pi runtime upgraded 0.80.6 → 0.80.10** (weekly upstream sync; 72 commits since 2026-07-12). The bundled `@earendil-works/pi-coding-agent` moves `0.80.6-forge.1` → `0.80.10-forge.1`; siblings `pi-tui` / `pi-ai` / `pi-agent-core` move `0.80.6` → `0.80.10`. peerDependency `@earendil-works/pi-coding-agent` moves `0.80.6` → `0.80.10`. Adapts to upstream API changes: `ModelRuntime.create()` replaces `ModelRegistry.create()` + `AuthStorage.create()` as the async session-runtime factory; `createAgentSession` now takes `modelRuntime` instead of `authStorage` + `modelRegistry`; `AuthStorage.setRuntimeApiKey()` moves to `ModelRuntime.setRuntimeApiKey()`; `AuthStorage.list()` returns `Promise<CredentialInfo[]>`. Pulls in upstream changes: Hugging Face llama search, llama.cpp router integration, separate generated model data, native extension providers, adaptive thinking for Kimi Coding, CRLF/CR line ending handling in TUI, and refreshed provider/model catalogs.
+- **Bundled forge-plugin bumped to 1.6.11** (#113).
+- **Stale-summary divergence guard** in the review verdict loop (WI-S48-T01).
+
 ## [1.1.4] — 2026-07-12
 
 ### Changed
