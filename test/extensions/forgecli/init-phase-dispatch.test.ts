@@ -70,19 +70,20 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 			return Promise.resolve();
 		}
 	}
+	const findSpy = vi.fn(() => undefined);
 	return {
 		...actual,
 		createAgentSession: vi.fn(async () => ({ session: mockSession })),
 		DefaultResourceLoader: MockDefaultResourceLoader,
-		AuthStorage: { create: vi.fn(() => ({})) },
-		ModelRegistry: { create: vi.fn(() => ({ find: vi.fn(() => undefined) })) },
+		ModelRegistry: { create: vi.fn(() => ({ find: findSpy, getRegisteredProviderIds: vi.fn(() => []), getRegisteredProviderConfig: vi.fn() })) },
+		ModelRuntime: { create: vi.fn(async () => ({ getModel: findSpy, refresh: vi.fn(), registerProvider: vi.fn(), setRuntimeApiKey: vi.fn() })) },
 		SessionManager: { inMemory: vi.fn(() => ({})) },
 		parseFrontmatter: vi.fn((raw: string) => ({ frontmatter: {}, body: raw })),
 		getAgentDir: vi.fn(() => "/fake/agent-dir"),
 	};
 });
 
-import { createAgentSession } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { AskBroker } from "../../../src/extensions/forgecli/ask-broker.js";
 import {
 	dispatchSingleAgent,
@@ -158,7 +159,7 @@ function makeCtx() {
 			setStatus: vi.fn(),
 		},
 		hasUI: true,
-		modelRegistry: { find: vi.fn(() => undefined) },
+		modelRegistry: ModelRegistry.create(),
 	};
 }
 

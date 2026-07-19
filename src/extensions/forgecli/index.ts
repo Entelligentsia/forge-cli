@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ModelRegistry, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ModelRegistry, ModelRuntime, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type LoadSkillsResult, loadSkillsFromDir, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { registerAddPipeline } from "./commands/add-pipeline.js";
 import { registerAddTask } from "./commands/add-task.js";
@@ -496,7 +496,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 				// the live registry is accessed from ctx.modelRegistry inside the
 				// governor's handler chain. Pass a no-op stub here — sufficient for
 				// registration time. The actual per-turn model lookup uses ctx.modelRegistry.
-				const stubRegistry = { find: () => undefined } as unknown as ModelRegistry;
+				const stubRegistry = { find: () => undefined } as unknown as ModelRuntime;
 				governor = createGovernor(table, stubRegistry);
 			} else {
 				governor = createNoOpGovernor();

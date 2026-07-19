@@ -11,11 +11,10 @@
 // auth migration.
 
 import {
-	AuthStorage,
 	formatNoModelsAvailableMessage,
 	getAgentDir,
 	getProviderLoginHelp,
-	ModelRegistry,
+	ModelRuntime,
 	runMigrations,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -66,14 +65,14 @@ export interface DoctorVersions {
 export async function runDoctorProbe(versions: DoctorVersions, cwd: string = process.cwd()): Promise<DoctorReport> {
 	const { migratedAuthProviders, deprecationWarnings } = runMigrations(cwd);
 
-	const authStorage = AuthStorage.create();
+	const modelRuntime = await ModelRuntime.create();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
-	const modelRegistry = ModelRegistry.create(authStorage);
 
-	const stored = authStorage.list();
-	const all = modelRegistry.getAll();
-	const available = modelRegistry.getAvailable();
+	const storedCredentials = await modelRuntime.listCredentials();
+	const stored = storedCredentials.map((c) => c.providerId);
+	const all = modelRuntime.getModels();
+	const available = modelRuntime.getAvailableSnapshot();
 	const configuredProviders = Array.from(new Set(available.map((m) => m.provider))).sort();
 
 	const status: DoctorReport["status"] =

@@ -186,12 +186,12 @@ async function readAvailableModels(sessionRegistry?: import("@earendil-works/pi-
 	let registry: import("@earendil-works/pi-coding-agent").ModelRegistry;
 	if (sessionRegistry) {
 		// Refresh to pick up any changes since the session started.
-		sessionRegistry.refresh();
+		await sessionRegistry.refresh();
 		registry = sessionRegistry;
 	} else {
-		const { AuthStorage, ModelRegistry } = await import("@earendil-works/pi-coding-agent");
-		const auth = AuthStorage.create();
-		registry = ModelRegistry.create(auth);
+		const { ModelRegistry, ModelRuntime } = await import("@earendil-works/pi-coding-agent");
+		const runtime = await ModelRuntime.create();
+		registry = new ModelRegistry(runtime);
 	}
 	try {
 		const available: AvailableModel[] = registry.getAvailable().map((m) => ({ provider: m.provider, id: m.id }));
@@ -264,7 +264,7 @@ export async function runConfigTui(args: string[], cwd: string, cb: ConfigTuiCal
 			writeErr(`forge config dispatch: internal arg-parsing error\n`);
 			return 1;
 		}
-		return runConfigDispatch(dispatchParsed, cwd, (line) => cb.write(`${line}\n`));
+		return await runConfigDispatch(dispatchParsed, cwd, (line) => cb.write(`${line}\n`));
 	}
 
 	// Interactive routes (tier-menu, edit-persona). edit-override stays a stub

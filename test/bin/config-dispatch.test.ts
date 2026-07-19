@@ -115,9 +115,9 @@ describe("runConfigDispatch", () => {
 		rmSync(tmpCwd, { recursive: true, force: true });
 	});
 
-	it("empty config — every task phase shows '(inherit pi current)'", () => {
+	it("empty config — every task phase shows '(inherit pi current)'", async () => {
 		const cap = captureLines();
-		const code = runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
+		const code = await runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
 		expect(code).toBe(0);
 		const out = cap.lines.join("\n");
 		expect(out).toContain("inherit pi current");
@@ -125,7 +125,7 @@ describe("runConfigDispatch", () => {
 		expect(out).not.toMatch(/anthropic:|openai:/);
 	});
 
-	it("persona-models set — requested column reflects resolution", () => {
+	it("persona-models set — requested column reflects resolution", async () => {
 		writePiConfig(tmpCwd, {
 			"persona-models": {
 				engineer: { provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
@@ -133,13 +133,13 @@ describe("runConfigDispatch", () => {
 			},
 		});
 		const cap = captureLines();
-		runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
+		await runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
 		const out = cap.lines.join("\n");
 		expect(out).toContain("anthropic:claude-3-5-sonnet-20241022");
 		expect(out).toContain("anthropic:claude-3-opus-20240229");
 	});
 
-	it("phase override (L4-name) — commit phase resolves through named persona", () => {
+	it("phase override (L4-name) — commit phase resolves through named persona", async () => {
 		writePiConfig(tmpCwd, {
 			"persona-models": {
 				engineer: { provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
@@ -154,7 +154,7 @@ describe("runConfigDispatch", () => {
 			},
 		});
 		const cap = captureLines();
-		runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
+		await runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
 		const out = cap.lines.join("\n");
 		// commit row should show haiku (collator's model), not sonnet (engineer's).
 		const commitLine = cap.lines.find((l) => l.startsWith("commit "));
@@ -164,14 +164,14 @@ describe("runConfigDispatch", () => {
 		expect(out).toMatch(/task\[commit\s*\]\s+L4-name/);
 	});
 
-	it("--json — emits DispatchOutput with taskPhases (8) + bugPhases (7)", () => {
+	it("--json — emits DispatchOutput with taskPhases (8) + bugPhases (7)", async () => {
 		writePiConfig(tmpCwd, {
 			"persona-models": {
 				engineer: { provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
 			},
 		});
 		const cap = captureLines();
-		runConfigDispatch({ subcommand: "dispatch", resolved: false, json: true }, tmpCwd, cap.write);
+		await runConfigDispatch({ subcommand: "dispatch", resolved: false, json: true }, tmpCwd, cap.write);
 		expect(cap.lines.length).toBe(1);
 		const parsed = JSON.parse(cap.lines[0]!) as DispatchOutput;
 		expect(parsed.cwd).toBe(tmpCwd);
@@ -187,12 +187,12 @@ describe("runConfigDispatch", () => {
 	});
 
 	// N-B-E: prints schema errors before dispatch output and exits 0 (Decision 9).
-	it("prints schema errors before dispatch output when config is schema-invalid", () => {
+	it("prints schema errors before dispatch output when config is schema-invalid", async () => {
 		// Write a schema-invalid project config.
 		writePiConfig(tmpCwd, { "persona-models": { engineer: "not-an-object" } });
 
 		const cap = captureLines();
-		const exitCode = runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
+		const exitCode = await runConfigDispatch({ subcommand: "dispatch", resolved: false, json: false }, tmpCwd, cap.write);
 
 		// Exit code must be 0 (informational surface).
 		expect(exitCode).toBe(0);
@@ -202,7 +202,7 @@ describe("runConfigDispatch", () => {
 		expect(errorLine).toBeDefined();
 	});
 
-	it("bug-fix phases use 'fix-bug' pipeline independently of task pipeline", () => {
+	it("bug-fix phases use 'fix-bug' pipeline independently of task pipeline", async () => {
 		writePiConfig(tmpCwd, {
 			"persona-models": {
 				"bug-fixer": { provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
@@ -217,7 +217,7 @@ describe("runConfigDispatch", () => {
 			},
 		});
 		const cap = captureLines();
-		runConfigDispatch({ subcommand: "dispatch", resolved: false, json: true }, tmpCwd, cap.write);
+		await runConfigDispatch({ subcommand: "dispatch", resolved: false, json: true }, tmpCwd, cap.write);
 		const parsed = JSON.parse(cap.lines[0]!) as DispatchOutput;
 		const triage = parsed.bugPhases.find((r) => r.phaseRole === "triage");
 		expect(triage?.requested?.model).toBe("claude-3-opus-20240229");

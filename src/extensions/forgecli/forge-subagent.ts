@@ -23,13 +23,13 @@ import type { Message } from "@earendil-works/pi-ai";
 import { registerFauxProvider, type FauxProviderRegistration } from "@earendil-works/pi-ai/compat";
 import {
 	type AgentSessionEvent,
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	type ExtensionFactory,
 	getAgentDir,
 	ModelRegistry,
 	type ModelRegistry as ModelRegistryType,
+	ModelRuntime,
 	parseFrontmatter,
 	SessionManager,
 	type ToolDefinition,
@@ -103,15 +103,14 @@ export interface RunSubagentOptions {
 	 * FORGE-BUG-001 followup. The host pi session's ModelRegistry — the only
 	 * registry that contains extension-registered providers (e.g.
 	 * `ollama-cloud`). When omitted, runForgeSubagent builds a fresh
-	 * `ModelRegistry.create(AuthStorage.create())` which only sees the
+	 * `ModelRuntime.create()` which only sees the
 	 * baseline providers wired up at process start, and every per-persona
 	 * `setModel` call will MISS — silently falling back to pi's current
 	 * model (typically Anthropic). Callers running inside an extension
 	 * command context MUST pass `ctx.modelRegistry` here.
 	 *
-	 * The same registry is used both for `registry.find(...)` (so the
-	 * routing decision sees the right providers) and as the subagent
-	 * session's registry (so the spawned agent can resolve the model id).
+	 * Internally converted to a ModelRuntime for the subagent session;
+	 * extension-registered providers are copied across.
 	 */
 	modelRegistry?: ModelRegistryType;
 	onEvent?: (event: AgentSessionEvent) => void;
@@ -359,24 +358,35 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	});
 	await loader.reload();
 
-	const authStorage = AuthStorage.create();
-	// Prefer the host session's ModelRegistry — it carries extension-registered
-	// providers (ollama-cloud, openrouter, etc.). Without it, the freshly
-	// created registry would miss every per-persona model and setModel below
-	// would silently fall back to pi's current model. See FORGE-BUG-001 +
-	// the modelRegistry doc on RunSubagentOptions.
-	const modelRegistry: ModelRegistryType = opts.modelRegistry ?? ModelRegistry.create(authStorage);
+	// Build a ModelRuntime for the subagent session. When the caller provides
+	// a ModelRegistry (from the host pi context), create a fresh runtime and
+	// copy over any extension-registered providers so the subagent sees them.
+	let modelRuntime: ModelRuntime;
+	if (opts.modelRegistry && typeof (opts.modelRegistry as any).getRegisteredProviderIds === "function") {
+		modelRuntime = await ModelRuntime.create();
+		for (const providerId of opts.modelRegistry.getRegisteredProviderIds()) {
+			const config = opts.modelRegistry.getRegisteredProviderConfig(providerId);
+			if (config) {
+				try {
+					modelRuntime.registerProvider(providerId, config);
+				} catch {
+					/* skip providers that fail registration */
+				}
+			}
+		}
+	} else {
+		modelRuntime = await ModelRuntime.create();
+	}
 	// Refresh in case providers were registered after the session started.
 	try {
-		modelRegistry.refresh?.();
+		await modelRuntime.refresh();
 	} catch {
 		/* ignore */
 	}
 
 	const { session } = await createAgentSession({
 		sessionManager: SessionManager.inMemory(),
-		authStorage,
-		modelRegistry,
+		modelRuntime,
 		resourceLoader: loader,
 		customTools: opts.customTools,
 		// Persona frontmatter `tools:` is a name allowlist (read/bash/edit/write/...).
@@ -432,7 +442,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	// any failure — never crashes the phase. result.model/provider are read
 	// from the stream after the fact (IL10 invariant preserved).
 	if (opts.requestedModel) {
-		const m = modelRegistry.find(opts.requestedModel.provider, opts.requestedModel.model);
+		const m = modelRuntime.getModel(opts.requestedModel.provider, opts.requestedModel.model);
 		if (m) {
 			try {
 				await session.setModel(m);
@@ -466,9 +476,9 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		fauxHandle = registerFauxProvider({});
 		fauxHandle.setResponses([]);
 		const fauxModel = fauxHandle.getModel();
-		authStorage.setRuntimeApiKey(fauxModel.provider, "faux-key");
+		modelRuntime.setRuntimeApiKey(fauxModel.provider, "faux-key");
 		try {
-			modelRegistry.registerProvider(fauxModel.provider, {
+			modelRuntime.registerProvider(fauxModel.provider, {
 				apiKey: "faux-key",
 				baseUrl: fauxModel.baseUrl ?? "https://faux.local",
 				api: fauxHandle.api,

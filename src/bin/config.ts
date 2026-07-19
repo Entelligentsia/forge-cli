@@ -20,7 +20,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { loadLayeredConfig } from "../extensions/forgecli/config/config-layer.js";
 import { BUG_PHASES } from "../extensions/forgecli/orchestrators/fix-bug.js";
 import { lookupPersonaModel, resolveModelForPhase } from "../extensions/forgecli/config/model-resolver.js";
@@ -175,9 +175,8 @@ export async function runConfigShow(opts: ConfigArgs, cwd: string, write: WriteF
 	const personaCatalogue = readPersonaCatalogue();
 	const pipelineCatalogue = readPipelineCatalogue(cwd);
 
-	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
-	const available = modelRegistry.getAvailable();
+	const modelRuntime = await ModelRuntime.create();
+	const available = modelRuntime.getAvailableSnapshot();
 
 	const hasPersonaModels =
 		merged._global?.["persona-models"] !== undefined || merged._project?.["persona-models"] !== undefined;
@@ -336,7 +335,7 @@ export interface DispatchOutput {
  *
  * No LLM call. No pi session. Pure inspection.
  */
-export function runConfigDispatch(args: ConfigArgs, cwd: string, write: (line: string) => void): number {
+export async function runConfigDispatch(args: ConfigArgs, cwd: string, write: (line: string) => void): Promise<number> {
 	const taskPipeline = args.pipeline ?? "default";
 	const bugPipeline = "fix-bug";
 
@@ -349,7 +348,7 @@ export function runConfigDispatch(args: ConfigArgs, cwd: string, write: (line: s
 		}
 	}
 	const { merged } = layeredDispatch;
-	const registry = ModelRegistry.create(AuthStorage.create());
+	const modelRuntime2 = await ModelRuntime.create();
 
 	const traceOne = (pipelineName: "default" | "fix-bug", phaseRole: string, personaNoun: string): DispatchPhaseRow => {
 		const res = resolveModelForPhase(pipelineName, phaseRole, personaNoun, merged);
@@ -364,7 +363,7 @@ export function runConfigDispatch(args: ConfigArgs, cwd: string, write: (line: s
 				registryId: null,
 			};
 		}
-		const found = registry.find?.(res.model.provider, res.model.model);
+		const found = modelRuntime2.getModel(res.model.provider, res.model.model);
 		return {
 			pipeline: pipelineName,
 			phaseRole,

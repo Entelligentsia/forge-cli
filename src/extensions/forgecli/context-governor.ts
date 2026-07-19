@@ -43,7 +43,7 @@ import type {
 	ToolCallEventResult,
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { loadGovernorProjectConfig } from "./governor-config.js";
 import { summaryFilenameFor, summaryKeyFor } from "./phase-vocab.js";
 
@@ -336,7 +336,7 @@ function buildSteerMessage(phaseKey: string): string {
  */
 export function createGovernor(
 	table: PhasePolicyTable,
-	_modelRegistry: ModelRegistry,
+	_modelRegistry: ModelRuntime,
 	steerFn?: (message: string) => void,
 	summarySentinel?: (phaseKey: string, entityId: string) => boolean,
 	compactFn?: () => void,
@@ -702,7 +702,7 @@ export function buildGovernorFactory(opts: GovernorFactoryOptions): ExtensionFac
 
 		// Registration-time stub; per-turn contextWindow resolution uses
 		// ctx.getContextUsage()/ctx.modelRegistry inside the handler chain.
-		const stubRegistry = { find: () => undefined } as unknown as ModelRegistry;
+		const stubRegistry = { find: () => undefined } as unknown as ModelRuntime;
 		const governor = createGovernor(
 			loadDefaultPolicyTable(),
 			stubRegistry,

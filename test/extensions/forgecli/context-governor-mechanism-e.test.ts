@@ -25,11 +25,10 @@
 
 import type { ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import {
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
-	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
@@ -527,10 +526,9 @@ describe("extensionFactories integration: factory fires on session_before_compac
 		const faux = registerFauxProvider({});
 		faux.setResponses([]);
 		const fauxModel = faux.getModel();
-		const authStorage = AuthStorage.inMemory();
-		authStorage.setRuntimeApiKey(fauxModel.provider, "faux-key");
-		const modelRegistry = ModelRegistry.inMemory(authStorage);
-		modelRegistry.registerProvider(fauxModel.provider, {
+		const modelRuntime = await ModelRuntime.create();
+		await modelRuntime.setRuntimeApiKey(fauxModel.provider, "faux-key");
+		modelRuntime.registerProvider(fauxModel.provider, {
 			apiKey: "faux-key",
 			baseUrl: fauxModel.baseUrl ?? "https://faux.local",
 			api: faux.api,
@@ -554,8 +552,7 @@ describe("extensionFactories integration: factory fires on session_before_compac
 			sessionManager: SessionManager.inMemory(),
 			cwd: process.cwd(),
 			resourceLoader,
-			authStorage,
-			modelRegistry,
+			modelRuntime,
 			model: fauxModel,
 		});
 

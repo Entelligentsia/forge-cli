@@ -1,11 +1,10 @@
 import type { Message } from "@earendil-works/pi-ai";
 import {
 	type AgentSessionEvent,
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
-	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -34,13 +33,11 @@ export async function dispatchLlmWorker(opts: {
 	});
 	await loader.reload();
 
-	const authStorage = AuthStorage.create();
-	const modelRegistry = ModelRegistry.create(authStorage);
+	const modelRuntime = await ModelRuntime.create();
 
 	const { session } = await createAgentSession({
 		sessionManager: SessionManager.inMemory(),
-		authStorage,
-		modelRegistry,
+		modelRuntime,
 		resourceLoader: loader,
 	});
 
