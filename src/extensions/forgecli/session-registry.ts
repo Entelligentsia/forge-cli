@@ -51,6 +51,8 @@ export interface PhaseSummary {
 		input: number;
 		output: number;
 		cacheRead: number;
+		/** Peak (high-water) context-window size. Non-cumulative. */
+		context: number;
 	};
 	/**
 	 * Provider + model id observed on the most recent assistant turn of this
@@ -122,10 +124,10 @@ export interface TurnEvent {
 	turn: number;
 	preview: string;
 	thinking: string;
-	/** Per-turn token delta (from `message.usage`). */
-	deltaUsage: { input: number; output: number; cacheRead: number };
-	/** Cumulative phase usage at this turn. */
-	cumUsage: { input: number; output: number; cacheRead: number };
+	/** Per-turn token delta (from `message.usage`). `context` is this turn's size. */
+	deltaUsage: { input: number; output: number; cacheRead: number; context: number };
+	/** Cumulative phase usage at this turn. `context` is the running peak. */
+	cumUsage: { input: number; output: number; cacheRead: number; context: number };
 	timestamp: number;
 }
 
@@ -363,23 +365,24 @@ export class SessionRegistry extends EventEmitter {
 	 * registry. Drives the top-level `Σ ↑X ↓Y ⇪Z` meter so users see the
 	 * process-wide token burn regardless of which subagent is foregrounded.
 	 */
-	getAggregateUsage(): { input: number; output: number; cacheRead: number } {
-		const agg = { input: 0, output: 0, cacheRead: 0 };
+	getAggregateUsage(): { input: number; output: number; cacheRead: number; context: number } {
+		const agg = { input: 0, output: 0, cacheRead: 0, context: 0 };
 		for (const s of this.sessions.values()) {
 			for (const p of s.phases) {
 				if (!p.usage) continue;
 				agg.input += p.usage.input;
 				agg.output += p.usage.output;
 				agg.cacheRead += p.usage.cacheRead;
+				agg.context += p.usage.context;
 			}
 		}
 		return agg;
 	}
 
-	setPhaseUsage(taskId: string, phaseRole: string, usage: { input: number; output: number; cacheRead: number }): void {
+	setPhaseUsage(taskId: string, phaseRole: string, usage: { input: number; output: number; cacheRead: number; context: number }): void {
 		const p = this.findPhase(taskId, phaseRole);
 		if (!p) return;
-		p.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead };
+		p.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, context: usage.context };
 		const s = this.sessions.get(taskId);
 		if (s) s.updatedAt = Date.now();
 		// "tail" → TailViewComponent re-renders the per-phase footer.

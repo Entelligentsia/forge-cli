@@ -103,6 +103,7 @@ export function hydrateRunTree(manifest: RunManifest, runDir: string): ReplayRes
 				input: phase.usage.input,
 				output: phase.usage.output,
 				cacheRead: phase.usage.cacheRead,
+				context: phase.usage.contextTokens ?? 0,
 			});
 			const node = tree.getNode(leafId);
 			if (node && typeof phase.usage.turns === "number") node.metrics.turn = phase.usage.turns;

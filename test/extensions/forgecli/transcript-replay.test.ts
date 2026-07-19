@@ -135,7 +135,7 @@ describe("hydrateRunTree", () => {
 		expect(triage!.label).toBe("triage#1");
 		expect(triage!.model).toBe("claude-opus-4-8");
 		expect(triage!.provider).toBe("anthropic");
-		expect(triage!.usage).toEqual({ input: 1000, output: 200, cacheRead: 50 });
+		expect(triage!.usage).toEqual({ input: 1000, output: 200, context: 0, cacheRead: 50 });
 		expect(triage!.iteration).toBe(1);
 		expect(triage!.metrics.turn).toBe(2);
 		expect(triage!.status).toBe("completed");

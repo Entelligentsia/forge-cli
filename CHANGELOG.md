@@ -5,6 +5,13 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] — 2026-07-19
+
+### Added
+
+- **Token-metric truthfulness — peak context replaces cumulative cache-read as the headline.** The orchestrator dashboard and phase footers now lead with **`ctx<peak>`** — the high-water context-window size (`max(input + cacheRead + cacheWrite)` per turn) — instead of surfacing cumulative `⇪` cache-read, which re-counts the same cached prefix on every turn and balloons to tens of millions (a per-turn billing quantity, not a context size). Press **`d`** to toggle a token-detail view that reveals the cumulative `⇪` cache-read again. `contextTokens` is captured per phase (peak, via `usage.totalTokens`) and recorded to the store through `store-cli record-usage --context-tokens`, so it flows into collate's `COST_REPORT` "Context (peak)" column. Bundles forge plugin **v1.6.13** (family-tier pricing fallback so `claude-sonnet-5` / `claude-haiku-4-5` are priced correctly instead of showing `$0.00`).
+- **Fix:** the usage-hook no longer passes `--estimated-cost-usd` to `store-cli record-usage` — the current store-cli rejects that flag (cost is derived at collate time), which would have failed the entire per-phase usage flush against the v1.6.13 payload.
+
 ## [1.1.5] — 2026-07-19
 
 ### Added

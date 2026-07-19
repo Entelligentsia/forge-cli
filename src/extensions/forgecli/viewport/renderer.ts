@@ -196,15 +196,28 @@ export interface UsageDelta {
 	input: number;
 	output: number;
 	cacheRead: number;
+	/**
+	 * Per-turn context-window size (pi's totalTokens). Accumulated as a PEAK
+	 * (high-water), not a sum — see viewport/events.ts. This is the honest
+	 * "how big is this agent" number; cumulative cacheRead re-counts the same
+	 * cached prefix every turn and balloons to tens of millions.
+	 */
+	context: number;
 }
 
 /** Extract usage from an assistant message; returns zeros if missing. */
 export function readUsage(message: AgentMessage | undefined): UsageDelta {
-	const u = (message as { usage?: { input?: number; output?: number; cacheRead?: number } } | undefined)?.usage;
+	const u = (message as
+		| { usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number } }
+		| undefined)?.usage;
+	// Per-turn context size: prefer pi's authoritative totalTokens; fall back to
+	// input + cacheRead + cacheWrite (the prompt tokens for this turn).
+	const context = u?.totalTokens ?? (u?.input ?? 0) + (u?.cacheRead ?? 0) + (u?.cacheWrite ?? 0);
 	return {
 		input: u?.input ?? 0,
 		output: u?.output ?? 0,
 		cacheRead: u?.cacheRead ?? 0,
+		context,
 	};
 }
 
@@ -294,11 +307,16 @@ export function fmtPhaseSummary(opts: {
 export function fmtTokenFooter(
 	usage: UsageDelta | undefined,
 	compression?: { calls: number; tokensSaved: number },
+	detailed = false,
 ): string {
 	if (!usage) return "";
-	const cache = usage.cacheRead > 0 ? ` ⇪${humanTokens(usage.cacheRead)}` : "";
+	// Headline: peak context (the real size) leads; ↑in ↓out follow. Cumulative
+	// cacheRead is a per-turn re-read billing quantity that dwarfs everything
+	// (tens of millions) and is NOT context size — it only appears in detail view.
+	const ctx = usage.context > 0 ? `ctx${humanTokens(usage.context)} ` : "";
 	const comp = compression && compression.tokensSaved > 0 ? ` ⇌${humanTokens(compression.tokensSaved)}` : "";
-	return `↑${humanTokens(usage.input)} ↓${humanTokens(usage.output)}${cache}${comp}`;
+	const cache = detailed && usage.cacheRead > 0 ? ` ⇪${humanTokens(usage.cacheRead)}` : "";
+	return `${ctx}↑${humanTokens(usage.input)} ↓${humanTokens(usage.output)}${cache}${comp}`;
 }
 
 /**
@@ -323,9 +341,10 @@ export function fmtModelAndTokenFooter(
 	info: { provider?: string; model?: string } | undefined,
 	usage: UsageDelta | undefined,
 	compression?: { calls: number; tokensSaved: number },
+	detailed = false,
 ): string {
 	const left = fmtModelLabel(info);
-	const right = fmtTokenFooter(usage, compression);
+	const right = fmtTokenFooter(usage, compression, detailed);
 	if (left && right) return `${left} · ${right}`;
 	return left || right;
 }

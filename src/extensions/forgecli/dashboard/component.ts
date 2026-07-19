@@ -186,6 +186,11 @@ export interface DashboardState {
 	cancelTargetId: string | null;
 	/** Scroll offset for the detail panel (0 = top). */
 	detailScroll: number;
+	/** Token-detail view (toggled with `d`): when true, token footers also show
+	 * cumulative cache-read (⇪). Default false — the headline leads with peak
+	 * context so cumulative cache-read (a per-turn re-read billing quantity that
+	 * balloons to tens of millions) doesn't masquerade as consumption. */
+	showTokenDetail: boolean;
 }
 
 /**
@@ -235,6 +240,7 @@ export class DashboardController {
 			logExpanded: false,
 			cancelTargetId: null,
 			detailScroll: 0,
+			showTokenDetail: false,
 		};
 		this._handlers = [];
 
@@ -310,8 +316,8 @@ export class DashboardController {
 	}
 
 	/** Aggregate token usage across all active roots. */
-	getAggregateUsage(): { input: number; output: number; cacheRead: number } {
-		const agg = { input: 0, output: 0, cacheRead: 0 };
+	getAggregateUsage(): { input: number; output: number; cacheRead: number; context: number } {
+		const agg = { input: 0, output: 0, cacheRead: 0, context: 0 };
 		for (const rootId of this.vm.roots) {
 			const stack = [rootId];
 			while (stack.length > 0) {
@@ -321,6 +327,7 @@ export class DashboardController {
 				agg.input += node.usage.input;
 				agg.output += node.usage.output;
 				agg.cacheRead += node.usage.cacheRead;
+				agg.context += node.usage.context;
 				stack.push(...node.children);
 			}
 		}
@@ -408,6 +415,14 @@ export class DashboardController {
 		// ctrl+o: toggle activity-log expansion (global — works in both panels).
 		if (matchesKey(data, Key.ctrl("o"))) {
 			this.state.logExpanded = !this.state.logExpanded;
+			if (!this.disposed) this.onInvalidate?.();
+			return;
+		}
+
+		// `d`: toggle token-detail view (global). Reveals cumulative cache-read
+		// (⇪) in token footers; off by default so peak context is the headline.
+		if (data === "d") {
+			this.state.showTokenDetail = !this.state.showTokenDetail;
 			if (!this.disposed) this.onInvalidate?.();
 			return;
 		}
@@ -879,15 +894,15 @@ export class DashboardComponent implements Component, Focusable {
 		const hintsBase = state.cancelTargetId
 			? " y confirm · n dismiss · esc close"
 			: this.controller.isReadOnly()
-				? " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · esc close · replay (read-only)"
-				: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · x cancel · esc close";
+				? " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · d detail · esc close · replay (read-only)"
+				: " ↑↓ nav · → expand · ← back · ⏎ focus · ^o log · d detail · x cancel · esc close";
 		lines.push(border("╰", this.theme) + border("─".repeat(contentWidth), this.theme) + border("╯", this.theme));
 
 		// Aggregate model + token footer (mirrors ViewportFooterComponent).
 		const aggUsage = this.controller.getAggregateUsage();
 		const aggCompression = this.controller.getAggregateCompression();
 		const activeModel = this.controller.getActiveModel();
-		const meter = fmtTokenFooter(aggUsage, aggCompression.tokensSaved > 0 ? aggCompression : undefined);
+		const meter = fmtTokenFooter(aggUsage, aggCompression.tokensSaved > 0 ? aggCompression : undefined, state.showTokenDetail);
 		const modelLabel = activeModel?.provider && activeModel?.model
 			? `${activeModel.provider} ${activeModel.model}`
 			: (activeModel?.provider ?? activeModel?.model ?? "");
@@ -1259,8 +1274,8 @@ export class DashboardComponent implements Component, Focusable {
 
 	private formatMetrics(node: NodeViewModel): string {
 		const parts: string[] = [];
-		if (node.usage.input || node.usage.output || node.usage.cacheRead) {
-			parts.push(fmtTokenFooter(node.usage));
+		if (node.usage.input || node.usage.output || node.usage.cacheRead || node.usage.context) {
+			parts.push(fmtTokenFooter(node.usage, undefined, this.controller.getState().showTokenDetail));
 		}
 		if (node.metrics.toolCount) {
 			parts.push(`${node.metrics.toolCount} tool${node.metrics.toolCount === 1 ? "" : "s"}`);

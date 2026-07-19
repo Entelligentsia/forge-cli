@@ -30,6 +30,8 @@ export interface UsageSnapshot {
 	input: number;
 	output: number;
 	cacheRead: number;
+	/** Peak (high-water) context-window size. Non-cumulative — see UsageDelta. */
+	context: number;
 }
 
 export interface NodeMetrics {
@@ -136,7 +138,7 @@ export class OrchestratorTree extends EventEmitter {
 			children: [],
 			status: "running",
 			startedAt: Date.now(),
-			usage: { input: 0, output: 0, cacheRead: 0 },
+			usage: { input: 0, output: 0, cacheRead: 0, context: 0 },
 			metrics: { turn: 0, toolCount: 0, errCount: 0 },
 			tailBuffer: [],
 			unreadWarnings: 0,
@@ -180,7 +182,7 @@ export class OrchestratorTree extends EventEmitter {
 	setNodeUsage(id: string, usage: UsageSnapshot): void {
 		const node = this.nodes.get(id);
 		if (!node) return;
-		node.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead };
+		node.usage = { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, context: usage.context };
 		this.emit("change", id);
 	}
 
@@ -388,7 +390,7 @@ export class OrchestratorTree extends EventEmitter {
 	}
 
 	getSubtreeUsage(id: string): UsageSnapshot {
-		const agg: UsageSnapshot = { input: 0, output: 0, cacheRead: 0 };
+		const agg: UsageSnapshot = { input: 0, output: 0, cacheRead: 0, context: 0 };
 		const stack = [id];
 		while (stack.length > 0) {
 			const current = stack.pop()!;
@@ -397,6 +399,8 @@ export class OrchestratorTree extends EventEmitter {
 			agg.input += node.usage.input;
 			agg.output += node.usage.output;
 			agg.cacheRead += node.usage.cacheRead;
+			// Sum of per-agent peaks = aggregate context processed across the subtree.
+			agg.context += node.usage.context;
 			stack.push(...node.children);
 		}
 		return agg;

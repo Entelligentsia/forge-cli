@@ -37,6 +37,14 @@ export interface UsageAccumulator {
 	outputTokens: number;
 	cacheReadTokens: number;
 	cacheWriteTokens: number;
+	/**
+	 * Peak (high-water) per-turn prompt size = max over turns of
+	 * (input + cacheRead + cacheWrite). This is the real context-window
+	 * occupancy — a NON-cumulative size metric. Unlike cacheReadTokens (which
+	 * sums the whole cached prefix re-read on every turn and balloons to tens of
+	 * millions), contextTokens stays bounded by the actual context window.
+	 */
+	contextTokens: number;
 	estimatedCostUSD: number;
 	/** Last model identifier seen in this phase. */
 	model: string;
@@ -114,6 +122,10 @@ export function registerUsageHook(pi: ExtensionAPI, options: UsageHookOptions = 
 		const costTotal = safeNumber(usage?.cost?.total);
 		const model = typeof msg.model === "string" ? msg.model : "unknown";
 
+		// Per-turn prompt size (the cached prefix + fresh input for THIS turn).
+		// Peak of this across turns = the real context-window high-water mark.
+		const turnContext = input + cacheRead + cacheWrite;
+
 		const phaseKey = getPhaseKey();
 		const existing = accumulator.get(phaseKey);
 
@@ -122,6 +134,7 @@ export function registerUsageHook(pi: ExtensionAPI, options: UsageHookOptions = 
 			existing.outputTokens += output;
 			existing.cacheReadTokens += cacheRead;
 			existing.cacheWriteTokens += cacheWrite;
+			if (turnContext > existing.contextTokens) existing.contextTokens = turnContext;
 			existing.estimatedCostUSD += costTotal;
 			existing.model = model; // use last model seen
 			existing.turnCount += 1;
@@ -131,6 +144,7 @@ export function registerUsageHook(pi: ExtensionAPI, options: UsageHookOptions = 
 				outputTokens: output,
 				cacheReadTokens: cacheRead,
 				cacheWriteTokens: cacheWrite,
+				contextTokens: turnContext,
 				estimatedCostUSD: costTotal,
 				model,
 				turnCount: 1,
@@ -172,8 +186,11 @@ export function flushPhaseUsage(opts: FlushOptions): void {
 		String(acc.cacheReadTokens),
 		"--cache-write-tokens",
 		String(acc.cacheWriteTokens),
-		"--estimated-cost-usd",
-		String(acc.estimatedCostUSD),
+		"--context-tokens",
+		String(acc.contextTokens),
+		// NOTE: --estimated-cost-usd is intentionally NOT passed. store-cli
+		// record-usage rejects it (exit 1) — cost is derived at collate time
+		// from lib/pricing.cjs. Passing it would fail the entire flush.
 		"--token-source",
 		"reported",
 		"--model",

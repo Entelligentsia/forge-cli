@@ -293,11 +293,17 @@ describe("extractAssistantText (full, no truncation)", () => {
 describe("readUsage / fmtTokenMeter", () => {
 	it("reads usage off assistant message", () => {
 		const msg = { role: "assistant", usage: { input: 1234, output: 56, cacheRead: 78 } };
-		expect(readUsage(msg as never)).toEqual({ input: 1234, output: 56, cacheRead: 78 });
+		// context falls back to input + cacheRead + cacheWrite when totalTokens absent.
+		expect(readUsage(msg as never)).toEqual({ input: 1234, output: 56, cacheRead: 78, context: 1312 });
+	});
+
+	it("prefers pi's totalTokens for context when present", () => {
+		const msg = { role: "assistant", usage: { input: 1234, output: 56, cacheRead: 78, totalTokens: 200_000 } };
+		expect(readUsage(msg as never).context).toBe(200_000);
 	});
 
 	it("returns zeros when usage missing", () => {
-		expect(readUsage(undefined)).toEqual({ input: 0, output: 0, cacheRead: 0 });
+		expect(readUsage(undefined)).toEqual({ input: 0, output: 0, cacheRead: 0, context: 0 });
 	});
 
 	it("formats sub-1k as raw", () => {
@@ -366,8 +372,22 @@ describe("fmtTokenFooter", () => {
 		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 0 })).toBe("↑1.44M ↓6.5k");
 	});
 
-	it("includes cache when nonzero", () => {
-		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 320_000 })).toBe("↑1.44M ↓6.5k ⇪320k");
+	it("hides cumulative cache from the compact (default) footer", () => {
+		// Cache-read is a per-turn re-read billing quantity — it must NOT lead the
+		// headline. Compact view drops ⇪ entirely.
+		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 320_000, context: 0 })).toBe("↑1.44M ↓6.5k");
+	});
+
+	it("includes cache only in the detailed footer (detailed=true)", () => {
+		expect(fmtTokenFooter({ input: 1_440_000, output: 6500, cacheRead: 320_000, context: 0 }, undefined, true)).toBe(
+			"↑1.44M ↓6.5k ⇪320k",
+		);
+	});
+
+	it("leads with peak context when present", () => {
+		expect(fmtTokenFooter({ input: 880, output: 116_708, cacheRead: 58_672_285, context: 226_900 })).toBe(
+			"ctx227k ↑880 ↓117k",
+		);
 	});
 });
 

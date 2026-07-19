@@ -330,6 +330,7 @@ export async function dispatchBugPhase(p: BugPhaseDispatchParams): Promise<BugPh
 			input: result.usage.input,
 			output: result.usage.output,
 			cacheRead: result.usage.cacheRead,
+			context: result.usage.contextTokens,
 		});
 		if (result.model) tree.setNodeModel(phaseNodeId, result.model, result.provider ?? "");
 		tree.completeNode(phaseNodeId, status);

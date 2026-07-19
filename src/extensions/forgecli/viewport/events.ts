@@ -186,7 +186,7 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 		toolCount: 0,
 		errCount: 0,
 		lastTool: "",
-		cumUsage: { input: 0, output: 0, cacheRead: 0 } as UsageDelta,
+		cumUsage: { input: 0, output: 0, cacheRead: 0, context: 0 } as UsageDelta,
 		cumCompression: { calls: 0, tokensSaved: 0 },
 		tailLog: [] as TailLogEntry[],
 	};
@@ -285,6 +285,9 @@ export function attachViewportObserver(opts: ViewportObserverOpts): AttachedObse
 				state.cumUsage.input += delta.input;
 				state.cumUsage.output += delta.output;
 				state.cumUsage.cacheRead += delta.cacheRead;
+				// context is a PEAK (high-water), not a running sum — it tracks the
+				// largest single-turn context window, not the re-read total.
+				if (delta.context > state.cumUsage.context) state.cumUsage.context = delta.context;
 				registry.setPhaseUsage(sessionId, phaseRole, state.cumUsage);
 				const nodeId = resolveNodeId();
 				tree.setNodeUsage(nodeId, state.cumUsage);

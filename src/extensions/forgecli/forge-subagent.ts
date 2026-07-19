@@ -257,7 +257,8 @@ function emptyUsage(): UsageStats {
  * stopReason="aborted".
  *
  * Usage events are aggregated from `turn_end` (per-turn assistant message
- * usage). Total contextTokens are sourced from the latest turn.
+ * usage). contextTokens is the PEAK per-turn totalTokens (high-water context
+ * size), not a cumulative sum and not merely the latest turn.
  */
 export async function runForgeSubagent(opts: RunSubagentOptions): Promise<SubagentResult> {
 	const { persona, task, cwd, signal, onEvent, forgeRoot, cacheSessionId } = opts;
@@ -544,7 +545,11 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 					result.usage.cacheRead += usage.cacheRead ?? 0;
 					result.usage.cacheWrite += usage.cacheWrite ?? 0;
 					result.usage.cost += usage.cost?.total ?? 0;
-					if ((usage.totalTokens ?? 0) > 0) {
+					// Peak (high-water), not latest: keep the largest single-turn
+					// context so a late compaction that shrinks the window doesn't
+					// under-report how big this agent actually got. max() also
+					// preserves the last good value across zero-usage husk turns.
+					if ((usage.totalTokens ?? 0) > result.usage.contextTokens) {
 						result.usage.contextTokens = usage.totalTokens as number;
 					}
 				}

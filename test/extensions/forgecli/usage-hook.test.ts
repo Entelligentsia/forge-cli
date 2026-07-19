@@ -245,6 +245,7 @@ describe("flushPhaseUsage", () => {
 					outputTokens: 500,
 					cacheReadTokens: 200,
 					cacheWriteTokens: 100,
+					contextTokens: 1300,
 					estimatedCostUSD: 0.0123,
 					model: "claude-sonnet-4-6",
 					turnCount: 3,
@@ -275,6 +276,12 @@ describe("flushPhaseUsage", () => {
 		expect(argv).toContain("200");
 		expect(argv).toContain("--cache-write-tokens");
 		expect(argv).toContain("100");
+		// Peak context (non-cumulative) is recorded alongside the cumulative counts.
+		expect(argv).toContain("--context-tokens");
+		expect(argv).toContain("1300");
+		// store-cli record-usage REJECTS --estimated-cost-usd (cost derived at
+		// collate time) — passing it would fail the whole flush.
+		expect(argv).not.toContain("--estimated-cost-usd");
 		expect(argv).toContain("--token-source");
 		expect(argv).toContain("reported");
 		expect(argv).toContain("--model");
@@ -295,6 +302,7 @@ describe("flushPhaseUsage", () => {
 					outputTokens: 50,
 					cacheReadTokens: 0,
 					cacheWriteTokens: 0,
+					contextTokens: 100,
 					estimatedCostUSD: 0.001,
 					model: "claude-haiku-4-5",
 					turnCount: 1,

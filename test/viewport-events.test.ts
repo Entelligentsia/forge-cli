@@ -60,10 +60,11 @@ describe("attachViewportObserver", () => {
 		});
 
 		expect(observer.state.turn).toBe(2);
-		expect(observer.state.cumUsage).toEqual({ input: 3000, output: 150, cacheRead: 500 });
+		// context is the PEAK per-turn size: max(1000, 2000+500) = 2500, not summed.
+		expect(observer.state.cumUsage).toEqual({ input: 3000, output: 150, cacheRead: 500, context: 2500 });
 
 		const phase = registry.getSession("T1")?.phases.find((p) => p.role === "plan");
-		expect(phase?.usage).toEqual({ input: 3000, output: 150, cacheRead: 500 });
+		expect(phase?.usage).toEqual({ input: 3000, output: 150, cacheRead: 500, context: 2500 });
 	});
 
 	it("renders a turn block with ╭ / │ / ╰ connectors in chronological order", () => {
@@ -166,8 +167,9 @@ describe("attachViewportObserver", () => {
 			type: "turn_end",
 			message: makeAssistantMessage({ input: 500, output: 25, text: "step 2" }),
 		});
-		expect(events[1].deltaUsage).toEqual({ input: 500, output: 25, cacheRead: 0 });
-		expect(events[1].cumUsage).toEqual({ input: 1500, output: 75, cacheRead: 0 });
+		expect(events[1].deltaUsage).toEqual({ input: 500, output: 25, cacheRead: 0, context: 500 });
+		// cumUsage.context is the peak per-turn size: max(1000, 500) = 1000.
+		expect(events[1].cumUsage).toEqual({ input: 1500, output: 75, cacheRead: 0, context: 1000 });
 	});
 
 	it("honours displayRole when provided", () => {
@@ -251,14 +253,14 @@ describe("attachViewportObserver — node-per-dispatch telemetry routing", () =>
 		// All live telemetry lands on the dispatch node…
 		expect(target.metrics.turn).toBe(1);
 		expect(target.metrics.toolCount).toBe(1);
-		expect(target.usage).toEqual({ input: 1000, output: 50, cacheRead: 0 });
+		expect(target.usage).toEqual({ input: 1000, output: 50, cacheRead: 0, context: 1000 });
 		expect(target.tailBuffer.length).toBeGreaterThan(0);
 		expect(target.lastTurnPreview).toBe("reviewing the revised plan");
 
 		// …and NONE leaks onto the stale running sibling.
 		expect(stale.metrics.turn).toBe(0);
 		expect(stale.metrics.toolCount).toBe(0);
-		expect(stale.usage).toEqual({ input: 0, output: 0, cacheRead: 0 });
+		expect(stale.usage).toEqual({ input: 0, output: 0, cacheRead: 0, context: 0 });
 		expect(stale.tailBuffer.length).toBe(0);
 		expect(stale.lastTurnPreview).toBeUndefined();
 	});
@@ -374,22 +376,23 @@ describe("attachViewportObserver — verbatim log entries (view owns display)", 
 describe("SessionRegistry.getAggregateUsage", () => {
 	it("returns zeros when no sessions", () => {
 		const reg = new SessionRegistry();
-		expect(reg.getAggregateUsage()).toEqual({ input: 0, output: 0, cacheRead: 0 });
+		expect(reg.getAggregateUsage()).toEqual({ input: 0, output: 0, cacheRead: 0, context: 0 });
 	});
 
 	it("sums phase.usage across all sessions and phases", () => {
 		const reg = new SessionRegistry();
 		reg.startSession("A");
 		reg.startPhase("A", "plan", 0);
-		reg.setPhaseUsage("A", "plan", { input: 1000, output: 50, cacheRead: 200 });
+		reg.setPhaseUsage("A", "plan", { input: 1000, output: 50, cacheRead: 200, context: 1200 });
 		reg.startPhase("A", "implement", 1);
-		reg.setPhaseUsage("A", "implement", { input: 5000, output: 300, cacheRead: 1000 });
+		reg.setPhaseUsage("A", "implement", { input: 5000, output: 300, cacheRead: 1000, context: 6000 });
 
 		reg.startSession("B");
 		reg.startPhase("B", "plan", 0);
-		reg.setPhaseUsage("B", "plan", { input: 2000, output: 100, cacheRead: 0 });
+		reg.setPhaseUsage("B", "plan", { input: 2000, output: 100, cacheRead: 0, context: 2000 });
 
-		expect(reg.getAggregateUsage()).toEqual({ input: 8000, output: 450, cacheRead: 1200 });
+		// context aggregates as sum-of-per-phase-peaks: 1200 + 6000 + 2000 = 9200.
+		expect(reg.getAggregateUsage()).toEqual({ input: 8000, output: 450, cacheRead: 1200, context: 9200 });
 	});
 
 	it("ignores phases with no usage data", () => {
@@ -397,7 +400,7 @@ describe("SessionRegistry.getAggregateUsage", () => {
 		reg.startSession("A");
 		reg.startPhase("A", "plan", 0);
 		// no setPhaseUsage call
-		expect(reg.getAggregateUsage()).toEqual({ input: 0, output: 0, cacheRead: 0 });
+		expect(reg.getAggregateUsage()).toEqual({ input: 0, output: 0, cacheRead: 0, context: 0 });
 	});
 
 	it("recordTurnEvent appends to the ring buffer and emits 'turn'", () => {
@@ -411,8 +414,8 @@ describe("SessionRegistry.getAggregateUsage", () => {
 			turn: 1,
 			preview: "a",
 			thinking: "",
-			deltaUsage: { input: 100, output: 10, cacheRead: 0 },
-			cumUsage: { input: 100, output: 10, cacheRead: 0 },
+			deltaUsage: { input: 100, output: 10, cacheRead: 0, context: 100 },
+			cumUsage: { input: 100, output: 10, cacheRead: 0, context: 100 },
 			timestamp: 1,
 		});
 		reg.recordTurnEvent({
@@ -422,8 +425,8 @@ describe("SessionRegistry.getAggregateUsage", () => {
 			turn: 1,
 			preview: "b",
 			thinking: "",
-			deltaUsage: { input: 200, output: 20, cacheRead: 0 },
-			cumUsage: { input: 200, output: 20, cacheRead: 0 },
+			deltaUsage: { input: 200, output: 20, cacheRead: 0, context: 200 },
+			cumUsage: { input: 200, output: 20, cacheRead: 0, context: 200 },
 			timestamp: 2,
 		});
 		expect(fired).toBe(2);
@@ -445,8 +448,8 @@ describe("SessionRegistry.getAggregateUsage", () => {
 				turn: 1,
 				preview: "",
 				thinking: "",
-				deltaUsage: { input: 1, output: 1, cacheRead: 0 },
-				cumUsage: { input: 1, output: 1, cacheRead: 0 },
+				deltaUsage: { input: 1, output: 1, cacheRead: 0, context: 1 },
+				cumUsage: { input: 1, output: 1, cacheRead: 0, context: 1 },
 				timestamp: i,
 			});
 		}
@@ -465,7 +468,7 @@ describe("SessionRegistry.getAggregateUsage", () => {
 		let change = 0;
 		reg.on("tail", () => tail++);
 		reg.on("change", () => change++);
-		reg.setPhaseUsage("A", "plan", { input: 1, output: 2, cacheRead: 3 });
+		reg.setPhaseUsage("A", "plan", { input: 1, output: 2, cacheRead: 3, context: 4 });
 		expect(tail).toBe(1);
 		expect(change).toBe(1);
 	});
