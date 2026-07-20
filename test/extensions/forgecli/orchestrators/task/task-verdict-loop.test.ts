@@ -161,8 +161,15 @@ describe("handleReviewVerdict — stale-summary divergence guard", () => {
 		expect(runHaltAdvisor).toHaveBeenCalledTimes(1);
 		const opts = vi.mocked(runHaltAdvisor).mock.calls[0]![0];
 		expect(opts.gateFailure.reasonCode).toBe("stale-summary-revision-cap");
-		expect(opts.gateFailure.detail).toMatch(/was not refreshed/i);
+		expect(opts.gateFailure.detail).toMatch(/did not refresh it/i);
 		expect(_args.notifications.some((n) => n.level === "error" && /stale/i.test(n.msg))).toBe(true);
+		// FORGE-BUG-042 root cause D: the advisory must present candidate causes,
+		// not assert one. The previous text stated the wrong-artifact-kind cause as
+		// fact, which sent two separate investigations down the wrong path while
+		// the real cause was an LLM-authored written_at.
+		expect(opts.gateFailure.detail).toMatch(/not a diagnosis of a specific subagent error|UNPROVABLE FRESHNESS/i);
+		expect(opts.gateFailure.detail).toMatch(/\(c\)/);
+		expect(opts.gateFailure.remediation).toMatch(/compare/i);
 	});
 
 	it("does NOT attempt recovery for a fresh 'revision' (reviewer genuinely wants changes) → normal loopback", async () => {

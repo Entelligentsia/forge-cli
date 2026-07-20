@@ -106,7 +106,9 @@ export function buildForgeArtifact(
 			"`section` set to a heading returns that section's EXACT, uncompressed source. Prefer outline→section " +
 			"over a whole `read` when you need precise or partial content (and to avoid re-reading the same artifact). " +
 			"(Section/outline apply to markdown artifacts only, not JSON *-summary.)\n\n" +
-			"JSON summary artifacts are validated on write (objective, key_changes, verdict, written_at required). " +
+			"JSON summary artifacts are validated on write (objective, key_changes, verdict required). " +
+			"Do NOT write a `written_at` field — it is store-owned and stamped at set-summary time; " +
+			"any value you supply is discarded. " +
 			"Use 'list' to see which artifacts already exist for an entity.",
 		promptSnippet:
 			"Use forge_artifact to read/write phase outputs (PLAN.md, PROGRESS.md, *-SUMMARY.json). " +

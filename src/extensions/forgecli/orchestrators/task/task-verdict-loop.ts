@@ -168,9 +168,13 @@ export async function handleReviewVerdict(p: VerdictLoopParams): Promise<Verdict
 		if (phaseStartMs && summaryKey) {
 			const meta = readVerdictWithMeta(taskId, phase.role, storeCli, cwd);
 			const writtenMs = meta.writtenAt ? Date.parse(meta.writtenAt) : NaN;
-			// 5s slack: a healthy run's written_at is during/after dispatch; a stale
-			// one is from a prior run (minutes/hours earlier).
-			const STALE_SLACK_MS = 5000;
+			// `written_at` is stamped by store-cli's set-summary at registration
+			// time (FORGE-BUG-042 root cause D), so on a healthy run it is strictly
+			// after phaseStartMs — both are Date.now() on this host, no clock skew.
+			// The slack is nominal, covering only filesystem/NTP jitter; it used to
+			// be 5s to absorb subagent-authored timestamps, which were not a clock
+			// reading at all and scattered hours-to-days either side of the truth.
+			const STALE_SLACK_MS = 1000;
 			const isStale = !Number.isNaN(writtenMs) && writtenMs + STALE_SLACK_MS < phaseStartMs;
 			if (isStale) {
 				// Register the subagent's already-authored sidecar ourselves (once per
@@ -359,9 +363,9 @@ async function escalateStaleSummaryRevision(p: StaleSummaryEscalationParams): Pr
 		forgeRoot,
 	} = p;
 	ctx.ui.notify(
-		`× forge:run-task — ${phase.role}: stored verdict 'revision' is stale (written_at predates this phase run) ` +
-			`and re-registering the '${summaryKey}' sidecar did not refresh it. The subagent likely wrote the summary ` +
-			`to the wrong artifact kind or skipped set-summary. Halting instead of acting on a stale verdict.`,
+		`× forge:run-task — ${phase.role}: could not prove the stored 'revision' verdict is current — its written_at ` +
+			`predates this phase run, and re-registering the '${summaryKey}' sidecar did not refresh it. ` +
+			`Halting instead of acting on a verdict that may be stale.`,
 		"error",
 	);
 	finishPhaseNode("escalated");
@@ -377,18 +381,26 @@ async function escalateStaleSummaryRevision(p: StaleSummaryEscalationParams): Pr
 		phase: phase.role,
 		reasonCode: "stale-summary-revision-cap",
 		detail:
-			`Phase '${phase.role}' returned a stored verdict 'revision', but its summary written_at was not refreshed ` +
-			`this run (it predates the phase dispatch). Re-registering the canonical '${summaryKey}' sidecar via ` +
-			`set-summary did not update it, so the store still reflects a prior round. The subagent most likely wrote ` +
-			`its summary sidecar to the wrong artifact kind (so set-summary auto-resolved and re-ingested the stale ` +
-			`canonical file) or skipped the set-summary call entirely. The orchestrator will not act on a verdict known ` +
-			`to be stale.`,
+			`Phase '${phase.role}' returned a stored verdict 'revision' whose summary written_at predates this phase ` +
+			`dispatch, and re-registering the canonical '${summaryKey}' sidecar via set-summary did not refresh it. ` +
+			`The orchestrator cannot prove the verdict is current, so it will not act on it. This is a diagnosis of ` +
+			`UNPROVABLE FRESHNESS, not of a specific subagent error — do not assume a cause without checking. ` +
+			`Candidates, in the order worth checking:\n` +
+			`  (a) The sidecar was written under the wrong artifact kind, so set-summary auto-resolved and ` +
+			`re-ingested the prior round's canonical file (must match PHASE_TO_KIND['${summaryKey}']).\n` +
+			`  (b) The subagent skipped the set-summary call entirely, leaving the prior round's registration in place.\n` +
+			`  (c) The stored written_at is not a real clock reading. It is store-owned as of FORGE-BUG-042 ` +
+			`(stamped by set-summary), but a record written by an older payload — or by any path that bypasses ` +
+			`set-summary — can still carry a subagent-authored timestamp, which is not an ordering signal at all.`,
 		remediation:
-			`Inspect the subagent's ${phase.role} transcript for its forge_artifact write + forge_store set-summary calls. ` +
-			`The summary sidecar artifact kind MUST match PHASE_TO_KIND['${summaryKey}'] (the canonical filename ` +
-			`set-summary auto-resolves). Manually register the correct sidecar (\`forge_store set-summary ${taskId} ${summaryKey}\`) ` +
-			`once the correct file is in place, then reset the pipeline to ${phase.role} and resume — e.g. ` +
-			`\`4ge reset ${taskId} --to ${phase.role}\`.`,
+			`First distinguish the causes above. Read the stored record ` +
+			`(\`forge_store read task ${taskId}\`) and compare summaries.${summaryKey}.written_at against the mtime of ` +
+			`the canonical sidecar on disk. If they disagree wildly — or written_at sits at midnight, or in the ` +
+			`future — you are in case (c): the value is not a clock reading, the freshness check is inconclusive, and ` +
+			`the underlying verdict may well be correct. Otherwise inspect the subagent's ${phase.role} transcript for ` +
+			`its forge_artifact write + forge_store set-summary calls to separate (a) from (b). Once the correct ` +
+			`sidecar is in place, re-register it (\`forge_store set-summary ${taskId} ${summaryKey}\`) — this stamps a ` +
+			`current written_at — then reset and resume: \`4ge reset ${taskId} --to ${phase.role}\`.`,
 	};
 	const advisorModel = resolveAdvisorModel(modelRoutingConfig, ctx.model as any);
 	await runHaltAdvisor({
