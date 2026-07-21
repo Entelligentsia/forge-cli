@@ -34,9 +34,19 @@ import {
 	writeSeenState,
 } from "../../../src/extensions/forgecli/update/whats-new.js";
 
+// Tracked so the global afterEach can remove them; the e2e block below also
+// removes its two roots explicitly, which is harmless (force: true).
+const tmpDirs: string[] = [];
+
 function tmpDir(label: string): string {
-	return path.join(os.tmpdir(), `forgecli-whats-new-${label}-${crypto.randomBytes(6).toString("hex")}`);
+	const dir = path.join(os.tmpdir(), `forgecli-whats-new-${label}-${crypto.randomBytes(6).toString("hex")}`);
+	tmpDirs.push(dir);
+	return dir;
 }
+
+afterEach(async () => {
+	await Promise.all(tmpDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
 
 const FORGE_CLI_LIKE = `# Changelog
 

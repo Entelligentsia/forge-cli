@@ -19,6 +19,10 @@ import { migrateLegacyData } from "../../../../src/extensions/forgecli/paths/mig
 
 const PRIOR_ENV = { ...process.env };
 
+// Tracked so afterEach can remove them. userRoot is created by the migrator
+// under test rather than here, so it needs tracking too.
+const tmpDirs: string[] = [];
+
 function freshDirs() {
 	const id = crypto.randomBytes(6).toString("hex");
 	const home = path.join(os.tmpdir(), `forge-cli-mig-home-${id}`);
@@ -26,6 +30,7 @@ function freshDirs() {
 	const userRoot = path.join(os.tmpdir(), `forge-cli-mig-userroot-${id}`);
 	fs.mkdirSync(home, { recursive: true });
 	fs.mkdirSync(xdg, { recursive: true });
+	tmpDirs.push(home, xdg, userRoot);
 	return { home, xdg, userRoot };
 }
 
@@ -62,6 +67,7 @@ afterEach(() => {
 	if (PRIOR_ENV.FORGE_CLI_HOME !== undefined) process.env.FORGE_CLI_HOME = PRIOR_ENV.FORGE_CLI_HOME;
 	else delete process.env.FORGE_CLI_HOME;
 	vi.restoreAllMocks();
+	for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe("migrator — neither legacy present", () => {

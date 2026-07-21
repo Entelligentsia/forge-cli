@@ -14,7 +14,14 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { afterAll } from "vitest";
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "forge-cli-home-vitest-"));
 process.env.FORGE_CLI_HOME = sandbox;
 process.env.FORGE_CLI_SKIP_MIGRATION = process.env.FORGE_CLI_SKIP_MIGRATION ?? "1";
+
+// One sandbox is created per test file, so without this every `npm test` run
+// left a dir behind in os.tmpdir(). Hooks in a setupFile apply per test file.
+afterAll(() => {
+	fs.rmSync(sandbox, { recursive: true, force: true });
+});

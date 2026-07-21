@@ -19,8 +19,14 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __test__, triggerUpdateCheck, type UpdateBannerCache } from "../../../src/extensions/forgecli/update/update-check.js";
 
+// Every dir handed out here is tracked so afterEach can remove it. The dir is
+// created lazily by the code under test, so we cannot rely on mkdtemp cleanup.
+const tmpCacheDirs: string[] = [];
+
 function tmpCacheDir(): string {
-	return path.join(os.tmpdir(), `forgecli-update-test-${crypto.randomBytes(6).toString("hex")}`);
+	const dir = path.join(os.tmpdir(), `forgecli-update-test-${crypto.randomBytes(6).toString("hex")}`);
+	tmpCacheDirs.push(dir);
+	return dir;
 }
 
 function jsonRes<T>(body: T): Response {
@@ -58,6 +64,7 @@ beforeEach(() => {
 afterEach(async () => {
 	process.env = { ...PRIOR_ENV };
 	vi.restoreAllMocks();
+	await Promise.all(tmpCacheDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
 describe("triggerUpdateCheck — opt-out", () => {
