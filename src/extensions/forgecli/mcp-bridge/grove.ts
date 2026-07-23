@@ -141,9 +141,9 @@ export function buildGroveSteering(toolNames: string[]): string {
 /**
  * Steering for grove's delegated explore-mode surface: a single `explore` tool
  * backed by a local LLM. It is a code LOCATOR — ask ONE narrow where-is question,
- * get `file:line` citations back — not a broad task runner. Framed to match
- * grove's own locator instructions so the model engages it rather than bypassing
- * it with a broad grep.
+ * get bare location lines (`lang:path#symbol@line`) back — not a broad task
+ * runner. Framed to match grove's own locator instructions so the model engages
+ * it rather than bypassing it with a broad grep.
  */
 function buildGroveExploreSteering(): string {
 	return [
@@ -151,13 +151,15 @@ function buildGroveExploreSteering(): string {
 		"",
 		`This project runs grove in explore-mode: a single \`${GROVE_EXPLORE_TOOL}\` tool,`,
 		"backed by a local LLM, is your code-navigation surface. It is a LOCATOR — it",
-		"finds WHERE code lives and returns `file:line` citations, not a whole answer.",
+		"finds WHERE code lives and returns bare location lines",
+		"(`lang:path#symbol@line`, e.g. `javascript:config/passport.js#login@114`),",
+		"not a whole answer.",
 		"",
 		"For any where-is / what-defines / who-calls question, reach for it FIRST.",
 		"Ask ONE narrow, single-focus question per call (e.g. \"where is the API-key",
 		"health check defined\"), not a broad multi-part task. Best flow: a few narrow",
 		`\`${GROVE_EXPLORE_TOOL}\` calls to locate the pieces → \`read\` those exact`,
-		"`file:line` spans → synthesize. `grep` / `rg` / reading whole files blind are",
+		"locations → synthesize. `grep` / `rg` / reading whole files blind are",
 		"fallbacks, used only after explore has been tried and returned insufficient",
 		"content.",
 	].join("\n");
