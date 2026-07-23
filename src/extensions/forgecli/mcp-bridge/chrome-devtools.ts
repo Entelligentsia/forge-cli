@@ -62,6 +62,31 @@ export function isBrowserBridgeEnabled(env: NodeJS.ProcessEnv = process.env): bo
 	return !(v === "0" || v === "false" || v === "off" || v === "no");
 }
 
+/**
+ * Whether this session's browser is a surface a human can SEE and act in —
+ * i.e. an auth handoff ("finish logging in, then continue") is possible.
+ *
+ * True when EITHER:
+ *   - connect-mode is active (FORGE_BROWSER_URL set) — the bridge drives the
+ *     user's own already-running Chrome, so the human is already looking at it; or
+ *   - Chrome is launched headed (FORGE_BROWSER_HEADLESS explicitly falsey) — a
+ *     real visible window the human can click through.
+ *
+ * The default headless+isolated launch is NOT interactive: no window, no
+ * persisted login, nothing for a human to drive — so the auth-handoff steering
+ * is withheld (it would be a lie to tell the agent it can ask a human to log in).
+ */
+export function isBrowserInteractive(env: NodeJS.ProcessEnv = process.env): boolean {
+	const url = env.FORGE_BROWSER_URL;
+	if (typeof url === "string" && url.trim().length > 0) return true;
+	const h = env.FORGE_BROWSER_HEADLESS;
+	if (typeof h === "string") {
+		const v = h.trim().toLowerCase();
+		if (v === "0" || v === "false" || v === "off" || v === "no") return true;
+	}
+	return false;
+}
+
 /** A resolved launcher for the browser MCP server: how to spawn it. */
 export interface ResolvedBrowserCommand {
 	/** Executable to spawn (resolved against PATH by child_process). */
@@ -180,9 +205,9 @@ function envStr(name: string): string | undefined {
  * change, drive the running app and confirm what rendered — snapshot the DOM,
  * screenshot the viewport, read console/network for errors.
  */
-export function buildBrowserSteering(toolNames: string[]): string {
+export function buildBrowserSteering(toolNames: string[], opts?: { interactive?: boolean }): string {
 	const available = toolNames.length > 0 ? toolNames.join(", ") : `${BROWSER_TOOL_PREFIX}*`;
-	return [
+	const lines = [
 		"## Browser UI verification — use the browser tools",
 		"",
 		`This session has Chrome DevTools browser tools available: ${available}.`,
@@ -205,7 +230,35 @@ export function buildBrowserSteering(toolNames: string[]): string {
 		"Reach for these instead of guessing from the code whenever a change has a",
 		"visible or interactive surface. Screenshots are also how you show the user",
 		"what you verified.",
-	].join("\n");
+	];
+
+	// Auth handoff — only when the browser is a surface a human can see and drive
+	// (connect-mode against the user's own Chrome, or a headed launch). In the
+	// default headless+isolated mode there is no window and no persisted login,
+	// so promising a human login step here would be a lie.
+	if (opts?.interactive) {
+		lines.push(
+			"",
+			"### Human-assisted authentication",
+			"",
+			"This browser is VISIBLE to the user (connect-mode against their own Chrome,",
+			"or a headed window) — so a step you cannot complete yourself, such as a",
+			"login / SSO / MFA wall, can be handed to the human. Do NOT type credentials",
+			"or attempt to bypass such a wall yourself.",
+			"",
+			"When you hit an auth wall:",
+			`1. \`${BROWSER_TOOL_PREFIX}take_screenshot\` the current page and note its URL,`,
+			"   so the user sees exactly what needs completing.",
+			"2. Call `forge_ask_user` (type=confirm) — e.g. \"Please finish signing in at",
+			"   <url> in your browser, then confirm to continue.\" This BLOCKS until the",
+			"   human answers, giving them time to authenticate in the visible window.",
+			`3. After they confirm, \`${BROWSER_TOOL_PREFIX}take_snapshot\` again to verify`,
+			"   you are past the wall (expected authenticated element/URL present) before",
+			"   resuming the task. If still blocked, re-ask rather than looping on the tool.",
+		);
+	}
+
+	return lines.join("\n");
 }
 
 /** Options for attaching the browser bridge to a pi session. */

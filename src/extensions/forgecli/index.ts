@@ -34,7 +34,7 @@ import { createForgeHeader, type ForgeHeader } from "./tui/forge-header.js";
 import { registerForgeInit } from "./forge-init/forge-init.js";
 import { type ForgeToolDefs, registerForgeTools, setExtraSubagentTools } from "./forge-tools.js";
 import { attachGrove, buildGroveSteering } from "./mcp-bridge/grove.js";
-import { attachBrowser, buildBrowserSteering, isBrowserBridgeEnabled } from "./mcp-bridge/chrome-devtools.js";
+import { attachBrowser, buildBrowserSteering, isBrowserBridgeEnabled, isBrowserInteractive } from "./mcp-bridge/chrome-devtools.js";
 import { checkBundledForgeDrift, registerForgeUpdateCommand } from "./update/forge-update-command.js";
 import { detectFoundryCollision, markCollisionSeen, wasCollisionSeen } from "./foundry-collision.js";
 import { registerHookDispatcher } from "./hook-dispatcher.js";
@@ -438,7 +438,7 @@ export default async function forgecli(pi: ExtensionAPI): Promise<void> {
 				if (browser) {
 					for (const tool of browser.tools) pi.registerTool(tool);
 					bridgedSubagentTools.push(...browser.tools);
-					setBrowserSteering(buildBrowserSteering(browser.toolNames));
+					setBrowserSteering(buildBrowserSteering(browser.toolNames, { interactive: isBrowserInteractive() }));
 					process.once("exit", () => {
 						void browser.dispose();
 					});

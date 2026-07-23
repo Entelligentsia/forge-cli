@@ -23,6 +23,7 @@ import {
 	buildBrowserSteering,
 	DEFAULT_BROWSER_MCP_PACKAGE,
 	isBrowserBridgeEnabled,
+	isBrowserInteractive,
 	resolveBrowserMcpCommand,
 } from "../../../../src/extensions/forgecli/mcp-bridge/chrome-devtools.js";
 
@@ -146,6 +147,45 @@ describe("buildBrowserSteering", () => {
 	it("falls back to a wildcard when the roster is empty", () => {
 		const steering = buildBrowserSteering([]);
 		expect(steering).toContain(`${BROWSER_TOOL_PREFIX}*`);
+	});
+
+	it("omits the auth-handoff section by default (headless, no window)", () => {
+		const steering = buildBrowserSteering([`${BROWSER_TOOL_PREFIX}navigate_page`]);
+		expect(steering).not.toMatch(/Human-assisted authentication/);
+		expect(steering).not.toContain("forge_ask_user");
+	});
+
+	it("adds the auth-handoff section when interactive", () => {
+		const steering = buildBrowserSteering([`${BROWSER_TOOL_PREFIX}take_screenshot`], { interactive: true });
+		expect(steering).toMatch(/Human-assisted authentication/);
+		// Leans on the existing blocking human-input primitive, not new plumbing.
+		expect(steering).toContain("forge_ask_user");
+		// Still carries the base verification procedure.
+		expect(steering).toMatch(/VERIFY UI changes|UI verification/);
+	});
+});
+
+describe("isBrowserInteractive", () => {
+	it("is OFF by default (headless+isolated launch, no window)", () => {
+		expect(isBrowserInteractive({})).toBe(false);
+	});
+
+	it("is ON in connect-mode (FORGE_BROWSER_URL points at the user's Chrome)", () => {
+		expect(isBrowserInteractive({ FORGE_BROWSER_URL: "http://127.0.0.1:9222" })).toBe(true);
+		// Empty/whitespace URL is not connect-mode.
+		expect(isBrowserInteractive({ FORGE_BROWSER_URL: "  " })).toBe(false);
+	});
+
+	it("is ON when Chrome is launched headed (FORGE_BROWSER_HEADLESS falsey)", () => {
+		for (const v of ["0", "false", "off", "no", "FALSE", " off "]) {
+			expect(isBrowserInteractive({ FORGE_BROWSER_HEADLESS: v })).toBe(true);
+		}
+	});
+
+	it("stays OFF for a headless=true token with no connect URL", () => {
+		for (const v of ["1", "true", "on", "yes"]) {
+			expect(isBrowserInteractive({ FORGE_BROWSER_HEADLESS: v })).toBe(false);
+		}
 	});
 });
 
