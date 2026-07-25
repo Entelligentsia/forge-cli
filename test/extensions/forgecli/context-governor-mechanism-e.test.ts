@@ -557,7 +557,7 @@ describe("extensionFactories integration: factory fires on session_before_compac
 		});
 
 		sessionInstance = created.session;
-		sessionInstance.agent.streamFn = buildSimpleStreamFn(2);
+		sessionInstance.agent.streamFunction = buildSimpleStreamFn(2);
 
 		// Drive 2 turns, then compact manually.
 		await sessionInstance.sendUserMessage("First message.");

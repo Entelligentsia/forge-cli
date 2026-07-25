@@ -407,7 +407,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 
 	// Test-only seam — see RunSubagentOptions.streamFn doc (forge-cli#17).
 	if (opts.streamFn) {
-		session.agent.streamFn = opts.streamFn;
+		session.agent.streamFunction = opts.streamFn;
 	}
 
 	// Stream resilience: ALWAYS guard each per-turn model call with an idle watchdog
@@ -425,7 +425,7 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 	if (session.agent && Number.isFinite(streamIdleMs) && streamIdleMs > 0) {
 		const r = Number(process.env.FORGE_STREAM_RETRIES ?? 3);
 		const streamLogPath = process.env.FORGE_STREAM_LOG ?? "/tmp/forge-stream.log";
-		session.agent.streamFn = wrapStreamFnWithIdleTimeout(session.agent.streamFn, {
+		session.agent.streamFunction = wrapStreamFnWithIdleTimeout(session.agent.streamFunction, {
 			idleMs: streamIdleMs,
 			maxRetries: Number.isFinite(r) ? r : 3,
 			log: (m) => {
@@ -500,10 +500,10 @@ export async function runForgeSubagent(opts: RunSubagentOptions): Promise<Subage
 		}
 		try {
 			await session.setModel(fauxModel);
-			// setModel rebinds session.agent.streamFn to the new model's provider
+			// setModel rebinds session.agent.streamFunction to the new model's provider
 			// stream; re-apply the scripted streamFn so the test seam wins over
 			// faux's (empty) default responses.
-			session.agent.streamFn = opts.streamFn;
+			session.agent.streamFunction = opts.streamFn;
 		} catch {
 			/* non-fatal: scripted streamFn may still run via the current model */
 		}
