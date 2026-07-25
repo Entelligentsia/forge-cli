@@ -5,6 +5,18 @@ All notable changes to `@entelligentsia/forgecli` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.7] — 2026-07-25
+
+### Changed
+
+- **Vendored pi runtime upgraded 0.80.10 → 0.82.0** (weekly upstream sync; 109 commits since 2026-07-19, three upstream releases v0.81.0 / v0.81.1 / v0.82.0). The bundled `@earendil-works/pi-coding-agent` moves `0.80.10-forge.1` → `0.82.0-forge.1`; siblings `pi-tui` / `pi-ai` / `pi-agent-core` move `0.80.10` → `0.82.0`. peerDependency `@earendil-works/pi-coding-agent` moves `0.80.10` → `0.82.0`. Pulls in upstream changes including: Anthropic `ANTHROPIC_AUTH_TOKEN` bearer auth for gateways + compaction/branch-summary fix for header-only auth (#5871), OpenRouter OAuth, Kimi Code subscription OAuth, constrained sampling, abortable provider retries, `bash_execution_update` events, session metadata exposed to bash tools, model-config reload in the `/model` picker, and refreshed provider/model catalogs.
+- **Adapts to upstream `Agent` API rename** `streamFn` → `streamFunction` (public property; the `AgentOptions` constructor field is unchanged). `forge-subagent.ts` and the context-governor test harness updated accordingly.
+- **Bundles forge plugin v1.6.14** (`run-task prompt integrity`).
+
+### Notes
+
+- Supersedes the unreleased 1.1.6 (its token-metric `ctx<peak>` work ships here too). npm skips 1.1.6.
+
 ## [1.1.6] — 2026-07-19
 
 ### Added
