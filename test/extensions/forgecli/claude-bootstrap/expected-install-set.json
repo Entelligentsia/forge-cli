@@ -238,6 +238,7 @@
     ".forge/tools/build-init-context.cjs",
     ".forge/tools/build-overlay.cjs",
     ".forge/tools/build-persona-pack.cjs",
+    ".forge/tools/check-placeholders.cjs",
     ".forge/tools/check-structure.cjs",
     ".forge/tools/collate.cjs",
     ".forge/tools/commit-task.cjs",

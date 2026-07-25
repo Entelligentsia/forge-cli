@@ -196,10 +196,13 @@ else
 	# 5. Hooks merged into .claude/settings.json
 	SETTINGS_FILE="$TMP_PROJECT_DIR/.claude/settings.json"
 	if [[ -f "$SETTINGS_FILE" ]]; then
+		# String(...) not the raw number: node colourises inspected numbers under
+		# some terminals, and the ANSI bytes reach the arithmetic test below as
+		# "operand expected". Keep stdout plain.
 		HOOK_KEYS=$(node -e "
 		  const s=require('$SETTINGS_FILE');
 		  const h=s.hooks||{};
-		  console.log(Object.keys(h).length);
+		  process.stdout.write(String(Object.keys(h).length));
 		" 2>/dev/null || echo "0")
 		if [[ "$HOOK_KEYS" -ge 4 ]]; then
 			record PASS "BOOTSTRAP-5: hooks merged into .claude/settings.json" "event-types=$HOOK_KEYS"
@@ -309,6 +312,7 @@ else
 	STORE_CLI="$TMP_PROJECT_DIR/.forge/tools/store-cli.cjs"
 	VALIDATE_STORE="$TMP_PROJECT_DIR/.forge/tools/validate-store.cjs"
 	GENERATION_MANIFEST="$TMP_PROJECT_DIR/.forge/tools/generation-manifest.cjs"
+	CHECK_PLACEHOLDERS="$TMP_PROJECT_DIR/.forge/tools/check-placeholders.cjs"
 	KB_PATH="engineering"
 fi
 
@@ -439,6 +443,33 @@ if [[ -n "$GENERATION_MANIFEST" && -f "$GENERATION_MANIFEST" ]]; then
 	fi
 else
 	record SKIP "E2E-T03-HEALTH: generation-manifest check" "SKIP_REASON=skip:generation-manifest unresolved"
+fi
+
+# ── Placeholder gate (auth-free) ───────────────────────────────────────────
+# A materialized workflow must carry no literal {{KEY}} / {KEY} substitution
+# token. This is the only automated gate with a real materialized instance to
+# check, so it is where the #47 class of defect ({SYNTAX_CHECK} shipping
+# unsubstituted into every implement_plan.md) gets caught.
+PLACEHOLDER_TARGETS=()
+for d in .forge/workflows .forge/personas; do
+	[[ -d "$TMP_PROJECT_DIR/$d" ]] && PLACEHOLDER_TARGETS+=("$d")
+done
+
+if [[ -z "${CHECK_PLACEHOLDERS:-}" || ! -f "$CHECK_PLACEHOLDERS" ]]; then
+	record SKIP "E2E-T03-HEALTH: placeholder gate" "SKIP_REASON=skip:check-placeholders unresolved"
+elif [[ ${#PLACEHOLDER_TARGETS[@]} -eq 0 ]]; then
+	# The deterministic bootstrap vendors tools and drivers; .forge/workflows and
+	# .forge/personas are materialized by the LLM half of /forge:init, which is
+	# auth-gated. Nothing to check in an auth-free run — not a failure.
+	record SKIP "E2E-T03-HEALTH: placeholder gate" "SKIP_REASON=env:ANTHROPIC_API_KEY not set (no materialized workflows/personas)"
+else
+	if (cd "$TMP_PROJECT_DIR" && node "$CHECK_PLACEHOLDERS" "${PLACEHOLDER_TARGETS[@]}") \
+		>"$TMP_SMOKE_OUT_DIR/placeholders.out" 2>&1; then
+		record PASS "E2E-T03-HEALTH: no unsubstituted placeholders" ""
+	else
+		PLACEHOLDER_RC=$?
+		record FAIL "E2E-T03-HEALTH: unsubstituted placeholders in materialized output rc=$PLACEHOLDER_RC" "see placeholders.out"
+	fi
 fi
 
 # ── Write SUMMARY.md ───────────────────────────────────────────────────────

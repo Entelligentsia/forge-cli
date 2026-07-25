@@ -12,7 +12,9 @@
 // without re-checking these markers reintroduces the same break.
 //
 // Asserts (against the real bundled base-pack, not a fixture):
-//   1. plan_task.md passes checkMaterialization (architect persona).
+//   1. plan_task.md passes checkMaterialization (engineer persona — converged
+//      from architect in forge-engineering#48 so the workflow's declared
+//      persona matches the one run-task actually dispatches).
 //   2. implement_plan.md passes checkMaterialization (engineer persona).
 
 import * as fs from "node:fs";
@@ -26,7 +28,7 @@ import { checkMaterialization as checkPlanMaterialization } from "../../../src/e
 describe("bundled base-pack: Pack-06 materialization markers", () => {
 	const basePackWorkflows = path.join(getBundledPayloadRoot(), ".base-pack", "workflows");
 
-	it("plan_task.md carries Iron Laws + Store-Write Verification + forge_store + architect.md", () => {
+	it("plan_task.md carries Iron Laws + Store-Write Verification + forge_store + engineer.md", () => {
 		const wfPath = path.join(basePackWorkflows, "plan_task.md");
 		const md = fs.readFileSync(wfPath, "utf8");
 		const res = checkPlanMaterialization(wfPath, md);
